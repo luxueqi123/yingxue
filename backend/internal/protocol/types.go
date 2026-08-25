@@ -25,12 +25,22 @@ const (
 
 type Status string
 
+type AuthMode string
+
 const (
 	StatusPending    Status = "pending"
 	StatusProcessing Status = "processing"
 	StatusSucceeded  Status = "succeeded"
 	StatusFailed     Status = "failed"
 	StatusCancelled  Status = "cancelled"
+)
+
+const (
+	AuthProviderDefault  AuthMode = ""
+	AuthBearer           AuthMode = "bearer"
+	AuthRawAuthorization AuthMode = "raw-authorization"
+	AuthAPIKeyHeader     AuthMode = "x-api-key"
+	AuthNone             AuthMode = "none"
 )
 
 type MediaReference struct {
@@ -75,6 +85,7 @@ type RequestSpec struct {
 	Method      string            `json:"method"`
 	Path        string            `json:"path"`
 	ContentType string            `json:"contentType"`
+	AuthMode    AuthMode          `json:"authMode,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Body        any               `json:"body,omitempty"`
 }

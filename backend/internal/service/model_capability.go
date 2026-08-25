@@ -245,6 +245,24 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.Resolutions = []string{"768P", "2K"}
 		video.DefaultResolution = "768P"
 		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
+	case model.ChannelInterfaceDashScopeWanxVideo:
+		video.Duration = VideoDurationConfig{Selection: "enum", Values: []int{5, 10}, Default: 5}
+		video.Resolutions = []string{"480p", "720p", "1080p"}
+		video.DefaultResolution = "720p"
+		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+		video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
+	case model.ChannelInterfaceAutoDLH3Video:
+		video.References.MinImages = 1
+		video.References.MaxImages = 9
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 1, Max: 10, Step: 1, Default: 5}
+		video.Ratios = []string{"9:16", "16:9", "1:1"}
+		video.DefaultRatio = "9:16"
+		video.Resolutions = []string{"480p", "768p", "1080p"}
+		video.DefaultResolution = "768p"
+		video.Operations = []string{"image_to_video", "reference_to_video"}
+		video.DefaultOperation = "reference_to_video"
+		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+		video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
 	}
 	return &ModelCapabilityConfig{Version: 1, Text: text, Image: DefaultImageCapabilityConfig(protocol, modelName), Video: video}
 }

@@ -278,6 +278,17 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.duration = { selection: "enum", values: [5, 10], default: 5 };
         video.resolutions = ["720p"];
     }
+    if (protocol === "dashscope-wanx-video") {
+        video.duration = { selection: "enum", values: [5, 10], default: 5 };
+        video.ratios = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
+        video.defaultRatio = "16:9";
+        video.resolutions = ["480p", "720p", "1080p"];
+        video.defaultResolution = "720p";
+        video.generateAudio = { supported: false, default: false };
+        video.watermark = { supported: false, default: false };
+        video.operations = ["text_to_video", "image_to_video"];
+        video.defaultOperation = "text_to_video";
+    }
     if (protocol === "gemini-veo") {
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
@@ -320,6 +331,19 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.watermark = { supported: true, default: false };
         video.operations.push("reference_to_video");
     }
+	if (protocol === "autodl-h3-video") {
+		video.references.minImages = 1;
+		video.references.maxImages = 9;
+		video.duration = { selection: "range", min: 1, max: 10, step: 1, default: 5 };
+		video.ratios = ["9:16", "16:9", "1:1"];
+		video.defaultRatio = "9:16";
+		video.resolutions = ["480p", "768p", "1080p"];
+		video.defaultResolution = "768p";
+		video.generateAudio = { supported: false, default: false };
+		video.watermark = { supported: false, default: false };
+		video.operations = ["image_to_video", "reference_to_video"];
+		video.defaultOperation = "reference_to_video";
+	}
     return { version: 1, text, image: defaultImageCapabilityConfig(protocol, model), video };
 }
 

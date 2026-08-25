@@ -1531,12 +1531,6 @@
         outline-offset: -2px;
     }
 
-    /* 品牌字标：弱化但可读，hover 加深 */
-    .app-workspace-brand-wordmark {
-        color: color-mix(in srgb, var(--foreground) 78%, transparent);
-        letter-spacing: 0.01em;
-        transition: color var(--motion-instant) ease-out;
-    }
     .app-workspace-nav-link {
         position: relative;
     }
@@ -12215,7 +12209,7 @@ html:not(.dark) .creation-home .storyboard-workbench-bar-action:hover { backgrou
     .creation-home .storyboard-workbench-empty-steps span { padding: 5px 10px; }
 }
 
-/* 对话时间线：你 → 影策 AI */
+/* 对话时间线：你 → 映雪 AI */
 .creation-home .storyboard-workbench-thread {
     display: flex;
     flex-direction: column;
@@ -12300,7 +12294,7 @@ html:not(.dark) .creation-home .storyboard-workbench-bar-action:hover { backgrou
 
 .creation-home .storyboard-workbench-handoff-badge svg { width: 12px; height: 12px; }
 
-/* 影策 AI 头像 */
+/* 映雪 AI 头像 */
 .creation-home .storyboard-workbench-ai-avatar {
     display: grid;
     width: 30px;
@@ -12376,7 +12370,7 @@ html:not(.dark) .creation-home .storyboard-workbench-bar-action:hover { backgrou
 
 .creation-home .storyboard-workbench-director-note span { flex: 0 0 auto; color: var(--creation-text); font-weight: 600; }
 
-/* 空态影策开场 */
+/* 空态映雪开场 */
 .creation-home .storyboard-workbench-empty-opener {
     display: flex;
     align-items: flex-start;
@@ -12587,7 +12581,7 @@ html:not(.dark) .creation-home .storyboard-workbench-bar-action:hover { backgrou
     .creation-empty-workspace > .creation-empty-suggest { margin-top: 20px; }
 }
 
-/* ===== 素材库 · 重构（影策影视资产） =====
+/* ===== 素材库 · 重构（映雪影视资产） =====
    与画布库共用 studio-band 毛玻璃页头与 frame 外壳；类型化封面、accent 反白筛选、
    批量操作条、banner+欢迎卡空态、资产档案抽屉。全局保持黑白单色。 */
 .assets-library-page .assets-header-meta { gap: 6px; }

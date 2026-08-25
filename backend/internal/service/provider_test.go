@@ -58,6 +58,7 @@ func TestChannelAPIURLNormalizesConfiguredVersionPrefix(t *testing.T) {
 		{name: "path carries v2", base: "http://provider.test:8000/v1", path: "/v2/tasks", want: "http://provider.test:8000/v2/tasks"},
 		{name: "ark v3", base: "https://ark.example.com/api/v3", path: "/images/generations", want: "https://ark.example.com/api/v3/images/generations"},
 		{name: "path carries ark v3", base: "https://ark.example.com", path: "/api/v3/images/generations", want: "https://ark.example.com/api/v3/images/generations"},
+		{name: "path carries AutoDL api v1", base: "https://autodl.art", path: "/api/v1/comfyui/workflows/demo", want: "https://autodl.art/api/v1/comfyui/workflows/demo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

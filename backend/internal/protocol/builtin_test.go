@@ -13,7 +13,7 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 	expected := []string{
 		"chat-completion", "openai-response", "claude-api",
 		"openai-image", "grok-image", "volcengine-ark-image", "volcengine-jimeng-image", "gemini-image",
-		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "agnes-video",
+		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "autodl-h3-video", "agnes-video",
 	}
 	for _, id := range expected {
 		if _, ok := registry.Get(id); !ok {
@@ -258,6 +258,63 @@ func TestDeclarativeManifestMapsFieldsAndResponses(t *testing.T) {
 	}
 }
 
+func TestDeclarativeManifestSupportsRawAuthAndIndexedOptionalMedia(t *testing.T) {
+	manifest := []byte(`{
+		"apiVersion":"v1",
+		"metadata":{"id":"indexed-media","version":"1.0.0","name":"Indexed Media","vendor":"Test","categories":["video"],"scopes":["canvas"],"documentation":"# Indexed Media"},
+		"authMode":"raw-authorization",
+		"create":{"method":"POST","path":"/tasks","fields":{"ref_image_0":"request.images.0.url","ref_image_1":"request.images.1.url"}},
+		"response":{"taskIdPaths":["id"],"statusPaths":["status"]}
+	}`)
+	adapter, err := LoadManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Images: []MediaReference{{URL: "https://example.com/one.png"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.AuthMode != AuthRawAuthorization {
+		t.Fatalf("auth mode = %q", spec.AuthMode)
+	}
+	body := spec.Body.(map[string]any)
+	if body["ref_image_0"] != "https://example.com/one.png" {
+		t.Fatalf("body = %#v", body)
+	}
+	if _, exists := body["ref_image_1"]; exists {
+		t.Fatalf("missing optional image was serialized: %#v", body)
+	}
+}
+
+func TestAutoDLH3AdapterMapsActivityWorkflow(t *testing.T) {
+	adapter, ok := Builtins().Get("autodl-h3-video")
+	if !ok {
+		t.Fatal("AutoDL H3 adapter missing")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "minimax_h3_lightx2v_v5", Prompt: "keep the character consistent", Duration: 7, Resolution: "768p", AspectRatio: "9:16",
+		Images: []MediaReference{{URL: "https://example.com/front.png"}, {URL: "https://example.com/side.png"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Path != "/api/v1/comfyui/comfyui_workflow/minimax_h3_lightx2v_v5" || spec.AuthMode != AuthRawAuthorization {
+		t.Fatalf("spec = %#v", spec)
+	}
+	body := spec.Body.(map[string]any)
+	if body["duration"] != 7 || body["resolution"] != "768p竖" || body["ref_image_0"] != "https://example.com/front.png" || body["ref_image_1"] != "https://example.com/side.png" {
+		t.Fatalf("body = %#v", body)
+	}
+	created, err := adapter.ParseCreate(context.Background(), []byte(`{"code":"Success","data":{"task_id":"h3-1","status":"QUEUED"}}`))
+	if err != nil || created.TaskID != "h3-1" || created.Status != StatusPending {
+		t.Fatalf("created = %#v, err = %v", created, err)
+	}
+	polled, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: "h3-1"}, []byte(`{"code":"Success","data":{"task_id":"h3-1","status":"completed","results":[{"url":"https://example.com/h3.mp4","type":"video"}]}}`))
+	if err != nil || polled.Status != StatusSucceeded || polled.Result == nil || len(polled.Result.Videos) != 1 || polled.Result.Videos[0].URL != "https://example.com/h3.mp4" {
+		t.Fatalf("polled = %#v, err = %v", polled, err)
+	}
+}
+
 func TestDeclarativeManifestRequiresDocumentation(t *testing.T) {
 	manifest := Manifest{
 		APIVersion: "v1",
@@ -297,7 +354,7 @@ func TestBuiltinDocumentationMatchesTextRequestShape(t *testing.T) {
 }
 
 func TestEveryBuiltinHasDetailedDocumentation(t *testing.T) {
-	requiredSections := []string{"## 接口", "## 模型", "## 参数", "## 官方", "## 影策运行时合同"}
+	requiredSections := []string{"## 接口", "## 模型", "## 参数", "## 官方", "## 映雪运行时合同"}
 	for _, metadata := range Builtins().List("", "", true) {
 		t.Run(metadata.ID, func(t *testing.T) {
 			AttachDocumentation(&metadata)

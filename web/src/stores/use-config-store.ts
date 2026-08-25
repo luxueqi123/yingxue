@@ -589,9 +589,11 @@ export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
 export function defaultBaseUrlForChannelInterface(interfaceType?: ChannelInterfaceType) {
     if (interfaceType === "gemini-veo" || interfaceType === "gemini-image") return GEMINI_BASE_URL;
     if (interfaceType === "novita-video") return "https://api.novita.ai/v3";
+    if (interfaceType === "dashscope-wanx-video") return "https://dashscope.aliyuncs.com/api/v1";
     if (interfaceType === "volcengine-ark-image" || interfaceType === "volcengine-ark-video") return "https://ark.cn-beijing.volces.com/api/v3";
     if (interfaceType === "volcengine-jimeng-image" || interfaceType === "volcengine-jimeng-video") return "https://visual.volcengineapi.com";
     if (interfaceType === "minimax-video") return "https://api.minimaxi.com";
+	if (interfaceType === "autodl-h3-video") return "https://autodl.art";
     if (interfaceType === "grok-image" || interfaceType === "newapi" || interfaceType === "newapi-channel-1" || interfaceType === "newapi-channel-2" || interfaceType === "xai-video") return "";
     return OPENAI_BASE_URL;
 }

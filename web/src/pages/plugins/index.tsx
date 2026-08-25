@@ -481,14 +481,14 @@ export default function PluginsPage() {
                                                 <div className="min-w-0">
                                                     <label htmlFor="eagle-base-url">Eagle 本地 API 地址</label>
                                                     <Input id="eagle-base-url" aria-label="Eagle 本地 API 地址" value={eagleBaseUrl} onChange={(event) => setEagleBaseUrl(event.target.value)} placeholder="http://localhost:41595" />
-                                                    <p>Eagle 必须在本机运行；影策通过插件直接读取和写入 Eagle 原始文件。</p>
+                                                    <p>Eagle 必须在本机运行；映雪通过插件直接读取和写入 Eagle 原始文件。</p>
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="plugin-setting-label-row">
                                                         <label htmlFor="eagle-auto-upload-generated">自动归档生成结果</label>
                                                         <Switch id="eagle-auto-upload-generated" checked={eagleAutoUploadGenerated} onChange={setEagleAutoUploadGenerated} aria-label="自动归档生成结果到 Eagle" />
                                                     </div>
-                                                    <p>图片、视频和音频生成成功后，自动写入 Eagle；影策本地素材仍会保留。</p>
+                                                    <p>图片、视频和音频生成成功后，自动写入 Eagle；映雪本地素材仍会保留。</p>
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="plugin-setting-label-row">

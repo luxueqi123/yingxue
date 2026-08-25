@@ -16,6 +16,7 @@ import (
 type Manifest struct {
 	APIVersion    string                 `json:"apiVersion"`
 	Metadata      Metadata               `json:"metadata"`
+	AuthMode      AuthMode               `json:"authMode,omitempty"`
 	Create        ManifestOperation      `json:"create"`
 	Agent         *ManifestOperation     `json:"agent,omitempty"`
 	Poll          *ManifestOperation     `json:"poll,omitempty"`
@@ -162,6 +163,11 @@ func ValidateManifest(manifest Manifest) error {
 	if strings.TrimSpace(manifest.Metadata.Name) == "" {
 		return fmt.Errorf("protocol manifest metadata requires name")
 	}
+	switch manifest.AuthMode {
+	case AuthProviderDefault, AuthBearer, AuthRawAuthorization, AuthAPIKeyHeader, AuthNone:
+	default:
+		return fmt.Errorf("unsupported protocol authMode %q", manifest.AuthMode)
+	}
 	if strings.TrimSpace(manifest.Metadata.Documentation) == "" {
 		return fmt.Errorf("protocol manifest metadata requires Markdown documentation")
 	}
@@ -225,14 +231,14 @@ type manifestAdapter struct{ manifest Manifest }
 
 func (a manifestAdapter) Metadata() Metadata { return a.manifest.Metadata }
 func (a manifestAdapter) BuildCreate(_ context.Context, c RequestContext) (RequestSpec, error) {
-	return buildManifestOperation(a.manifest.Create, c.Request, ""), nil
+	return buildManifestOperation(a.manifest.Create, c.Request, "", a.manifest.AuthMode), nil
 }
 func (a manifestAdapter) BuildAgent(_ context.Context, c AgentRequestContext) (RequestSpec, error) {
 	if a.manifest.Agent == nil {
 		return RequestSpec{}, fmt.Errorf("protocol %s has no agent operation", a.manifest.Metadata.ID)
 	}
 	request := GenerationRequest{Model: c.Model, Extra: map[string]any{"agent": c.Request}}
-	return buildManifestOperation(*a.manifest.Agent, request, ""), nil
+	return buildManifestOperation(*a.manifest.Agent, request, "", a.manifest.AuthMode), nil
 }
 func (a manifestAdapter) ParseAgent(_ context.Context, body []byte) (AgentResult, error) {
 	if a.manifest.AgentResponse == nil {
@@ -273,7 +279,7 @@ func (a manifestAdapter) BuildPoll(_ context.Context, c PollContext) (RequestSpe
 	}
 	request := c.Request
 	request.Model = c.Model
-	return buildManifestOperation(*a.manifest.Poll, request, c.TaskID), nil
+	return buildManifestOperation(*a.manifest.Poll, request, c.TaskID, a.manifest.AuthMode), nil
 }
 func (a manifestAdapter) ParsePoll(_ context.Context, c PollContext, body []byte) (PollResult, error) {
 	payload, err := decodeObject(body)
@@ -289,7 +295,7 @@ func (a manifestAdapter) BuildCancel(_ context.Context, c PollContext) (RequestS
 	}
 	request := c.Request
 	request.Model = c.Model
-	return buildManifestOperation(*a.manifest.Cancel, request, c.TaskID), nil
+	return buildManifestOperation(*a.manifest.Cancel, request, c.TaskID, a.manifest.AuthMode), nil
 }
 
 func (a manifestAdapter) parse(payload map[string]any, c PollContext) CreateResult {
@@ -328,17 +334,21 @@ func (a manifestAdapter) parse(payload map[string]any, c PollContext) CreateResu
 	return CreateResult{TaskID: id, Status: status, Result: result, Message: message}
 }
 
-func buildManifestOperation(operation ManifestOperation, request GenerationRequest, taskID string) RequestSpec {
+func buildManifestOperation(operation ManifestOperation, request GenerationRequest, taskID string, authMode AuthMode) RequestSpec {
 	var body map[string]any
 	if len(operation.Fields) > 0 {
 		body = make(map[string]any, len(operation.Fields))
 	}
 	for key, expression := range operation.Fields {
-		setMapPath(body, key, manifestExpressionValue(expression, request, taskID))
+		value := manifestExpressionValue(expression, request, taskID)
+		if value == nil {
+			continue
+		}
+		setMapPath(body, key, value)
 	}
 	path := strings.ReplaceAll(operation.Path, "{{taskId}}", url.PathEscape(taskID))
 	path = strings.ReplaceAll(path, "{{model}}", url.PathEscape(request.Model))
-	return RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, ContentType: defaultValue(operation.ContentType, "application/json"), Body: body}
+	return RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, ContentType: defaultValue(operation.ContentType, "application/json"), AuthMode: authMode, Body: body}
 }
 
 func manifestExpressionValue(expression string, request GenerationRequest, taskID string) any {
@@ -373,10 +383,49 @@ func manifestExpressionValue(expression string, request GenerationRequest, taskI
 	case "taskId":
 		return taskID
 	}
+	for prefix, values := range map[string][]MediaReference{
+		"request.images.": request.Images,
+		"request.videos.": request.Videos,
+		"request.audios.": request.Audios,
+	} {
+		if strings.HasPrefix(expression, prefix) {
+			return manifestMediaExpressionValue(values, strings.TrimPrefix(expression, prefix))
+		}
+	}
 	if strings.HasPrefix(expression, "request.extra.") {
 		return pathValue(request.Extra, strings.TrimPrefix(expression, "request.extra."))
 	}
 	return expression
+}
+
+func manifestMediaExpressionValue(values []MediaReference, path string) any {
+	parts := strings.Split(strings.Trim(path, "."), ".")
+	if len(parts) != 2 {
+		return nil
+	}
+	index, err := strconv.Atoi(parts[0])
+	if err != nil || index < 0 || index >= len(values) {
+		return nil
+	}
+	switch parts[1] {
+	case "url":
+		if strings.TrimSpace(values[index].URL) == "" {
+			return nil
+		}
+		return strings.TrimSpace(values[index].URL)
+	case "dataUrl":
+		if strings.TrimSpace(values[index].DataURL) == "" {
+			return nil
+		}
+		return strings.TrimSpace(values[index].DataURL)
+	case "kind":
+		if strings.TrimSpace(values[index].Kind) == "" {
+			return nil
+		}
+		return strings.TrimSpace(values[index].Kind)
+	default:
+		return nil
+	}
 }
 
 func pathValue(payload map[string]any, path string) any {

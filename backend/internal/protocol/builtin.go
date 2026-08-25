@@ -74,7 +74,7 @@ func Builtins() *Registry {
 	registry, err := NewRegistry(
 		openAIChatAdapter(), openAIResponsesAdapter(), claudeAdapter(),
 		openAIImagesAdapter(), grokImagesAdapter(), arkImagesAdapter(), jimengImagesAdapter(), geminiImagesAdapter(),
-		openAIVideosAdapter(), newAPIChannel1Adapter(), newAPIVideosAdapter(), xAIVideosAdapter(), arkVideosAdapter(), jimengVideosAdapter(), geminiVeoAdapter(), novitaVideosAdapter(), miniMaxVideosAdapter(),
+		openAIVideosAdapter(), newAPIChannel1Adapter(), newAPIVideosAdapter(), xAIVideosAdapter(), arkVideosAdapter(), jimengVideosAdapter(), geminiVeoAdapter(), novitaVideosAdapter(), miniMaxVideosAdapter(), autoDLH3VideosAdapter(),
 		openAIAudioAdapter(), asyncAudioAdapter(), agnesAdapter(),
 	)
 	if err != nil {
@@ -455,6 +455,124 @@ func miniMaxVideosAdapter() Adapter {
 		mergeExtra(body, r.Extra, "model", "prompt", "duration", "content", "resolution", "aspect_ratio")
 		return jsonSpec(http.MethodPost, "/v2/video_generation", body), nil
 	})
+}
+
+func autoDLH3VideosAdapter() Adapter {
+	info := metadata("autodl-h3-video", "AutoDL H3 多图参考生视频", "AutoDL", CapabilityVideo, "POST /api/v1/comfyui/comfyui_workflow/{workflow_id}", "GET /api/v1/comfyui/comfyui_workflow/result/{task_id}", "application/json")
+	info.Parameters = []Parameter{
+		{Name: "model", Type: "string", Required: true, Mapping: "URL workflow_id", Description: "填写活动工作流 ID：minimax_h3_lightx2v_v5。"},
+		{Name: "prompt", Type: "string", Required: true, Mapping: "prompt", Description: "视频生成提示词。"},
+		{Name: "images", Type: "media[]", Required: true, Mapping: "ref_image_0 ... ref_image_8", Description: "1-9 张上游可访问的公网参考图 URL。"},
+		{Name: "duration", Type: "integer", Mapping: "duration", Description: "1-10 秒，默认 5 秒。"},
+		{Name: "aspectRatio", Type: "string", Mapping: "resolution 方向后缀", Description: "支持 16:9、9:16、1:1。"},
+		{Name: "resolution", Type: "string", Mapping: "resolution", Description: "支持 480p、768p、1080p；活动计费由 AutoDL 决定。"},
+	}
+	return builtinAdapter{
+		info: info,
+		create: func(r GenerationRequest) (RequestSpec, error) {
+			workflowID := strings.TrimSpace(r.Model)
+			if workflowID != "minimax_h3_lightx2v_v5" {
+				return RequestSpec{}, fmt.Errorf("AutoDL H3 多图活动接口仅支持工作流 minimax_h3_lightx2v_v5")
+			}
+			if len(r.Images) == 0 || len(r.Images) > 9 {
+				return RequestSpec{}, fmt.Errorf("AutoDL H3 多图参考生视频需要 1-9 张参考图片")
+			}
+			body := map[string]any{
+				"prompt":     strings.TrimSpace(r.Prompt),
+				"duration":   autoDLH3Duration(r.Duration),
+				"resolution": autoDLH3Resolution(r.Resolution, r.AspectRatio),
+			}
+			for index, image := range r.Images {
+				imageURL := strings.TrimSpace(image.URL)
+				if !strings.HasPrefix(imageURL, "https://") && !strings.HasPrefix(imageURL, "http://") {
+					return RequestSpec{}, fmt.Errorf("AutoDL H3 第 %d 张参考图片必须是上游可访问的 HTTP(S) URL", index+1)
+				}
+				body[fmt.Sprintf("ref_image_%d", index)] = imageURL
+			}
+			if seed, ok := r.Extra["seed"]; ok && seed != nil {
+				body["seed"] = seed
+			}
+			return RequestSpec{Method: http.MethodPost, Path: "/api/v1/comfyui/comfyui_workflow/" + url.PathEscape(workflowID), ContentType: "application/json", AuthMode: AuthRawAuthorization, Body: body}, nil
+		},
+		parseCreate: parseAutoDLH3Create,
+		poll: func(c PollContext) (RequestSpec, error) {
+			if strings.TrimSpace(c.TaskID) == "" {
+				return RequestSpec{}, fmt.Errorf("AutoDL H3 查询任务缺少 task_id")
+			}
+			return RequestSpec{Method: http.MethodGet, Path: "/api/v1/comfyui/comfyui_workflow/result/" + url.PathEscape(c.TaskID), AuthMode: AuthRawAuthorization}, nil
+		},
+		parsePoll: parseAutoDLH3Poll,
+	}
+}
+
+func autoDLH3Duration(value int) int {
+	if value < 1 || value > 10 {
+		return 5
+	}
+	return value
+}
+
+func autoDLH3Resolution(resolution, ratio string) string {
+	tier := strings.ToLower(strings.TrimSpace(resolution))
+	switch tier {
+	case "480", "480p", "low":
+		tier = "480p"
+	case "1080", "1080p":
+		tier = "1080p"
+	default:
+		tier = "768p"
+	}
+	switch strings.TrimSpace(ratio) {
+	case "1:1":
+		return tier + "(1:1)"
+	case "9:16", "3:4":
+		return tier + "竖"
+	default:
+		return tier + "横"
+	}
+}
+
+func parseAutoDLH3Create(payload map[string]any) (CreateResult, error) {
+	data, err := autoDLH3ResponseData(payload)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	status := normalizeStatus(firstString(data, "status"))
+	if status == "" {
+		status = StatusPending
+	}
+	return CreateResult{TaskID: firstString(data, "task_id"), Status: status, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
+}
+
+func parseAutoDLH3Poll(c PollContext, payload map[string]any) (PollResult, error) {
+	data, err := autoDLH3ResponseData(payload)
+	if err != nil {
+		return PollResult{}, err
+	}
+	status := normalizeStatus(firstString(data, "status"))
+	result := &Result{Videos: mediaFromArray(data["results"], CapabilityVideo)}
+	if len(result.Videos) > 0 && status == "" {
+		status = StatusSucceeded
+	}
+	if status == "" {
+		status = StatusPending
+	}
+	if len(result.Videos) == 0 {
+		result = nil
+	}
+	return PollResult{TaskID: defaultValue(firstString(data, "task_id"), c.TaskID), Status: status, Result: result, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
+}
+
+func autoDLH3ResponseData(payload map[string]any) (map[string]any, error) {
+	code := firstString(payload, "code")
+	if code != "" && !strings.EqualFold(code, "success") {
+		return nil, fmt.Errorf("AutoDL H3 接口返回失败：%s", firstNonEmpty(firstString(payload, "msg", "message", "error"), code))
+	}
+	data := object(payload["data"])
+	if data == nil {
+		return nil, fmt.Errorf("AutoDL H3 接口响应缺少 data")
+	}
+	return data, nil
 }
 
 func openAIAudioAdapter() Adapter {

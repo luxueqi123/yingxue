@@ -8,6 +8,7 @@ import { assertVideoCapability, assertVideoConfig } from "./video-validation";
 import type { RequestOptions, VideoGenerationResult, VideoGenerationTask, VideoGenerationTaskState } from "./video-contracts";
 import { videoResponseTools } from "./video-response";
 import type { VideoProviderDeps } from "./video-provider-deps";
+import { createDashScopeVideoTask, pollDashScopeVideoTask } from "./video-provider-dashscope";
 import { createGeminiVeoTask, pollGeminiVeoTask } from "./video-provider-gemini";
 import { createMiniMaxVideoTask, pollMiniMaxVideoTask } from "./video-provider-minimax";
 import { createVideoGenerationsTask, pollVideoGenerationsTask } from "./video-provider-newapi";
@@ -40,6 +41,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const deps: VideoProviderDeps = { transport: createVideoTransport(requestConfig), response: videoResponseTools };
     if (requestConfig.interfaceType === "newapi-channel-2") return createVideoGenerationsTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (requestConfig.interfaceType === "gemini-veo") return createGeminiVeoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    if (requestConfig.interfaceType === "dashscope-wanx-video") return createDashScopeVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (requestConfig.interfaceType === "novita-video") return createNovitaVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (requestConfig.interfaceType === "minimax-video") return createMiniMaxVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (isSeedanceConfig(requestConfig)) return createSeedanceTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
@@ -53,6 +55,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     const deps: VideoProviderDeps = { transport: createVideoTransport(requestConfig), response: videoResponseTools };
     if (task.provider === "video-generations") return pollVideoGenerationsTask(deps, task, options);
     if (task.provider === "gemini-veo") return pollGeminiVeoTask(deps, requestConfig, task, options);
+    if (task.provider === "dashscope-wanx") return pollDashScopeVideoTask(deps, requestConfig, task, options);
     if (task.provider === "novita") return pollNovitaVideoTask(deps, requestConfig, task, options);
     if (task.provider === "minimax") return pollMiniMaxVideoTask(deps, requestConfig, task, options);
     if (task.provider === "seedance") return pollSeedanceTask(deps, requestConfig, task, options);

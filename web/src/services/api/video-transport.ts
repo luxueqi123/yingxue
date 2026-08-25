@@ -8,7 +8,7 @@ import type { RequestOptions, ResolvedAiConfig } from "./video-contracts";
 
 export type VideoTransport = {
     apiUrl: (path: string) => string;
-    post: <T>(upstreamUrl: string, body: unknown, options?: RequestOptions) => Promise<T>;
+    post: <T>(upstreamUrl: string, body: unknown, options?: RequestOptions, extraHeaders?: Record<string, string>) => Promise<T>;
     postForm: <T>(upstreamUrl: string, body: FormData, options?: RequestOptions) => Promise<T>;
     get: <T>(upstreamUrl: string, options?: RequestOptions) => Promise<T>;
     getBlob: (upstreamUrl: string, options?: RequestOptions) => Promise<Blob>;
@@ -31,8 +31,8 @@ export function createVideoTransport(config: ResolvedAiConfig): VideoTransport {
 
     return {
         apiUrl: (path) => buildApiUrl(config.baseUrl, path),
-        post: async <T>(upstreamUrl: string, body: unknown, options?: RequestOptions) => {
-            const request = channelRequest(config, upstreamUrl, headers("application/json"));
+        post: async <T>(upstreamUrl: string, body: unknown, options?: RequestOptions, extraHeaders?: Record<string, string>) => {
+            const request = channelRequest(config, upstreamUrl, { ...headers("application/json"), ...extraHeaders });
             return (await axios.post<T>(request.url, body, { ...requestOptions(options), headers: request.headers, withCredentials: request.credentials === "include" })).data;
         },
         postForm: async <T>(upstreamUrl: string, body: FormData, options?: RequestOptions) => {

@@ -26,7 +26,7 @@ export function WorkspaceTopBar({ sidebarOpen, onToggleSidebar }: { sidebarOpen:
     const { pathname } = useLocation();
 
     const slug = pathname.split("/").filter(Boolean)[0];
-    const pageTitle = (slug && PAGE_TITLES[slug]) || "影策";
+    const pageTitle = (slug && PAGE_TITLES[slug]) || "映雪";
 
     return (
         <header className="app-workspace-topbar flex shrink-0 items-center justify-between gap-3 px-3 sm:px-4">
@@ -35,7 +35,7 @@ export function WorkspaceTopBar({ sidebarOpen, onToggleSidebar }: { sidebarOpen:
                     {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
                 </button>
                 <nav className="flex min-w-0 items-center gap-2 text-[var(--fs-caption)] text-foreground/50" aria-label="当前位置">
-                    <Link to="/" className="shrink-0 font-medium text-foreground/70 transition-colors hover:text-foreground">影策</Link>
+                    <Link to="/" className="shrink-0 font-medium text-foreground/70 transition-colors hover:text-foreground">映雪</Link>
                     <span className="shrink-0 text-foreground/30">/</span>
                     <span className="truncate font-medium text-foreground">{pageTitle}</span>
                 </nav>

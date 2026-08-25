@@ -4,6 +4,7 @@ import { ArrowLeft, Play } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
 import { aceternityMotion } from "@/lib/aceternity-motion";
+import { YingxueBrandLockup } from "@/components/brand/yingxue-brand-lockup";
 import { getAntThemeConfig } from "@/lib/app-theme";
 
 const AUTH_VIDEO_URL = "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4";
@@ -49,7 +50,7 @@ export function AuthScene() {
     return (
         <main className="h-dvh min-h-0 overflow-y-auto bg-[#08090c] text-white lg:overflow-hidden">
             <div className="grid min-h-full lg:h-full lg:grid-cols-[minmax(0,1.32fr)_minmax(520px,1fr)]">
-                <section className="relative min-h-[250px] overflow-hidden sm:min-h-[320px] lg:min-h-0" aria-label="影策品牌影片">
+                <section className="relative min-h-[250px] overflow-hidden sm:min-h-[320px] lg:min-h-0" aria-label="映雪品牌影片">
                     <video
                         className="absolute inset-0 size-full object-cover"
                         src={AUTH_VIDEO_URL}
@@ -63,9 +64,8 @@ export function AuthScene() {
                     <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,5,8,.58),transparent_42%,rgba(4,5,8,.74))]" />
                     <div aria-hidden className="absolute inset-y-0 right-0 hidden w-[clamp(120px,14vw,240px)] bg-[linear-gradient(90deg,transparent_0%,rgba(11,12,16,.68)_58%,#0b0c10_100%)] lg:block" />
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-5 sm:p-7 lg:p-9">
-                        <Link to="/" className="inline-flex items-center gap-2.5 text-sm font-semibold text-white drop-shadow-sm transition-opacity hover:opacity-80">
-                            <span className="size-7 bg-current" style={{ mask: "url(/logo.svg) center / contain no-repeat", WebkitMask: "url(/logo.svg) center / contain no-repeat" }} />
-                            影策
+                        <Link to="/" aria-label="映雪首页" className="inline-flex items-center transition-opacity hover:opacity-80">
+                            <YingxueBrandLockup className="h-14 w-auto sm:h-[67px] lg:h-[78px]" />
                         </Link>
                         <span className="inline-flex items-center gap-2 rounded-full border border-white/16 bg-black/20 px-3 py-1.5 text-[var(--fs-label)] text-white/76 backdrop-blur-xl">
                             <Play className="size-3 fill-current" />
@@ -78,7 +78,7 @@ export function AuthScene() {
                         transition={{ duration: aceternityMotion.duration.panel, ease: aceternityMotion.easing.enter }}
                         className="absolute inset-x-0 bottom-0 max-w-2xl p-5 sm:p-7 lg:p-10"
                     >
-                        <p className="text-xs font-semibold tracking-[0.18em] text-white/58">YINGCE STUDIO</p>
+                        <p className="text-xs font-semibold tracking-[0.18em] text-white/58">YINGXUE STUDIO</p>
                         <h1 className="mt-3 max-w-xl text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">
                             让一个故事，<br className="hidden sm:inline" />
                             从文字走向银幕。

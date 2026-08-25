@@ -1,8 +1,9 @@
-import { ChevronDown, ChevronRight, Home, Infinity as InfinityIcon, LogOut, PanelLeftOpen, Plus, Search, ShieldCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, Home, LogOut, PanelLeftOpen, Plus, Search, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
+import { YingxueBrandLockup } from "@/components/brand/yingxue-brand-lockup";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
 import { cn } from "@/lib/utils";
@@ -114,14 +115,9 @@ function WorkspaceSwitcher({ collapsed, onNavigate, onExpand }: { collapsed: boo
                 aria-expanded={isOpen}
                 className="group flex w-full items-center justify-between rounded-[var(--r-sm)] px-2 py-2 text-left transition-colors select-none hover:bg-surface-hover"
             >
-                <span className="flex min-w-0 items-center gap-3">
-                    <span className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm">
-                        <InfinityIcon className="size-4" strokeWidth={2} />
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                        <span className="app-workspace-brand-wordmark truncate text-[var(--fs-body)] leading-none font-medium">影策</span>
-                        <span className="mt-1 truncate text-[var(--fs-label)] leading-none text-foreground/42">创作工作台</span>
-                    </span>
+                <span className="flex min-w-0 items-center gap-2.5">
+                    <YingxueBrandLockup variant="adaptive" className="h-10 w-auto" />
+                    <span className="truncate text-[var(--fs-label)] leading-none text-foreground/48">创作工作台</span>
                 </span>
                 <ChevronDown className="size-4 shrink-0 text-foreground/40 transition-colors group-hover:text-foreground/70" strokeWidth={1.5} />
             </button>
@@ -131,7 +127,7 @@ function WorkspaceSwitcher({ collapsed, onNavigate, onExpand }: { collapsed: boo
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     <div className="app-workspace-nav-popover absolute left-3 right-3 top-full z-50 mt-1 overflow-hidden rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-surface-strong)] py-1 animate-in fade-in zoom-in-95 duration-100">
                         <div className="px-3 py-2.5">
-                            <div className="truncate text-[var(--fs-body)] font-semibold">影策</div>
+                            <div className="truncate text-[var(--fs-body)] font-semibold">映雪</div>
                             <div className="mt-0.5 truncate text-[var(--fs-label)] text-foreground/45">创作工作台</div>
                         </div>
                         <div className="mx-2 my-1 h-px bg-[var(--workspace-border)]" />

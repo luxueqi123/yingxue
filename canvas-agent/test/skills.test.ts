@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import { codexInput, writeSkillFiles } from "../src/agents.js";
@@ -32,7 +33,7 @@ test("writeSkillFiles creates Codex-compatible SKILL.md inputs and unique names"
         assert.deepEqual(prepared.inputs.map((item) => item.type), ["skill", "skill"]);
         assert.deepEqual(prepared.inputs.map((item) => item.name), ["canvas-same", "canvas-same-2"]);
         for (const item of prepared.inputs) {
-            assert.equal(item.path.endsWith("/SKILL.md"), true);
+            assert.equal(path.basename(item.path), "SKILL.md");
             const body = await fs.readFile(item.path, "utf8");
             assert.match(body, /^---\nname: canvas-same(?:-2)?\ndescription: /);
             assert.match(body, /\n---\n\n#/);

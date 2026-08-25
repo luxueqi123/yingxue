@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,7 +25,7 @@ func TestPluginViewIncludesDocumentationForEveryBundledProtocol(t *testing.T) {
 			continue
 		}
 		document := strings.TrimSpace(plugin.Manifest.Protocol.Documentation)
-		if document == "" || !strings.Contains(document, "## 影策运行时合同") {
+		if document == "" || !strings.Contains(document, "## 映雪运行时合同") {
 			t.Errorf("bundled plugin %q has no complete documentation in PluginView", plugin.Manifest.ID)
 		}
 	}
@@ -109,6 +110,47 @@ func TestDeclarativeProtocolRuntimeExecutesCreatePollAndDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result["mode"] != "video" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestAutoDLH3RuntimeUsesRawTokenAndPersistsTemporaryResult(t *testing.T) {
+	const token = "test-comfyui-token"
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != token {
+			t.Errorf("Authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/api/v1/comfyui/comfyui_workflow/minimax_h3_lightx2v_v5":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["resolution"] != "768p竖" || body["ref_image_0"] != server.URL+"/reference.png" {
+				t.Errorf("create body = %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"code":"Success","data":{"task_id":"h3-1","status":"QUEUED"}}`))
+		case "/api/v1/comfyui/comfyui_workflow/result/h3-1":
+			_, _ = w.Write([]byte(`{"code":"Success","data":{"task_id":"h3-1","status":"completed","results":[{"url":"` + server.URL + `/result.mp4","type":"video"}]}}`))
+		case "/result.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	config := providerConfig{BaseURL: server.URL, APIKey: token, Model: "minimax_h3_lightx2v_v5", APIFormat: "openai", InterfaceType: "autodl-h3-video", VideoSeconds: "5", VQuality: "768p", Size: "9:16", AllowLocalChannel: true}
+	ctx := withProviderOutboundPolicy(context.Background(), config)
+	ctx = withProtocolRegistry(ctx, protocol.Builtins())
+	result, err := runVideoTask(ctx, canvasGenerationInput{Mode: "video", Prompt: "test", Config: config, ReferenceImages: []providerMedia{{URL: server.URL + "/reference.png"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	video, ok := result["video"].(map[string]interface{})
+	if !ok || !strings.HasPrefix(video["dataUrl"].(string), "data:video/mp4;base64,") {
 		t.Fatalf("result = %#v", result)
 	}
 }

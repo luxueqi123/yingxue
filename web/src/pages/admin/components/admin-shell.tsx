@@ -8,7 +8,6 @@ import {
     FileClock,
     HardDrive,
     Home,
-    Infinity as InfinityIcon,
     KeyRound,
     Layers3,
     Mail,
@@ -28,6 +27,7 @@ import { useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet } from "react-router";
 
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
+import { YingxueBrandLockup } from "@/components/brand/yingxue-brand-lockup";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { WORKSPACE_SIDEBAR_STORAGE_KEY } from "@/components/layout/workspace-sidebar-state";
 import { getAdminAntThemeConfig } from "@/lib/app-theme";
@@ -99,14 +99,9 @@ export function AdminShell() {
                 <aside className={cn("app-workspace-sidebar admin-sidebar hidden shrink-0 flex-col overflow-hidden lg:flex", collapsed && "is-collapsed")}>
                     <div className={cn("flex h-13 shrink-0 items-center", collapsed ? "justify-center" : "gap-2 px-3")}>
                         {!collapsed ? (
-                            <Link to="/" className="app-workspace-brand-link flex min-w-0 flex-1 items-center gap-2" title="影策">
-                                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-foreground text-background">
-                                    <InfinityIcon className="size-4" />
-                                </span>
-                                <span className="min-w-0">
-                                    <span className="block truncate text-[var(--fs-body)] font-semibold">影策</span>
-                                    <span className="block truncate text-[var(--fs-micro)] text-foreground/42">管理后台</span>
-                                </span>
+                            <Link to="/" className="app-workspace-brand-link flex min-w-0 flex-1 items-center gap-2" title="映雪">
+                                <YingxueBrandLockup variant="adaptive" className="h-9 w-auto" />
+                                <span className="truncate text-[var(--fs-micro)] text-foreground/48">管理后台</span>
                             </Link>
                         ) : null}
                         <Tooltip mouseEnterDelay={0.1} title={collapsed ? "展开侧栏" : "折叠侧栏"} placement="right">

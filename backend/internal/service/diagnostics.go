@@ -383,7 +383,7 @@ func buildDiagnosticZIP(bundleID string, manifest diagnosticManifest, collection
 		return nil, err
 	}
 	newline := string(rune(10))
-	readme := fmt.Sprintf("影策用户诊断包%s%s诊断编号：%s%s时间范围：%s 至 %s%s%s该文件由用户主动导出，仅包含有限时间范围内的脱敏诊断摘要。%s", newline, newline, bundleID, newline, collection.Window.From.Format(time.RFC3339), collection.Window.To.Format(time.RFC3339), newline, newline, newline)
+	readme := fmt.Sprintf("映雪用户诊断包%s%s诊断编号：%s%s时间范围：%s 至 %s%s%s该文件由用户主动导出，仅包含有限时间范围内的脱敏诊断摘要。%s", newline, newline, bundleID, newline, collection.Window.From.Format(time.RFC3339), collection.Window.To.Format(time.RFC3339), newline, newline, newline)
 	if err := writeDiagnosticZipFile(archive, "README.txt", []byte(readme)); err != nil {
 		return nil, err
 	}

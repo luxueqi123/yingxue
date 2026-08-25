@@ -82,6 +82,8 @@ const (
 	ChannelInterfaceNovitaVideo           ChannelInterfaceType = "novita-video"
 	ChannelInterfaceMiniMaxVideo          ChannelInterfaceType = "minimax-video"
 	ChannelInterfaceAgnesVideo            ChannelInterfaceType = "agnes-video"
+	ChannelInterfaceDashScopeWanxVideo    ChannelInterfaceType = "dashscope-wanx-video"
+	ChannelInterfaceAutoDLH3Video         ChannelInterfaceType = "autodl-h3-video"
 
 	ApiCallStatusSucceeded ApiCallStatus = "succeeded"
 	ApiCallStatusFailed    ApiCallStatus = "failed"

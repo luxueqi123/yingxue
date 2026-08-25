@@ -314,7 +314,7 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		}
 	}
 	if resumedProviderRequestID(ctx) == "" {
-		requirePublicURL := input.Config.InterfaceType == "newapi-channel-1" || input.Config.InterfaceType == "newapi-channel-2" || input.Config.InterfaceType == string(model.ChannelInterfaceVolcengineArkVideo) || input.Config.InterfaceType == string(model.ChannelInterfaceMiniMaxVideo)
+		requirePublicURL := input.Config.InterfaceType == "newapi-channel-1" || input.Config.InterfaceType == "newapi-channel-2" || input.Config.InterfaceType == string(model.ChannelInterfaceVolcengineArkVideo) || input.Config.InterfaceType == string(model.ChannelInterfaceMiniMaxVideo) || input.Config.InterfaceType == string(model.ChannelInterfaceAutoDLH3Video)
 		if err := s.hydrateGenerationMedia(userID, &input, requirePublicURL); err != nil {
 			return nil, err
 		}
@@ -1887,6 +1887,10 @@ func runDeclarativeProtocolTask(ctx context.Context, input canvasGenerationInput
 	if !ok {
 		return nil, fmt.Errorf("接口类型 %s 未安装声明式适配器", input.Config.InterfaceType)
 	}
+	return runProtocolAdapterTask(ctx, input, adapter)
+}
+
+func runProtocolAdapterTask(ctx context.Context, input canvasGenerationInput, adapter protocol.Adapter) (map[string]interface{}, error) {
 	request := protocolRequestFromInput(input)
 	taskID := resumedProviderRequestID(ctx)
 	var created protocol.CreateResult
@@ -1908,7 +1912,7 @@ func runDeclarativeProtocolTask(ctx context.Context, input canvasGenerationInput
 			return nil, protocolResultError(created.Message, taskID)
 		}
 		if created.Status == protocol.StatusSucceeded {
-			return finishProtocolResult(ctx, input.Config, input.Mode, created.Result)
+			return finishProtocolResult(ctx, input.Config, input.Mode, created.Result, spec.AuthMode)
 		}
 		if taskID == "" {
 			return nil, errors.New("声明式协议创建请求没有返回任务 ID")
@@ -1933,7 +1937,7 @@ func runDeclarativeProtocolTask(ctx context.Context, input canvasGenerationInput
 		}
 		switch state.Status {
 		case protocol.StatusSucceeded:
-			return finishProtocolResult(ctx, input.Config, input.Mode, state.Result)
+			return finishProtocolResult(ctx, input.Config, input.Mode, state.Result, spec.AuthMode)
 		case protocol.StatusFailed, protocol.StatusCancelled:
 			return nil, protocolResultError(state.Message, taskID)
 		}
@@ -2005,7 +2009,9 @@ func executeProtocolRequest(ctx context.Context, config providerConfig, spec pro
 	if err != nil {
 		return nil, err
 	}
-	applyProviderAuth(req, config)
+	if err := applyProtocolRequestAuth(req, config, spec.AuthMode); err != nil {
+		return nil, err
+	}
 	if spec.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -2017,7 +2023,24 @@ func executeProtocolRequest(ctx context.Context, config providerConfig, spec pro
 	return data, err
 }
 
-func finishProtocolResult(ctx context.Context, config providerConfig, mode string, result *protocol.Result) (map[string]interface{}, error) {
+func applyProtocolRequestAuth(req *http.Request, config providerConfig, mode protocol.AuthMode) error {
+	switch mode {
+	case protocol.AuthProviderDefault:
+		applyProviderAuth(req, config)
+	case protocol.AuthBearer:
+		req.Header.Set("Authorization", "Bearer "+config.APIKey)
+	case protocol.AuthRawAuthorization:
+		req.Header.Set("Authorization", config.APIKey)
+	case protocol.AuthAPIKeyHeader:
+		req.Header.Set("x-api-key", config.APIKey)
+	case protocol.AuthNone:
+	default:
+		return fmt.Errorf("声明式协议使用了不支持的鉴权模式 %q", mode)
+	}
+	return nil
+}
+
+func finishProtocolResult(ctx context.Context, config providerConfig, mode string, result *protocol.Result, authMode protocol.AuthMode) (map[string]interface{}, error) {
 	if result == nil {
 		return nil, errors.New("声明式协议已完成但没有返回结果")
 	}
@@ -2044,7 +2067,7 @@ func finishProtocolResult(ctx context.Context, config providerConfig, mode strin
 	}
 	items := make([]interface{}, 0, len(references))
 	for _, reference := range references {
-		data, mimeType, err := protocolMediaBytes(ctx, config, reference)
+		data, mimeType, err := protocolMediaBytes(ctx, config, reference, authMode)
 		if err != nil {
 			return nil, err
 		}
@@ -2061,7 +2084,7 @@ func finishProtocolResult(ctx context.Context, config providerConfig, mode strin
 	}
 }
 
-func protocolMediaBytes(ctx context.Context, config providerConfig, reference protocol.MediaReference) ([]byte, string, error) {
+func protocolMediaBytes(ctx context.Context, config providerConfig, reference protocol.MediaReference, authMode protocol.AuthMode) ([]byte, string, error) {
 	if strings.TrimSpace(reference.DataURL) != "" {
 		mimeType, data, err := decodeProviderDataURL(reference.DataURL)
 		return data, mimeType, err
@@ -2070,7 +2093,17 @@ func protocolMediaBytes(ctx context.Context, config providerConfig, reference pr
 	if value == "" {
 		return nil, "", errors.New("声明式协议媒体结果地址为空")
 	}
-	data, mimeType, err := getProviderExternalBinary(withProviderRequestKind(ctx, "download"), config, value)
+	req, err := http.NewRequestWithContext(withProviderRequestKind(ctx, "download"), http.MethodGet, value, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if sameProviderOrigin(config.BaseURL, value) {
+		if err := applyProtocolRequestAuth(req, config, authMode); err != nil {
+			return nil, "", err
+		}
+		ApplyOutboundHeaders(req, config.Headers)
+	}
+	data, mimeType, err := doBinary(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("声明式协议媒体结果下载失败：%w", err)
 	}
@@ -2292,8 +2325,18 @@ func runVideoTask(ctx context.Context, input canvasGenerationInput) (map[string]
 	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
 		return runDeclarativeProtocolTask(ctx, input)
 	}
+	if input.Config.InterfaceType == string(model.ChannelInterfaceAutoDLH3Video) {
+		adapter, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType)
+		if !ok {
+			return nil, fmt.Errorf("接口类型 %s 未安装", input.Config.InterfaceType)
+		}
+		return runProtocolAdapterTask(ctx, input, adapter)
+	}
 	if input.Config.InterfaceType == string(model.ChannelInterfaceMiniMaxVideo) {
 		return runMiniMaxVideoTask(ctx, input)
+	}
+	if input.Config.InterfaceType == string(model.ChannelInterfaceDashScopeWanxVideo) {
+		return runDashScopeWanxVideoTask(ctx, input)
 	}
 	if input.Config.InterfaceType == string(model.ChannelInterfaceVolcengineJiMengVideo) {
 		return runVolcengineJiMengVideoTask(ctx, input)
@@ -3400,6 +3443,136 @@ func xaiVideoBody(input canvasGenerationInput) (map[string]interface{}, error) {
 	return requestAsMap(body)
 }
 
+func runDashScopeWanxVideoTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
+	id := resumedProviderRequestID(ctx)
+	var created map[string]interface{}
+	if id == "" {
+		body, err := dashScopeWanxVideoRequestBody(input)
+		if err != nil {
+			return nil, err
+		}
+		if err := postDashScopeJSON(ctx, input.Config, "/services/aigc/video-generation/video-synthesis", body, &created); err != nil {
+			return nil, err
+		}
+		if output, ok := created["output"].(map[string]interface{}); ok {
+			created = output
+		}
+		id = stringField(created, "task_id")
+	}
+	if id == "" {
+		return nil, errors.New("DashScope 万相接口没有返回任务 ID")
+	}
+	for deadline := providerPollingDeadline(ctx); time.Now().Before(deadline); {
+		var state map[string]interface{}
+		if err := getJSON(ctx, input.Config, "/tasks/"+id, &state); err != nil {
+			return nil, err
+		}
+		output, _ := state["output"].(map[string]interface{})
+		status := strings.ToUpper(stringField(output, "task_status"))
+		if status == "SUCCEEDED" {
+			videoURL := stringField(output, "video_url")
+			if videoURL == "" {
+				return nil, errors.New("DashScope 万相任务成功但没有返回视频 URL")
+			}
+			data, mimeType, err := getExternalBinary(withProviderRequestKind(ctx, "download"), videoURL)
+			if err != nil {
+				return nil, fmt.Errorf("视频结果下载失败：%w", err)
+			}
+			return map[string]interface{}{"mode": "video", "video": map[string]interface{}{"dataUrl": dataURL(mimeType, data), "mimeType": mimeType}}, nil
+		}
+		if status == "FAILED" || status == "CANCELED" {
+			code := stringField(output, "code")
+			message := stringField(output, "message")
+			if code != "" && message != "" {
+				return nil, fmt.Errorf("DashScope 万相视频生成失败：%s %s", code, message)
+			}
+			return nil, errors.New(defaultString(message, "DashScope 万相视频生成失败"))
+		}
+		if err := sleepContext(ctx, 5*time.Second); err != nil {
+			return nil, err
+		}
+	}
+	return nil, errors.New("DashScope 万相视频生成超时")
+}
+
+func postDashScopeJSON(ctx context.Context, config providerConfig, path string, body interface{}, target interface{}) error {
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL(config.BaseURL, path), bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-DashScope-Async", "enable")
+	ApplyOutboundHeaders(req, config.Headers)
+	return doJSON(req, target)
+}
+
+func dashScopeWanxVideoRequestBody(input canvasGenerationInput) (map[string]interface{}, error) {
+	parameters := map[string]interface{}{
+		"duration":   normalizeDashScopeVideoDuration(input.Config.VideoSeconds, input.Config.Model),
+		"resolution": normalizeDashScopeVideoResolution(input.Config.VQuality, input.Config.Model),
+	}
+	if ratio := normalizeDashScopeVideoRatio(input.Config.Size); ratio != "" {
+		parameters["ratio"] = ratio
+	}
+	body := map[string]interface{}{
+		"model":      defaultString(input.Config.Model, "wanx2.1-t2v-turbo"),
+		"input":      map[string]interface{}{"prompt": strings.TrimSpace(input.Prompt)},
+		"parameters": parameters,
+	}
+	if isDashScopeImageToVideoModel(input.Config.Model) && len(input.ReferenceImages) > 0 {
+		url, err := openAIImageInputURL(input.ReferenceImages[0])
+		if err != nil {
+			return nil, err
+		}
+		body["input"] = map[string]interface{}{"prompt": strings.TrimSpace(input.Prompt), "img_url": url}
+	}
+	return body, nil
+}
+
+func isDashScopeImageToVideoModel(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "-i2v-") || strings.Contains(lower, "wan3.0-video") || strings.Contains(lower, "kling-v3")
+}
+
+func normalizeDashScopeVideoDuration(value string, model string) int {
+	seconds, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || seconds <= 0 {
+		return 5
+	}
+	if seconds != 5 && seconds != 10 {
+		return 5
+	}
+	if seconds == 10 && strings.Contains(strings.ToLower(model), "turbo") {
+		return 5
+	}
+	return seconds
+}
+
+func normalizeDashScopeVideoResolution(value string, model string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "480p", "480":
+		return "480P"
+	case "1080p", "1080":
+		if strings.Contains(strings.ToLower(model), "turbo") {
+			return "720P"
+		}
+		return "1080P"
+	default:
+		return "720P"
+	}
+}
+
+func normalizeDashScopeVideoRatio(value string) string {
+	switch strings.TrimSpace(value) {
+	case "16:9", "9:16", "1:1", "4:3", "3:4", "21:9":
+		return value
+	default:
+		return ""
+	}
+}
+
 func runSeedanceVideosTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
 	id := resumedProviderRequestID(ctx)
 	var created map[string]interface{}
@@ -4097,7 +4270,7 @@ func ChannelAPIURLForProtocol(baseURL string, path string, interfaceType model.C
 	return apiURLWithDefaultPrefix(baseURL, path, defaultPrefix)
 }
 
-var channelAPIPrefixes = []string{"/api/plan/v3", "/api/v3", "/v1beta", "/v1", "/v2", "/v3"}
+var channelAPIPrefixes = []string{"/api/plan/v3", "/api/v3", "/api/v1", "/v1beta", "/v1", "/v2", "/v3"}
 
 func apiURLWithDefaultPrefix(baseURL string, path string, defaultPrefix string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")

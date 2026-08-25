@@ -7,6 +7,27 @@ function source(path: string) {
 }
 
 describe("workspace route loading", () => {
+    test("uses the Yingxue brand on the authentication scene", () => {
+        const authScene = source("../src/pages/auth/auth-scene.tsx");
+
+        expect(authScene).toContain("YINGXUE STUDIO");
+        expect(authScene).not.toContain("YINGCE STUDIO");
+    });
+
+    test("uses the complete Yingxue logo inside workspace and admin sidebars", () => {
+        const lockup = source("../src/components/brand/yingxue-brand-lockup.tsx");
+        const workspaceSidebar = source("../src/components/layout/workspace-sidebar-nav.tsx");
+        const adminShell = source("../src/pages/admin/components/admin-shell.tsx");
+
+        expect(lockup).toContain('variant?: "adaptive" | "light" | "dark"');
+        expect(lockup).toContain("yingxue-premium-v5-light.webp");
+        expect(lockup).toContain("yingxue-premium-v5-dark.webp");
+        expect(workspaceSidebar).toContain('<YingxueBrandLockup variant="adaptive"');
+        expect(workspaceSidebar).not.toContain("YingxueBrandMark");
+        expect(adminShell).toContain('<YingxueBrandLockup variant="adaptive"');
+        expect(adminShell).not.toContain("YingxueBrandMark");
+    });
+
     test("keeps lazy workspace routes inside the workspace stage", () => {
         const router = source("../src/router.tsx");
         const deferred = router.slice(router.indexOf("function deferred"), router.indexOf("function fullScreenDeferred"));
