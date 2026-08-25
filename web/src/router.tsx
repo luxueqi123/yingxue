@@ -45,8 +45,8 @@ const WalletPage = lazy(loadWalletPage);
 const ProjectsPage = lazy(loadProjectsPage);
 const ProjectDetailPage = lazy(() => import("@/pages/projects/detail"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
-const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
-const FolderPreviewLab = lazy(() => import("@/pages/dev/folder-preview-lab"));
+const TestVoiceRecording = import.meta.env.DEV ? lazy(() => import("@/pages/test-voice-recording")) : null;
+const FolderPreviewLab = import.meta.env.DEV ? lazy(() => import("@/pages/dev/folder-preview-lab")) : null;
 
 function deferred(element: ReactNode) {
     return <Suspense fallback={<WorkspaceRouteLoader />}>{element}</Suspense>;
@@ -66,7 +66,7 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "/share/canvas/:token", element: fullScreenDeferred(<SharedCanvasPage />), errorElement: <RouteErrorPage /> },
-    ...(import.meta.env.DEV
+    ...(FolderPreviewLab
         ? [{ path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> }]
         : []),
     {
@@ -101,7 +101,9 @@ export const router = createBrowserRouter([
                 ),
             },
             { path: "/settings", element: <RequireAuth>{deferred(<SettingsPage />)}</RequireAuth> },
-            { path: "/test-voice-recording", element: <RequireAuth>{deferred(<TestVoiceRecording />)}</RequireAuth> },
+            ...(TestVoiceRecording
+                ? [{ path: "/test-voice-recording", element: <RequireAuth>{deferred(<TestVoiceRecording />)}</RequireAuth> }]
+                : []),
             {
                 path: "/projects",
                 element: (

@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/ddcat-ai/open-ai-canvas">GitHub</a> ·
   <a href="docs/content/docs/overview/features.mdx">功能</a> ·
-  <a href="docs/content/docs/overview/quick-start.mdx">文档</a> ·
+  <a href="docs/index.md">文档</a> ·
   <a href="SECURITY.md">安全策略</a>
 </p>
 
@@ -68,7 +68,7 @@ Issue 反馈、技术讨论和产品升级建议都可以在 QQ 群中沟通。�
 - **Agent 协作**：画布助手、本地 Canvas Agent、MCP 工具、Codex App 插件和技能库。
 - **管理与渠道**：系统渠道、逻辑模型、用量/积分、功能开关、对象存储、响应拦截和管理后台。
 
-详细功能清单见 [`docs/content/docs/overview/features.mdx`](docs/content/docs/overview/features.mdx)，实现入口见 [`docs/content/docs/backend/code-map.mdx`](docs/content/docs/backend/code-map.mdx)。
+详细功能清单见 [`docs/content/docs/overview/features.mdx`](docs/content/docs/overview/features.mdx)，代码边界和实现入口见 [`AGENTS.md`](AGENTS.md)。
 
 ## 架构概览
 
@@ -89,7 +89,7 @@ Issue 反馈、技术讨论和产品升级建议都可以在 QQ 群中沟通。�
 Codex 插件（`plugins/yingce/`）负责把 MCP 接入 Codex App。
 ```
 
-前端默认把 `/api` 代理到 `http://127.0.0.1:8080`；生产环境由网页容器的 Nginx 代理到后端，只有 web 的 `3000` 端口需要对外暴露。系统模型和文本任务的 SSE 只在明确的流式路径关闭代理缓冲，详见 [`nginx.conf`](nginx.conf) 和 [SSE 文档](docs/content/docs/overview/docker.mdx)。
+前端默认把 `/api` 代理到 `http://127.0.0.1:8080`；生产环境由网页容器的 Nginx 代理到后端，只有 web 的 `3000` 端口需要对外暴露。系统模型和文本任务的 SSE 只在明确的流式路径关闭代理缓冲，现役配置见 [`nginx.conf`](nginx.conf)。
 
 ## 本地开发
 
@@ -197,7 +197,7 @@ curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/script
 - 限制 `.env`、数据库、PostgreSQL/Redis 数据卷、上传目录、备份和 `.settings-key` 的权限；数据卷不等于备份。
 - 后端 `8080` 留在 Compose 网络内，不要直接暴露到公网。
 
-具体 Nginx/Caddy 示例和断线恢复方式见 [`docs/content/docs/overview/docker.mdx`](docs/content/docs/overview/docker.mdx)。
+部署拓扑以 [`docker-compose.deploy.yml`](docker-compose.deploy.yml) 和 [`nginx.conf`](nginx.conf) 为准；本机调试边界见[本地开发](docs/content/docs/backend/local-development.mdx)。
 
 ## 数据和安全边界
 
@@ -250,14 +250,12 @@ cd docs && bun run types:check
 
 ## 文档导航
 
-- [快速开始](docs/content/docs/overview/quick-start.mdx)
+- [文档索引](docs/index.md)
 - [功能介绍](docs/content/docs/overview/features.mdx)
-- [代码功能地图](docs/content/docs/backend/code-map.mdx)
 - [本地开发](docs/content/docs/backend/local-development.mdx)
-- [数据库结构](docs/content/docs/backend/backend-database.mdx)
-- [画布操作手册](docs/content/docs/canvas/canvas-node-manual.mdx)
 - [插件系统](docs/content/docs/plugins/plugin-system.mdx)
-- [待办与待测试](docs/content/docs/progress/todo.mdx) · [待测试清单](docs/content/docs/progress/pending-test.mdx)
+- [待测试清单](docs/content/docs/progress/pending-test.mdx)
+- [工作区设计](docs/design/workspace-shell-design.mdx) · [画布浮动控件](docs/design/canvas-floating-controls.mdx)
 - [更新日志](CHANGELOG.md) · [贡献指南](CONTRIBUTING.md) · [上游声明](NOTICE)
 
 根目录 [`AGENTS.md`](AGENTS.md) 约束协作方式；`docs/index.md` 是面向 AI 的文档索引。

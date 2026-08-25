@@ -1,6 +1,6 @@
 # 映雪 · AI 文档索引
 
-面向 AI 的短索引。详细文档维护规则见 [AGENTS.md](../AGENTS.md) 第 10 节「文档同步」。
+面向 AI 的短索引。详细文档维护规则见 [AGENTS.md](../AGENTS.md) 第 9 节「文档与交付」。
 
 ## 设计沉淀
 
@@ -12,17 +12,13 @@
 
 - [用户诊断包设计](design/user-diagnostic-bundle.mdx)：面向普通用户的一键日志导出、前后端链路关联、脱敏、权限与排障方案。
 
-## 本地协作文档（不随仓库分发）
-
-- [beautifului 创作设计](beautifului-creation-design.md)：本地设计参考，未纳入版本控制。
-
 ## 按约定维护的文档（`docs/content/docs/`）
 
 功能、代码地图、待办、待测试分别维护在以下页面；尚未建立的专题会在对应任务中补齐：
 
 - [功能](content/docs/overview/features.mdx)
 - [本地开发](content/docs/backend/local-development.mdx)
-- [后端数据库](content/docs/backend/backend-database.mdx)
+- 后端数据库：待补充
 - 代码地图：待补充
 - 待办：待补充
 - [待测试](content/docs/progress/pending-test.mdx)

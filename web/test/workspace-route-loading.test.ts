@@ -38,6 +38,14 @@ describe("workspace route loading", () => {
         expect(router).toContain("fullScreenDeferred(<SharedCanvasPage />)");
     });
 
+    test("keeps voice recording diagnostics out of production routes", () => {
+        const router = source("../src/router.tsx");
+
+        expect(router).toContain('const TestVoiceRecording = import.meta.env.DEV ? lazy(() => import("@/pages/test-voice-recording")) : null;');
+        expect(router).toMatch(/\.\.\.\(TestVoiceRecording[\s\S]{0,180}path: "\/test-voice-recording"/);
+        expect(router).toContain('const FolderPreviewLab = import.meta.env.DEV ? lazy(() => import("@/pages/dev/folder-preview-lab")) : null;');
+    });
+
     test("preloads the reported workspace routes before navigation", () => {
         const modules = source("../src/lib/workspace-route-modules.ts");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");

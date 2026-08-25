@@ -88,7 +88,7 @@ function ChatInput() {
 
 - 创建页主输入行：`web/src/pages/create/index.tsx`（`CreationComposer` 的 `creation-chat-controls`）
 - 画布助手面板：`canvas-assistant-panel.tsx`、`canvas-local-agent-panel.tsx`（输入行 left 插槽）
-- 测试页：`web/src/pages/test-voice-recording.tsx`
+- 仅开发环境测试页：`web/src/pages/test-voice-recording.tsx`（路由 `/test-voice-recording` 不进入生产构建路由表）
 
 ## 下一步
 - [x] 内联波形录制（不弹窗），停止后自动转写
