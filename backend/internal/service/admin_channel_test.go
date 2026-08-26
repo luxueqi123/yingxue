@@ -84,6 +84,22 @@ func TestPublicChannelOnlyReturnsSystemHeadersToAdmin(t *testing.T) {
 	}
 }
 
+func TestPublicChannelCountsDisabledModelsForAdmin(t *testing.T) {
+	channel := model.ModelChannel{ID: "system-1", Scope: model.ChannelScopeSystem, ModelsJSON: `[]`}
+	models := []model.ChannelModel{
+		{ID: "enabled", ChannelID: channel.ID, ModelKey: "enabled-model", Enabled: true},
+		{ID: "disabled", ChannelID: channel.ID, ModelKey: "disabled-model", Enabled: false},
+	}
+
+	view := publicChannel(channel, true, models)
+	if view.ModelCount != 2 || view.EnabledModelCount != 1 {
+		t.Fatalf("model counts = total:%d enabled:%d, want total:2 enabled:1", view.ModelCount, view.EnabledModelCount)
+	}
+	if len(view.Models) != 1 || view.Models[0] != "enabled-model" {
+		t.Fatalf("public enabled models = %#v", view.Models)
+	}
+}
+
 func TestChannelFromRequestRejectsInvalidConcurrencyLimit(t *testing.T) {
 	for _, limit := range []int{0, 1000} {
 		_, err := channelFromRequest(ChannelRequest{Name: "Bad", BaseURL: "https://example.com/v1", ConcurrencyLimit: &limit}, model.ModelChannel{})

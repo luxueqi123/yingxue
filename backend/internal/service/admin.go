@@ -108,6 +108,8 @@ type PublicModelChannel struct {
 	APIFormat         string                    `json:"apiFormat"`
 	ConcurrencyLimit  int                       `json:"concurrencyLimit"`
 	Models            []string                  `json:"models"`
+	ModelCount        int                       `json:"modelCount"`
+	EnabledModelCount int                       `json:"enabledModelCount"`
 	ModelCosts        []PublicChannelModelPrice `json:"modelCosts"`
 	Headers           []OutboundHeader          `json:"headers,omitempty"`
 	HasAPIKey         bool                      `json:"hasApiKey"`
@@ -820,10 +822,13 @@ func mergeChannelRequest(req ChannelRequest, channel model.ModelChannel) Channel
 func publicChannel(channel model.ModelChannel, admin bool, channelModels []model.ChannelModel) PublicModelChannel {
 	models := make([]string, 0, len(channelModels))
 	modelCosts := make([]PublicChannelModelPrice, 0, len(channelModels))
+	modelCount := len(channelModels)
+	enabledModelCount := 0
 	for _, item := range channelModels {
 		if !item.Enabled {
 			continue
 		}
+		enabledModelCount++
 		models = append(models, item.ModelKey)
 		if item.Enabled && item.PriceConfigured {
 			capabilityConfig, decodeErr := DecodeModelCapabilityConfig(item.CapabilityConfigJSON)
@@ -837,6 +842,10 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 	}
 	if len(models) == 0 {
 		_ = json.Unmarshal([]byte(channel.ModelsJSON), &models)
+		if modelCount == 0 {
+			modelCount = len(models)
+			enabledModelCount = len(models)
+		}
 	}
 	apiKey := ""
 	baseURL := channel.BaseURL
@@ -864,6 +873,8 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 		APIFormat:         channel.APIFormat,
 		ConcurrencyLimit:  channel.ConcurrencyLimit,
 		Models:            models,
+		ModelCount:        modelCount,
+		EnabledModelCount: enabledModelCount,
 		ModelCosts:        modelCosts,
 		Headers:           headers,
 		HasAPIKey:         strings.TrimSpace(channel.APIKey) != "",

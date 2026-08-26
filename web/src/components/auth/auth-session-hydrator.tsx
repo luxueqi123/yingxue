@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
-import { applyUserSession } from "@/lib/user-session";
 import { getAuthSession } from "@/services/api/auth";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { preloadWorkspaceRoute } from "@/lib/workspace-route-modules";
@@ -16,10 +15,18 @@ export function AuthSessionHydrator({ children }: { children: ReactNode }) {
         preloadWorkspaceRoute(window.location.pathname);
         getAuthSession()
             .then(async (payload) => {
-                if (!cancelled) await applyUserSession(payload);
+                if (!cancelled) {
+                    const { applyUserSession } = await import("@/lib/user-session");
+                    if (!cancelled) await applyUserSession(payload);
+                }
             })
-            .catch(async () => {
-                if (!cancelled) await applyUserSession({ user: null, logicalModels: [] });
+            .catch(() => {
+                if (!cancelled) {
+                    // 游客只需要完成最小认证态，不应为登录页提前加载画布、素材和模型配置。
+                    const userStore = useUserStore.getState();
+                    userStore.clearSession();
+                    userStore.setHydrated(true);
+                }
             });
         return () => {
             cancelled = true;

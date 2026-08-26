@@ -38,6 +38,9 @@ export type ModelChannel = {
     hasApiKey?: boolean;
     hasSecretKey?: boolean;
     concurrencyLimit?: number;
+    // 管理台渠道列表使用：总数包含停用或待定价模型，启用数表示当前可用的模型数。
+    modelCount?: number;
+    enabledModelCount?: number;
     modelCosts?: Array<{
         model: string;
         displayName?: string;

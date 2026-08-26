@@ -190,7 +190,16 @@ export default function ChannelsPage() {
 
     const columns: ColumnsType<ModelChannel> = [
         { title: "渠道", dataIndex: "name", render: (_, channel) => <div><div className="font-medium">{channel.name}</div><div className="admin-monospace max-w-lg truncate text-foreground/45">{channel.baseUrl}</div></div> },
-        { title: "模型", dataIndex: "models", width: 100, render: (models: string[]) => `${models?.length || 0} 个` },
+        {
+            title: "模型",
+            dataIndex: "modelCount",
+            width: 160,
+            render: (_, channel) => {
+                const total = channel.modelCount ?? channel.models?.length ?? 0;
+                const enabled = channel.enabledModelCount ?? channel.models?.length ?? 0;
+                return total === enabled ? `${total} 个` : `${total} 个（${enabled} 启用）`;
+            },
+        },
         { title: "最大并发", dataIndex: "concurrencyLimit", width: 120, render: (value: number) => value > 0 ? value : <span className="text-foreground/45">跟随系统</span> },
         { title: "凭证", width: 130, render: (_, channel) => <AdminStatusBadge label={channel.hasApiKey ? (channel.hasSecretKey ? "AK/SK 已配置" : "API Key 已配置") : "未配置"} tone={channel.hasApiKey ? "success" : "neutral"} /> },
         { title: "状态", dataIndex: "enabled", width: 100, render: (enabled) => <AdminStatusBadge label={enabled !== false ? "已启用" : "已停用"} tone={enabled !== false ? "success" : "neutral"} /> },
