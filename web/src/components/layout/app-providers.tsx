@@ -7,7 +7,9 @@ import zhCN from "antd/locale/zh_CN";
 import { AuthSessionHydrator } from "@/components/auth/auth-session-hydrator";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { getAntThemeConfig } from "@/lib/app-theme";
+import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
 import { appQueryClient } from "@/lib/query-client";
+import { usePluginStore } from "@/stores/use-plugin-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -16,6 +18,11 @@ const ClientRootInit = lazy(() => import("@/components/layout/client-root-init")
 export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useThemeStore((state) => state.theme);
     const dark = theme === "dark";
+    const ensurePlugin = usePluginStore((state) => state.ensurePlugin);
+
+    useEffect(() => {
+        for (const plugin of listRegisteredPlugins()) ensurePlugin(plugin.manifest);
+    }, [ensurePlugin]);
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);

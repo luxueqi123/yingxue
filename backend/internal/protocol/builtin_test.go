@@ -13,7 +13,7 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 	expected := []string{
 		"chat-completion", "openai-response", "claude-api",
 		"openai-image", "grok-image", "volcengine-ark-image", "volcengine-jimeng-image", "gemini-image",
-		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "autodl-h3-video", "agnes-video",
+		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "agnes-video",
 	}
 	for _, id := range expected {
 		if _, ok := registry.Get(id); !ok {
@@ -41,6 +41,9 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Agnes metadata was omitted from the administrator catalog")
+	}
+	if _, ok := registry.Get("autodl-comfyui"); ok {
+		t.Fatal("AutoDL must be provided by the uploaded plugin package, not the host registry")
 	}
 }
 
@@ -216,11 +219,9 @@ func TestAgnesIsExplicitlyUnavailable(t *testing.T) {
 
 func TestDeclarativeManifestMapsFieldsAndResponses(t *testing.T) {
 	manifest := []byte(`{
-			"apiVersion":"v1",
-			"metadata":{"id":"example-video","version":"1.0.0","name":"Example Video","vendor":"Example","categories":["video"],"scopes":["admin.system-channel","user.custom-channel"],"documentation":"# Example Video"},
-		"create":{"method":"POST","path":"/v1/tasks","fields":{"model":"request.model","input.prompt":"request.prompt","input.seconds":"request.duration"}},
-		"poll":{"method":"GET","path":"/v1/tasks/{{taskId}}"},
-		"response":{"taskIdPaths":["id","data.id"],"statusPaths":["status","data.status"],"resultUrlPaths":["result.video_url","data.result.video_url"],"resultKind":"video"}
+			"apiVersion":"yingce.plugin/v1",
+			"id":"example-video","version":"1.0.0","name":"Example Video","author":"Example","documentation":"# Example Video",
+		"contributes":{"providers":[{"id":"example-video","label":"Example Video","capabilities":["video"],"scopes":["admin.system-channel","user.custom-channel"],"create":{"method":"POST","path":"/v1/tasks","fields":{"model":"request.model","input.prompt":"request.prompt","input.seconds":"request.duration"}},"poll":{"method":"GET","path":"/v1/tasks/{{taskId}}"},"response":{"taskIdPaths":["id","data.id"],"statusPaths":["status","data.status"],"resultPaths":["result.video_url","data.result.video_url"],"resultKind":"video"}}]}
 	}`)
 	adapter, err := LoadManifest(manifest)
 	if err != nil {
@@ -258,60 +259,30 @@ func TestDeclarativeManifestMapsFieldsAndResponses(t *testing.T) {
 	}
 }
 
-func TestDeclarativeManifestSupportsRawAuthAndIndexedOptionalMedia(t *testing.T) {
+func TestDeclarativeManifestSupportsMediaPathsTransformsAndErrors(t *testing.T) {
 	manifest := []byte(`{
-		"apiVersion":"v1",
-		"metadata":{"id":"indexed-media","version":"1.0.0","name":"Indexed Media","vendor":"Test","categories":["video"],"scopes":["canvas"],"documentation":"# Indexed Media"},
-		"authMode":"raw-authorization",
-		"create":{"method":"POST","path":"/tasks","fields":{"ref_image_0":"request.images.0.url","ref_image_1":"request.images.1.url"}},
-		"response":{"taskIdPaths":["id"],"statusPaths":["status"]}
+		"apiVersion":"yingce.plugin/v1",
+		"id":"declarative-expression-test","version":"1.0.0","name":"Declarative Expression Test","author":"Test","documentation":"# Declarative Expression Test",
+		"contributes":{"providers":[{"id":"declarative-expression-test","label":"Declarative Expression Test","capabilities":["video"],"scopes":["canvas"],"create":{"method":"POST","path":"/tasks","fields":{"resolution":"request.resolution|lower","ref_image_0":"request.images.0.url","ref_image_1":"request.images.1.url"}},"response":{"errorPaths":["code"],"messagePaths":["msg"]}}]}
 	}`)
 	adapter, err := LoadManifest(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Images: []MediaReference{{URL: "https://example.com/one.png"}}}})
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Resolution: "768P", Images: []MediaReference{{URL: "https://cdn.example/one.png"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.AuthMode != AuthRawAuthorization {
-		t.Fatalf("auth mode = %q", spec.AuthMode)
-	}
 	body := spec.Body.(map[string]any)
-	if body["ref_image_0"] != "https://example.com/one.png" {
-		t.Fatalf("body = %#v", body)
+	if body["resolution"] != "768p" || body["ref_image_0"] != "https://cdn.example/one.png" {
+		t.Fatalf("mapped body = %#v", body)
 	}
 	if _, exists := body["ref_image_1"]; exists {
-		t.Fatalf("missing optional image was serialized: %#v", body)
+		t.Fatalf("empty media path was not omitted: %#v", body)
 	}
-}
-
-func TestAutoDLH3AdapterMapsActivityWorkflow(t *testing.T) {
-	adapter, ok := Builtins().Get("autodl-h3-video")
-	if !ok {
-		t.Fatal("AutoDL H3 adapter missing")
-	}
-	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
-		Model: "minimax_h3_lightx2v_v5", Prompt: "keep the character consistent", Duration: 7, Resolution: "768p", AspectRatio: "9:16",
-		Images: []MediaReference{{URL: "https://example.com/front.png"}, {URL: "https://example.com/side.png"}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spec.Path != "/api/v1/comfyui/comfyui_workflow/minimax_h3_lightx2v_v5" || spec.AuthMode != AuthRawAuthorization {
-		t.Fatalf("spec = %#v", spec)
-	}
-	body := spec.Body.(map[string]any)
-	if body["duration"] != 7 || body["resolution"] != "768p竖" || body["ref_image_0"] != "https://example.com/front.png" || body["ref_image_1"] != "https://example.com/side.png" {
-		t.Fatalf("body = %#v", body)
-	}
-	created, err := adapter.ParseCreate(context.Background(), []byte(`{"code":"Success","data":{"task_id":"h3-1","status":"QUEUED"}}`))
-	if err != nil || created.TaskID != "h3-1" || created.Status != StatusPending {
-		t.Fatalf("created = %#v, err = %v", created, err)
-	}
-	polled, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: "h3-1"}, []byte(`{"code":"Success","data":{"task_id":"h3-1","status":"completed","results":[{"url":"https://example.com/h3.mp4","type":"video"}]}}`))
-	if err != nil || polled.Status != StatusSucceeded || polled.Result == nil || len(polled.Result.Videos) != 1 || polled.Result.Videos[0].URL != "https://example.com/h3.mp4" {
-		t.Fatalf("polled = %#v, err = %v", polled, err)
+	failed, err := adapter.ParseCreate(context.Background(), []byte(`{"code":"RequestParameterIsWrong","msg":"invalid resolution"}`))
+	if err != nil || failed.Status != StatusFailed || failed.Message != "invalid resolution" {
+		t.Fatalf("failed response = %#v, err = %v", failed, err)
 	}
 }
 
