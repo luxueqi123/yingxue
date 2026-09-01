@@ -66,6 +66,84 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"account": account, "granted": true})
 	})
+	r.GET("/payments/config", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		config, err := svc.PaymentConfig(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"config": config})
+	})
+	r.GET("/payments/orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		orders, err := svc.PaymentOrders(user, limit)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"orders": orders})
+	})
+	r.GET("/payments/orders/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		order, err := svc.PaymentOrder(user, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"order": order})
+	})
+	r.POST("/payments/orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "payment-order:"+user.ID, 20, time.Hour) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		var req service.CreatePaymentOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		req.IdempotencyKey = c.GetHeader("Idempotency-Key")
+		result, err := svc.CreatePaymentOrder(c.Request.Context(), user, req, c.ClientIP())
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	paymentNotify := func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		if err := c.Request.ParseForm(); err != nil {
+			c.String(http.StatusBadRequest, "fail")
+			return
+		}
+		if _, err := svc.CompleteEPayPayment(c.Request.Form); err != nil {
+			c.String(http.StatusBadRequest, "fail")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.String(http.StatusOK, "success")
+	}
+	r.GET("/payments/epay/notify", paymentNotify)
+	r.POST("/payments/epay/notify", paymentNotify)
 
 	r.GET("/admin/settings/linuxdo", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -185,6 +263,38 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		setting, err := svc.UpdateEmailSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.GET("/admin/settings/payment", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		setting, err := svc.AdminPaymentSetting(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.PATCH("/admin/settings/payment", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		var req service.PaymentSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		setting, err := svc.UpdatePaymentSetting(user, req)
 		if err != nil {
 			failService(c, err)
 			return

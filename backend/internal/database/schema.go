@@ -34,6 +34,7 @@ func Models() []any {
 		&model.CreditAccount{},
 		&model.CreditLedgerEntry{},
 		&model.BillingOrder{},
+		&model.PaymentOrder{},
 		&model.RedeemBatch{},
 		&model.RedeemCode{},
 		&model.AdminAuditEvent{},

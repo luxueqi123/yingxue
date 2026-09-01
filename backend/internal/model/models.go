@@ -16,6 +16,7 @@ type ResourceStatus string
 type ResourceDeletionStatus string
 type BillingStatus string
 type CreditLedgerType string
+type PaymentOrderStatus string
 type RedeemCodeStatus string
 type AnnouncementStatus string
 type AnnouncementLevel string
@@ -121,6 +122,11 @@ const (
 	CreditLedgerAdminAdjust  CreditLedgerType = "admin_adjustment"
 	CreditLedgerSignupBonus  CreditLedgerType = "signup_bonus"
 	CreditLedgerCheckinBonus CreditLedgerType = "checkin_bonus"
+	CreditLedgerRecharge     CreditLedgerType = "recharge"
+
+	PaymentOrderPending PaymentOrderStatus = "pending"
+	PaymentOrderPaid    PaymentOrderStatus = "paid"
+	PaymentOrderFailed  PaymentOrderStatus = "failed"
 
 	RedeemCodeUnused   RedeemCodeStatus = "unused"
 	RedeemCodeRedeemed RedeemCodeStatus = "redeemed"

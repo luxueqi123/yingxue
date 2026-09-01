@@ -1,22 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Drawer, Form, Input, InputNumber, Modal, Select } from "antd";
+import { App, Button, Checkbox, Drawer, Form, Input, InputNumber, Modal, Select, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { BadgeCheck, Coins, Plus, RefreshCw, Search, Trash2, Undo2 } from "lucide-react";
+import { BadgeCheck, Coins, CreditCard, Plus, RefreshCw, Search, Trash2, Undo2 } from "lucide-react";
 
 import { PaginationBar } from "@/components/layout/workspace-page";
 import { formatCredits } from "@/constant/credits";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { listAdminUsers, type AdminReferenceData, type AdminUser } from "@/services/api/auth";
-import { adjustAdminUserCredits, getAdminCreditPolicy, listAdminBillingOrders, resolveAdminBillingOrder, resolveAdminBillingOrders, updateAdminCreditPolicy, type BillingOrder } from "@/services/api/wallet";
+import {
+    adjustAdminUserCredits,
+    getAdminCreditPolicy,
+    getAdminPaymentSetting,
+    listAdminBillingOrders,
+    resolveAdminBillingOrder,
+    resolveAdminBillingOrders,
+    updateAdminCreditPolicy,
+    updateAdminPaymentSetting,
+    type BillingOrder,
+    type PaymentSetting,
+} from "@/services/api/wallet";
 
 import { AdminBatchBar, AdminDataTable, AdminRowActions, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
 
-export type CreditOperation = "policy" | "adjustment" | null;
+export type CreditOperation = "policy" | "payment" | "adjustment" | null;
 
 type AdjustmentFormValues = { userId: string; amount: number; note: string };
 type ResolutionFormValues = { note: string };
 type PolicyMultiplierRow = { model?: string; multiplier?: number };
 type PolicyFormValues = { signupBonus: number; checkinBonus: number; defaultMultiplier: number; modelMultipliers: PolicyMultiplierRow[] };
+type PaymentFormValues = Pick<PaymentSetting, "enabled" | "baseUrl" | "merchantId" | "siteUrl" | "payTypes"> & { merchantKey?: string };
 type BillingResolutionAction = "settle" | "refund";
 type AdjustmentUser = AdminReferenceData["users"][number] & Partial<Pick<AdminUser, "email" | "availableMicrocredits" | "reservedMicrocredits">>;
 type BillingResolutionTarget = { kind: "single"; order: BillingOrder; action: BillingResolutionAction } | { kind: "batch"; orders: BillingOrder[]; action: BillingResolutionAction };
@@ -35,6 +47,9 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [loading, setLoading] = useState(true);
     const [loadingPolicy, setLoadingPolicy] = useState(false);
     const [savingPolicy, setSavingPolicy] = useState(false);
+    const [loadingPayment, setLoadingPayment] = useState(false);
+    const [savingPayment, setSavingPayment] = useState(false);
+    const [hasMerchantKey, setHasMerchantKey] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
     const [resolving, setResolving] = useState(false);
     const [keyword, setKeyword] = useState("");
@@ -53,6 +68,7 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [adjustmentForm] = Form.useForm<AdjustmentFormValues>();
     const [resolutionForm] = Form.useForm<ResolutionFormValues>();
     const [policyForm] = Form.useForm<PolicyFormValues>();
+    const [paymentForm] = Form.useForm<PaymentFormValues>();
     const ordersRequestRef = useRef(0);
     const userSearchRequestRef = useRef(0);
     const selectedAdjustmentUserId = Form.useWatch("userId", adjustmentForm);
@@ -123,6 +139,34 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     }, [activeOperation, message, policyForm]);
 
     useEffect(() => {
+        if (activeOperation !== "payment") return;
+        let active = true;
+        setLoadingPayment(true);
+        void getAdminPaymentSetting()
+            .then(({ setting }) => {
+                if (!active) return;
+                setHasMerchantKey(setting.hasMerchantKey);
+                paymentForm.setFieldsValue({
+                    enabled: setting.enabled,
+                    baseUrl: setting.baseUrl || "https://m.ooeao.com",
+                    merchantId: setting.merchantId,
+                    merchantKey: "",
+                    siteUrl: setting.siteUrl || "https://tianyayingxue.cn",
+                    payTypes: setting.payTypes,
+                });
+            })
+            .catch((error) => {
+                if (active) message.error(error instanceof Error ? error.message : "读取在线支付配置失败");
+            })
+            .finally(() => {
+                if (active) setLoadingPayment(false);
+            });
+        return () => {
+            active = false;
+        };
+    }, [activeOperation, message, paymentForm]);
+
+    useEffect(() => {
         if (activeOperation !== "adjustment") return;
         adjustmentForm.resetFields();
         setPendingAdjustment(null);
@@ -181,6 +225,27 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
             message.error(error instanceof Error ? error.message : "保存积分策略失败");
         } finally {
             setSavingPolicy(false);
+        }
+    };
+
+    const savePayment = async (values: PaymentFormValues) => {
+        setSavingPayment(true);
+        try {
+            const { setting } = await updateAdminPaymentSetting({
+                enabled: values.enabled,
+                baseUrl: values.baseUrl.trim(),
+                merchantId: values.merchantId.trim(),
+                merchantKey: values.merchantKey?.trim() || undefined,
+                siteUrl: values.siteUrl.trim(),
+                payTypes: values.payTypes,
+            });
+            setHasMerchantKey(setting.hasMerchantKey);
+            message.success(setting.enabled ? "在线支付已启用" : "在线支付配置已保存，当前保持关闭");
+            onOperationChange(null);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "保存在线支付配置失败");
+        } finally {
+            setSavingPayment(false);
         }
     };
 
@@ -577,6 +642,98 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                                     </>
                                 )}
                             </Form.List>
+                        </section>
+                    </Form>
+                )}
+            </Drawer>
+
+            <Drawer
+                title="在线支付"
+                open={activeOperation === "payment"}
+                size="min(700px, 100vw)"
+                onClose={() => {
+                    if (!savingPayment) onOperationChange(null);
+                }}
+                rootClassName="admin-drawer admin-credit-drawer"
+                destroyOnHidden
+                mask={{ closable: !savingPayment }}
+                keyboard={!savingPayment}
+                footer={
+                    <div className="flex justify-end gap-2">
+                        <Button disabled={savingPayment} onClick={() => onOperationChange(null)}>
+                            取消
+                        </Button>
+                        <Button type="primary" loading={savingPayment} disabled={loadingPayment} icon={<CreditCard className="size-4" />} onClick={() => paymentForm.submit()}>
+                            保存支付配置
+                        </Button>
+                    </div>
+                }
+            >
+                <div className="admin-credit-drawer-intro is-warning">
+                    <strong>真实资金配置</strong>
+                    <p>启用后，用户可在积分中心选择套餐并进入支付二维码或收银台；请只填写已确认的易支付商户参数。</p>
+                </div>
+                {loadingPayment ? (
+                    <div className="admin-credit-drawer-loading" role="status">
+                        正在读取在线支付配置…
+                    </div>
+                ) : (
+                    <Form
+                        form={paymentForm}
+                        layout="vertical"
+                        requiredMark={false}
+                        initialValues={{
+                            enabled: false,
+                            baseUrl: "https://m.ooeao.com",
+                            merchantId: "",
+                            merchantKey: "",
+                            siteUrl: "https://tianyayingxue.cn",
+                            payTypes: ["alipay", "wxpay"],
+                        }}
+                        onFinish={(values) => void savePayment(values)}
+                    >
+                        <section className="admin-credit-drawer-section">
+                            <Form.Item name="enabled" label="开放在线支付" valuePropName="checked">
+                                <Switch checkedChildren="已开放" unCheckedChildren="已关闭" />
+                            </Form.Item>
+                            <Form.Item
+                                name="baseUrl"
+                                label="支付平台地址"
+                                rules={[
+                                    { required: true, whitespace: true, message: "请填写支付平台地址" },
+                                    { type: "url", message: "请输入完整 HTTPS 地址" },
+                                ]}
+                            >
+                                <Input placeholder="https://m.ooeao.com" autoComplete="url" />
+                            </Form.Item>
+                            <Form.Item name="merchantId" label="商户 ID" rules={[{ required: true, whitespace: true, message: "请填写商户 ID" }]}>
+                                <Input placeholder="易支付商户 ID" autoComplete="off" />
+                            </Form.Item>
+                            <Form.Item name="merchantKey" label="商户密钥" extra={hasMerchantKey ? "已保存密钥；留空将继续使用现有密钥。" : "首次启用前必须填写，保存后不会回显。"}>
+                                <Input.Password placeholder={hasMerchantKey ? "留空保留现有密钥" : "请输入商户密钥"} autoComplete="new-password" />
+                            </Form.Item>
+                            <Form.Item
+                                name="siteUrl"
+                                label="本站公网地址"
+                                rules={[
+                                    { required: true, whitespace: true, message: "请填写本站公网地址" },
+                                    { type: "url", message: "请输入完整 HTTPS 地址" },
+                                ]}
+                            >
+                                <Input placeholder="https://tianyayingxue.cn" autoComplete="url" />
+                            </Form.Item>
+                            <Form.Item name="payTypes" label="开放支付方式" rules={[{ required: true, type: "array", min: 1, message: "请至少选择一种支付方式" }]}>
+                                <Checkbox.Group
+                                    options={[
+                                        { label: "支付宝", value: "alipay" },
+                                        { label: "微信支付", value: "wxpay" },
+                                        { label: "QQ 钱包", value: "qqpay" },
+                                        { label: "网银", value: "bank" },
+                                        { label: "京东支付", value: "jdpay" },
+                                        { label: "PayPal", value: "paypal" },
+                                    ]}
+                                />
+                            </Form.Item>
                         </section>
                     </Form>
                 )}

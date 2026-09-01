@@ -35,16 +35,3 @@ func TestPublicPricingNoticeMatchesCreditExchangeRate(t *testing.T) {
 		}
 	}
 }
-
-func TestPublicRechargeStoreURLRejectsUnsafeValues(t *testing.T) {
-	for _, value := range []string{"", "http://catfk.com/shop", "javascript:alert(1)", "https://user:pass@catfk.com/shop"} {
-		t.Setenv("CANVAS_RECHARGE_URL", value)
-		if got := publicRechargeStoreURL(); got != "" {
-			t.Fatalf("publicRechargeStoreURL(%q) = %q, want empty", value, got)
-		}
-	}
-	t.Setenv("CANVAS_RECHARGE_URL", "https://catfk.com/shop/yingxue")
-	if got := publicRechargeStoreURL(); got != "https://catfk.com/shop/yingxue" {
-		t.Fatalf("publicRechargeStoreURL(valid) = %q", got)
-	}
-}

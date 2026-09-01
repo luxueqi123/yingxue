@@ -14,7 +14,7 @@ export type CreditAccount = {
 export type CreditLedgerEntry = {
     id: string;
     userId: string;
-    type: "redeem" | "admin_grant" | "consume" | "refund" | "admin_adjustment" | "signup_bonus" | "checkin_bonus";
+    type: "redeem" | "recharge" | "admin_grant" | "consume" | "refund" | "admin_adjustment" | "signup_bonus" | "checkin_bonus";
     amountMicrocredits: number;
     availableAfterMicrocredits: number;
     reservedAfterMicrocredits: number;
@@ -37,7 +37,6 @@ export type WalletSummary = {
         checkinBonusMicrocredits: number;
         checkedInToday: boolean;
         creditPerYuan: number;
-        rechargeStoreUrl: string;
         rechargePlans: PublicRechargePlan[];
         pricingNotice: PublicPricingNotice;
     };
@@ -48,7 +47,41 @@ export type PublicRechargePlan = {
     priceCents: number;
     creditsMicrocredits: number;
     bonusPercent: number;
-    productUrl?: string;
+};
+
+export type PaymentConfig = {
+    enabled: boolean;
+    payTypes: Array<"alipay" | "wxpay" | "qqpay" | "bank" | "jdpay" | "paypal">;
+};
+
+export type PaymentOrder = {
+    id: string;
+    userId: string;
+    planId: string;
+    planName: string;
+    amountCents: number;
+    creditsMicrocredits: number;
+    payType: PaymentConfig["payTypes"][number];
+    status: "pending" | "paid" | "failed";
+    providerTradeNo?: string;
+    providerError?: string;
+    checkoutUrl?: string;
+    qrCode?: string;
+    urlScheme?: string;
+    paidAt?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type PaymentSetting = PaymentConfig & {
+    baseUrl: string;
+    merchantId: string;
+    merchantKey?: string;
+    hasMerchantKey: boolean;
+    siteUrl: string;
+    updatedBy?: string;
+    createdAt?: string;
+    updatedAt?: string;
 };
 
 export type PublicPricingRate = {
@@ -88,7 +121,7 @@ export type ChannelModel = {
     priceVersion: number;
     capabilityVersion?: number;
     capabilityConfig?: import("@/lib/model-capabilities").ModelCapabilityConfig;
-	priceTiers: ChannelModelPriceTier[];
+    priceTiers: ChannelModelPriceTier[];
     createdAt: string;
     updatedAt: string;
 };
@@ -96,8 +129,8 @@ export type ChannelModel = {
 export type ChannelModelPriceTier = {
     id: string;
     channelModelId: string;
-	selector: Record<string, string>;
-	selectorKey: string;
+    selector: Record<string, string>;
+    selectorKey: string;
     resolution: string;
     videoSeconds: number;
     providerModelKey: string;
@@ -123,7 +156,7 @@ export type ChannelModelMutation = {
     protocol?: ChannelModel["protocol"];
     enabled?: boolean;
     capabilityConfig?: ChannelModel["capabilityConfig"];
-	priceTiers?: Array<Omit<ChannelModelPriceTier, "id" | "channelModelId" | "selectorKey" | "priceVersion" | "createdAt" | "updatedAt">>;
+    priceTiers?: Array<Omit<ChannelModelPriceTier, "id" | "channelModelId" | "selectorKey" | "priceVersion" | "createdAt" | "updatedAt">>;
     billingMode?: ChannelModel["billingMode"];
     unitPriceMicrocredits?: number;
     inputTokenPriceMicrocredits?: number;
@@ -254,6 +287,22 @@ export function checkinCredits() {
     return request<{ account: CreditAccount; granted: boolean }>(api.post("/wallet/checkin"));
 }
 
+export function getPaymentConfig() {
+    return request<{ config: PaymentConfig }>(api.get("/payments/config"));
+}
+
+export function createPaymentOrder(input: { planId: string; payType: PaymentOrder["payType"] }, idempotencyKey: string) {
+    return request<{ order: PaymentOrder }>(api.post("/payments/orders", input, { headers: { "Idempotency-Key": idempotencyKey } }));
+}
+
+export function getPaymentOrder(id: string) {
+    return request<{ order: PaymentOrder }>(api.get(`/payments/orders/${encodeURIComponent(id)}`));
+}
+
+export function listPaymentOrders(limit = 20) {
+    return request<{ orders: PaymentOrder[] }>(api.get("/payments/orders", { params: { limit } }));
+}
+
 export function getAdminCreditPolicy() {
     return request<{ policy: CreditPolicy }>(api.get("/admin/settings/credits"));
 }
@@ -286,6 +335,14 @@ export function updateAdminEmailSetting(input: Partial<EmailSetting>) {
     return request<{ setting: EmailSetting }>(api.patch("/admin/settings/email", input));
 }
 
+export function getAdminPaymentSetting() {
+    return request<{ setting: PaymentSetting }>(api.get("/admin/settings/payment"));
+}
+
+export function updateAdminPaymentSetting(input: Partial<PaymentSetting>) {
+    return request<{ setting: PaymentSetting }>(api.patch("/admin/settings/payment", input));
+}
+
 export function listAdminChannelModels(channelId: string) {
     return request<{ models: ChannelModel[] }>(api.get(`/admin/channels/${encodeURIComponent(channelId)}/models`));
 }
@@ -308,7 +365,7 @@ export function updateAdminChannelModel(channelId: string, id: string, input: Ch
 }
 
 export function deleteAdminChannelModel(channelId: string, id: string) {
-	return request<{ ok: boolean }>(api.delete(`/admin/channels/${encodeURIComponent(channelId)}/models/${encodeURIComponent(id)}`));
+    return request<{ ok: boolean }>(api.delete(`/admin/channels/${encodeURIComponent(channelId)}/models/${encodeURIComponent(id)}`));
 }
 
 export type AdminFinanceListParams = { keyword?: string; status?: string; validity?: string; page?: number; limit?: number };

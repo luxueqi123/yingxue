@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -28,19 +26,17 @@ type PublicCreditPolicy struct {
 	CheckinBonusMicrocredits int64                `json:"checkinBonusMicrocredits"`
 	CheckedInToday           bool                 `json:"checkedInToday"`
 	CreditPerYuan            int64                `json:"creditPerYuan"`
-	RechargeStoreURL         string               `json:"rechargeStoreUrl"`
 	RechargePlans            []PublicRechargePlan `json:"rechargePlans"`
 	PricingNotice            PublicPricingNotice  `json:"pricingNotice"`
 }
 
-// PublicRechargePlan 是积分中心展示和云猫卡密商品的稳定对照表。
+// PublicRechargePlan 是积分中心展示和在线收款订单使用的稳定套餐快照。
 // 金额使用分，积分使用微积分，避免前后端浮点换算误差。
 type PublicRechargePlan struct {
 	ID                  string `json:"id"`
 	PriceCents          int64  `json:"priceCents"`
 	CreditsMicrocredits int64  `json:"creditsMicrocredits"`
 	BonusPercent        int64  `json:"bonusPercent"`
-	ProductURL          string `json:"productUrl,omitempty"`
 }
 
 type PublicPricingRate struct {
@@ -195,22 +191,9 @@ func (s *Service) publicCreditPolicy(userID string) (PublicCreditPolicy, error) 
 		CheckinBonusMicrocredits: policy.CheckinBonusMicrocredits,
 		CheckedInToday:           checked,
 		CreditPerYuan:            publicCreditPerYuan,
-		RechargeStoreURL:         publicRechargeStoreURL(),
 		RechargePlans:            clonePublicRechargePlans(),
 		PricingNotice:            publicPricingNotice,
 	}, err
-}
-
-func publicRechargeStoreURL() string {
-	raw := strings.TrimSpace(os.Getenv("CANVAS_RECHARGE_URL"))
-	if raw == "" {
-		return ""
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
-		return ""
-	}
-	return parsed.String()
 }
 
 func clonePublicRechargePlans() []PublicRechargePlan {

@@ -232,6 +232,7 @@ func migrations() []tableMigration {
 		migrateTable[model.CreditAccount]("credit_accounts"),
 		migrateTable[model.CreditLedgerEntry]("credit_ledger_entries"),
 		migrateTable[model.BillingOrder]("billing_orders"),
+		migrateTable[model.PaymentOrder]("payment_orders"),
 		migrateTable[model.RedeemBatch]("redeem_batches"),
 		migrateTable[model.RedeemCode]("redeem_codes"),
 		migrateTable[model.AdminAuditEvent]("admin_audit_events"),
