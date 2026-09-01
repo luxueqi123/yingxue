@@ -36,7 +36,30 @@ export type WalletSummary = {
         signupBonusMicrocredits: number;
         checkinBonusMicrocredits: number;
         checkedInToday: boolean;
+        creditPerYuan: number;
+        rechargeStoreUrl: string;
+        rechargePlans: PublicRechargePlan[];
+        pricingNotice: PublicPricingNotice;
     };
+};
+
+export type PublicRechargePlan = {
+    id: string;
+    priceCents: number;
+    creditsMicrocredits: number;
+    bonusPercent: number;
+    productUrl?: string;
+};
+
+export type PublicPricingRate = {
+    channel: string;
+    resolution: string;
+    priceCentsPerSecond: number;
+    creditsMicrocreditsPerSecond: number;
+};
+
+export type PublicPricingNotice = {
+    rates: PublicPricingRate[];
 };
 
 export type CreditPolicy = {
@@ -52,6 +75,7 @@ export type ChannelModel = {
     modelKey: string;
     providerModelKey: string;
     displayName: string;
+    icon: string;
     capability: "text" | "image" | "video" | "audio" | "";
     protocol?: import("@/lib/model-protocols").ModelProtocol;
     billingMode: "fixed_request" | "per_second" | "token";
@@ -94,6 +118,7 @@ export type ChannelModelMutation = {
     modelKey: string;
     providerModelKey?: string;
     displayName?: string;
+    icon?: string;
     capability: ChannelModel["capability"];
     protocol?: ChannelModel["protocol"];
     enabled?: boolean;

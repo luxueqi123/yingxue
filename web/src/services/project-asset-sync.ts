@@ -1,4 +1,5 @@
 import { canvasNodeToAsset, declaredCanvasNodeAssetCategory, findCanvasNodeAsset, type CanvasAssetSource } from "@/lib/canvas/canvas-node-asset";
+import { canvasVideoAssetPreviewUrl } from "@/lib/canvas/canvas-media-preview";
 import { readImageMeta } from "@/lib/image-utils";
 import { parseBackendGenerationResult, type BackendGenerationResult } from "@/services/api/generation-task";
 import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
@@ -13,6 +14,7 @@ import { createLocalDreaminaTaskEffectStore } from "@/services/local-dreamina-ge
 import { createProviderNeutralGenerationTaskEffectStore } from "@/services/provider-neutral-generation-effects";
 import { saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { normalizeAssetCategory } from "@/lib/asset-category";
 import { runGenerationConsumer } from "@/services/generation-consumer-lifecycle";
 import { useAssetStore, type AssetCategory, type AssetStatus, type NewAsset } from "@/stores/use-asset-store";
 import type { CanvasNodeData } from "@/types/canvas";
@@ -91,7 +93,7 @@ async function syncAssetToProject(assetId: string, domainProjectId: string, cate
         domainProjectId,
         {
             assetId: asset.id,
-            category: category || asset.category || "other",
+            category: normalizeAssetCategory(category || asset.category),
             folderId,
         },
         signal,
@@ -101,7 +103,7 @@ async function syncAssetToProject(assetId: string, domainProjectId: string, cate
     if (folderId !== undefined && (linked.folderId || "") !== folderId) linked = (await moveProjectAsset(domainProjectId, asset.id, folderId, signal)).asset;
     throwIfAborted(signal);
     useAssetStore.getState().updateAsset(asset.id, {
-        category: linked.category as AssetCategory,
+        category: normalizeAssetCategory(linked.category),
         status: linked.status as AssetStatus,
         primaryVersionId: linked.primaryVersionId,
         metadata: { ...asset.metadata, projectIds: [...new Set([...linkedProjectIds, domainProjectId])] },
@@ -284,7 +286,7 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
         return {
             kind: "video",
             title: "生成视频",
-            coverUrl: stored.url,
+            coverUrl: canvasVideoAssetPreviewUrl(stored.url),
             tags: ["生成"],
             status: "confirmed",
             source: "生成任务",

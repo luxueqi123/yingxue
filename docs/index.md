@@ -12,6 +12,8 @@
 
 - [用户诊断包设计](design/user-diagnostic-bundle.mdx)：面向普通用户的一键日志导出、前后端链路关联、脱敏、权限与排障方案。
 
+- [生产静态发布与缓存](content/docs/backend/local-development.mdx#生产静态发布与缓存)：Vite 哈希分包、Nginx 缓存、旧标签页兼容、数据盘发布与回滚门禁。
+
 - [肖像权可识别性排查画布插件实施规格](design/portrait-clearance-canvas-plugin.mdx)：TypeScript 重写、画布节点与全屏工作台、项目模型复用、本机 ONNX/百度识图/候选去重、任务合同、报告和验收方案。
 
 ## 本地协作文档（不随仓库分发）

@@ -5,15 +5,17 @@ import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { FOLDER_COLLAPSED_HEIGHT, FOLDER_COLLAPSED_WIDTH, FRAME_HEADER_HEIGHT, getFrameChildIds, getFrameChildren, isFrameNode } from "@/lib/canvas/canvas-frame";
-import { alignCanvasNodes, layoutCanvasFlow, layoutCanvasNodes, nextCanvasVersionLabel, type CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
+import { alignCanvasNodes, layoutCanvasAuto, layoutCanvasFlow, layoutCanvasNodes, nextCanvasVersionLabel, type CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
 import { createCanvasNode, isHiddenBatchChild, removeCanvasNodes } from "@/lib/canvas/canvas-project-domain";
-import { isolateCopiedNodeMetadata } from "@/lib/canvas/canvas-node-copy";
+import { isolateCopiedNodeMetadata, nextCopiedNodeTitle } from "@/lib/canvas/canvas-node-copy";
 import { CanvasNodeType, type CanvasConnection, type CanvasFolderStyle, type CanvasFolderTheme, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ContextMenuState, type Position } from "@/types/canvas";
 import { cloneCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { isDrawingEngineAvailable, type CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { useUserStore } from "@/stores/use-user-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { createDefaultPortraitClearanceState, PORTRAIT_CLEARANCE_NODE_TYPE } from "@/lib/portrait-clearance/contracts";
+import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
+import { usePluginStore } from "@/stores/use-plugin-store";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -58,6 +60,7 @@ export function useCanvasNodeOperations({
     const { message } = App.useApp();
     const effectiveConfig = useEffectiveConfig();
     const tldrawLicenseKey = useUserStore((state) => state.drawingEngine.tldrawLicenseKey);
+    const runtimeStatuses = usePluginStore((state) => state.runtimeStatuses);
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const preferCopiedNodesRef = useRef(false);
     const markerWritePendingRef = useRef(false);
@@ -131,13 +134,17 @@ export function useCanvasNodeOperations({
             return;
         }
         const selectedWorkflowProvider = type === CanvasNodeType.Config
-            ? workflowProvider || "runninghub"
+            ? workflowProvider || (workflowProviderPluginEnabled(runtimeStatuses, "runninghub") ? "runninghub" : workflowProviderPluginEnabled(runtimeStatuses, "comfyui") ? "comfyui" : undefined)
             : undefined;
+        if (selectedWorkflowProvider && !workflowProviderPluginEnabled(runtimeStatuses, selectedWorkflowProvider)) {
+            message.error(`${selectedWorkflowProvider === "runninghub" ? "RunningHub" : "ComfyUI"} 工作流插件未启用`);
+            return;
+        }
         const workflowTitle = type === CanvasNodeType.Config && selectedWorkflowProvider === "runninghub" ? "RunningHub 工作流" : type === CanvasNodeType.Config && selectedWorkflowProvider === "comfyui" ? "ComfyUI Bridge" : undefined;
         const metadata: CanvasNodeMetadata | undefined = type === CanvasNodeType.Drawing
             ? { drawingEngine: defaultDrawingEngine }
             : type === CanvasNodeType.Config
-                ? { generationMode: "image", workflowProvider: selectedWorkflowProvider }
+                ? { generationMode: "image", workflowProvider: selectedWorkflowProvider || "model" }
                 : type === PORTRAIT_CLEARANCE_NODE_TYPE
                     ? { portraitClearance: createDefaultPortraitClearanceState() }
                     : undefined;
@@ -146,7 +153,7 @@ export function useCanvasNodeOperations({
         commitNodes([...nodesRef.current, node]);
         selectNodes(new Set([node.id]));
         if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Script && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Frame && type !== CanvasNodeType.Drawing && type !== PORTRAIT_CLEARANCE_NODE_TYPE) setDialogNodeId(node.id);
-    }, [commitNodes, defaultDrawingEngine, effectiveConfig.comfyBridge.enabled, effectiveConfig.comfyBridge.workflows.length, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, selectNodes, setDialogNodeId, tldrawLicenseKey]);
+    }, [commitNodes, defaultDrawingEngine, effectiveConfig.comfyBridge.enabled, effectiveConfig.comfyBridge.workflows.length, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, runtimeStatuses, selectNodes, setDialogNodeId, tldrawLicenseKey]);
 
     const createFolder = useCallback((position?: Position, linked?: { id: string; projectId: string; title: string; style: CanvasFolderStyle; theme: CanvasFolderTheme; createdAt: string }) => {
         const folder = createCanvasNode(CanvasNodeType.Frame, position || getCanvasCenter(), {
@@ -193,12 +200,9 @@ export function useCanvasNodeOperations({
             return;
         }
 
-        const candidateIds = new Set(candidates.map((node) => node.id));
-        const hasConnections = connectionsRef.current.some((connection) => candidateIds.has(connection.fromNodeId) && candidateIds.has(connection.toNodeId));
-        const mode = hasConnections ? "flow" : "grid";
-        const positions = mode === "flow" ? layoutCanvasFlow(candidates, connectionsRef.current) : layoutCanvasNodes(candidates, "grid");
+        const positions = layoutCanvasAuto(candidates, connectionsRef.current);
         commitNodes(currentNodes.map((node) => positions.has(node.id) ? { ...node, position: positions.get(node.id)! } : node));
-        message.success(mode === "flow" ? (hasSelection ? "已按连线整理选中节点" : "已按连线整理画布") : (hasSelection ? "已网格整理选中节点" : "已网格整理画布"));
+        message.success(hasSelection ? "已按媒体分类整理选中节点" : "已按媒体分类整理画布");
     }, [commitNodes, connectionsRef, message, nodesRef, selectedNodeIdsRef]);
 
     const alignSelectedNodes = useCallback((mode: CanvasAlignmentMode) => {
@@ -454,8 +458,11 @@ export function useCanvasNodeOperations({
         const dy = center.y - (bounds.top + bounds.bottom) / 2;
         const idMap = new Map(clipboard.nodes.map((node, index) => [node.id, `${node.type}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`]));
         const copiedSourceIds = new Set(clipboard.nodes.map((node) => node.id));
+        const reservedTitles = new Set(nodesRef.current.map((node) => node.title));
         const nextNodes = clipboard.nodes.map((node) => {
             const metadata = isolateCopiedNodeMetadata(node, idMap);
+            const title = nextCopiedNodeTitle(node.title, reservedTitles);
+            reservedTitles.add(title);
             if (node.type === CanvasNodeType.Drawing && metadata) {
                 metadata.drawingId = `${idMap.get(node.id)}-document`;
                 metadata.drawingRevision = 0;
@@ -466,7 +473,7 @@ export function useCanvasNodeOperations({
             return {
                 ...node,
                 id: idMap.get(node.id)!,
-                title: node.title.endsWith(" Copy") ? node.title : `${node.title} Copy`,
+                title,
                 position: { x: node.position.x + dx, y: node.position.y + dy },
                 parentId: node.parentId ? idMap.get(node.parentId) : undefined,
                 metadata,

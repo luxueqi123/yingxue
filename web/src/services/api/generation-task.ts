@@ -52,6 +52,7 @@ type BackendGenerationTaskOptions = {
     signal?: AbortSignal;
     metadata?: Record<string, unknown>;
     onTaskUpdate?: (task: GenerationTask) => void;
+    onTextDelta?: (text: string) => void;
     localIdempotencyKey?: string;
     localResumeOnly?: boolean;
     clientOperationId?: string;
@@ -123,6 +124,20 @@ export async function runBackendGenerationTask(
     return createAndWaitGenerationTask({ projectId, mode, prompt, config, referenceImages, referenceVideos, referenceAudios, textHistory, signal, metadata, onTaskUpdate }, prepared, dependencies);
 }
 
+// 分镜等后台生产流程只需要可靠提交任务；任务状态与产物由项目工作区轮询和
+// 后端自动回填负责，不能让页面 mutation 一直等待供应商完成。
+export async function submitBackendGenerationTask(
+    options: BackendGenerationTaskOptions,
+    dependencies: GenerationTaskDependencies = defaultDependencies,
+): Promise<GenerationTask> {
+    throwIfAborted(options.signal);
+    assertClientPromptLimit(options.mode, options.prompt, options.config, options.metadata);
+    if (usesLocalDreamina(options.config)) throw new Error("本机即梦任务暂不支持后台提交");
+    const prepared = await prepareGenerationReferences(options);
+    throwIfAborted(options.signal);
+    return createBackendGenerationTask(options, prepared, dependencies);
+}
+
 export async function runBackendToolGenerationTask(options: {
     prompt: string;
     config: AiConfig;
@@ -130,6 +145,7 @@ export async function runBackendToolGenerationTask(options: {
     tools: ResponseFunctionTool[];
     toolChoice: ToolChoice;
     signal?: AbortSignal;
+    onDelta?: (text: string) => void;
 }): Promise<ToolResponseResult> {
     throwIfAborted(options.signal);
     const logicalModelId = logicalModelIDForConfig(options.config);
@@ -149,7 +165,7 @@ export async function runBackendToolGenerationTask(options: {
             metadata: { source: "canvas-online-agent" },
         },
     });
-    const completed = await waitForGenerationTask(task.id, { signal: options.signal, initialTask: task });
+    const completed = await waitForGenerationTask(task.id, { signal: options.signal, initialTask: task, onTextDelta: options.onDelta });
     const result = parseBackendGenerationResult(completed);
     return {
         content: result.text || "",
@@ -399,7 +415,14 @@ async function prepareGenerationReferences({
 }
 
 async function createAndWaitGenerationTask(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences, dependencies: GenerationTaskDependencies) {
-    const { projectId, mode, prompt, config, signal, metadata, onTaskUpdate } = options;
+    const task = await createBackendGenerationTask(options, prepared, dependencies);
+    const { signal, onTaskUpdate, onTextDelta } = options;
+    const completed = await dependencies.waitTask(task.id, { signal, initialTask: task, onTaskUpdate, onTextDelta });
+    return parseBackendGenerationResult(completed);
+}
+
+async function createBackendGenerationTask(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences, dependencies: GenerationTaskDependencies) {
+    const { projectId, mode, prompt, config, metadata, onTaskUpdate } = options;
     const videoOperation = generationOperation(options);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
@@ -426,8 +449,7 @@ async function createAndWaitGenerationTask(options: BackendGenerationTaskOptions
         },
     });
     onTaskUpdate?.(task);
-    const completed = await dependencies.waitTask(task.id, { signal, initialTask: task, onTaskUpdate });
-    return parseBackendGenerationResult(completed);
+    return task;
 }
 
 async function prepareBackendMediaReference(media: ReferenceVideo | ReferenceAudio) {

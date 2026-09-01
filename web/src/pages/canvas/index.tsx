@@ -44,7 +44,8 @@ export default function CanvasPage() {
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
     const handoffMode = mode === "handoff";
-    const forwardedQuery = agentMode || handoffMode ? `?${searchParams.toString()}` : "";
+    const promptMode = mode === "prompt";
+    const forwardedQuery = agentMode || handoffMode || promptMode ? `?${searchParams.toString()}` : "";
     const enterProject = (id: string) => {
         navigate(`/canvas/${id}${forwardedQuery}`);
     };
@@ -173,7 +174,7 @@ export default function CanvasPage() {
     };
 
     useEffect(() => {
-        if (!hydrated || autoOpenRef.current || (mode !== "new" && mode !== "recent" && mode !== "handoff")) return;
+        if (!hydrated || autoOpenRef.current || (mode !== "new" && mode !== "recent" && mode !== "handoff" && mode !== "prompt")) return;
         autoOpenRef.current = true;
         if (mode === "recent" && projects[0]?.id) {
             enterProject(projects[0].id);
@@ -185,7 +186,7 @@ export default function CanvasPage() {
         });
     }, [hydrated, message, mode, projects]);
 
-    if (hydrated && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
+    if (hydrated && (mode === "new" || mode === "recent" || mode === "handoff" || mode === "prompt")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
 
     return (
         <WorkspacePage grid className="canvas-library-page">

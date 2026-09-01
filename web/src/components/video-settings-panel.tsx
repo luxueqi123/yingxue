@@ -4,8 +4,8 @@ import { Switch } from "antd";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceRatioOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { normalizeVideoDuration, normalizeVideoResolution, VIDEO_DURATION_MIN } from "@/lib/video-generation-options";
-import { modelCapabilityConfigFor, videoDurationOptions, type VideoCapabilityConfig } from "@/lib/model-capabilities";
+import { formatVideoResolutionLabel, isVideoResolutionMatch, normalizeVideoDuration, videoDimensionsForRatioAndResolution, videoResolutionComparisonKey, VIDEO_DURATION_MIN } from "@/lib/video-generation-options";
+import { modelCapabilityConfigFor, resolveVideoRatioValue, resolveVideoResolutionValue, videoDurationOptions, type VideoCapabilityConfig } from "@/lib/model-capabilities";
 import { modelOptionName, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 const sizeOptions = [
@@ -36,16 +36,13 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     }
 
     const seconds = normalizeVideoDuration(config.videoSeconds);
-    const size = normalizeVideoSizeValue(config.size);
-    const dimensions = readSizeDimensions(size);
-    const resolution = normalizeVideoResolutionValue(config.vquality);
-    const configuredResolutions = profile.resolutions.map((value) => ({ value: value.replace(/p$/i, ""), label: value.toUpperCase() }));
+    const resolution = resolveVideoResolutionValue(profile, config.vquality);
+    const ratio = resolveVideoRatioValue(profile, config.size);
+    const dimensions = videoDimensionsForRatioAndResolution(ratio, resolution);
+    const sizeSupported = profile.ratios.length > 0;
+    const configuredResolutions = profile.resolutions.map((value) => ({ value, label: formatVideoResolutionLabel(value) }));
     const generateAudio = boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
     const watermark = boolConfig(config.videoWatermark, profile.watermark.default);
-    const updateDimension = (key: "width" | "height", value: number | null) => {
-        const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
-        onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
-    };
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -54,25 +51,25 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {configuredResolutions.length ? <SettingGroup title="分辨率" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-1.5">
                         {configuredResolutions.map((item) => (
-							<OptionPill key={item.value} selected={resolution === item.value} disabled={!hasPriceTierForVideoSelection(priceTiers, item.value, Number(seconds))} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+							<OptionPill key={item.value} selected={isVideoResolutionMatch(resolution, item.value)} disabled={!hasPriceTierForVideoSelection(priceTiers, item.value, Number(seconds))} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
                     </div>
                 </SettingGroup> : null}
-                <SettingGroup title="尺寸" color={theme.node.muted}>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                {sizeSupported ? <SettingGroup title="尺寸" color={theme.node.muted}>
+                    {dimensions ? <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5">
+                        <DimensionValue prefix="W" value={dimensions.width} theme={theme} />
                         <span className="text-xs opacity-45">×</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
-                    </div>
+                        <DimensionValue prefix="H" value={dimensions.height} theme={theme} />
+                    </div> : null}
                     <div className="grid grid-cols-3 gap-1.5">
                         {profile.ratios.map((value) => (
                             <button
                                 key={value}
                                 type="button"
                                 className="flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md px-1 text-[var(--fs-label)] font-medium transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                                style={{ background: normalizeRatioValue(config.size) === value ? theme.toolbar.activeBg : "transparent", color: theme.node.text, outlineColor: theme.node.muted }}
+                                style={{ background: ratio === value ? theme.toolbar.activeBg : "transparent", color: theme.node.text, outlineColor: theme.node.muted }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => onConfigChange("size", value)}
                             >
@@ -81,7 +78,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </button>
                         ))}
                     </div>
-                </SettingGroup>
+                </SettingGroup> : null}
                 <SettingGroup title="秒数" color={theme.node.muted}>
 					<VideoDurationControl profile={profile} value={Number(seconds)} theme={theme} disabled={(value) => !hasPriceTierForVideoSelection(priceTiers, resolution, value)} onChange={(value) => onConfigChange("videoSeconds", String(value))} />
                 </SettingGroup>
@@ -182,7 +179,7 @@ function SeedanceVideoSettingsPanel({ config, profile, priceTiers, onConfigChang
 }
 
 export function videoResolutionLabel(value: string) {
-    return `${normalizeVideoResolutionValue(value)}P`;
+    return formatVideoResolutionLabel(value);
 }
 
 export function videoSizeLabel(value: string) {
@@ -205,13 +202,9 @@ export function normalizeVideoSizeValue(value: string) {
     return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
 }
 
-export function normalizeVideoResolutionValue(value: string) {
-    return normalizeVideoResolution(value);
-}
-
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
     return (
-        <button type="button" disabled={disabled} className="h-8 cursor-pointer whitespace-nowrap rounded-md px-1 text-[var(--fs-label)] font-medium leading-none transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-35" style={{ background: selected ? theme.toolbar.activeBg : "transparent", color: theme.node.text, outlineColor: theme.node.muted }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
+        <button type="button" disabled={disabled} aria-pressed={selected} className="h-8 cursor-pointer whitespace-nowrap rounded-md px-1 text-[var(--fs-label)] font-medium leading-none transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-35" style={{ background: selected ? theme.toolbar.activeBg : "transparent", color: theme.node.text, outlineColor: theme.node.muted }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>
             {children}
         </button>
     );
@@ -228,14 +221,14 @@ function SettingGroup({ title, color, children }: { title: string; color: string
     );
 }
 
-function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; onChange: (value: number | null) => void }) {
+function DimensionValue({ prefix, value, theme }: { prefix: string; value: number; theme: CanvasTheme }) {
     return (
-        <label className="flex h-8 overflow-hidden rounded-md text-[var(--fs-label)]" style={{ background: theme.toolbar.itemHover, color: theme.node.text, opacity: disabled ? 0.55 : 1 }}>
+        <div className="flex h-8 overflow-hidden rounded-md text-[var(--fs-label)]" style={{ background: theme.toolbar.itemHover, color: theme.node.text }}>
             <span className="grid w-7 place-items-center" style={{ color: theme.node.muted }}>
                 {prefix}
             </span>
-            <input type="number" min={1} disabled={disabled} className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || null)} onMouseDown={(event) => event.stopPropagation()} />
-        </label>
+            <span className="min-w-0 flex-1 px-2 leading-8 tabular-nums">{value}</span>
+        </div>
     );
 }
 
@@ -301,9 +294,7 @@ function hasPriceTierForVideoSelection(tiers: ReturnType<typeof modelPriceTiers>
 }
 
 function normalizeTierResolution(value: string) {
-	const normalized = normalizeVideoResolution(value);
-	if (/^\d+$/.test(normalized)) return `${normalized}p`;
-	return normalized.toLowerCase();
+	return videoResolutionComparisonKey(value);
 }
 
 function DurationRangeControl({ value, min, max, step, theme, onChange }: { value: number; min: number; max: number; step: number; theme: CanvasTheme; onChange: (value: number) => void }) {
@@ -370,16 +361,4 @@ function SwitchRow({ label, checked, theme, onChange }: { label: string; checked
             </span>
         </div>
     );
-}
-
-function readSizeDimensions(size: string) {
-    if (size === "auto") return { width: 0, height: 0 };
-    const match = size.match(/^(\d+)x(\d+)$/);
-    return { width: Number(match?.[1]) || 1280, height: Number(match?.[2]) || 720 };
-}
-
-function normalizeRatioValue(value: string) {
-    const match = String(value || "").match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/);
-    if (!match) return value;
-    return `${match[1]}:${match[2]}`;
 }

@@ -10,6 +10,17 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
+func TestPasswordResetRateLimitSubjectNormalizesAndHashesEmail(t *testing.T) {
+	first := passwordResetRateLimitSubject(" Creator@Example.com ")
+	second := passwordResetRateLimitSubject("creator@example.com")
+	if first != second {
+		t.Fatalf("normalized subjects differ: %q != %q", first, second)
+	}
+	if first == "creator@example.com" || strings.Contains(first, "@") || len(first) != 64 {
+		t.Fatalf("rate limit subject is not a SHA-256 digest: %q", first)
+	}
+}
+
 func TestAuthorizeSystemProxyAllowsConfiguredGenerationModel(t *testing.T) {
 	channel := &model.ModelChannel{APIFormat: "openai", ModelsJSON: `["gpt-image-1"]`}
 	body := []byte(`{"model":"gpt-image-1","prompt":"test"}`)
@@ -63,6 +74,28 @@ func TestAuthorizeCustomRelayAllowsModelsAndAgentEndpoints(t *testing.T) {
 		}
 		if err := authorizeCustomRelay(test.method, target, test.apiFormat, test.contentType); err != nil {
 			t.Fatalf("authorizeCustomRelay(%s %s) error = %v", test.method, test.target, err)
+		}
+	}
+}
+
+func TestAuthorizeCustomRelayAllowsOnlyOfficialAgnesPollQuery(t *testing.T) {
+	target, err := url.Parse("https://apihub.agnes-ai.com/agnesapi?video_id=video-1&model_name=agnes-video-2.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeCustomRelay(http.MethodGet, target, "openai", ""); err != nil {
+		t.Fatalf("authorizeCustomRelay() Agnes poll error = %v", err)
+	}
+	for _, raw := range []string{
+		"https://apihub.agnes-ai.com/agnesapi?video_id=video-1",
+		"https://apihub.agnes-ai.com/agnesapi?video_id=video-1&model_name=agnes-video-2.5&extra=1",
+	} {
+		invalid, parseErr := url.Parse(raw)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if err := authorizeCustomRelay(http.MethodGet, invalid, "openai", ""); err == nil {
+			t.Fatalf("authorizeCustomRelay(%q) should fail", raw)
 		}
 	}
 }
@@ -145,6 +178,23 @@ func TestAuthorizeSystemProxyMiniMaxVideoCreateAndPoll(t *testing.T) {
 	}
 	if err := authorizeSystemProxy(channel, model.ChannelInterfaceMiniMaxVideo, http.MethodPost, "/v2/video_generation", "application/json", []byte(`{"model":"unapproved"}`)); err == nil {
 		t.Fatal("unapproved MiniMax model should be rejected")
+	}
+}
+
+func TestAuthorizeSystemProxyAgnesVideoCreateAndPoll(t *testing.T) {
+	channel := &model.ModelChannel{APIFormat: "openai", ModelsJSON: `["agnes-video-2.5"]`}
+	createBody := []byte(`{"model":"agnes-video-2.5","prompt":"test","mode":"text","seconds":"5","size":"720P"}`)
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAgnesVideo, http.MethodPost, "/videos", "application/json", createBody); err != nil {
+		t.Fatalf("Agnes create authorization error = %v", err)
+	}
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAgnesVideo, http.MethodGet, "/agnesapi", "", nil); err != nil {
+		t.Fatalf("Agnes poll authorization error = %v", err)
+	}
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAgnesVideo, http.MethodPost, "/videos", "multipart/form-data; boundary=test", createBody); err == nil {
+		t.Fatal("expected Agnes multipart create to be rejected")
+	}
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAgnesVideo, http.MethodGet, "/videos/task-1", "", nil); err == nil {
+		t.Fatal("expected unsupported Agnes poll path to be rejected")
 	}
 }
 

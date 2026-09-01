@@ -1,8 +1,9 @@
-import { AnimatePresence, useReducedMotion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Clipboard, CloudUpload, Copy, FolderOpen, FolderPlus, Image as ImageIcon, Layers3, Link2, Maximize2, PanelTop, Pencil, Plus, Redo2, Tags, Trash2, Undo2, Upload, UserRound } from "lucide-react";
 
 import { CanvasCreateMenu, type CanvasCreateCommand } from "@/components/canvas/canvas-create-menu";
+import { ASSET_CATEGORY_OPTIONS } from "@/lib/asset-category";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -15,15 +16,7 @@ import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type Canvas
 
 type CanvasAssetCategory = NonNullable<NonNullable<CanvasNodeData["metadata"]>["assetCategory"]>;
 
-const assetCategoryOptions: Array<{ value: CanvasAssetCategory; label: string }> = [
-    { value: "character", label: "角色" },
-    { value: "environment", label: "场景" },
-    { value: "wardrobe", label: "服饰" },
-    { value: "prop", label: "道具" },
-    { value: "weapon", label: "武器" },
-    { value: "style", label: "画风" },
-    { value: "other", label: "其他" },
-];
+const assetCategoryOptions: Array<{ value: CanvasAssetCategory; label: string }> = ASSET_CATEGORY_OPTIONS;
 
 type CanvasNodeContextMenuProps = {
     menu: ContextMenuState;
@@ -93,7 +86,6 @@ export function CanvasNodeContextMenu({
     onToggleFrame,
 }: CanvasNodeContextMenuProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const reducedMotion = useReducedMotion();
     const [addOpen, setAddOpen] = useState(false);
     const [categoryOpen, setCategoryOpen] = useState(false);
 
@@ -117,9 +109,9 @@ export function CanvasNodeContextMenu({
     }, [categoryOpen, onClose]);
 
     useEffect(() => {
-        setAddOpen(false);
+        setAddOpen(menu.type === "canvas" && Boolean(menu.createOpen));
         setCategoryOpen(false);
-    }, [menu.type, menu.x, menu.y]);
+    }, [menu]);
 
     const runAction = (action: () => void) => {
         action();
@@ -148,8 +140,8 @@ export function CanvasNodeContextMenu({
             <SpotlightSurface
                 spotlightColor={theme.toolbar.itemHover}
                 data-canvas-context-menu
-                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, x: -3, y: -3 }}
-                animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 transition={{ duration: aceternityMotion.duration.instant, ease: aceternityMotion.easing.enter }}
                 className="aceternity-floating-panel fixed z-[var(--z-popover)] flex w-[224px] max-h-[calc(100vh-56px)] origin-top-left flex-col overflow-hidden rounded-xl border p-1.5 backdrop-blur-2xl"
                 style={{ left: position.left, top: position.top, background: theme.spatial.elevated, borderColor: theme.toolbar.border, color: theme.node.text }}
@@ -207,6 +199,7 @@ export function CanvasNodeContextMenu({
                                     <MenuDivider />
                                     <MenuSection label="节点" />
                                     <MenuButton icon={<Copy />} label="复制节点" shortcut="⌘C" onClick={() => runAction(onCopyNode)} />
+                                    {isImage ? <MenuButton icon={<Clipboard />} label="复制图片" disabled={!hasNodeContent} onClick={() => runAction(onCopyContent)} /> : null}
                                     <MenuButton icon={<Link2 />} label={isImage ? "复制图片地址" : "复制视频地址"} disabled={!canCopyMediaUrl} onClick={() => runAction(onCopyMediaUrl)} />
                                     <MenuButton icon={<Layers3 />} label="创建参数变体" shortcut="⌘D" onClick={() => runAction(onDuplicate)} />
                                     <MenuButton icon={<Trash2 />} label="删除节点" danger onClick={() => runAction(onDelete)} />
@@ -244,7 +237,6 @@ export function CanvasNodeContextMenu({
                         parentPosition={position}
                         workspaceMode={workspaceMode}
                         isProjectLinked={isProjectLinked}
-                        reducedMotion={Boolean(reducedMotion)}
                         onAddNode={(type) => runAction(() => onAddNode(type))}
                         onAddFolder={() => runAction(onAddFolder)}
                         onChooseStyle={() => runAction(onChooseStyle)}
@@ -259,14 +251,15 @@ export function CanvasNodeContextMenu({
     );
 }
 
-function AddNodeContextMenu({ parentPosition, workspaceMode, isProjectLinked, reducedMotion, onAddNode, onAddFolder, onChooseStyle, onOpenDirector, onUpload, onOpenAssets, onOpenProjectCharacters }: { parentPosition: { left: number; top: number }; workspaceMode: CanvasWorkspaceMode; isProjectLinked: boolean; reducedMotion: boolean; onAddNode: (type: CanvasNodeTypeId) => void; onAddFolder: () => void; onChooseStyle: () => void; onOpenDirector: () => void; onUpload: () => void; onOpenAssets: () => void; onOpenProjectCharacters: () => void }) {
+function AddNodeContextMenu({ parentPosition, workspaceMode, isProjectLinked, onAddNode, onAddFolder, onChooseStyle, onOpenDirector, onUpload, onOpenAssets, onOpenProjectCharacters }: { parentPosition: { left: number; top: number }; workspaceMode: CanvasWorkspaceMode; isProjectLinked: boolean; onAddNode: (type: CanvasNodeTypeId) => void; onAddFolder: () => void; onChooseStyle: () => void; onOpenDirector: () => void; onUpload: () => void; onOpenAssets: () => void; onOpenProjectCharacters: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const installations = usePluginStore((state) => state.installations);
+    const pluginStates = usePluginStore((state) => state.pluginStates);
     const left = getSubmenuLeft(parentPosition.left);
     const createContext: AddNodeMenuContext = {
         workspaceMode,
         isProjectLinked,
-        enabledPluginIds: new Set(installations.filter((item) => item.enabled).map((item) => item.manifest.id)),
+        enabledPluginIds: new Set(installations.filter((item) => pluginStates[item.manifest.id]?.effectiveEnabled ?? item.enabled).map((item) => item.manifest.id)),
         handlers: {
             onAddText: () => onAddNode(CanvasNodeType.Text),
             onAddImage: () => onAddNode(CanvasNodeType.Image),
@@ -297,9 +290,9 @@ function AddNodeContextMenu({ parentPosition, workspaceMode, isProjectLinked, re
     return (
         <SpotlightSurface
             spotlightColor={theme.toolbar.itemHover}
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, x: left > parentPosition.left ? -5 : 5, scale: 0.97 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: left > parentPosition.left ? -4 : 4, scale: 0.98 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: aceternityMotion.duration.instant, ease: aceternityMotion.easing.enter }}
             className="aceternity-floating-panel fixed z-[var(--z-popover)] w-[260px] origin-top overflow-hidden rounded-[var(--dock-radius)] border p-2 backdrop-blur-2xl"
             style={{ left, top: parentPosition.top, background: theme.spatial.elevated, borderColor: theme.toolbar.border, color: theme.node.text }}
@@ -340,7 +333,7 @@ function MenuButton({ icon, label, detail, shortcut, badge, chevron = false, act
             <span className="canvas-menu-item-icon grid size-7 shrink-0 place-items-center rounded-md border opacity-75 group-hover:opacity-100 [&_svg]:size-3.5" style={{ background: danger ? `${theme.accent.danger}12` : theme.spatial.surface, borderColor: danger ? `${theme.accent.danger}33` : theme.toolbar.border, color: danger ? theme.accent.danger : theme.node.text }}>{icon}</span>
             <span className="min-w-0 flex-1"><span className="flex items-center gap-1 text-xs font-medium"><span className="truncate">{label}</span>{badge ? <span className="rounded-full border px-1 py-0.5 text-[var(--fs-nano)] font-bold" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border, color: theme.node.muted }}>{badge}</span> : null}</span>{detail ? <span className="mt-0.5 block truncate text-[var(--fs-micro)]" style={{ color: theme.node.muted }}>{detail}</span> : null}</span>
             {shortcut ? <span className="shrink-0 text-[var(--fs-micro)] opacity-38">{shortcut}</span> : null}
-            {chevron ? <ChevronRight className="size-3 shrink-0 opacity-45 transition-transform group-hover:translate-x-0.5" /> : null}
+            {chevron ? <ChevronRight className="size-3 shrink-0 opacity-45" /> : null}
         </button>
     );
 }

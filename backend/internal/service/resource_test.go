@@ -718,7 +718,7 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedLocalURL(t *testing.T) {
 	if err := svc.hydrateProviderMedia("user-1", &media, true); err != nil {
 		t.Fatalf("hydrateProviderMedia() error = %v", err)
 	}
-	if !strings.HasPrefix(media.URL, server.URL+"/api/public/resources/resource-local/file?") || !strings.Contains(media.URL, "signature=") || media.DataURL != "" {
+	if !strings.HasPrefix(media.URL, server.URL+"/api/public/resources/resource-local/file/resource-local.png?") || !strings.Contains(media.URL, "signature=") || media.DataURL != "" {
 		t.Fatalf("media = %#v", media)
 	}
 	stored, err := svc.repo.Resource("resource-local")
@@ -825,7 +825,7 @@ func newResourceTestService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.SystemSetting{}, &model.UserOSSSetting{}, &model.UserDailyUploadUsage{}, &model.Resource{}, &model.SessionFile{}); err != nil {
+	if err := db.AutoMigrate(&model.SystemSetting{}, &model.UserOSSSetting{}, &model.StorageLocation{}, &model.UserDailyUploadUsage{}, &model.Resource{}, &model.SessionFile{}); err != nil {
 		t.Fatal(err)
 	}
 	return &Service{repo: repository.New(db), dataDir: t.TempDir()}

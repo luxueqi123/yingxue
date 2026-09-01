@@ -81,9 +81,11 @@ sync_source() {
 }
 
 prepare_environment() {
+    mkdir -p "$INSTALL_DIR/skill-media"
     if [[ -f .env ]]; then
         grep -Eq '^POSTGRES_PASSWORD=.+$' .env || fail "现有 .env 缺少 POSTGRES_PASSWORD"
         grep -Eq '^DATABASE_URL=.+$' .env || fail "现有 .env 缺少 DATABASE_URL"
+        grep -Eq '^CANVAS_SKILL_MEDIA_PATH=.+$' .env || printf '\nCANVAS_SKILL_MEDIA_PATH=%s/skill-media\n' "$INSTALL_DIR" >>.env
         local configured_http_port
         configured_http_port="$(sed -n 's/^CANVAS_HTTP_PORT=//p' .env | tail -n 1)"
         if [[ -n "$configured_http_port" ]]; then
@@ -104,6 +106,7 @@ POSTGRES_USER=open_ai_canvas
 POSTGRES_PASSWORD=${database_password}
 DATABASE_URL=postgresql://open_ai_canvas:${database_password}@postgres:5432/open_ai_canvas?sslmode=disable
 CANVAS_HTTP_PORT=${CANVAS_HTTP_PORT}
+CANVAS_SKILL_MEDIA_PATH=${INSTALL_DIR}/skill-media
 CANVAS_REGISTRATION_ENABLED=false
 CANVAS_ALLOW_PRIVATE_UPSTREAMS=false
 CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS=

@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import { App } from "antd";
 import { useNavigate } from "react-router";
 
+import { canvasAppearanceBaseTheme, canvasAppearanceForTheme, normalizeCanvasAppearance, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
+import { normalizeCanvasNodeTimestamps } from "@/lib/canvas/canvas-node-timestamps";
 import { hydrateAssistantImages, hydrateCanvasImages, resetInterruptedGeneration } from "@/lib/canvas/canvas-project-generation";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
 import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, CanvasNodeMetadata, ViewportTransform } from "@/types/canvas";
 import type { CanvasHistorySnapshot } from "./use-canvas-history";
 
@@ -18,6 +21,7 @@ type UseCanvasProjectLifecycleOptions = {
     connections: CanvasConnection[];
     chatSessions: CanvasAssistantSession[];
     activeChatId: string | null;
+    canvasAppearance: CanvasAppearance;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
     viewport: ViewportTransform;
@@ -29,6 +33,7 @@ type UseCanvasProjectLifecycleOptions = {
     setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
     setChatSessions: Dispatch<SetStateAction<CanvasAssistantSession[]>>;
     setActiveChatId: Dispatch<SetStateAction<string | null>>;
+    setCanvasAppearance: Dispatch<SetStateAction<CanvasAppearance>>;
     setBackgroundMode: Dispatch<SetStateAction<CanvasBackgroundMode>>;
     setShowImageInfo: Dispatch<SetStateAction<boolean>>;
     setViewport: Dispatch<SetStateAction<ViewportTransform>>;
@@ -45,6 +50,7 @@ export function useCanvasProjectLifecycle({
     connections,
     chatSessions,
     activeChatId,
+    canvasAppearance,
     backgroundMode,
     showImageInfo,
     viewport,
@@ -56,6 +62,7 @@ export function useCanvasProjectLifecycle({
     setConnections,
     setChatSessions,
     setActiveChatId,
+    setCanvasAppearance,
     setBackgroundMode,
     setShowImageInfo,
     setViewport,
@@ -86,11 +93,16 @@ export function useCanvasProjectLifecycle({
 
         const applyRestoredProject = (restoredNodes: CanvasNodeData[], restoredSessions: CanvasAssistantSession[]) => {
             if (cancelled) return;
+            const fallbackTheme = useThemeStore.getState().theme;
+            const restoredAppearance = project.appearance
+                ? normalizeCanvasAppearance(project.appearance, fallbackTheme)
+                : canvasAppearanceForTheme(fallbackTheme);
             const snapshot: CanvasHistorySnapshot = {
                 nodes: restoredNodes,
                 connections: project.connections,
                 chatSessions: restoredSessions,
                 activeChatId: project.activeChatId || null,
+                canvasAppearance: restoredAppearance,
                 backgroundMode: project.backgroundMode || "dots",
                 showImageInfo: project.showImageInfo || false,
             };
@@ -101,6 +113,8 @@ export function useCanvasProjectLifecycle({
             setConnections(snapshot.connections);
             setChatSessions(snapshot.chatSessions);
             setActiveChatId(snapshot.activeChatId);
+            setCanvasAppearance(snapshot.canvasAppearance);
+            useThemeStore.getState().setTheme(canvasAppearanceBaseTheme(snapshot.canvasAppearance, fallbackTheme));
             setBackgroundMode(snapshot.backgroundMode);
             setShowImageInfo(snapshot.showImageInfo);
             setViewport(project.viewport);
@@ -109,7 +123,10 @@ export function useCanvasProjectLifecycle({
         };
 
         const restore = async () => {
-            const initialNodes = resetInterruptedGeneration(project.nodes);
+            const initialNodes = normalizeCanvasNodeTimestamps(resetInterruptedGeneration(project.nodes), {
+                createdAt: project.createdAt,
+                updatedAt: project.updatedAt,
+            });
             const initialSessions = project.chatSessions || [];
 
             // 先恢复可交互的节点和布局，媒体缓存/资源校验放到后台，避免首屏被远程资源拖住。
@@ -124,7 +141,7 @@ export function useCanvasProjectLifecycle({
         return () => {
             cancelled = true;
         };
-    }, [hydrated, message, navigate, openProject, projectId, resetHistory, setActiveChatId, setBackgroundMode, setChatSessions, setConnections, setNodes, setShowImageInfo, setViewport]);
+    }, [hydrated, message, navigate, openProject, projectId, resetHistory, setActiveChatId, setBackgroundMode, setCanvasAppearance, setChatSessions, setConnections, setNodes, setShowImageInfo, setViewport]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -143,8 +160,8 @@ export function useCanvasProjectLifecycle({
 
     useEffect(() => {
         if (!projectLoaded || historyPausedRef.current) return;
-        updateProject(projectId, { nodes, connections, chatSessions, activeChatId, backgroundMode, showImageInfo });
-    }, [activeChatId, backgroundMode, chatSessions, connections, historyPausedRef, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
+        updateProject(projectId, { nodes, connections, chatSessions, activeChatId, appearance: canvasAppearance, backgroundMode, showImageInfo });
+    }, [activeChatId, backgroundMode, canvasAppearance, chatSessions, connections, historyPausedRef, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -198,6 +215,7 @@ export function useCanvasProjectLifecycle({
                 connections: connectionsRef.current,
                 chatSessions,
                 activeChatId,
+                appearance: canvasAppearance,
                 backgroundMode,
                 showImageInfo,
                 viewport: viewportRef.current,
@@ -216,7 +234,7 @@ export function useCanvasProjectLifecycle({
             message.warning(`本地画布布局已保存，云端同步失败：${detail}`);
         }
         return true;
-    }, [activeChatId, backgroundMode, chatSessions, connectionsRef, currentProject?.directorScenes, message, nodesRef, projectId, showImageInfo, updateProject, viewportRef]);
+    }, [activeChatId, backgroundMode, canvasAppearance, chatSessions, connectionsRef, currentProject?.directorScenes, message, nodesRef, projectId, showImageInfo, updateProject, viewportRef]);
 
     const clearCanvasFiles = useCallback(() => {
         cleanupCanvasFiles({ projectId, nodes: [], chatSessions: [] });
@@ -234,7 +252,7 @@ export function useCanvasProjectLifecycle({
     };
 }
 
-const hydratedMediaMetadataKeys = ["content", "storageKey", "naturalWidth", "naturalHeight", "bytes", "mimeType", "durationMs"] as const satisfies readonly (keyof CanvasNodeMetadata)[];
+const hydratedMediaMetadataKeys = ["content", "storageKey", "naturalWidth", "naturalHeight", "bytes", "mimeType", "durationMs", "hasAudio", "videoPreview"] as const satisfies readonly (keyof CanvasNodeMetadata)[];
 
 function mergeHydratedNodeMedia(currentNodes: CanvasNodeData[], initialNodes: CanvasNodeData[], hydratedNodes: CanvasNodeData[]) {
     const initialById = new Map(initialNodes.map((node) => [node.id, node]));

@@ -151,6 +151,31 @@ describe("逻辑模型选择", () => {
         expect(defaults.size).toBe("16:9");
     });
 
+    test("不支持画幅的视频模型不会继续提交旧的全局尺寸", () => {
+        const model = "autodl-channel::minimax_h3_lightx2v_no_pic";
+        const profile = defaultModelCapabilityConfig("autodl-comfyui", "minimax_h3_lightx2v_no_pic");
+        profile.video!.ratios = [];
+        profile.video!.defaultRatio = "";
+        profile.video!.resolutions = ["480p竖", "480p横"];
+        profile.video!.defaultResolution = "480p竖";
+        const config: AiConfig = {
+            ...defaultConfig,
+            size: "16:9",
+            vquality: "720",
+            channels: [{ id: "autodl-channel", name: "AutoDL", baseUrl: "https://autodl.art", apiKey: "system", apiFormat: "openai", scope: "system", models: ["minimax_h3_lightx2v_no_pic"], modelCosts: [{ model: "minimax_h3_lightx2v_no_pic", capability: "video", protocol: "autodl-comfyui", billingMode: "fixed_request", unitPriceMicrocredits: 1, capabilityConfig: profile }] }],
+            models: [model],
+            videoModels: [model],
+            videoModel: model,
+            model,
+        };
+        const videoNode = { ...node("video", CanvasNodeType.Video), metadata: { model, generationMode: "video" as const } };
+
+        const generationConfig = buildGenerationConfig(config, videoNode, "video");
+
+        expect(generationConfig.size).toBe("");
+        expect(generationConfig.vquality).toBe("480p竖");
+    });
+
     test("后台标注的视频模型不因内部标识缺少视频关键词而回退", () => {
         const config = policyConfig();
         const selectedModel = config.videoModels[0]!;
@@ -191,8 +216,24 @@ describe("逻辑模型选择", () => {
 
     test("音频仅在单独参考时归类为音频生视频", () => {
         expect(inferVideoOperation({ textCount: 1, imageCount: 0, videoCount: 0, audioCount: 1, characterCount: 0 })).toBe("audio_to_video");
-        expect(inferVideoOperation({ textCount: 1, imageCount: 1, videoCount: 0, audioCount: 1, characterCount: 0 })).toBe("reference_to_video");
+        expect(inferVideoOperation({ textCount: 1, imageCount: 1, videoCount: 0, audioCount: 1, characterCount: 0 })).toBe("image_to_video");
         expect(inferVideoOperation({ textCount: 1, imageCount: 0, videoCount: 1, audioCount: 1, characterCount: 0 })).toBe("reference_to_video");
+    });
+
+    test("图片加音频可匹配支持图生视频和参考音频的模型", () => {
+        const config = policyConfig();
+        const imageModel = "relay::cinema-image";
+        const imageCost = config.channels[0]?.modelCosts?.find((item) => item.model === "cinema-image");
+        if (!imageCost?.capabilityConfig?.video) throw new Error("缺少图生视频能力配置");
+        imageCost.capabilityConfig.video.references.maxAudios = 1;
+        const requirements = {
+            capability: "video" as const,
+            input: { textCount: 0, imageCount: 1, videoCount: 0, audioCount: 1, characterCount: 0 },
+            videoSeconds: "6",
+        };
+
+        expect(modelCompatibilityError(config, imageModel, requirements)).toBe("");
+        expect(resolveCompatibleModel(config, "relay::cinema-text", requirements)).toBe(imageModel);
     });
 
     test("逻辑视频模型将 720 与 720p 视为同一分辨率", () => {

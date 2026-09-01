@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 
 import { nanoid } from "nanoid";
-import { parseAssetStorageDocument, rebaseAssetSnapshot, serializeAssetStorageDocument, type AssetStorageDocument } from "@/lib/asset-storage-revision";
+import type { AssetCategory } from "@/lib/asset-category";
+import { normalizeAssetRecord, parseAssetStorageDocument, rebaseAssetSnapshot, serializeAssetStorageDocument, type AssetStorageDocument } from "@/lib/asset-storage-revision";
 import { parseCanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -13,11 +14,11 @@ import { flushGenerationAssetStorageLocks, insertOrReturnGenerationAsset, withGe
 import { CANVAS_STORE_KEY, commitPendingCanvasStorePersistenceLocked, pendingCanvasStorePersistence, withCanvasStorePersistenceLock } from "@/stores/canvas/use-canvas-store";
 
 export type AssetKind = "text" | "image" | "video" | "audio" | "model" | "entity";
-export type AssetCategory = "character" | "environment" | "wardrobe" | "prop" | "weapon" | "style" | "other";
+export type { AssetCategory } from "@/lib/asset-category";
 export type AssetStatus = "draft" | "review" | "confirmed" | "archived";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
 export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
-export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; durationMs?: number; bytes: number; mimeType: string } };
+export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; durationMs?: number; hasAudio?: boolean; bytes: number; mimeType: string } };
 export type AudioAsset = AssetBase<"audio"> & { data: { url: string; storageKey?: string; durationMs?: number; bytes: number; mimeType: string } };
 export type ModelAsset = AssetBase<"model"> & { data: { url: string; storageKey?: string; bytes: number; mimeType: string; fileName: string } };
 export type EntityAsset = AssetBase<"entity"> & { data: { definition: Record<string, unknown> } };
@@ -144,7 +145,7 @@ function trackAssetOperation<T>(operation: Promise<T>) {
 
 function persistAssetState(name: string, value: StorageValue<AssetStore>) {
     const scope = getActiveUserScope();
-    const nextAssets = value.state.assets;
+    const nextAssets = value.state.assets.map(normalizeAssetRecord);
     const queued = queuedAssetPersists.get(scope);
     const observed = observedAssetPersists.get(scope);
     const baseAssets = assetMemoryStates.get(scope)?.assets ?? observed?.assets ?? [];
@@ -230,6 +231,7 @@ const assetStorage: PersistStorage<AssetStore> = {
 };
 
 async function normalizePersistedAsset(asset: Asset): Promise<Asset> {
+    asset = normalizeAssetRecord(asset);
     const storageKey = "data" in asset && asset.data && "storageKey" in asset.data ? asset.data.storageKey : undefined;
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
@@ -269,7 +271,7 @@ export const useAssetStore = create<AssetStore>()(
             addAsset: (asset) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
-                set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
+                set((state) => ({ assets: [normalizeAssetRecord({ ...asset, id, createdAt: now, updatedAt: now } as Asset), ...state.assets] }));
                 return id;
             },
             addGenerationAsset: (effectKey, asset, signal) => {
@@ -287,13 +289,13 @@ export const useAssetStore = create<AssetStore>()(
                             assetId: id,
                             createAsset: () => {
                                 const now = new Date().toISOString();
-                                return {
+                                return normalizeAssetRecord({
                                     ...asset,
                                     id,
                                     createdAt: now,
                                     updatedAt: now,
                                     metadata: { ...asset.metadata, generationEffectKey: effectKey },
-                                } as Asset;
+                                } as Asset);
                             },
                             updateAssets: (updater) => {
                                 withAssetStorePersistenceSuppressed(() => {
@@ -353,7 +355,7 @@ export const useAssetStore = create<AssetStore>()(
             },
             updateAsset: (id, patch) =>
                 set((state) => ({
-                    assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
+                    assets: state.assets.map((asset) => (asset.id === id ? normalizeAssetRecord({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
                 })),
             removeAsset: async (id) => {
                 let remainingAssets: Asset[] = [];
@@ -369,7 +371,7 @@ export const useAssetStore = create<AssetStore>()(
                 if (!removedAsset || (!collectImageStorageKeys(removedAsset).size && !collectMediaStorageKeys(removedAsset).size)) return;
                 await get().cleanupImages({ assets: remainingAssets });
             },
-            replaceAssets: (assets) => set({ assets }),
+            replaceAssets: (assets) => set({ assets: assets.map(normalizeAssetRecord) }),
             cleanupImages: async (extra) => {
                 const scope = getActiveUserScope();
                 const frozenExtraImageKeys = collectImageStorageKeys(extra);

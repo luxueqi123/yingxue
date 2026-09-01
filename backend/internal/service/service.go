@@ -25,6 +25,9 @@ type Service struct {
 	emailCodeMu                sync.Mutex
 	redeemBatchMu              sync.Mutex
 	storageMu                  sync.Mutex
+	storageTestMu              sync.Mutex
+	workerRuntimeMu            sync.Mutex
+	activeStorageTests         map[string]bool
 	characterTaskMu            sync.Mutex
 	activeCancels              map[string]context.CancelFunc
 	pendingStorage             map[string]int64
@@ -48,6 +51,9 @@ type Service struct {
 	routeCatalogVersion        int64
 	routeHealthMu              sync.Mutex
 	routeHealthBlocked         map[string]time.Time
+	workers                    *workerRuntime
+	updateManager              UpdateManager
+	mailSender                 func(emailSettingValue, string, string, string) error
 }
 
 const taskWorkerConcurrency = 3
@@ -102,7 +108,7 @@ func New(repo *repository.Repository, dataDir string) *Service {
 func NewWithRuntimeCapabilities(repo *repository.Repository, dataDir string, capabilities RuntimeCapabilities) *Service {
 	coordinator, err := newRuntimeCoordinator(repo.Dialect())
 	pluginRuntime, pluginRuntimeErr := newPluginRuntime(dataDir)
-	service := &Service{repo: repo, dataDir: dataDir, runtimeCapabilities: capabilities, activeCancels: make(map[string]context.CancelFunc), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time)}
+	service := &Service{repo: repo, dataDir: dataDir, runtimeCapabilities: capabilities, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time)}
 	service.taskBillingCoordinator = newTaskBillingCoordinator(service.repo)
 	service.taskTerminalCoordinator = newTaskTerminalCoordinator(service)
 	service.taskRouteExecutor = newTaskRouteExecutor(service)
@@ -122,8 +128,39 @@ func (s *Service) taskBilling() *taskBillingCoordinator {
 }
 
 func (s *Service) StartWorker() {
-	s.taskWorker().start()
-	s.startResourceDeletionWorker()
+	runtime := s.backgroundWorkers()
+	ctx, started := runtime.start()
+	if !started {
+		return
+	}
+	s.taskWorker().start(ctx)
+	s.startResourceDeletionWorker(ctx)
+	s.startSkillSyncWorker(ctx)
+}
+
+func (s *Service) BeginDrain() { s.backgroundWorkers().beginDrain() }
+
+func (s *Service) StopWorker(ctx context.Context) error { return s.backgroundWorkers().stop(ctx) }
+
+func (s *Service) IsDraining() bool { return s.backgroundWorkers().isDraining() }
+
+func (s *Service) ActiveWorkerTasks() int64 { return s.backgroundWorkers().activeTaskCount() }
+
+func (s *Service) backgroundWorkers() *workerRuntime {
+	s.workerRuntimeMu.Lock()
+	defer s.workerRuntimeMu.Unlock()
+	if s.workers == nil {
+		s.workers = &workerRuntime{}
+	}
+	return s.workers
+}
+
+func (s *Service) runWorkerLoop(fn func(context.Context)) bool {
+	return s.backgroundWorkers().goLoop(fn)
+}
+
+func (s *Service) runWorkerTask(fn func()) bool {
+	return s.backgroundWorkers().goTask(fn)
 }
 
 func (s *Service) CreateSession(userID string, req CreateSessionRequest) (*SessionDetail, error) {

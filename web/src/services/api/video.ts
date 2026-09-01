@@ -9,6 +9,7 @@ import type { RequestOptions, VideoGenerationResult, VideoGenerationTask, VideoG
 import { videoResponseTools } from "./video-response";
 import type { VideoProviderDeps } from "./video-provider-deps";
 import { createDashScopeVideoTask, pollDashScopeVideoTask } from "./video-provider-dashscope";
+import { createAgnesVideoTask, isAgnesConfig, pollAgnesVideoTask } from "./video-provider-agnes";
 import { createGeminiVeoTask, pollGeminiVeoTask } from "./video-provider-gemini";
 import { createMiniMaxVideoTask, pollMiniMaxVideoTask } from "./video-provider-minimax";
 import { createVideoGenerationsTask, pollVideoGenerationsTask } from "./video-provider-newapi";
@@ -21,7 +22,7 @@ export type { VideoGenerationResult, VideoGenerationTask, VideoGenerationTaskSta
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
-    const delayMs = task.provider === "openai" ? 2500 : 5000;
+    const delayMs = task.provider === "agnes" ? 1500 : task.provider === "openai" ? 2500 : 5000;
     for (let attempt = 0; attempt < 120; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
@@ -44,6 +45,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (requestConfig.interfaceType === "dashscope-wanx-video") return createDashScopeVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (requestConfig.interfaceType === "novita-video") return createNovitaVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (requestConfig.interfaceType === "minimax-video") return createMiniMaxVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    if (isAgnesConfig(requestConfig)) return createAgnesVideoTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (isSeedanceConfig(requestConfig)) return createSeedanceTask(deps, requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (videoReferences.length || audioReferences.length) throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 Seedance 2.0 / 火山 Agent Plan 模型，或移除参考素材");
     return createOpenAIVideoTask(deps, requestConfig, selectedModel, prompt, references, options);
@@ -58,6 +60,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     if (task.provider === "dashscope-wanx") return pollDashScopeVideoTask(deps, requestConfig, task, options);
     if (task.provider === "novita") return pollNovitaVideoTask(deps, requestConfig, task, options);
     if (task.provider === "minimax") return pollMiniMaxVideoTask(deps, requestConfig, task, options);
+    if (task.provider === "agnes") return pollAgnesVideoTask(deps, requestConfig, task, options);
     if (task.provider === "seedance") return pollSeedanceTask(deps, requestConfig, task, options);
     return pollOpenAIVideoTask(deps, task, options);
 }

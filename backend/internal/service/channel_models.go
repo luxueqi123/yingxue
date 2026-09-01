@@ -21,6 +21,7 @@ type ChannelModelRequest struct {
 	ModelKey                     string                         `json:"modelKey"`
 	ProviderModelKey             string                         `json:"providerModelKey"`
 	DisplayName                  string                         `json:"displayName"`
+	Icon                         string                         `json:"icon"`
 	Capability                   string                         `json:"capability"`
 	Protocol                     string                         `json:"protocol"`
 	BillingMode                  string                         `json:"billingMode"`
@@ -76,6 +77,13 @@ func (s *Service) EnsureSystemChannelModels() error {
 			if err := s.syncInitialChannelModels(&channels[index], channelModelNames(channels[index])); err != nil {
 				return err
 			}
+			items, err = s.repo.ChannelModels(channels[index].ID, true)
+			if err != nil {
+				return err
+			}
+		}
+		if err := s.syncAutoDLH3ChannelModels(&channels[index], items); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -100,7 +108,7 @@ func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]mod
 		if decodeErr != nil || config == nil {
 			continue
 		}
-		normalized, normalizeErr := NormalizeModelCapabilityConfig(items[index].Capability, string(items[index].Protocol), config)
+		normalized, normalizeErr := NormalizeModelCapabilityConfigForModel(items[index].Capability, string(items[index].Protocol), firstNonEmpty(items[index].ProviderModelKey, items[index].ModelKey), config)
 		if normalizeErr != nil || normalized == nil {
 			continue
 		}
@@ -145,9 +153,16 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		return nil, err
 	}
 	// 使用服务端保存的渠道密钥和请求头访问上游，避免敏感配置再次经过浏览器。
-	models, err := s.FetchChannelModels(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, AllowLocalChannel: channel.AllowLocalChannel, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
+	// AutoDL H3 的目录不是 OpenAI 的 /models；由其稳定的工作流清单提供目录及能力信息。
+	catalog, err := s.FetchChannelModelCatalog(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, AllowLocalChannel: channel.AllowLocalChannel, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
 	if err != nil {
 		return nil, err
+	}
+	models := make([]string, 0, len(catalog))
+	for _, item := range catalog {
+		if name := strings.TrimPrefix(strings.TrimSpace(item.ID), "models/"); name != "" {
+			models = append(models, name)
+		}
 	}
 	// 只按当前未删除记录去重；普通手动删除的模型仍可重新拉取，已合并进模型家族的 SKU 除外。
 	existing, err := s.repo.ChannelModels(channelID, true)
@@ -159,14 +174,22 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		known[channelModelCatalogKey(item.ModelKey)] = struct{}{}
 	}
 	retired := retiredChannelModelKeys(channel.RetiredModelsJSON)
-	missing := make([]model.ChannelModel, 0, len(models))
-	for _, name := range models {
-		name = strings.TrimPrefix(strings.TrimSpace(name), "models/")
+	missing := make([]model.ChannelModel, 0, len(catalog))
+	for _, catalogItem := range catalog {
+		name := strings.TrimPrefix(strings.TrimSpace(catalogItem.ID), "models/")
 		key := channelModelCatalogKey(name)
 		if _, ok := known[key]; ok || retired[key] {
 			continue
 		}
 		// 自动发现不能绕过定价边界；新模型由管理员定价后再手动启用。
+		if workflow, ok := protocol.AutoDLH3WorkflowByID(name); ok && isAutoDLH3Channel(*channel, existing) {
+			item, itemErr := s.newAutoDLH3ChannelModel(channelID, workflow, autoDLH3Protocol(existing))
+			if itemErr != nil {
+				return nil, itemErr
+			}
+			missing = append(missing, item)
+			continue
+		}
 		modelID, idErr := s.repo.NextPrefixedID("MODEL")
 		if idErr != nil {
 			return nil, idErr
@@ -204,7 +227,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		return nil, BadAuthRequest("该渠道已存在模型 " + modelKey + "，请直接编辑已有模型")
 	}
 	if capability == "text" || capability == "image" || capability == "video" {
-		if _, err := NormalizeModelCapabilityConfig(capability, string(protocol), req.CapabilityConfig); err != nil {
+		if _, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig); err != nil {
 			return nil, err
 		}
 	}
@@ -230,11 +253,12 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if item.DisplayName == "" {
 		item.DisplayName = modelKey
 	}
+	item.Icon = strings.TrimSpace(req.Icon)
 	item.Capability = capability
 	item.Protocol = protocol
 	s.applyChannelModelPriceTierSummary(item, tiers)
 	if capability == "text" || capability == "image" || capability == "video" {
-		capabilityConfig, normalizeErr := NormalizeModelCapabilityConfig(capability, string(protocol), req.CapabilityConfig)
+		capabilityConfig, normalizeErr := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig)
 		if normalizeErr != nil {
 			return nil, normalizeErr
 		}
@@ -292,6 +316,9 @@ func validateChannelModelTierCapabilities(tiers []model.ChannelModelPriceTier, r
 			return BadAuthRequest("价格档分辨率不在该视频模型支持范围内：" + tier.Resolution)
 		}
 		if tier.VideoSeconds == 0 {
+			continue
+		}
+		if !videoDurationSupported(config.Video) {
 			continue
 		}
 		if config.Video.Duration.Selection == "enum" && !durationSupported[tier.VideoSeconds] {
@@ -499,10 +526,13 @@ func (s *Service) applyChannelModelPriceTierSummary(item *model.ChannelModel, ti
 	var summary *model.ChannelModelPriceTier
 	for index := range tiers {
 		tier := &tiers[index]
-		if tier.Enabled && tier.PriceConfigured {
-			item.PriceConfigured = true
+		if !tier.Enabled || !tier.PriceConfigured {
+			continue
 		}
-		if summary == nil || (tier.Resolution == "*" && tier.VideoSeconds == 0) {
+		item.PriceConfigured = true
+		// 模型级字段只是旧管理/旧客户端的兼容摘要。只允许从启用且已
+		// 配置的价格档生成，优先使用有效的通配档，不能被停用的旧档覆盖。
+		if summary == nil || (summary.Resolution != "*" && tier.Resolution == "*" && tier.VideoSeconds == 0) {
 			summary = tier
 		}
 	}
@@ -529,7 +559,7 @@ func (s *Service) TestAdminChannelModel(ctx context.Context, actor *model.User, 
 		return nil, err
 	}
 	if capability == "text" || capability == "image" || capability == "video" {
-		if _, err := NormalizeModelCapabilityConfig(capability, string(protocol), req.CapabilityConfig); err != nil {
+		if _, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig); err != nil {
 			return nil, err
 		}
 	}
@@ -559,7 +589,7 @@ func (s *Service) TestAdminChannelModel(ctx context.Context, actor *model.User, 
 	imageSize, imageQuality := "", ""
 	var imageProfile *ImageCapabilityConfig
 	if capability == "image" {
-		profile, normalizeErr := NormalizeModelCapabilityConfig(capability, string(protocol), req.CapabilityConfig)
+		profile, normalizeErr := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig)
 		if normalizeErr != nil {
 			return nil, normalizeErr
 		}
@@ -740,30 +770,26 @@ func (s *Service) syncInitialChannelModels(channel *model.ModelChannel, names []
 		}
 		desired[name] = true
 		if item := byKey[name]; item != nil {
-			if !item.Enabled {
-				item.Enabled = true
-				item.PriceVersion++
-				if err := s.repo.SaveChannelModel(item); err != nil {
-					return err
-				}
-			}
 			continue
 		}
 		modelID, idErr := s.repo.NextPrefixedID("MODEL")
 		if idErr != nil {
 			return idErr
 		}
-		item := model.ChannelModel{ID: modelID, ChannelID: channel.ID, ModelKey: name, DisplayName: name, BillingMode: "fixed_request", Enabled: false, PriceVersion: 1}
+		item := model.ChannelModel{ID: modelID, ChannelID: channel.ID, ModelKey: name, DisplayName: name, BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, UnitPriceMicrocredits: 0, PriceVersion: 1}
 		if err := s.repo.SaveChannelModel(&item); err != nil {
 			return err
 		}
 	}
 	for index := range existing {
-		if existing[index].Enabled && !desired[existing[index].ModelKey] {
+		if !desired[existing[index].ModelKey] {
+			changed := existing[index].Enabled
 			existing[index].Enabled = false
-			existing[index].PriceVersion++
-			if err := s.repo.SaveChannelModel(&existing[index]); err != nil {
-				return err
+			if changed {
+				existing[index].PriceVersion++
+				if err := s.repo.SaveChannelModel(&existing[index]); err != nil {
+					return err
+				}
 			}
 		}
 	}

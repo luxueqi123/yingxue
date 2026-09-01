@@ -32,6 +32,7 @@ type ChannelModel struct {
 	ModelKey                     string               `json:"modelKey" gorm:"size:120;uniqueIndex:idx_channel_model_key_active,priority:2,where:deleted_at IS NULL"`
 	ProviderModelKey             string               `json:"providerModelKey" gorm:"size:120"`
 	DisplayName                  string               `json:"displayName" gorm:"size:160"`
+	Icon                         string               `json:"icon" gorm:"size:80"`
 	Capability                   string               `json:"capability" gorm:"size:32;index"`
 	Protocol                     ChannelInterfaceType `json:"protocol" gorm:"size:32;index"`
 	BillingMode                  string               `json:"billingMode" gorm:"size:32"`
@@ -92,6 +93,9 @@ type ApiCallLog struct {
 	TaskID              string        `json:"taskId,omitempty" gorm:"index;size:36"`
 	TaskStatus          TaskStatus    `json:"taskStatus,omitempty" gorm:"-"`
 	BillingOrderID      string        `json:"billingOrderId,omitempty" gorm:"index;size:36"`
+	BillingStatus       BillingStatus `json:"billingStatus,omitempty" gorm:"-"`
+	BillingAmount       int64         `json:"billingAmountMicrocredits" gorm:"-"`
+	BillingAvailable    bool          `json:"billingAvailable" gorm:"-"`
 	Source              string        `json:"source" gorm:"index;size:64"`
 	Capability          string        `json:"capability" gorm:"index;size:32"`
 	Operation           string        `json:"operation" gorm:"size:64"`

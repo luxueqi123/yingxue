@@ -57,6 +57,7 @@ function buildNav(features: FeatureAvailability, balance: string, isAdmin: boole
             heading: "工作台管理",
             items: [
                 toolItem("skills", "/skills"),
+                toolItem("prompts", "/prompts"),
                 ...(features.pluginCenterEnabled || isAdmin ? [toolItem("plugins", "/plugins")] : []),
                 ...(features.creditsEnabled ? [{ ...toolItem("wallet", "/wallet"), badge: balance }] : []),
             ],

@@ -38,6 +38,10 @@ func RegisterComfyBridgeRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
+		if err := svc.RequireWorkflowPluginForUser(user.ID, "comfyui-bridge-image"); err != nil {
+			failService(c, err)
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.CreateComfyBridgeRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -54,6 +58,10 @@ func RegisterComfyBridgeRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/comfy-bridges", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
+			failService(c, err)
+			return
+		}
+		if err := svc.RequireWorkflowPluginForUser(user.ID, "comfyui-bridge-image"); err != nil {
 			failService(c, err)
 			return
 		}

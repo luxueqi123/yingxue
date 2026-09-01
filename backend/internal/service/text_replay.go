@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -27,6 +28,10 @@ type TextReplayResult struct {
 	TextDraft string                `json:"textDraft,omitempty"`
 	FinalText string                `json:"finalText,omitempty"`
 	Complete  bool                  `json:"complete"`
+	Status    model.TaskStatus      `json:"status"`
+	Stage     string                `json:"stage,omitempty"`
+	Progress  int                   `json:"progress"`
+	Error     string                `json:"error,omitempty"`
 }
 
 // isTextReplayTaskRequest 识别前端自管的文本持久化请求（input 带 replay=true）。
@@ -107,7 +112,11 @@ func (s *Service) TaskTextReplay(userID string, taskID string, after int64) (*Te
 	if err != nil {
 		return nil, err
 	}
-	result := &TextReplayResult{Deltas: deltas, TextDraft: task.TextDraft, Complete: task.Status == model.TaskStatusSucceeded || task.Status == model.TaskStatusFailed || task.Status == model.TaskStatusCancelled}
+	result := &TextReplayResult{
+		Deltas: deltas, TextDraft: task.TextDraft,
+		Complete: task.Status == model.TaskStatusSucceeded || task.Status == model.TaskStatusFailed || task.Status == model.TaskStatusCancelled,
+		Status:   task.Status, Stage: task.Stage, Progress: task.Progress, Error: task.Error,
+	}
 	if task.Status == model.TaskStatusSucceeded {
 		result.FinalText = taskResultText(task.ResultJSON)
 	}
@@ -148,18 +157,23 @@ func taskResultText(raw string) string {
 	return result.Text
 }
 
-func (s *Service) startTextReplayCleanup() {
+func (s *Service) startTextReplayCleanup(ctx context.Context) {
 	cleanup := func() {
 		if _, err := s.CleanupTaskTextReplay(); err != nil {
 			log.Printf("text replay cleanup failed: %v", err)
 		}
 	}
-	cleanup()
-	go func() {
+	s.runWorkerLoop(func(ctx context.Context) {
+		cleanup()
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
-		for range ticker.C {
-			cleanup()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanup()
+			}
 		}
-	}()
+	})
 }

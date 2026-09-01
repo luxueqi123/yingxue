@@ -1,4 +1,4 @@
-import type { ModelProtocol } from "@/lib/model-protocols";
+import type { ModelProtocol, ModelProtocolWorkflow } from "@/lib/model-protocols";
 
 export type ModelCapabilityConfig = {
     version: number;
@@ -64,6 +64,7 @@ export type VideoCapabilityConfig = {
         values?: number[];
         default: number;
     };
+    durationSupported?: boolean;
     ratios: string[];
     defaultRatio: string;
     resolutions: string[];
@@ -344,17 +345,77 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
 		video.operations = ["image_to_video", "reference_to_video"];
 		video.defaultOperation = "reference_to_video";
 	}
+    if (protocol === "agnes-video" && ["agnes-video-2.5", "agnes-video-2.5-flash"].includes(model.trim().toLowerCase())) {
+        const flash = model.trim().toLowerCase() === "agnes-video-2.5-flash";
+        video.references.maxImages = flash ? 5 : 9;
+        video.references.maxVideos = flash ? 0 : 3;
+        video.references.maxAudios = 3;
+        video.duration = { selection: "range", min: 4, max: 12, step: 1, default: 5 };
+        video.ratios = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
+        video.defaultRatio = "16:9";
+        video.resolutions = flash ? ["720P"] : ["720P", "960P", "2K"];
+        video.defaultResolution = "720P";
+        video.operations.push("reference_to_video", "audio_to_video");
+    }
     return { version: 1, text, image: defaultImageCapabilityConfig(protocol, model), video };
 }
 
-export function modelCapabilityConfigFor(config: { channels: Array<{ id: string; models: string[]; modelCosts?: Array<{ model: string; capabilityConfig?: ModelCapabilityConfig; protocol?: ModelProtocol }> }> }, model: string) {
+export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow: ModelProtocolWorkflow): ModelCapabilityConfig | undefined {
+    if (workflow.capability !== "image" && workflow.capability !== "video") return undefined;
+    const fallback = defaultModelCapabilityConfig(protocol, workflow.id);
+    const fields: WorkflowVideoFieldLike[] = workflow.parameters.map((parameter) => ({
+        fieldName: parameter.name,
+        source: parameter.mapping,
+        fieldType: parameter.type,
+        options: parameter.values,
+        defaultValue: workflow.defaults?.[parameter.name],
+    }));
+    if (workflow.capability === "image") {
+        return { ...fallback, image: workflowImageCapabilityConfig(fields, fallback.image!) };
+    }
+    return { ...fallback, video: workflowVideoCapabilityConfig(fields, fallback.video!) };
+}
+
+type CapabilityModelCost = {
+    model: string;
+    capabilityConfig?: ModelCapabilityConfig;
+    protocol?: ModelProtocol;
+    logicalPriceTiers?: Array<{ selector?: Record<string, string> }>;
+};
+
+function imageCapabilityWithPricedQualities(image: ImageCapabilityConfig | undefined, cost: CapabilityModelCost | undefined) {
+    if (!image) return image;
+    const qualities = Array.from(
+        new Set(
+            (cost?.logicalPriceTiers || [])
+                .map((tier) => tier.selector?.quality)
+                .filter((quality): quality is string => Boolean(quality))
+                .map(normalizeCapabilityString)
+                .filter((quality) => !["*", "auto", "any"].includes(quality.toLowerCase())),
+        ),
+    );
+    if (!qualities.length) return image;
+    return {
+        ...image,
+        quality: {
+            ...image.quality,
+            supported: true,
+            values: qualities,
+            default: qualities.includes(image.quality.default) ? image.quality.default : qualities[0],
+        },
+    };
+}
+
+export function modelCapabilityConfigFor(config: { channels: Array<{ id: string; models: string[]; modelCosts?: CapabilityModelCost[] }> }, model: string) {
     const separator = model.indexOf("::");
     const channelId = separator >= 0 ? model.slice(0, separator) : "";
     const modelName = separator >= 0 ? model.slice(separator + 2) : model;
     const channel = config.channels.find((item) => item.id === channelId) || config.channels.find((item) => item.models.includes(modelName));
     const cost = channel?.modelCosts?.find((item) => item.model === modelName);
     const fallback = defaultModelCapabilityConfig(cost?.protocol, modelName);
-    if (!cost?.capabilityConfig) return fallback;
+    if (!cost?.capabilityConfig) {
+        return { ...fallback, image: imageCapabilityWithPricedQualities(fallback.image, cost) };
+    }
     const capabilityConfig = normalizeModelCapabilityConfig(cost.capabilityConfig);
     const text = capabilityConfig.text ? { ...fallback.text!, ...capabilityConfig.text, references: { ...fallback.text!.references, ...capabilityConfig.text.references } } : fallback.text;
     const video = capabilityConfig.video ? { ...fallback.video!, ...capabilityConfig.video, references: { ...fallback.video!.references, ...capabilityConfig.video.references } } : fallback.video;
@@ -381,7 +442,7 @@ export function modelCapabilityConfigFor(config: { channels: Array<{ id: string;
               };
           })()
         : fallback.image;
-    return { ...fallback, ...capabilityConfig, text, image, video };
+    return { ...fallback, ...capabilityConfig, text, image: imageCapabilityWithPricedQualities(image, cost), video };
 }
 
 // 工作流字段是供应商参数的唯一事实来源；不能用普通视频模型的固定清晰度列表覆盖它。
@@ -912,10 +973,18 @@ export function imageSizeRequest(profile: ImageCapabilityConfig, value?: string)
 
 export function normalizeVideoValue(profile: VideoCapabilityConfig, value: { seconds?: string; ratio?: string; resolution?: string }) {
     const duration = profile.duration.selection === "enum" ? ((profile.duration.values || []).includes(Number(value.seconds)) ? Number(value.seconds) : profile.duration.default) : normalizeRangeDuration(profile, Number(value.seconds));
-    const ratio = profile.ratios.includes(value.ratio || "") ? value.ratio! : profile.defaultRatio;
+    const ratio = resolveVideoRatioValue(profile, value.ratio);
     // 前端状态历史上保存过 `720`，而能力配置和供应商通常使用 `720p`；统一按能力中的原始值返回，避免被误判为不支持。
-    const resolution = videoResolutionRequest(profile, value.resolution) || profile.defaultResolution || profile.resolutions[0] || "";
+    const resolution = resolveVideoResolutionValue(profile, value.resolution);
     return { seconds: String(duration), ratio, resolution };
+}
+
+export function resolveVideoRatioValue(profile: VideoCapabilityConfig, value: string | undefined) {
+    return profile.ratios.includes(value || "") ? value! : profile.defaultRatio || profile.ratios[0] || "";
+}
+
+export function resolveVideoResolutionValue(profile: VideoCapabilityConfig, value: string | undefined) {
+    return videoResolutionRequest(profile, value) || profile.defaultResolution || profile.resolutions[0] || "";
 }
 
 export function videoResolutionRequest(profile: VideoCapabilityConfig, value: string | undefined) {

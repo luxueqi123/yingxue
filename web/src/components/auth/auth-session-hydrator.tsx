@@ -8,6 +8,7 @@ import { useUserStore } from "@/stores/use-user-store";
 
 export function AuthSessionHydrator({ children }: { children: ReactNode }) {
     const hydrated = useUserStore((state) => state.hydrated);
+    const isPublicAuthRoute = typeof window !== "undefined" && (window.location.pathname === "/login" || window.location.pathname === "/register");
 
     useEffect(() => {
         let cancelled = false;
@@ -33,5 +34,7 @@ export function AuthSessionHydrator({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    return hydrated ? children : <FullScreenLoader />;
+    // 登录/注册页本身不依赖会话数据，先展示表单和背景影片；会话请求仍在后台完成。
+    // 这样慢网络不会让首屏组件一直被全屏加载层遮住。
+    return hydrated || isPublicAuthRoute ? children : <FullScreenLoader />;
 }

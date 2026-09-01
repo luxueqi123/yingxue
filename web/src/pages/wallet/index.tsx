@@ -186,6 +186,8 @@ export default function WalletPage() {
                     </motion.div>
                 </section>
 
+                <RechargeNotice policy={wallet?.policy} />
+
                 <section className="wallet-ledger-panel app-workspace-surface mt-9 rounded-lg p-4 backdrop-blur-xl sm:p-5">
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -224,6 +226,56 @@ export default function WalletPage() {
             </div>
         </main>
     );
+}
+
+function RechargeNotice({ policy }: { policy?: WalletSummary["policy"] }) {
+    const plans = policy?.rechargePlans || [];
+    if (!plans.length) return null;
+    return (
+        <section className="wallet-recharge-panel app-workspace-surface mt-6 rounded-lg p-5 backdrop-blur-xl sm:p-6" aria-labelledby="wallet-recharge-title">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h2 id="wallet-recharge-title" className="text-base font-semibold">充值与价格公示</h2>
+                    <p className="mt-1 text-xs leading-5 text-foreground/65">
+                        充值请直接联系本人：微信 <span className="font-medium text-foreground">wzb981127</span>
+                        <span className="mx-1 text-foreground/35">·</span>
+                        QQ <span className="font-medium text-foreground">2354628216</span>
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-foreground/45">充值积分不直接等同人民币余额。</p>
+                </div>
+            </div>
+
+            {plans.length ? (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    {plans.map((plan, index) => (
+                        <div key={plan.id} className={`wallet-recharge-plan rounded-lg border px-4 py-4 ${index === 2 ? "border-primary/50 bg-primary/[.06]" : "border-border/70 bg-foreground/[.025]"}`}>
+                            <div className="flex items-start justify-between gap-2">
+                                <span className="text-xs font-medium text-foreground/55">充值档位</span>
+                                {plan.bonusPercent > 0 ? <Tag color="gold">赠 {plan.bonusPercent}%</Tag> : null}
+                            </div>
+                            <div className="mt-3 flex items-baseline gap-1">
+                                <strong className="text-2xl font-semibold tabular-nums">¥{formatCents(plan.priceCents)}</strong>
+                            </div>
+                            <div className="mt-2 text-sm font-medium tabular-nums">到账 {formatCredits(plan.creditsMicrocredits)} 积分</div>
+                            <div className="mt-1 text-xs text-foreground/45">购买后兑换到账</div>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+
+            <div className="mt-6 border-t border-border/60 pt-5">
+                <div>
+                    <h3 className="text-sm font-semibold">换算公式</h3>
+                    <p className="mt-2 text-xs leading-6 text-foreground/58">1 元 = {policy?.creditPerYuan || 10} 积分；扣除积分 = ⌈使用秒数 × 标价（元/秒） × {policy?.creditPerYuan || 10}⌉。</p>
+                    <p className="mt-1 text-xs leading-6 text-foreground/45">实际扣费以任务命中的渠道、分辨率和结算账单为准；失败任务按系统账单状态处理。</p>
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function formatCents(value: number) {
+    return (value / 100).toLocaleString("zh-CN", { minimumFractionDigits: value % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
 function BalanceMetric({ label, description, value, icon }: { label: string; description: string; value: number; icon: ReactNode }) {

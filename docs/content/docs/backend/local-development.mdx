@@ -66,3 +66,35 @@ LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) \
 ```
 
 Docker 开发编排也使用 `.local/project-workbench-debug`，并默认暴露前端 `3000` 和后端 `8080`。端口冲突时，可通过 `CANVAS_WEB_HOST_PORT` 和 `CANVAS_BACKEND_HOST_PORT` 调整宿主机端口。
+
+## 生产静态发布与缓存
+
+映雪 Web 使用 Vite 内容哈希分包。`index.html` 与 `/assets/*.js` 必须采用不同缓存策略，发布时也不能让仍停留在旧页面的用户突然失去旧分包。
+
+现役规则：
+
+- `index.html` 使用 `no-cache, no-store, must-revalidate`，保证刷新后取得当前入口。
+- `/assets/` 下的内容哈希文件使用一年 `immutable` 缓存。
+- 缺失的 `/assets/*` 必须返回真实 `404`，禁止 SPA 回退到 `index.html`。
+- 前端监听 Vite 的 `vite:preloadError`；旧标签页遇到已退役分包时最多自动刷新一次，60 秒内不循环刷新。
+- 新发布至少保留上一现役版本的哈希资源作为兼容窗口。发布稳定后再按发布保留策略清理，不能在切流时立即删除旧资源。
+
+完成 `web` 构建后先运行静态引用门禁：
+
+```bash
+node scripts/audit-static-release.mjs web/dist
+```
+
+结果必须为 `missing_assets=0`。该门禁检查 `index.html`、JS 和 CSS 引用的本地静态文件是否完整，但不能替代生产缓存与旧标签页验证。
+
+数据盘发布按以下顺序执行：
+
+1. 在 `/www/open-ai-canvas/releases/<release>/static` 创建全新的候选目录，不覆盖当前现役目录。
+2. 写入本次完整构建产物，再把上一现役版本 `static/assets/` 中缺少的哈希文件以“不覆盖”方式带入候选目录，形成一个版本的兼容窗口。
+3. 校验候选目录静态引用完整，确认 `skill-media` 子挂载点存在。
+4. 先用候选容器或本机端口验证首页、登录、创作台、当前分包和上一版本抽样分包。
+5. Compose 命令固定传入 `-p open-ai-canvas`；不能让发布目录名自动变成新的 Compose 项目名，否则会另起容器并争抢公网端口。
+6. 只重建 Web 服务并切换 `/www/open-ai-canvas/current`；PostgreSQL、Redis 和后端不因纯前端发布重启。
+7. 同时验证源站与公网域名，确认 HTML 为禁止缓存、哈希资源为长期缓存、缺失分包为 `404`。
+
+回滚时使用上一个完整发布目录和 Compose 覆盖文件。只切回 Web 静态挂载并重新创建 Web 服务，不回滚或覆盖数据库、Redis、上传资源及 `skill-media` 数据盘目录。

@@ -169,6 +169,56 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	}
 }
 
+func TestEnsureSystemChannelModelsCompletesAutoDLH3Workflows(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	channel := model.ModelChannel{
+		ID: "autodl-h3", Scope: model.ChannelScopeSystem, Enabled: true, Name: "AutoDL H3",
+		BaseURL: "https://autodl.art", APIFormat: "openai", ModelsJSON: `["minimax_h3_lightx2v_v5"]`,
+	}
+	existing := model.ChannelModel{
+		ID: "existing-h3", ChannelID: channel.ID, ModelKey: "minimax_h3_lightx2v_v5", ProviderModelKey: "minimax_h3_lightx2v_v5",
+		DisplayName: "已有 H3 多图", Capability: "video", Protocol: model.ChannelInterfaceAutoDLH3Video,
+		BillingMode: "fixed_request", Enabled: true, PriceConfigured: true, PriceVersion: 3,
+	}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.EnsureSystemChannelModels(); err != nil {
+		t.Fatal(err)
+	}
+	items, err := svc.repo.ChannelModels(channel.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 7 {
+		t.Fatalf("H3 model count = %d, want 7", len(items))
+	}
+	for _, item := range items {
+		if item.ID == existing.ID {
+			if !item.Enabled || !item.PriceConfigured || item.PriceVersion != 3 || item.DisplayName != existing.DisplayName {
+				t.Fatalf("existing H3 model was changed: %#v", item)
+			}
+			continue
+		}
+		if item.Enabled || item.PriceConfigured || item.Protocol != model.ChannelInterfaceAutoDLH3Video || item.Capability != "video" || item.ProviderModelKey != item.ModelKey || item.CapabilityConfigJSON == "" {
+			t.Fatalf("new H3 workflow defaults = %#v", item)
+		}
+	}
+}
+
+func TestAutoDLH3NewWorkflowsUseBuiltinProtocolWhenOldPluginExists(t *testing.T) {
+	protocolID := autoDLH3Protocol([]model.ChannelModel{{
+		ModelKey: "minimax_h3_lightx2v_v5", Protocol: "autodl-comfyui",
+	}})
+	if protocolID != model.ChannelInterfaceAutoDLH3Video {
+		t.Fatalf("new H3 workflow protocol = %q, want %q", protocolID, model.ChannelInterfaceAutoDLH3Video)
+	}
+}
+
 func TestSaveAdminChannelModelRejectsActiveDuplicateKey(t *testing.T) {
 	svc, db := newChannelModelTestService(t)
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
@@ -260,7 +310,7 @@ func newChannelModelTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.IDSequence{}); err != nil {
+	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelPriceTier{}, &model.IDSequence{}); err != nil {
 		t.Fatal(err)
 	}
 	return &Service{repo: repository.New(db)}, db

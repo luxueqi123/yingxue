@@ -12,12 +12,14 @@ const UserLayout = lazy(() => import("@/layouts/user-layout"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const AnalyticsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
 const AnnouncementsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
+const StorageResourcesPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.StorageResourcesPage })));
 const CreditOperationsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.CreditOperationsPage })));
 const AccessSettingsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AccessSettingsPage })));
 const EmailSettingsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.EmailSettingsPage })));
 const FeatureAvailabilityPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.FeatureAvailabilityPage })));
 const ChannelsPage = lazy(() => import("@/pages/admin/channels/channels-page"));
 const LogicalModelsPage = lazy(() => import("@/pages/admin/logical-models/logical-models-page"));
+const AdminPluginsPage = lazy(() => import("@/pages/admin/plugins/plugins-page"));
 const LogsPage = lazy(() => import("@/pages/admin/logs/logs-page"));
 const RedemptionCodesPage = lazy(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
 const RuntimePolicySettingsPage = lazy(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
@@ -26,11 +28,13 @@ const StorageSettingsPage = lazy(() => import("@/pages/admin/settings/storage-se
 const ArkPrivateAssetsSettingsPage = lazy(() => import("@/pages/admin/settings/ark-private-assets-settings-page"));
 const ResponseInterceptionSettingsPage = lazy(() => import("@/pages/admin/settings/response-interception-settings-page"));
 const ThirdPartySettingsPage = lazy(() => import("@/pages/admin/settings/libtv-settings-page"));
+const SystemUpdatePage = lazy(() => import("@/pages/admin/settings/system-update-page"));
 const StoryboardPromptsPage = lazy(() => import("@/pages/admin/storyboard-prompts/storyboard-prompts-page"));
 const UsersPage = lazy(() => import("@/pages/admin/users/users-page"));
 const AssetsPage = lazy(loadAssetsPage);
 const LoginPage = lazy(() => import("@/pages/auth/login"));
 const RegisterPage = lazy(() => import("@/pages/auth/register"));
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(() => import("@/pages/canvas/project"));
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
@@ -38,6 +42,7 @@ const CreatePage = lazy(loadCreatePage);
 const HomePage = lazy(() => import("@/pages/home"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = lazy(() => import("@/pages/skills"));
+const PromptsPage = lazy(() => import("@/pages/prompts"));
 const PluginsPage = lazy(() => import("@/pages/plugins"));
 const EagleLibraryPage = lazy(() => import("@/pages/plugins/eagle"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
@@ -46,7 +51,6 @@ const ProjectsPage = lazy(loadProjectsPage);
 const ProjectDetailPage = lazy(() => import("@/pages/projects/detail"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const TestVoiceRecording = import.meta.env.DEV ? lazy(() => import("@/pages/test-voice-recording")) : null;
-const FolderPreviewLab = import.meta.env.DEV ? lazy(() => import("@/pages/dev/folder-preview-lab")) : null;
 
 function deferred(element: ReactNode) {
     return <Suspense fallback={<WorkspaceRouteLoader />}>{element}</Suspense>;
@@ -56,6 +60,23 @@ function fullScreenDeferred(element: ReactNode) {
     return <Suspense fallback={<FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />}>{element}</Suspense>;
 }
 
+/**
+ * DEV 专用实验室路由。
+ *
+ * lazy(() => import(...)) 写在函数体内，而不是模块顶层常量：
+ * 生产构建时 import.meta.env.DEV 被替换为 false，本函数随之不可达，
+ * 摇树会连同其中的动态 import 一起删除，实验室代码不进入生产依赖图。
+ * 若把 lazy 提到模块顶层，动态 import 会被静态分析成真实 chunk 并打进 dist。
+ */
+function devRoutes() {
+    const FolderPreviewLab = lazy(() => import("@/pages/dev/folder-preview-lab"));
+    const DirectorReproLab = lazy(() => import("@/pages/dev/director-repro-lab"));
+    return [
+        { path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> },
+        { path: "/dev/director-repro", element: fullScreenDeferred(<DirectorReproLab />), errorElement: <RouteErrorPage /> },
+    ];
+}
+
 export const router = createBrowserRouter([
     {
         element: <AuthScene />,
@@ -63,12 +84,11 @@ export const router = createBrowserRouter([
         children: [
             { path: "/login", element: fullScreenDeferred(<LoginPage />) },
             { path: "/register", element: fullScreenDeferred(<RegisterPage />) },
+            { path: "/forgot-password", element: fullScreenDeferred(<ForgotPasswordPage />) },
         ],
     },
     { path: "/share/canvas/:token", element: fullScreenDeferred(<SharedCanvasPage />), errorElement: <RouteErrorPage /> },
-    ...(FolderPreviewLab
-        ? [{ path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> }]
-        : []),
+    ...(import.meta.env.DEV ? devRoutes() : []),
     {
         element: (
             <UserLayout>
@@ -90,8 +110,23 @@ export const router = createBrowserRouter([
             },
             { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
-            { path: "/plugins", element: <RequireAuth><RequireFeature feature="pluginCenterEnabled">{deferred(<PluginsPage />)}</RequireFeature></RequireAuth> },
-            { path: "/plugins/eagle", element: <RequireAuth><RequireFeature feature="pluginCenterEnabled">{deferred(<EagleLibraryPage />)}</RequireFeature></RequireAuth> },
+            { path: "/prompts", element: <RequireAuth>{deferred(<PromptsPage />)}</RequireAuth> },
+            {
+                path: "/plugins",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="pluginCenterEnabled">{deferred(<PluginsPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/plugins/eagle",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="pluginCenterEnabled">{deferred(<EagleLibraryPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
             {
                 path: "/wallet",
                 element: (
@@ -136,6 +171,14 @@ export const router = createBrowserRouter([
                     </RequireAuth>
                 ),
             },
+            {
+                path: "/projects/:projectId/workflow/:unitId/:stage",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
             { path: "/canvas/:id", element: <RequireAuth>{deferred(<CanvasProjectPage />)}</RequireAuth> },
             {
@@ -146,9 +189,11 @@ export const router = createBrowserRouter([
                     { path: "users", element: deferred(<UsersPage />) },
                     { path: "channels", element: deferred(<ChannelsPage />) },
                     { path: "models", element: <RequireFeature feature="frontendModelsEnabled">{deferred(<LogicalModelsPage />)}</RequireFeature> },
+                    { path: "plugins", element: deferred(<AdminPluginsPage />) },
                     { path: "prompt-templates", element: deferred(<StoryboardPromptsPage />) },
                     { path: "storyboard-prompts", element: <Navigate to="/admin/prompt-templates" replace /> },
                     { path: "announcements", element: deferred(<AnnouncementsPage />) },
+                    { path: "resources", element: deferred(<StorageResourcesPage />) },
                     { path: "credit-operations", element: deferred(<CreditOperationsPage />) },
                     { path: "redemption-codes", element: deferred(<RedemptionCodesPage />) },
                     { path: "logs", element: deferred(<LogsPage />) },
@@ -163,6 +208,7 @@ export const router = createBrowserRouter([
                     { path: "settings/ark-private-assets", element: deferred(<ArkPrivateAssetsSettingsPage />) },
                     { path: "settings/response-interception", element: deferred(<ResponseInterceptionSettingsPage />) },
                     { path: "settings/third-party", element: deferred(<ThirdPartySettingsPage />) },
+                    { path: "settings/system-update", element: deferred(<SystemUpdatePage />) },
                     { path: "settings/libtv", element: <Navigate to="/admin/settings/third-party" replace /> },
                 ],
             },

@@ -52,6 +52,41 @@ func TestNormalizeChannelModelContractRequiresJiMengSecret(t *testing.T) {
 	}
 }
 
+func TestSaveAdminChannelModelPersistsAndPublishesIcon(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
+		ModelKey: "gpt-test", DisplayName: "GPT Test", Icon: "OpenAI", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "gpt-test"),
+		PriceTiers:       []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, Enabled: &enabled}}, Enabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Icon != "OpenAI" {
+		t.Fatalf("saved icon = %q, want OpenAI", saved.Icon)
+	}
+	var stored model.ChannelModel
+	if err := db.First(&stored, "id = ?", saved.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Icon != "OpenAI" {
+		t.Fatalf("stored icon = %q, want OpenAI", stored.Icon)
+	}
+	if public := svc.sanitizeChannelModel(saved); public.Icon != "OpenAI" {
+		t.Fatalf("public icon = %q, want OpenAI", public.Icon)
+	}
+	legacyPublic := publicChannel(channel, false, []model.ChannelModel{*saved})
+	if len(legacyPublic.ModelCosts) != 1 || legacyPublic.ModelCosts[0].Icon != "OpenAI" {
+		t.Fatalf("legacy public model costs = %#v", legacyPublic.ModelCosts)
+	}
+}
+
 func TestImageTestDefaultsUseModelCapability(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -91,5 +126,17 @@ func TestImageTestDefaultsUseModelCapability(t *testing.T) {
 				t.Fatalf("imageTestDefaults() = %q, %q; want %q, %q", size, quality, test.wantSize, test.wantQuality)
 			}
 		})
+	}
+}
+
+func TestApplyChannelModelPriceTierSummaryIgnoresDisabledWildcard(t *testing.T) {
+	item := &model.ChannelModel{}
+	tiers := []model.ChannelModelPriceTier{
+		{Resolution: "1080p", BillingMode: "per_second", UnitPriceMicrocredits: 1_200_000, Enabled: true, PriceConfigured: true},
+		{Resolution: "*", BillingMode: "fixed_request", UnitPriceMicrocredits: 0, Enabled: false, PriceConfigured: false},
+	}
+	(&Service{}).applyChannelModelPriceTierSummary(item, tiers)
+	if !item.PriceConfigured || item.BillingMode != "per_second" || item.UnitPriceMicrocredits != 1_200_000 {
+		t.Fatalf("summary = %#v", item)
 	}
 }

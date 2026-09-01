@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/protocol"
 )
 
 const testReferenceImageDataURL = "data:image/png;base64,aGVsbG8="
@@ -72,6 +74,100 @@ func TestChannelAPIURLNormalizesConfiguredVersionPrefix(t *testing.T) {
 func TestChannelAPIURLForProtocolUsesGeminiDefault(t *testing.T) {
 	if got := ChannelAPIURLForProtocol("https://generativelanguage.googleapis.com", "/models/gemini:generateContent", model.ChannelInterfaceGeminiVeo); got != "https://generativelanguage.googleapis.com/v1beta/models/gemini:generateContent" {
 		t.Fatalf("Gemini URL = %q", got)
+	}
+}
+
+func TestChannelAPIURLForProtocolUsesAgnesOriginPollPath(t *testing.T) {
+	got := ChannelAPIURLForProtocol("https://apihub.agnes-ai.com/v1", "/agnesapi?video_id=video-1&model_name=agnes-video-2.5", model.ChannelInterfaceAgnesVideo)
+	if got != "https://apihub.agnes-ai.com/agnesapi?video_id=video-1&model_name=agnes-video-2.5" {
+		t.Fatalf("Agnes poll URL = %q", got)
+	}
+}
+
+func TestProtocolRequestURLCanResolveSameOriginRootPath(t *testing.T) {
+	got, err := protocolRequestURL("https://apihub.agnes-ai.com/v1", protocol.RequestSpec{Path: "/agnesapi?video_id=video-1&model_name=agnes-video-2.5", OriginPath: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://apihub.agnes-ai.com/agnesapi?video_id=video-1&model_name=agnes-video-2.5" {
+		t.Fatalf("root path URL = %q", got)
+	}
+}
+
+func TestRunVideoTaskUsesHostBackedAgnesJSONProtocol(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	center, err := newPluginRuntime(t.TempDir())
+	if err != nil {
+		t.Fatalf("newPluginRuntime() error = %v", err)
+	}
+	adapter, ok := center.registrySnapshot().Resolve("agnes-video")
+	if !ok {
+		t.Fatal("host-backed Agnes adapter is missing")
+	}
+	if metadata := adapter.Metadata(); metadata.Version != "1.2.0" || metadata.Execution != "host:agnes-video" || !metadata.RequiresPublicMediaURLs {
+		t.Fatalf("Agnes runtime metadata = %#v", metadata)
+	}
+
+	paths := make([]string, 0, 3)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.RequestURI())
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/videos":
+			if contentType := r.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+				t.Errorf("Content-Type = %q, want application/json", contentType)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode create body: %v", err)
+			}
+			want := map[string]any{
+				"model": "agnes-video-2.5", "prompt": "make it move", "mode": "keyframe",
+				"seconds": "5", "size": "720P", "aspect_ratio": "16:9", "n": float64(1),
+				"first_frame": server.URL + "/reference.png",
+			}
+			if !reflect.DeepEqual(body, want) {
+				t.Errorf("create body = %#v, want %#v", body, want)
+			}
+			for _, legacy := range []string{"input_reference", "input_reference[]", "preset", "resolution_name"} {
+				if _, exists := body[legacy]; exists {
+					t.Errorf("create body contains legacy field %q: %#v", legacy, body)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"video_id":"video-1","status":"queued"}`))
+		case "GET /agnesapi":
+			if r.URL.Query().Get("video_id") != "video-1" || r.URL.Query().Get("model_name") != "agnes-video-2.5" {
+				t.Errorf("poll query = %q", r.URL.RawQuery)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"video_id":"video-1","status":"completed","metadata":{"url":"` + server.URL + `/video.mp4"}}`))
+		case "GET /video.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx := withProtocolRegistry(context.Background(), center.registrySnapshot())
+	result, err := runVideoTask(ctx, canvasGenerationInput{
+		Mode:            "video",
+		Prompt:          "make it move",
+		Config:          providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", InterfaceType: "agnes-video", Model: "agnes-video-2.5", VideoSeconds: "5", Size: "16:9", VQuality: "720P"},
+		ReferenceImages: []providerMedia{{URL: server.URL + "/reference.png"}},
+	})
+	if err != nil {
+		t.Fatalf("runVideoTask() error = %v", err)
+	}
+	video, ok := result["video"].(map[string]interface{})
+	if !ok || video["dataUrl"] != "data:video/mp4;base64,dmlkZW8=" {
+		t.Fatalf("video = %#v", result["video"])
+	}
+	wantPaths := "POST /v1/videos,GET /agnesapi?video_id=video-1&model_name=agnes-video-2.5,GET /video.mp4"
+	if got := strings.Join(paths, ","); got != wantPaths {
+		t.Fatalf("paths = %q, want %q", got, wantPaths)
 	}
 }
 
@@ -334,9 +430,85 @@ data: [DONE]
 	}))
 	defer server.Close()
 
-	got, err := postStreamingText(context.Background(), providerConfig{BaseURL: server.URL, APIKey: "test-key"}, "/chat/completions", map[string]interface{}{"model": "test-model"}, "chat-completion")
+	var deltas strings.Builder
+	got, err := postStreamingText(context.Background(), providerConfig{BaseURL: server.URL, APIKey: "test-key"}, "/chat/completions", map[string]interface{}{"model": "test-model"}, "chat-completion", func(delta string) {
+		deltas.WriteString(delta)
+	})
 	if err != nil || got != "流式分镜" {
 		t.Fatalf("postStreamingText() = %q, err = %v", got, err)
+	}
+	if deltas.String() != "流式分镜" {
+		t.Fatalf("stream deltas = %q", deltas.String())
+	}
+}
+
+func TestStreamingAgentParserReassemblesChatToolCallsAcrossChunks(t *testing.T) {
+	var deltas strings.Builder
+	parser := newStreamingAgentParser("chat-completion", func(delta string) {
+		deltas.WriteString(delta)
+	})
+	stream := `data: {"choices":[{"delta":{"content":"准备","tool_calls":[{"index":0,"id":"call-1","function":{"name":"canvas_apply_ops","arguments":"{\"ops\":"}}]}}]}
+
+data: {"choices":[{"delta":{"content":"执行","tool_calls":[{"index":0,"function":{"arguments":"[]}"}}]}}]}
+
+data: [DONE]
+
+`
+	parser.consume("text/event-stream", []byte(stream[:47]))
+	parser.consume("text/event-stream", []byte(stream[47:]))
+	parser.flush()
+	result, err := parser.result()
+	if err != nil {
+		t.Fatalf("streamingAgentParser.result() error = %v", err)
+	}
+	if result["text"] != "准备执行" || deltas.String() != "准备执行" {
+		t.Fatalf("text = %v, deltas = %q", result["text"], deltas.String())
+	}
+	calls, _ := result["toolCalls"].([]interface{})
+	call, _ := calls[0].(map[string]interface{})
+	function, _ := call["function"].(map[string]interface{})
+	if call["id"] != "call-1" || function["name"] != "canvas_apply_ops" || function["arguments"] != `{"ops":[]}` {
+		t.Fatalf("tool call = %#v", call)
+	}
+}
+
+func TestStreamingAgentParserSeparatesResponsesReasoningFromVisibleText(t *testing.T) {
+	var deltas strings.Builder
+	parser := newStreamingAgentParser("responses", func(delta string) {
+		deltas.WriteString(delta)
+	})
+	parser.consume("text/event-stream", []byte(`event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"内部分析"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"可见回答"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"可见回答"}]}]}}
+
+`))
+	parser.flush()
+	result, err := parser.result()
+	if err != nil {
+		t.Fatalf("streamingAgentParser.result() error = %v", err)
+	}
+	if result["text"] != "可见回答" || result["reasoning"] != "内部分析" || deltas.String() != "可见回答" {
+		t.Fatalf("result = %#v, deltas = %q", result, deltas.String())
+	}
+}
+
+func TestStreamingAgentParserWaitsForCompleteClaudeToolJSON(t *testing.T) {
+	parser := newStreamingAgentParser("claude-api", nil)
+	parser.consume("text/event-stream", []byte(`event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-2","name":"canvas_get_state","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"include\":"}}
+
+`))
+	parser.flush()
+	if _, err := parser.result(); err == nil || !strings.Contains(err.Error(), "完整 JSON") {
+		t.Fatalf("incomplete tool arguments error = %v", err)
 	}
 }
 
@@ -382,6 +554,169 @@ func TestProviderPayloadErrorMessageUsesSafeActionableCategories(t *testing.T) {
 				t.Fatalf("provider payload detail leaked: %q", message)
 			}
 		})
+	}
+}
+
+func TestProviderPayloadErrorCategoryFlagsRealPersonRejection(t *testing.T) {
+	raw := `{"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"The request failed because the input image 'content[1]' may contain real person. Request id: secret-trace"}}`
+	message, ok := providerPayloadErrorCategory(raw)
+	if !ok {
+		t.Fatalf("providerPayloadErrorCategory() ok = false, want true")
+	}
+	if !strings.Contains(message, "真人形象") {
+		t.Fatalf("providerPayloadErrorCategory() = %q, want 真人形象 category", message)
+	}
+	if strings.Contains(message, "secret") || strings.Contains(message, "content[1]") {
+		t.Fatalf("provider payload detail leaked: %q", message)
+	}
+}
+
+func TestProviderPayloadErrorCategoryReportsUnclassifiedBodies(t *testing.T) {
+	for _, raw := range []string{"", "   ", "trace_id=private internal stack"} {
+		if message, ok := providerPayloadErrorCategory(raw); ok {
+			t.Fatalf("providerPayloadErrorCategory(%q) = %q, want no category", raw, message)
+		}
+	}
+}
+
+func TestProviderUserFacingErrorMessageClassifiesRejectedRequestBodies(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		want       string
+	}{
+		{
+			name:       "real person rejection",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"input image may contain real person, secret-trace"}}`,
+			want:       "真人形象",
+		},
+		{
+			name:       "moderation rejection",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"request blocked by content policy, secret-trace"}}`,
+			want:       "安全审核",
+		},
+		{
+			name:       "unprocessable entity is classified too",
+			statusCode: http.StatusUnprocessableEntity,
+			body:       `{"error":{"message":"insufficient balance, secret-trace"}}`,
+			want:       "额度不足",
+		},
+		{
+			name:       "unclassified body keeps the generic parameter hint",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"trace_id=secret-trace"}}`,
+			want:       "请检查模型和参数",
+		},
+		{
+			name:       "empty body keeps the generic parameter hint",
+			statusCode: http.StatusBadRequest,
+			body:       "",
+			want:       "请检查模型和参数",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := providerUserFacingErrorMessage(providerHTTPError{StatusCode: tt.statusCode, Body: tt.body})
+			if !strings.Contains(message, tt.want) {
+				t.Fatalf("providerUserFacingErrorMessage() = %q, want category %q", message, tt.want)
+			}
+			if strings.Contains(message, "secret-trace") || strings.Contains(message, `{"error"`) {
+				t.Fatalf("provider response body leaked: %q", message)
+			}
+		})
+	}
+}
+
+func TestProviderUserFacingErrorMessageOnlyClassifiesValidationStatuses(t *testing.T) {
+	// 鉴权失败与网关错误的正文可能是密钥诊断或代理 HTML，不参与归类。
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusBadGateway} {
+		message := providerUserFacingErrorMessage(providerHTTPError{
+			StatusCode: statusCode,
+			Body:       `{"error":{"message":"blocked by content policy, api-key=secret"}}`,
+		})
+		if strings.Contains(message, "安全审核") {
+			t.Fatalf("status %d classified from response body: %q", statusCode, message)
+		}
+		if strings.Contains(message, "secret") || strings.Contains(message, "api-key") {
+			t.Fatalf("status %d leaked response body: %q", statusCode, message)
+		}
+	}
+}
+
+func TestProviderUserFacingErrorMessageClassifiesWrappedHTTPErrors(t *testing.T) {
+	wrapped := fmt.Errorf("视频任务创建失败：%w", providerHTTPError{
+		StatusCode: http.StatusBadRequest,
+		Body:       `{"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"may contain real person","request_id":"secret-trace"}}`,
+	})
+	message := providerUserFacingErrorMessage(wrapped)
+	if !strings.Contains(message, "真人形象") {
+		t.Fatalf("providerUserFacingErrorMessage() = %q, want 真人形象 category", message)
+	}
+	if strings.Contains(message, "secret-trace") || strings.Contains(message, `{"error"`) {
+		t.Fatalf("provider response body leaked through wrapped error: %q", message)
+	}
+}
+
+// 正文经常回显用户提示词。肖像类词汇本身不能触发真人类目，
+// 否则普通的参数错误或安全审核会被误报成肖像问题。
+func TestProviderPayloadErrorCategoryIgnoresEchoedPortraitWording(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "echoed chinese portrait prompt stays a parameter error",
+			raw:  `{"error":{"message":"invalid parameter: prompt=生成油画肖像"}}`,
+			want: "请检查模型和参数",
+		},
+		{
+			name: "echoed english likeness prompt stays a parameter error",
+			raw:  `{"error":{"message":"invalid argument: style=likeness study"}}`,
+			want: "请检查模型和参数",
+		},
+		{
+			name: "moderation wins over echoed real person prompt",
+			raw:  `{"error":{"message":"request blocked by content policy: prompt=real person portrait"}}`,
+			want: "安全审核",
+		},
+		{
+			name: "bare real person prose is not classified as likeness",
+			raw:  `{"error":{"message":"this model does not support real people yet"}}`,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message, ok := providerPayloadErrorCategory(tt.raw)
+			if tt.want == "" {
+				if ok {
+					t.Fatalf("providerPayloadErrorCategory() = %q, want no category", message)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("providerPayloadErrorCategory() ok = false, want category %q", tt.want)
+			}
+			if strings.Contains(message, "真人形象") {
+				t.Fatalf("echoed portrait wording misclassified as likeness: %q", message)
+			}
+			if !strings.Contains(message, tt.want) {
+				t.Fatalf("providerPayloadErrorCategory() = %q, want category %q", message, tt.want)
+			}
+		})
+	}
+}
+
+// 供应商错误码与安全审核措辞同时出现时，以更具体的错误码为准。
+func TestProviderPayloadErrorCategoryPrefersProviderCodeOverModerationWording(t *testing.T) {
+	raw := `{"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"blocked by content policy"}}`
+	message, ok := providerPayloadErrorCategory(raw)
+	if !ok || !strings.Contains(message, "真人形象") {
+		t.Fatalf("providerPayloadErrorCategory() = %q, ok = %v, want 真人形象 category", message, ok)
 	}
 }
 
@@ -612,6 +947,58 @@ func TestRunImageTaskOmitsAutomaticQualityAndSize(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("runImageTask() error = %v", err)
+	}
+}
+
+func TestRunOpenAIImageTaskUsesMultipartEditContract(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/images/edits" {
+			t.Errorf("path = %q, want /v1/images/edits", r.URL.Path)
+		}
+		if contentType := r.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "multipart/form-data;") {
+			t.Errorf("Content-Type = %q, want multipart/form-data", contentType)
+		}
+		if err := r.ParseMultipartForm(2 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm() error = %v", err)
+		}
+		if r.FormValue("model") != "gpt-image-2-high" || r.FormValue("prompt") != "make the reference clearer" || r.FormValue("n") != "1" {
+			t.Fatalf("form values = model:%q prompt:%q n:%q", r.FormValue("model"), r.FormValue("prompt"), r.FormValue("n"))
+		}
+		if r.FormValue("response_format") != "b64_json" || r.FormValue("output_format") != "png" || r.FormValue("size") != "1024x1024" {
+			t.Fatalf("format values = response_format:%q output_format:%q size:%q", r.FormValue("response_format"), r.FormValue("output_format"), r.FormValue("size"))
+		}
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			t.Fatalf("FormFile(image) error = %v", err)
+		}
+		defer file.Close()
+		content, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("ReadAll(image) error = %v", err)
+		}
+		if header.Filename != "reference-reference.png" || string(content) != "hello" {
+			t.Fatalf("image = filename:%q content:%q", header.Filename, string(content))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"aGVsbG8="}]}`))
+	}))
+	defer server.Close()
+
+	profile := DefaultImageCapabilityConfig("openai-image", "gpt-image-2-high")
+	result, err := runImageTask(context.Background(), canvasGenerationInput{
+		Mode:            "image",
+		Prompt:          "make the reference clearer",
+		Config:          providerConfig{BaseURL: server.URL, APIKey: "key", Model: "gpt-image-2-high", InterfaceType: "openai-image", Size: "1024x1024"},
+		ImageCapability: profile,
+		ReferenceImages: []providerMedia{{Name: "reference.png", Type: "image/png", DataURL: testReferenceImageDataURL}},
+	})
+	if err != nil {
+		t.Fatalf("runImageTask() error = %v", err)
+	}
+	images, _ := result["images"].([]map[string]string)
+	if len(images) != 1 || images[0]["dataUrl"] != "data:image/png;base64,aGVsbG8=" {
+		t.Fatalf("images = %#v", result["images"])
 	}
 }
 
@@ -985,6 +1372,31 @@ func TestSeedanceVideosBodyUsesOrderedFrameImageURLsWhenConfigured(t *testing.T)
 	}
 }
 
+func TestSeedanceVideosBodyKeepsProjectAssetsAsReferenceImages(t *testing.T) {
+	body, err := seedanceVideosRequestBody(canvasGenerationInput{
+		Prompt: "keep the character consistent",
+		Config: providerConfig{Model: "seedance-2.0"},
+		ReferenceImages: []providerMedia{
+			{ID: "character-1", DataURL: testReferenceImageDataURL},
+			{ID: "character-2", DataURL: "data:image/png;base64,d29ybGQ="},
+		},
+		Metadata: map[string]interface{}{
+			"videoEditOperation":    "reference_to_video",
+			"videoStartFrameNodeId": "character-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seedanceVideosRequestBody() error = %v", err)
+	}
+	want := []string{testReferenceImageDataURL, "data:image/png;base64,d29ybGQ="}
+	if !reflect.DeepEqual(body.ReferenceImageURLs, want) {
+		t.Fatalf("reference_image_urls = %#v, want %#v", body.ReferenceImageURLs, want)
+	}
+	if body.ImageURL != "" || body.ImageURLs != nil {
+		t.Fatalf("reference operation leaked frame fields: %#v", body)
+	}
+}
+
 func TestRunVideoTaskUsesNewAPIForAnyVideoModel(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	paths := make([]string, 0, 3)
@@ -1344,6 +1756,22 @@ func TestXAIVideoBodyWithStartFrameKeepsOfficialImageShape(t *testing.T) {
 	}
 }
 
+func TestXAIVideoReferenceOperationIgnoresStaleStartFrameMetadata(t *testing.T) {
+	body, err := xaiVideoRequestBody(canvasGenerationInput{
+		Config: providerConfig{Model: "grok-imagine-video-1.5", InterfaceType: "xai-video"},
+		ReferenceImages: []providerMedia{
+			{ID: "character", DataURL: testReferenceImageDataURL},
+		},
+		Metadata: map[string]interface{}{"videoEditOperation": "reference_to_video", "videoStartFrameNodeId": "character"},
+	})
+	if err != nil {
+		t.Fatalf("xaiVideoRequestBody() error = %v", err)
+	}
+	if body.Image != nil || len(body.ReferenceImages) != 1 {
+		t.Fatalf("xAI reference operation body = %#v", body)
+	}
+}
+
 func TestXAIVideoBodyWithStartFrameRejectsMultipleImages(t *testing.T) {
 	_, err := xaiVideoRequestBody(canvasGenerationInput{
 		Config: providerConfig{Model: "grok-imagine-video-1.5", InterfaceType: "xai-video"},
@@ -1529,6 +1957,38 @@ func TestNewAPIChannel1VideoBodyMapsFramesAndReferences(t *testing.T) {
 	parameters := body["parameters"].(map[string]interface{})
 	if parameters["resolution"] != "1080P" || parameters["ratio"] != "9:16" || parameters["duration"] != 15 || parameters["watermark"] != true {
 		t.Fatalf("parameters = %#v", parameters)
+	}
+}
+
+func TestProtocolRequestPreservesVideoImageIDsAndRoles(t *testing.T) {
+	request := protocolRequestFromInput(canvasGenerationInput{
+		Mode: "video",
+		ReferenceImages: []providerMedia{
+			{ID: "start", URL: "https://example.com/start.png"},
+			{ID: "character", URL: "https://example.com/character.png"},
+		},
+		Metadata: map[string]interface{}{
+			"videoEditOperation":    "image_to_video",
+			"videoStartFrameNodeId": "start",
+		},
+	})
+	if len(request.Images) != 2 {
+		t.Fatalf("images = %#v", request.Images)
+	}
+	if request.Images[0].ID != "start" || request.Images[0].Role != "first_frame" {
+		t.Fatalf("start image = %#v", request.Images[0])
+	}
+	if request.Images[1].ID != "character" || request.Images[1].Role != "reference_image" {
+		t.Fatalf("unmarked image role = %#v", request.Images[1])
+	}
+
+	request = protocolRequestFromInput(canvasGenerationInput{
+		Mode:            "video",
+		ReferenceImages: []providerMedia{{ID: "character", URL: "https://example.com/character.png"}},
+		Metadata:        map[string]interface{}{"videoEditOperation": "reference_to_video", "videoStartFrameNodeId": "character"},
+	})
+	if request.Images[0].Role != "reference_image" {
+		t.Fatalf("reference operation image = %#v", request.Images[0])
 	}
 }
 
@@ -2120,6 +2580,49 @@ func TestRunMiniMaxVideoTaskCreatesPollsAndDownloads(t *testing.T) {
 	}
 	if got := strings.Join(paths, ","); got != "POST /v2/video_generation,GET /v2/query/video_generation/minimax-task-1,GET /video.mp4" {
 		t.Fatalf("paths = %q", got)
+	}
+}
+
+func TestRunMiniMaxVideoTaskUsesExplicitReferenceRoles(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v2/video_generation":
+			var body miniMaxVideoRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if len(body.Content) != 3 || body.Content[1].Role != "reference_image" || body.Content[2].Role != "reference_audio" {
+				t.Errorf("content = %#v", body.Content)
+			}
+			if body.Ratio != "16:9" {
+				t.Errorf("ratio = %q, want 16:9 for reference mode", body.Ratio)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"task_id":"minimax-reference-task"}`))
+		case "GET /v2/query/video_generation/minimax-reference-task":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"task":{"status":"succeeded","content":{"url":"` + server.URL + `/video.mp4"}}}`))
+		case "GET /video.mp4":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+		Mode:            "video",
+		Prompt:          "保持角色一致",
+		Config:          providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "6", VQuality: "768P", Size: "16:9"},
+		ReferenceImages: []providerMedia{{ID: "character-1", URL: server.URL + "/character.png"}},
+		ReferenceAudios: []providerMedia{{ID: "voice-1", URL: server.URL + "/voice.mp3"}},
+		Metadata:        map[string]interface{}{"videoEditOperation": "reference_to_video"},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

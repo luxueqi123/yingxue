@@ -47,9 +47,11 @@ const (
 )
 
 type MediaReference struct {
+	ID        string `json:"id,omitempty"`
 	URL       string `json:"url,omitempty"`
 	DataURL   string `json:"dataUrl,omitempty"`
 	Kind      string `json:"kind,omitempty"`
+	Role      string `json:"role,omitempty"`
 	Ephemeral bool   `json:"ephemeral,omitempty"`
 }
 
@@ -88,6 +90,7 @@ type PollContext struct {
 type RequestSpec struct {
 	Method      string            `json:"method"`
 	Path        string            `json:"path"`
+	OriginPath  bool              `json:"originPath,omitempty"`
 	ContentType string            `json:"contentType"`
 	AuthMode    AuthMode          `json:"authMode,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
@@ -288,6 +291,9 @@ type ManifestWorkflow struct {
 	Capability Capability     `json:"capability"`
 	Parameters []Parameter    `json:"parameters"`
 	Defaults   map[string]any `json:"defaults,omitempty"`
+	// Create 可覆盖 Provider 的默认请求映射。工作流 ID 仍作为模型字段传入，
+	// 但不同工作流可以安全地使用首尾帧、参考音频等不同的上游参数名。
+	Create *ManifestOperation `json:"create,omitempty"`
 }
 
 type ManifestCanvasNode struct {

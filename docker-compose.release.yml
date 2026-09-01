@@ -1,0 +1,10 @@
+services:
+  migrate:
+    image: open-ai-canvas-backend:${CANVAS_RELEASE_TAG:?必须配置候选发布标签}
+  backend:
+    image: open-ai-canvas-backend:${CANVAS_RELEASE_TAG:?必须配置候选发布标签}
+  web:
+    image: open-ai-canvas-web:${CANVAS_RELEASE_TAG:?必须配置候选发布标签}
+    volumes:
+      - ${CANVAS_RELEASE_DIR:?必须配置候选发布目录}/static:/usr/share/nginx/html:ro
+      - ${CANVAS_RELEASE_DIR:?必须配置候选发布目录}/nginx.conf:/etc/nginx/conf.d/default.conf:ro

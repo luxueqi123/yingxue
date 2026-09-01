@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"infinite-canvas/backend/internal/model"
+	protocolspec "infinite-canvas/backend/internal/protocol"
 )
 
 // ModelCapabilityConfig 是模型能力声明，不包含供应商字段名；协议适配器负责把统一参数映射到上游请求。
@@ -68,6 +69,7 @@ type ParameterSupport struct {
 type VideoCapabilityConfig struct {
 	References        VideoReferenceConfig `json:"references"`
 	Duration          VideoDurationConfig  `json:"duration"`
+	DurationSupported *bool                `json:"durationSupported,omitempty"`
 	Ratios            []string             `json:"ratios"`
 	DefaultRatio      string               `json:"defaultRatio"`
 	Resolutions       []string             `json:"resolutions"`
@@ -107,6 +109,10 @@ type VideoBooleanConfig struct {
 
 func DefaultModelCapabilityConfig(protocol string) *ModelCapabilityConfig {
 	return DefaultModelCapabilityConfigForModel(protocol, "")
+}
+
+func videoDurationSupported(value *VideoCapabilityConfig) bool {
+	return value == nil || value.DurationSupported == nil || *value.DurationSupported
 }
 
 func DefaultImageCapabilityConfig(protocol string, modelName string) *ImageCapabilityConfig {
@@ -252,17 +258,45 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
 		video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
 	case model.ChannelInterfaceAutoDLH3Video:
-		video.References.MinImages = 1
-		video.References.MaxImages = 9
-		video.Duration = VideoDurationConfig{Selection: "range", Min: 1, Max: 10, Step: 1, Default: 5}
-		video.Ratios = []string{"9:16", "16:9", "1:1"}
-		video.DefaultRatio = "9:16"
-		video.Resolutions = []string{"480p", "768p", "1080p"}
-		video.DefaultResolution = "768p"
-		video.Operations = []string{"image_to_video", "reference_to_video"}
-		video.DefaultOperation = "reference_to_video"
-		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
-		video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
+		if workflow, ok := protocolspec.AutoDLH3WorkflowByID(modelName); ok {
+			video.References.MinImages = workflow.MinImages
+			video.References.MaxImages = workflow.MaxImages
+			video.References.MaxAudios = workflow.MaxAudios
+			video.References.MaxAudioBytes = 15 * 1024 * 1024
+			video.References.MaxAudioDuration = workflow.MaxSecond
+			video.Duration = VideoDurationConfig{Selection: "range", Min: 1, Max: workflow.MaxSecond, Step: 1, Default: 5}
+			video.Ratios = append([]string(nil), workflow.Ratios...)
+			video.DefaultRatio = "9:16"
+			if len(video.Ratios) > 0 && !containsString(video.Ratios, video.DefaultRatio) {
+				video.DefaultRatio = video.Ratios[0]
+			}
+			video.Resolutions = append([]string(nil), workflow.Resolutions...)
+			video.DefaultResolution = "768p"
+			video.Operations = []string{"text_to_video", "image_to_video", "reference_to_video"}
+			video.DefaultOperation = "text_to_video"
+			if workflow.MinImages > 0 {
+				video.DefaultOperation = "image_to_video"
+			}
+			if workflow.MaxAudios > 0 {
+				video.Operations = append(video.Operations, "audio_to_video")
+			}
+			video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+			video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
+		} else {
+			video.References.MinImages = 1
+			video.References.MaxImages = 9
+			video.Duration = VideoDurationConfig{Selection: "range", Min: 1, Max: 10, Step: 1, Default: 5}
+			video.Ratios = []string{"9:16", "16:9", "1:1"}
+			video.DefaultRatio = "9:16"
+			video.Resolutions = []string{"480p", "768p", "1080p"}
+			video.DefaultResolution = "768p"
+			video.Operations = []string{"image_to_video", "reference_to_video"}
+			video.DefaultOperation = "reference_to_video"
+			video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+			video.Watermark = VideoBooleanConfig{Supported: false, Default: false}
+		}
+	case model.ChannelInterfaceAgnesVideo:
+		video = applyModelSpecificVideoCapability(video, protocol, modelName)
 	}
 	return &ModelCapabilityConfig{Version: 1, Text: text, Image: DefaultImageCapabilityConfig(protocol, modelName), Video: video}
 }
@@ -278,7 +312,11 @@ func DecodeModelCapabilityConfig(raw string) (*ModelCapabilityConfig, error) {
 	return &value, nil
 }
 
-func NormalizeModelCapabilityConfig(capability string, _ string, input *ModelCapabilityConfig) (*ModelCapabilityConfig, error) {
+func NormalizeModelCapabilityConfig(capability string, protocol string, input *ModelCapabilityConfig) (*ModelCapabilityConfig, error) {
+	return NormalizeModelCapabilityConfigForModel(capability, protocol, "", input)
+}
+
+func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig) (*ModelCapabilityConfig, error) {
 	if capability != "text" && capability != "image" && capability != "video" {
 		return nil, nil
 	}
@@ -305,11 +343,50 @@ func NormalizeModelCapabilityConfig(capability string, _ string, input *ModelCap
 	if input == nil || input.Video == nil {
 		return nil, BadAuthRequest("请配置视频模型能力参数")
 	}
-	value := &ModelCapabilityConfig{Version: 1, Video: input.Video}
+	value := &ModelCapabilityConfig{Version: 1, Video: applyModelSpecificVideoCapability(input.Video, protocol, modelName)}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}
 	return value, nil
+}
+
+func applyModelSpecificVideoCapability(profile *VideoCapabilityConfig, protocol string, modelName string) *VideoCapabilityConfig {
+	if profile == nil || model.ChannelInterfaceType(strings.TrimSpace(protocol)) != model.ChannelInterfaceAgnesVideo {
+		return profile
+	}
+	normalizedModel := strings.ToLower(strings.TrimSpace(modelName))
+	if normalizedModel != "agnes-video-2.5" && normalizedModel != "agnes-video-2.5-flash" {
+		return profile
+	}
+	value := *profile
+	value.References = profile.References
+	flash := normalizedModel == "agnes-video-2.5-flash"
+	value.References.MaxImages = 9
+	value.References.MaxVideos = 3
+	value.References.MaxAudios = 3
+	value.References.MaxVideoBytes = 200 * 1024 * 1024
+	value.References.MaxVideoDuration = 15
+	value.References.MaxAudioBytes = 15 * 1024 * 1024
+	value.References.MaxAudioDuration = 15
+	if flash {
+		value.References.MaxImages = 5
+		value.References.MaxVideos = 0
+		value.References.MaxVideoBytes = 0
+		value.References.MaxVideoDuration = 0
+	}
+	value.Duration = VideoDurationConfig{Selection: "range", Min: 4, Max: 12, Step: 1, Default: 5}
+	value.Ratios = []string{"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
+	value.DefaultRatio = "16:9"
+	value.Resolutions = []string{"720P", "960P", "2K"}
+	if flash {
+		value.Resolutions = []string{"720P"}
+	}
+	value.DefaultResolution = "720P"
+	value.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+	value.Watermark = VideoBooleanConfig{Supported: false, Default: false}
+	value.Operations = []string{"text_to_video", "image_to_video", "reference_to_video", "audio_to_video"}
+	value.DefaultOperation = "text_to_video"
+	return &value
 }
 
 // CapabilitySpecFromModelCapabilityConfig 将渠道模型的真实供应能力投影为路由能力规格。
@@ -505,8 +582,12 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if err := validateVideoDuration(value.Duration); err != nil {
 		return err
 	}
-	if len(value.Ratios) == 0 || strings.TrimSpace(value.DefaultRatio) == "" || !containsCapabilityString(value.Ratios, value.DefaultRatio) {
-		return BadAuthRequest("请至少配置一个画面比例，并选择默认比例")
+	if len(value.Ratios) == 0 {
+		if strings.TrimSpace(value.DefaultRatio) != "" {
+			return BadAuthRequest("未配置画面比例时不能设置默认比例")
+		}
+	} else if strings.TrimSpace(value.DefaultRatio) == "" || !containsCapabilityString(value.Ratios, value.DefaultRatio) {
+		return BadAuthRequest("默认画面比例必须属于支持值")
 	}
 	if len(value.Resolutions) == 0 {
 		if strings.TrimSpace(value.DefaultResolution) != "" {
@@ -575,10 +656,18 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 			}
 			return validateImageTask(profile, taskInput)
 		}
-		if taskInput.Config.CapabilityConfig == nil || taskInput.Config.CapabilityConfig.Video == nil {
-			return nil
+		profile := taskInput.Config.CapabilityConfig
+		if profile == nil || profile.Video == nil {
+			if taskInput.Config.InterfaceType != string(model.ChannelInterfaceAgnesVideo) {
+				return nil
+			}
+			profile = DefaultModelCapabilityConfigForModel(taskInput.Config.InterfaceType, taskInput.Config.Model)
 		}
-		return validateVideoTask(taskInput.Config.CapabilityConfig.Video, taskInput)
+		normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", taskInput.Config.InterfaceType, taskInput.Config.Model, profile)
+		if normalizeErr != nil || normalized == nil || normalized.Video == nil {
+			return BadAuthRequest("当前视频模型能力参数无效")
+		}
+		return validateVideoTask(normalized.Video, taskInput)
 	}
 	item, err := s.repo.ChannelModelByKey(channelID, providerChannelModelKey(taskInput.Config))
 	if err != nil {
@@ -598,11 +687,15 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 	if err != nil || profile == nil || profile.Video == nil {
 		return BadAuthRequest("当前视频模型尚未配置能力参数")
 	}
-	applyFixedVideoResolution(&taskInput, profile.Video)
+	normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), profile)
+	if normalizeErr != nil || normalized == nil || normalized.Video == nil {
+		return BadAuthRequest("当前视频模型能力参数无效")
+	}
+	applyFixedVideoResolution(&taskInput, normalized.Video)
 	if config, ok := input["config"].(map[string]any); ok {
 		config["vquality"] = taskInput.Config.VQuality
 	}
-	return validateVideoTask(profile.Video, taskInput)
+	return validateVideoTask(normalized.Video, taskInput)
 }
 
 // applyModelSpecificImageCapability is retained as a narrow normalization hook

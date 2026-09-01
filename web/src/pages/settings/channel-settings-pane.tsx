@@ -8,7 +8,7 @@ import { mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
 import { desktopLocalChannelFormState, desktopLocalChannelPayloadValue, DESKTOP_LOCAL_CHANNEL_EXAMPLE_BASE_URL } from "@/lib/desktop-local-channel";
 import { fetchChannelModels } from "@/services/api/image";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
-import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
+import { pluginWorkflowCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import {
     createModelChannel,
@@ -84,7 +84,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub, onOpenComf
                   protocol: provider.value,
                   billingMode: "fixed_request" as const,
                   unitPriceMicrocredits: 0,
-                  capabilityConfig: workflow.capability === "image" || workflow.capability === "video" ? defaultModelCapabilityConfig(provider.value, workflow.id) : undefined,
+                  capabilityConfig: pluginWorkflowCapabilityConfig(provider.value, workflow),
                   defaultOptions: workflow.defaults,
               }))
             : channel.modelCosts;
@@ -226,30 +226,34 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub, onOpenComf
                     <Button className="h-10 flex-1 sm:h-8 sm:flex-none" type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>新增渠道</Button>
                 </div>
             </div>
-            <section className="settings-section mb-3">
+            {onOpenRunningHub || onOpenComfyUI ? <section className="settings-section mb-3">
                 <div className="mb-3">
                     <h3 className="text-sm font-semibold">个人工作流渠道</h3>
                     <p className="mt-1 text-xs text-foreground/55">RunningHub 和 ComfyUI 使用各自的工作流参数与执行通道，配置入口统一放在个人渠道中。</p>
                 </div>
                 <div className="grid gap-2 lg:grid-cols-2">
-                    <WorkflowChannelEntry
-                        icon={<Workflow className="size-4" />}
-                        title="RunningHub"
-                        description="云端工作流和 RunningHub App"
-                        status={runningHubReady ? `${config.runningHub.workflows.length} 个工作流已配置` : config.runningHub.enabled ? "待完成连接和工作流配置" : "未启用"}
-                        ready={runningHubReady}
-                        onOpen={onOpenRunningHub}
-                    />
-                    <WorkflowChannelEntry
-                        icon={<MonitorUp className="size-4" />}
-                        title="ComfyUI"
-                        description="通过 Bridge 连接本机或远程 ComfyUI"
-                        status={comfyBridgeReady ? `${config.comfyBridge.workflows.length} 个工作流已配置` : config.comfyBridge.enabled ? "待选择 Bridge 和工作流" : "未启用"}
-                        ready={comfyBridgeReady}
-                        onOpen={onOpenComfyUI}
-                    />
+                    {onOpenRunningHub ? (
+                        <WorkflowChannelEntry
+                            icon={<Workflow className="size-4" />}
+                            title="RunningHub"
+                            description="云端工作流和 RunningHub App"
+                            status={runningHubReady ? `${config.runningHub.workflows.length} 个工作流已配置` : config.runningHub.enabled ? "待完成连接和工作流配置" : "未启用"}
+                            ready={runningHubReady}
+                            onOpen={onOpenRunningHub}
+                        />
+                    ) : null}
+                    {onOpenComfyUI ? (
+                        <WorkflowChannelEntry
+                            icon={<MonitorUp className="size-4" />}
+                            title="ComfyUI"
+                            description="通过 Bridge 连接本机或远程 ComfyUI"
+                            status={comfyBridgeReady ? `${config.comfyBridge.workflows.length} 个工作流已配置` : config.comfyBridge.enabled ? "待选择 Bridge 和工作流" : "未启用"}
+                            ready={comfyBridgeReady}
+                            onOpen={onOpenComfyUI}
+                        />
+                    ) : null}
                 </div>
-            </section>
+            </section> : null}
             {userChannels.length ? (
                 <div className="settings-channel-list space-y-2">
                     {userChannels.map((channel) => {

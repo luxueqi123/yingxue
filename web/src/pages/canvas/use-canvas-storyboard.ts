@@ -24,7 +24,9 @@ import { resolveStoryboardGenerationContext } from "@/lib/canvas/canvas-storyboa
 import { reconcileStoryboardTargetConnections, storyboardComposerContent, storyboardRowReferenceNodeIds } from "@/lib/canvas/canvas-storyboard-materializer";
 import { generationErrorMessage } from "@/lib/generation-error";
 import { navigateToSettings } from "@/lib/settings-navigation";
+import type { Skill } from "@/services/api/skills";
 import { createGenerationTask, waitForGenerationTask } from "@/services/api/task-center";
+import { skillRuntime } from "@/services/skill-runtime";
 import { modelDisplayName, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import {
     CanvasNodeType,
@@ -36,6 +38,7 @@ import {
 
 type UseCanvasStoryboardOptions = {
     projectId: string;
+    addedSkills: Skill[];
     nodesRef: { current: CanvasNodeData[] };
     connectionsRef: { current: CanvasConnection[] };
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
@@ -51,6 +54,7 @@ const NODE_STATUS_ERROR = "error" as const;
 
 export function useCanvasStoryboard({
     projectId,
+    addedSkills,
     nodesRef,
     connectionsRef,
     setNodes,
@@ -135,13 +139,18 @@ export function useCanvasStoryboard({
             navigateToSettings({ continueCreation: true });
             return;
         }
-        setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, composerContent: prompt, status: NODE_STATUS_LOADING, taskStage: "正在创建任务", taskProgress: 0, errorDetails: undefined } } : node));
         try {
+            const skillExecution = await skillRuntime.prepare({
+                profile: "shortDrama",
+                prompt: expandedPrompt,
+                skills: addedSkills,
+            });
+            setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, composerContent: prompt, status: NODE_STATUS_LOADING, taskStage: "正在创建任务", taskProgress: 0, errorDetails: undefined, ...skillExecution.metadata } } : node));
             const task = await createGenerationTask({
                 projectId,
                 type: "agent_storyboard_rows",
                 operation: "storyboard_rows",
-                prompt: expandedPrompt,
+                prompt: skillExecution.prompt,
                 model: generationConfig.model,
                 ...(logicalModelIDForConfig(generationConfig) ? { logicalModelId: logicalModelIDForConfig(generationConfig) } : {}),
                 input: {
@@ -152,12 +161,13 @@ export function useCanvasStoryboard({
                     shotDurationSeconds,
                     shotCount: requestedShotCount,
                     config: backendProviderConfig(generationConfig, "text"),
-                    metadata: { nodeId },
+                    metadata: { nodeId, ...skillExecution.metadata },
                 },
             });
             setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...generationTaskMetadata(task), status: NODE_STATUS_LOADING } } : node));
             const completed = await waitForGenerationTask(task.id, {
                 initialTask: task,
+                useTextEvents: true,
                 onTaskUpdate: (next) => setNodes((current) => current.map((node) => node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...generationTaskMetadata(next), status: NODE_STATUS_LOADING } } : node)),
             });
             const result = storyboardRowsFromTask(completed);
@@ -184,7 +194,7 @@ export function useCanvasStoryboard({
             message.error(details);
             return false;
         }
-    }, [connectionsRef, effectiveConfig, isAiConfigReady, message, nodesRef, projectId, setNodes]);
+    }, [addedSkills, connectionsRef, effectiveConfig, isAiConfigReady, message, nodesRef, projectId, setNodes]);
 
     const ensureScriptImageNodes = useCallback((nodeId: string, rowIds: string[]) => {
         const scriptNode = nodesRef.current.find((node) => node.id === nodeId && node.type === CanvasNodeType.Script);
@@ -200,7 +210,7 @@ export function useCanvasStoryboard({
             const existing = row.imageNodeId ? nextNodes.find((node) => node.id === row.imageNodeId && node.type === CanvasNodeType.Image) : undefined;
             const existingMetadata = existing?.metadata?.content ? existing.metadata : resetGenerationTaskMetadata(existing?.metadata);
             const referenceIds = storyboardRowReferenceNodeIds(scriptNode, row, nextNodes, nextConnections, false, existing?.id);
-            const composerContent = storyboardComposerContent(prompt, referenceIds);
+            const composerContent = storyboardComposerContent(prompt, referenceIds, nextNodes);
             const imageNode = existing
                 ? { ...existing, metadata: { ...existingMetadata, prompt, composerContent, ...storyboardPromptTemplateMetadata(row, "image"), workflowKind: "shot" as const, workflowTitle: `镜头 ${row.shotNumber} 分镜图`, shotIndex: row.shotNumber } }
                 : createCanvasNode(CanvasNodeType.Image, { x: startX + imageSpec.width / 2, y: scriptNode.position.y + index * (imageSpec.height + 36) + imageSpec.height / 2 }, { prompt, composerContent, ...storyboardPromptTemplateMetadata(row, "image"), workflowKind: "shot", workflowTitle: `镜头 ${row.shotNumber} 分镜图`, shotIndex: row.shotNumber, status: NODE_STATUS_IDLE });
@@ -285,7 +295,7 @@ export function useCanvasStoryboard({
             const existingIndex = row.videoNodeId ? nextNodes.findIndex((node) => node.id === row.videoNodeId && node.type === CanvasNodeType.Video) : -1;
             const existing = existingIndex >= 0 ? nextNodes[existingIndex] : undefined;
             const referenceIds = storyboardRowReferenceNodeIds(scriptNode, row, nextNodes, nextConnections, false, existing?.id);
-            const composerContent = storyboardComposerContent(prompt, referenceIds);
+            const composerContent = storyboardComposerContent(prompt, referenceIds, nextNodes);
             if (existingIndex >= 0) {
                 const existing = nextNodes[existingIndex];
                 const existingMetadata = existing.metadata?.content ? existing.metadata : resetGenerationTaskMetadata(existing.metadata);
@@ -447,7 +457,7 @@ export function useCanvasStoryboard({
             const prompt = (row.videoMotionPrompt || row.plotDescription).trim();
             const existing = row.videoNodeId ? nextNodes.find((node) => node.id === row.videoNodeId && node.type === CanvasNodeType.Video) : undefined;
             const referenceIds = storyboardRowReferenceNodeIds(currentScriptNode, row, nextNodes, nextConnections, true, existing?.id);
-            const composerContent = storyboardComposerContent(prompt, referenceIds);
+            const composerContent = storyboardComposerContent(prompt, referenceIds, nextNodes);
             const existingMetadata = existing?.metadata?.content ? existing.metadata : resetGenerationTaskMetadata(existing?.metadata);
             const videoNode = existing
                 ? { ...existing, metadata: { ...existingMetadata, prompt, composerContent, model: videoModel, ...storyboardPromptTemplateMetadata(row, "video"), workflowKind: "shot" as const, workflowTitle: `镜头 ${row.shotNumber} 视频`, shotIndex: row.shotNumber, generationMode: "video" as const, videoEditOperation: "image_to_video" as const, videoStartFrameNodeId: row.imageNodeId, seconds: String(row.durationSeconds) } }

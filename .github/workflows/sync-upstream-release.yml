@@ -1,0 +1,147 @@
+name: Sync upstream and publish Yingxue
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: sync-upstream-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge, verify and publish
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPOSITORY: ddcat-ai/open-ai-canvas
+    steps:
+      - name: Checkout Yingxue main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve latest stable upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
+          test -n "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch upstream release
+        shell: bash
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream "refs/tags/${{ steps.upstream.outputs.tag }}:refs/tags/upstream-${{ steps.upstream.outputs.tag }}"
+
+      - name: Detect pending upstream changes
+        id: pending
+        shell: bash
+        run: |
+          if git merge-base --is-ancestor "upstream-${{ steps.upstream.outputs.tag }}" HEAD; then
+            echo "value=false" >> "$GITHUB_OUTPUT"
+            echo "Yingxue already contains ${{ steps.upstream.outputs.tag }}"
+          else
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream without publishing
+        if: steps.pending.outputs.value == 'true'
+        id: merge
+        shell: bash
+        run: |
+          git config user.name "yingxue-release-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge --no-ff --no-commit "upstream-${{ steps.upstream.outputs.tag }}"; then
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort || true
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          version="v$(date -u +%Y.%-m.%-d)-yingxue.${GITHUB_RUN_NUMBER}"
+          printf '%s\n' "$version" > VERSION
+          python - "$version" "${{ steps.upstream.outputs.tag }}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path("CHANGELOG.md")
+          text = path.read_text(encoding="utf-8")
+          marker = "## Unreleased\n"
+          entry = (
+              f"\n## {sys.argv[1]}\n\n"
+              f"- 自动同步上游稳定版 `{sys.argv[2]}`，并通过映雪后端、前端与发布构建验收。\n"
+          )
+          if marker not in text:
+              raise SystemExit("CHANGELOG.md 缺少 Unreleased 标题")
+          path.write_text(text.replace(marker, marker + entry, 1), encoding="utf-8")
+          PY
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.pending.outputs.value == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+
+      - name: Verify backend
+        if: steps.pending.outputs.value == 'true'
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l .)"
+          go test ./...
+
+      - name: Set up Bun
+        if: steps.pending.outputs.value == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Verify web
+        if: steps.pending.outputs.value == 'true'
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run test
+          bun run build
+
+      - name: Commit and tag verified release
+        if: steps.pending.outputs.value == 'true'
+        shell: bash
+        run: |
+          git add VERSION CHANGELOG.md
+          git commit -m "merge(upstream): 映雪 - 自动同步 ${{ steps.upstream.outputs.tag }}"
+          git tag -a "${{ steps.merge.outputs.version }}" -m "${{ steps.merge.outputs.version }}"
+          git push origin HEAD:main "refs/tags/${{ steps.merge.outputs.version }}"
+
+      - name: Start image and Release publishing
+        if: steps.pending.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh workflow run publish-images.yml --ref "${{ steps.merge.outputs.version }}"
+
+      - name: Report blocked automatic sync
+        if: failure() && steps.pending.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          title="上游自动同步失败：${{ steps.upstream.outputs.tag }}"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          if [[ -z "$existing" ]]; then
+            gh issue create --title "$title" --body "自动合并或验收没有通过，未发布映雪版本，生产环境不会看到这次更新。运行记录：$url"
+          else
+            gh issue comment "$existing" --body "再次失败，仍未发布。运行记录：$url"
+          fi

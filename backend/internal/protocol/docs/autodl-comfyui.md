@@ -10,7 +10,7 @@ AutoDL 的模型选择对应 ComfyUI 工作流 ID。不同工作流可以声明�
 
 ## 参数
 
-请求体为 JSON。常用字段包括 `prompt`、`duration` 和 `resolution`；实际工作流可以扩展自己的参数 schema。状态返回值位于 `data.status`，任务 ID 位于 `data.task_id`，成功结果位于 `data.results`。结果数组中的地址是短期 URL，成功后必须立即由宿主下载到影策资源存储，不能把临时地址直接写入画布长期数据。
+请求体为 JSON。常用字段包括 `prompt`、`duration` 和 `resolution`；实际工作流可以扩展自己的参数 schema。工作流声明的分辨率选项属于供应商枚举，画布必须保留其完整值，例如 `768p竖`、`768p横`，插件仅在发送前统一转换为小写，不在宿主中增加 AutoDL 专用归一化。状态返回值位于 `data.status`，任务 ID 位于 `data.task_id`，成功结果位于 `data.results`。结果数组中的地址是短期 URL，成功后必须立即由宿主下载到影策资源存储，不能把临时地址直接写入画布长期数据。
 
 ## 鉴权
 

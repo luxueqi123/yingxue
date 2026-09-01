@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +66,48 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, gin.H{"sent": true})
+	})
+	r.POST("/auth/password-reset-code", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
+		var req struct {
+			Email string `json:"email"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available || !enforceRateLimit(c, "password-reset-code-ip:"+c.ClientIP(), policy.Request.EmailCodePerHour, time.Hour) {
+			return
+		}
+		if !enforceRateLimit(c, "password-reset-code-account:"+passwordResetRateLimitSubject(req.Email), policy.Request.EmailCodePerHour, time.Hour) {
+			return
+		}
+		if err := svc.SendPasswordResetEmailCode(req.Email); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"sent": true})
+	})
+	r.POST("/auth/password-reset", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		var req service.PasswordResetRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available || !enforceRateLimit(c, "password-reset-ip:"+c.ClientIP(), policy.Request.LoginIPPerTenMinutes, 10*time.Minute) {
+			return
+		}
+		if !enforceRateLimit(c, "password-reset-account:"+passwordResetRateLimitSubject(req.Email), policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
+			return
+		}
+		if err := svc.ResetPassword(req); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"reset": true})
 	})
 	r.POST("/auth/login", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
@@ -477,6 +520,7 @@ func RegisterAdminRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.OSSSettingRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			fail(c, http.StatusBadRequest, err)
@@ -488,6 +532,28 @@ func RegisterAdminRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, gin.H{"setting": setting})
+	})
+	r.POST("/admin/settings/oss/test", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "admin-storage-test:"+user.ID, 6, time.Minute) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		var req service.OSSSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.TestAdminOSSSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
 	})
 	r.GET("/admin/settings/ark-private-assets", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -811,6 +877,9 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		return
 	}
 	modelName := proxyRequestModelForPath(path, c.GetHeader("Content-Type"), body)
+	if modelName == "" && c.Request.Method == http.MethodGet && path == "/agnesapi" {
+		modelName = strings.TrimSpace(c.Query("model_name"))
+	}
 	protocol := model.ChannelInterfaceType("")
 	capability := "text"
 	var channelModel *model.ChannelModel
@@ -880,7 +949,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	}
 	defer releaseChannel()
 	if c.Request.Method == http.MethodPost {
-		order, err := svc.ReserveProxyBillingWithBody(user.ID, channel.ID, strings.TrimPrefix(modelName, "models/"), capability, c.GetHeader("X-Canvas-Scene"), c.GetHeader("X-Idempotency-Key"), proxyRequestVideoSeconds(c.GetHeader("Content-Type"), body), body)
+		order, err := svc.ReserveProxyBillingWithRequest(user.ID, channel.ID, strings.TrimPrefix(modelName, "models/"), capability, c.GetHeader("X-Canvas-Scene"), c.GetHeader("X-Idempotency-Key"), proxyRequestVideoSeconds(c.GetHeader("Content-Type"), body), c.GetHeader("Content-Type"), body)
 		if err != nil {
 			failService(c, err)
 			return
@@ -1041,6 +1110,11 @@ func currentUser(c *gin.Context, svc *service.Service) (*model.User, error) {
 func sessionCookie(c *gin.Context) string {
 	value, _ := c.Cookie(service.SessionCookieName)
 	return value
+}
+
+func passwordResetRateLimitSubject(value string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(value))))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func setSessionCookie(c *gin.Context, value string, maxAge int) {

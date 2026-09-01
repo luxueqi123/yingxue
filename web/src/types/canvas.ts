@@ -1,4 +1,5 @@
 import type { CanvasColorGrade } from "@/lib/canvas/canvas-color-grade";
+import type { AssetCategory } from "@/lib/asset-category";
 import type { PortraitTextureSettings } from "@/lib/canvas/canvas-portrait-texture";
 import type { StyleExecutionPlan } from "@/lib/canvas/style-profile";
 import type { PortraitClearanceNodeState } from "@/lib/portrait-clearance/contracts";
@@ -194,6 +195,14 @@ export type CanvasNodeMetadata = {
           };
     content?: string;
     previewContent?: string;
+    videoPreview?: {
+        content: string;
+        storageKey?: string;
+        width?: number;
+        height?: number;
+        bytes?: number;
+        mimeType?: string;
+    };
     richText?: Record<string, unknown>;
     composerContent?: string;
     prompt?: string;
@@ -205,6 +214,7 @@ export type CanvasNodeMetadata = {
     generationErrorCode?: string;
     resourceReloadAvailable?: boolean;
     failedPromptFingerprint?: string;
+    lastGenerationRequestFingerprint?: string;
     fontSize?: number;
     generationMode?: CanvasGenerationMode;
     generationType?: CanvasImageGenerationType;
@@ -243,15 +253,20 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    /** Whether the video file contains an audio track when this is known. */
+    hasAudio?: boolean;
     assetId?: string;
     assetTags?: string[];
-    assetCategory?: "character" | "environment" | "wardrobe" | "prop" | "weapon" | "style" | "other";
+    assetCategory?: AssetCategory;
     workflowKind?: CanvasWorkflowKind;
     workflowTitle?: string;
     workflowDescription?: string;
     stylePresetId?: string;
     styleProfileJson?: string;
     styleExecutionPlan?: StyleExecutionPlan;
+    skillIds?: string[];
+    skillVersions?: Array<{ skillId: string; versionId: string; version: string }>;
+    skillFiles?: Array<{ skillId: string; path: string; sha256?: string }>;
     chapterId?: string;
     chapterTitle?: string;
     shotIndex?: number;
@@ -319,6 +334,8 @@ export type CanvasNodeMetadata = {
     videoCameraMovePrompt?: string;
     videoStartFrameNodeId?: string;
     videoEndFrameNodeId?: string;
+    videoFrameSourceNodeId?: string;
+    videoFrameTimeMs?: number;
     versionOfNodeId?: string;
     versionLabel?: string;
     versionPrimary?: boolean;
@@ -407,6 +424,8 @@ export type CanvasNodeData = {
     id: string;
     type: CanvasNodeTypeId;
     title: string;
+    createdAt?: string;
+    updatedAt?: string;
     position: Position;
     width: number;
     height: number;
@@ -499,6 +518,7 @@ export type ContextMenuState =
           x: number;
           y: number;
           position: Position;
+          createOpen?: boolean;
       }
     | {
           type: "node";

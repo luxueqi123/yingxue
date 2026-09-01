@@ -27,7 +27,7 @@ func TestVideoTaskTimeoutHasFiveMinuteSafetyFloor(t *testing.T) {
 
 func TestOnlyResumableNewAPIChannel2VideoDeadlinesStayRunning(t *testing.T) {
 	svc := &Service{}
-	input, err := json.Marshal(canvasGenerationInput{Mode: "video", Config: providerConfig{BaseURL: "https://example.com", InterfaceType: string(model.ChannelInterfaceNewAPIChannel2)}})
+	input, err := json.Marshal(canvasGenerationInput{Mode: "video", Config: providerConfig{BaseURL: "https://8.8.8.8", InterfaceType: string(model.ChannelInterfaceNewAPIChannel2)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestOnlyResumableNewAPIChannel2VideoDeadlinesStayRunning(t *testing.T) {
 	if svc.shouldDeferVideoProviderTask(base, string(input), context.Canceled) {
 		t.Fatal("explicit cancellation must not be deferred")
 	}
-	other, err := json.Marshal(canvasGenerationInput{Mode: "video", Config: providerConfig{BaseURL: "https://example.com", InterfaceType: string(model.ChannelInterfaceNewAPIVideo)}})
+	other, err := json.Marshal(canvasGenerationInput{Mode: "video", Config: providerConfig{BaseURL: "https://8.8.8.8", InterfaceType: string(model.ChannelInterfaceNewAPIVideo)}})
 	if err != nil {
 		t.Fatal(err)
 	}

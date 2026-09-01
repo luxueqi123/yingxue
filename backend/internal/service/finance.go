@@ -452,7 +452,10 @@ func (s *Service) taskBillingOrder(userID string, task *model.Task, input map[st
 		capability = capabilityFromTaskType(task.Type)
 	}
 	scene := firstNonEmpty(strings.TrimSpace(task.Operation), task.Type)
-	return s.newBillingOrder(userID, task.ID, "task:"+task.ID+":"+newID(), channelID, modelKey, capability, scene, billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(input, capability))
+	// 系统渠道没有前台逻辑模型替它保存 priceTierId；必须从任务输入重建
+	// 同一份运行意图，才能命中 480p/768p/1080p 等分辨率价格档。
+	intent := ModelRequestIntentFromTaskInput(input, task.Type, task.Operation)
+	return s.newBillingOrderWithIntent(userID, task.ID, "task:"+task.ID+":"+newID(), channelID, modelKey, capability, scene, billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(input, capability), intent)
 }
 
 func (s *Service) newLogicalModelBillingOrder(userID string, task *model.Task, input map[string]any) (*model.BillingOrder, error) {
@@ -474,7 +477,9 @@ func (s *Service) newLogicalModelBillingOrder(userID string, task *model.Task, i
 		capability = capabilityFromTaskType(task.Type)
 	}
 	if logicalModel.PricePolicy == "channel" {
-		order, priceErr := s.newBillingOrderWithPriceTier(userID, task.ID, "task:"+task.ID+":"+newID(), channelModel.ChannelID, channelModel.ModelKey, capability, firstNonEmpty(strings.TrimSpace(task.Operation), task.Type), billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(input, capability), strings.TrimSpace(fmt.Sprint(config["priceTierId"])))
+		intent := ModelRequestIntentFromTaskInput(input, task.Type, task.Operation)
+		priceTierID, _ := config["priceTierId"].(string)
+		order, priceErr := s.newBillingOrderWithPriceTier(userID, task.ID, "task:"+task.ID+":"+newID(), channelModel.ChannelID, channelModel.ModelKey, capability, firstNonEmpty(strings.TrimSpace(task.Operation), task.Type), billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(input, capability), strings.TrimSpace(priceTierID), intent)
 		if priceErr != nil {
 			return nil, priceErr
 		}
@@ -533,6 +538,12 @@ func (s *Service) ReserveProxyBilling(userID string, channelID string, modelKey 
 }
 
 func (s *Service) ReserveProxyBillingWithBody(userID string, channelID string, modelKey string, capability string, scene string, idempotencyKey string, quantity int64, requestBody []byte) (*model.BillingOrder, error) {
+	return s.ReserveProxyBillingWithRequest(userID, channelID, modelKey, capability, scene, idempotencyKey, quantity, "", requestBody)
+}
+
+// ReserveProxyBillingWithRequest 在系统代理入口预授权积分。contentType 用于
+// 解析 multipart 表单中的 resolution/duration 等计费规格；JSON 请求同样支持。
+func (s *Service) ReserveProxyBillingWithRequest(userID string, channelID string, modelKey string, capability string, scene string, idempotencyKey string, quantity int64, contentType string, requestBody []byte) (*model.BillingOrder, error) {
 	enabled, err := s.FeatureEnabled(FeatureCredits)
 	if err != nil {
 		return nil, err
@@ -543,7 +554,8 @@ func (s *Service) ReserveProxyBillingWithBody(userID string, channelID string, m
 	if strings.TrimSpace(idempotencyKey) == "" {
 		idempotencyKey = newID()
 	}
-	order, err := s.newBillingOrder(userID, "", "proxy:"+idempotencyKey, channelID, modelKey, capability, firstNonEmpty(strings.TrimSpace(scene), "system_proxy"), quantity, estimateProxyTokens(requestBody))
+	intent := ModelRequestIntentFromProxyRequest(capability, contentType, requestBody)
+	order, err := s.newBillingOrderWithIntent(userID, "", "proxy:"+idempotencyKey, channelID, modelKey, capability, firstNonEmpty(strings.TrimSpace(scene), "system_proxy"), quantity, estimateProxyTokens(requestBody), intent)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +572,19 @@ func (s *Service) newBillingOrder(userID string, taskID string, idempotencyKey s
 	return s.newBillingOrderWithPriceTier(userID, taskID, idempotencyKey, channelID, modelKey, capability, scene, requestedQuantity, tokenEstimate, "")
 }
 
-func (s *Service) newBillingOrderWithPriceTier(userID string, taskID string, idempotencyKey string, channelID string, modelKey string, capability string, scene string, requestedQuantity int64, tokenEstimate tokenBillingEstimate, priceTierID string) (*model.BillingOrder, error) {
+func (s *Service) newBillingOrderWithPriceTier(userID string, taskID string, idempotencyKey string, channelID string, modelKey string, capability string, scene string, requestedQuantity int64, tokenEstimate tokenBillingEstimate, priceTierID string, intents ...ModelRequestIntent) (*model.BillingOrder, error) {
+	var intent *ModelRequestIntent
+	if len(intents) > 0 {
+		intent = &intents[0]
+	}
+	return s.newBillingOrderWithPriceTierAndIntent(userID, taskID, idempotencyKey, channelID, modelKey, capability, scene, requestedQuantity, tokenEstimate, priceTierID, intent)
+}
+
+func (s *Service) newBillingOrderWithIntent(userID string, taskID string, idempotencyKey string, channelID string, modelKey string, capability string, scene string, requestedQuantity int64, tokenEstimate tokenBillingEstimate, intent ModelRequestIntent) (*model.BillingOrder, error) {
+	return s.newBillingOrderWithPriceTierAndIntent(userID, taskID, idempotencyKey, channelID, modelKey, capability, scene, requestedQuantity, tokenEstimate, "", &intent)
+}
+
+func (s *Service) newBillingOrderWithPriceTierAndIntent(userID string, taskID string, idempotencyKey string, channelID string, modelKey string, capability string, scene string, requestedQuantity int64, tokenEstimate tokenBillingEstimate, priceTierID string, intent *ModelRequestIntent) (*model.BillingOrder, error) {
 	item, err := s.repo.ChannelModelByKey(channelID, modelKey)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, BadAuthRequest("当前模型暂时不可用，请重新选择")
@@ -568,7 +592,7 @@ func (s *Service) newBillingOrderWithPriceTier(userID string, taskID string, ide
 	if err != nil {
 		return nil, err
 	}
-	tier := channelModelPriceTierForBilling(*item, priceTierID, capability)
+	tier := channelModelPriceTierForBilling(*item, priceTierID, capability, intent)
 	if tier == nil {
 		return nil, BadAuthRequest("当前模型尚未配置所选规格的用户积分价格")
 	}
@@ -625,7 +649,7 @@ func (s *Service) newBillingOrderWithPriceTier(userID string, taskID string, ide
 	}, nil
 }
 
-func channelModelPriceTierForBilling(channelModel model.ChannelModel, priceTierID string, capability string) *model.ChannelModelPriceTier {
+func channelModelPriceTierForBilling(channelModel model.ChannelModel, priceTierID string, capability string, intent *ModelRequestIntent) *model.ChannelModelPriceTier {
 	if priceTierID != "" {
 		for index := range channelModel.PriceTiers {
 			tier := &channelModel.PriceTiers[index]
@@ -635,7 +659,12 @@ func channelModelPriceTierForBilling(channelModel model.ChannelModel, priceTierI
 		}
 		return nil
 	}
-	return channelModelPriceTierForIntent(channelModel, ModelRequestIntent{Capability: capability, Options: map[string]any{}})
+	if intent == nil {
+		intent = &ModelRequestIntent{Capability: capability, Inputs: map[string]int{}, Options: map[string]any{}}
+	} else if intent.Capability == "" {
+		intent.Capability = capability
+	}
+	return channelModelPriceTierForIntent(channelModel, *intent)
 }
 
 func estimateTaskTokens(input map[string]any) tokenBillingEstimate {

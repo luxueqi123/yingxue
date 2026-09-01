@@ -125,6 +125,11 @@ func (s *Service) FetchChannelModelCatalog(ctx context.Context, actor *model.Use
 	if err != nil {
 		return nil, err
 	}
+	// AutoDL 的 ComfyUI 工作流目录并不兼容 OpenAI /models；H3 的工作流 ID 和能力
+	// 是固定的公开合同，直接返回可避免把错误的 GET /models 发给上游。
+	if isAutoDLBaseURL(baseURL) {
+		return autoDLH3Catalog(), nil
+	}
 
 	target := apiURL(baseURL, "/models")
 	if apiFormat == "gemini" {

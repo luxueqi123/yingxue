@@ -39,13 +39,21 @@ func Models() []any {
 		&model.AdminAuditEvent{},
 		&model.UserDailyActivity{},
 		&model.SystemSetting{},
+		&model.PluginPlatformState{},
+		&model.UserPluginState{},
 		&model.ArkPrivateAssetBinding{},
 		&model.UserOSSSetting{},
+		&model.StorageLocation{},
 		&model.UserDailyUploadUsage{},
 		&model.Skill{},
+		&model.SkillVersion{},
+		&model.SkillFile{},
 		&model.UserSkillState{},
+		&model.Prompt{},
+		&model.UserPromptState{},
 		&model.Resource{},
 		&model.ResourceDeletionJob{},
+		&model.AnnouncementImageDraft{},
 		&model.Asset{},
 		&model.ProjectAssetLink{},
 		&model.ProjectAssetFolder{},
@@ -59,11 +67,14 @@ func Models() []any {
 		&model.ProjectUnit{},
 		&model.CanvasUnitLink{},
 		&model.Shot{},
+		&model.ShotRevision{},
+		&model.ShotArtifact{},
 		&model.ShotAssetReference{},
 		&model.WorkflowTemplateVersion{},
 		&model.WorkflowInstance{},
 		&model.WorkflowStepInstance{},
 		&model.WorkflowStepTask{},
+		&model.ProductionTaskLink{},
 		&model.CanvasProject{},
 		&model.CanvasShare{},
 		&model.PromptTemplate{},
@@ -82,7 +93,7 @@ func Models() []any {
 	}
 }
 
-func MigrateSchema(db *gorm.DB) error {
+func migrateSchemaV1(db *gorm.DB) error {
 	// 旧表只保存 Updream 目录状态，与本地技能主键没有可迁移关系；首次升级时按产品要求清空重建。
 	if db.Migrator().HasColumn(&model.UserSkillState{}, "skill_dir") && !db.Migrator().HasColumn(&model.UserSkillState{}, "skill_id") {
 		if err := db.Migrator().DropTable(&model.UserSkillState{}); err != nil {
@@ -96,6 +107,9 @@ func MigrateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.AutoMigrate(Models()...); err != nil {
+		return err
+	}
+	if err := backfillProjectUnitWordCounts(db); err != nil {
 		return err
 	}
 	if err := migrateChannelModelPriceTierSelectors(db); err != nil {
@@ -131,6 +145,22 @@ func MigrateSchema(db *gorm.DB) error {
 		return err
 	}
 	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_nonempty ON users(lower(email)) WHERE email <> ''").Error
+}
+
+func backfillProjectUnitWordCounts(db *gorm.DB) error {
+	var units []model.ProjectUnit
+	if err := db.Select("id", "source_text").Where("word_count = 0 AND source_text <> ''").Find(&units).Error; err != nil {
+		return fmt.Errorf("读取待回填章节字数：%w", err)
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, unit := range units {
+			wordCount := model.ProjectUnitWordCount(unit.SourceText)
+			if err := tx.Model(&model.ProjectUnit{}).Where("id = ?", unit.ID).Update("word_count", wordCount).Error; err != nil {
+				return fmt.Errorf("回填章节 %s 字数：%w", unit.ID, err)
+			}
+		}
+		return nil
+	})
 }
 
 // migrateChannelModelPriceTierSelectors upgrades the old video-only unique key to
