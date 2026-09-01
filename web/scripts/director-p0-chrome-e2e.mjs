@@ -673,10 +673,9 @@ async function saveFailureCloseGuard(cdp, baseUrl) {
     const stayClicked = await cdp.clickText("留在导演台");
     if (!stayClicked) throw new Error("F: 留在导演台 button not clickable");
     const modalGone = await cdp.poll(
-        `![...document.querySelectorAll('.ant-modal-confirm')].some((modal) => {
-            const rect = modal.getBoundingClientRect();
-            const style = getComputedStyle(modal);
-            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+        `![...document.querySelectorAll('button')].some((button) => {
+            const text = (button.textContent || '').trim();
+            return (text === '仍然离开' || text === '留在导演台') && button.getClientRects().length > 0;
         })`,
         "modal dismissed",
         20000,

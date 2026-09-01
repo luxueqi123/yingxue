@@ -114,6 +114,8 @@ jobs:
           bun run typecheck
           bun run test
           bun run build
+          google-chrome --version || chromium --version
+          bun run test:director:e2e
 
       - name: Commit and tag verified release
         if: steps.pending.outputs.value == 'true'
