@@ -79,7 +79,7 @@ func renderRuntimeContract(info Metadata) string {
 		b.WriteString("- 轮询频率应遵守上游速率限制；媒体 URL 通常有有效期，成功后应立即进入映雪资源保存流程。\n")
 	}
 	b.WriteString("- 参考素材只接受上游可访问的 HTTP(S) URL 或带 MIME 前缀的 data URL；裸 Base64、登录后才能访问的链接和 Cookie 保护地址不可用。\n")
-		b.WriteString("- 插件只保证下方“当前实现”明确列出的字段。上游新增能力不会自动获得映雪支持，必须补适配、解析和测试。\n")
+	b.WriteString("- 插件只保证下方“当前实现”明确列出的字段。上游新增能力不会自动获得映雪支持，必须补适配、解析和测试。\n")
 	return strings.TrimSpace(b.String())
 }
 
