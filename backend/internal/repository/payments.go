@@ -52,19 +52,28 @@ func (r *Repository) PaymentOrdersForUser(userID string, limit int) ([]model.Pay
 	return orders, r.db.Where("user_id = ?", userID).Order("created_at desc").Limit(limit).Find(&orders).Error
 }
 
+func (r *Repository) PaymentOrders(limit int) ([]model.PaymentOrder, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var orders []model.PaymentOrder
+	return orders, r.db.Order("created_at desc").Limit(limit).Find(&orders).Error
+}
+
 func (r *Repository) MarkPaymentOrderFailed(id string, message string) error {
 	return r.db.Model(&model.PaymentOrder{}).
 		Where("id = ? AND status = ?", id, model.PaymentOrderPending).
 		Updates(map[string]any{"status": model.PaymentOrderFailed, "provider_error": message, "updated_at": time.Now()}).Error
 }
 
-func (r *Repository) SavePaymentCheckout(id string, providerTradeNo string, checkoutURL string, qrCode string, urlScheme string) error {
+func (r *Repository) SavePaymentCheckout(id string, providerTradeNo string, checkoutURL string, qrCode string, qrCodeImage string, urlScheme string) error {
 	return r.db.Model(&model.PaymentOrder{}).
 		Where("id = ? AND status = ?", id, model.PaymentOrderPending).
 		Updates(map[string]any{
 			"provider_trade_no": providerTradeNo,
 			"checkout_url":      checkoutURL,
 			"qr_code":           qrCode,
+			"qr_code_image":     qrCodeImage,
 			"url_scheme":        urlScheme,
 			"updated_at":        time.Now(),
 		}).Error

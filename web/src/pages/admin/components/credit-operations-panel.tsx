@@ -12,11 +12,13 @@ import {
     getAdminCreditPolicy,
     getAdminPaymentSetting,
     listAdminBillingOrders,
+    listAdminPaymentOrders,
     resolveAdminBillingOrder,
     resolveAdminBillingOrders,
     updateAdminCreditPolicy,
     updateAdminPaymentSetting,
     type BillingOrder,
+    type PaymentOrder,
     type PaymentSetting,
 } from "@/services/api/wallet";
 
@@ -28,7 +30,7 @@ type AdjustmentFormValues = { userId: string; amount: number; note: string };
 type ResolutionFormValues = { note: string };
 type PolicyMultiplierRow = { model?: string; multiplier?: number };
 type PolicyFormValues = { signupBonus: number; checkinBonus: number; defaultMultiplier: number; modelMultipliers: PolicyMultiplierRow[] };
-type PaymentFormValues = Pick<PaymentSetting, "enabled" | "baseUrl" | "merchantId" | "siteUrl" | "payTypes"> & { merchantKey?: string };
+type PaymentFormValues = Pick<PaymentSetting, "enabled" | "baseUrl" | "apiPath" | "merchantId" | "siteUrl" | "payTypes"> & { merchantKey?: string };
 type BillingResolutionAction = "settle" | "refund";
 type AdjustmentUser = AdminReferenceData["users"][number] & Partial<Pick<AdminUser, "email" | "availableMicrocredits" | "reservedMicrocredits">>;
 type BillingResolutionTarget = { kind: "single"; order: BillingOrder; action: BillingResolutionAction } | { kind: "batch"; orders: BillingOrder[]; action: BillingResolutionAction };
@@ -48,6 +50,7 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [loadingPolicy, setLoadingPolicy] = useState(false);
     const [savingPolicy, setSavingPolicy] = useState(false);
     const [loadingPayment, setLoadingPayment] = useState(false);
+    const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [savingPayment, setSavingPayment] = useState(false);
     const [hasMerchantKey, setHasMerchantKey] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
@@ -142,13 +145,15 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
         if (activeOperation !== "payment") return;
         let active = true;
         setLoadingPayment(true);
-        void getAdminPaymentSetting()
-            .then(({ setting }) => {
+        void Promise.all([getAdminPaymentSetting(), listAdminPaymentOrders(20)])
+            .then(([{ setting }, { orders: nextPaymentOrders }]) => {
                 if (!active) return;
                 setHasMerchantKey(setting.hasMerchantKey);
+                setPaymentOrders(nextPaymentOrders);
                 paymentForm.setFieldsValue({
                     enabled: setting.enabled,
                     baseUrl: setting.baseUrl || "https://m.ooeao.com",
+                    apiPath: setting.apiPath || "/xpay/epay/mapi.php",
                     merchantId: setting.merchantId,
                     merchantKey: "",
                     siteUrl: setting.siteUrl || "https://tianyayingxue.cn",
@@ -685,6 +690,7 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                         initialValues={{
                             enabled: false,
                             baseUrl: "https://m.ooeao.com",
+                            apiPath: "/xpay/epay/mapi.php",
                             merchantId: "",
                             merchantKey: "",
                             siteUrl: "https://tianyayingxue.cn",
@@ -705,6 +711,17 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                                 ]}
                             >
                                 <Input placeholder="https://m.ooeao.com" autoComplete="url" />
+                            </Form.Item>
+                            <Form.Item
+                                name="apiPath"
+                                label="下单接口路径"
+                                extra="境安码当前使用 /xpay/epay/mapi.php；标准易支付通常使用 /mapi.php。"
+                                rules={[
+                                    { required: true, whitespace: true, message: "请填写下单接口路径" },
+                                    { pattern: /^\/(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^?#]*$/, message: "请输入以 / 开头且不含查询参数的站内路径" },
+                                ]}
+                            >
+                                <Input placeholder="/xpay/epay/mapi.php" autoComplete="off" />
                             </Form.Item>
                             <Form.Item name="merchantId" label="商户 ID" rules={[{ required: true, whitespace: true, message: "请填写商户 ID" }]}>
                                 <Input placeholder="易支付商户 ID" autoComplete="off" />
@@ -734,6 +751,32 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                                     ]}
                                 />
                             </Form.Item>
+                        </section>
+                        <section className="admin-credit-drawer-section mt-5">
+                            <div className="mb-3">
+                                <strong className="text-sm">最近收款订单</strong>
+                                <p className="mt-1 text-xs text-foreground/50">显示最近 20 笔下单记录，最终到账状态以后端验签回调为准。</p>
+                            </div>
+                            {paymentOrders.length ? (
+                                <div className="grid gap-2">
+                                    {paymentOrders.map((order) => (
+                                        <div key={order.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-foreground/[.025] px-3 py-3">
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-medium">{order.planName}</div>
+                                                <div className="mt-1 truncate text-xs text-foreground/45">{userLabels.get(order.userId) || order.userId} · {new Date(order.createdAt).toLocaleString("zh-CN", { hour12: false })}</div>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <div className="text-sm font-medium tabular-nums">¥{(order.amountCents / 100).toFixed(2)}</div>
+                                                <div className={`mt-1 text-xs ${order.status === "paid" ? "text-emerald-600 dark:text-emerald-400" : order.status === "failed" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>
+                                                    {order.status === "paid" ? "已到账" : order.status === "failed" ? "创建失败" : "待支付"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-xs text-foreground/45">暂无在线收款订单</div>
+                            )}
                         </section>
                     </Form>
                 )}

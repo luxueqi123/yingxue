@@ -8,7 +8,7 @@ import { formatCredits } from "@/constant/credits";
 import { PaginationBar, TableSurface } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { aceternityMotion } from "@/lib/aceternity-motion";
-import { checkinCredits, createPaymentOrder, getPaymentConfig, getPaymentOrder, getWallet, redeemCredits, type CreditLedgerEntry, type PaymentConfig, type PaymentOrder, type PublicRechargePlan, type WalletSummary } from "@/services/api/wallet";
+import { checkinCredits, createPaymentOrder, getPaymentConfig, getPaymentOrder, getWallet, listPaymentOrders, redeemCredits, type CreditLedgerEntry, type PaymentConfig, type PaymentOrder, type PublicRechargePlan, type WalletSummary } from "@/services/api/wallet";
 import { modelDisplayName, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 type LedgerFilter = "all" | "income" | "consume" | "refund";
@@ -37,6 +37,7 @@ export default function WalletPage() {
     const [selectedPaymentPlan, setSelectedPaymentPlan] = useState<PublicRechargePlan | null>(null);
     const [payType, setPayType] = useState<PaymentOrder["payType"]>("alipay");
     const [activePayment, setActivePayment] = useState<PaymentOrder | null>(null);
+    const [recentPayments, setRecentPayments] = useState<PaymentOrder[]>([]);
     const [startingPayment, setStartingPayment] = useState(false);
     const requestSequence = useRef(0);
 
@@ -64,6 +65,9 @@ export default function WalletPage() {
                 if (nextConfig.payTypes.length) setPayType(nextConfig.payTypes[0]);
             })
             .catch(() => setPaymentConfig({ enabled: false, payTypes: [] }));
+        void listPaymentOrders(5)
+            .then(({ orders }) => setRecentPayments(orders))
+            .catch(() => setRecentPayments([]));
         const returnedOrder = new URLSearchParams(window.location.search).get("paymentOrder");
         if (returnedOrder) {
             void getPaymentOrder(returnedOrder)
@@ -80,6 +84,7 @@ export default function WalletPage() {
                 const { order } = await getPaymentOrder(activePayment.id);
                 if (cancelled) return;
                 setActivePayment(order);
+                setRecentPayments((current) => [order, ...current.filter((item) => item.id !== order.id)].slice(0, 5));
                 if (order.status === "paid") {
                     await reload(page, pageSize);
                     window.dispatchEvent(new CustomEvent("wallet:updated"));
@@ -109,6 +114,7 @@ export default function WalletPage() {
         try {
             const { order } = await createPaymentOrder({ planId: selectedPaymentPlan.id, payType }, crypto.randomUUID());
             setActivePayment(order);
+            setRecentPayments((current) => [order, ...current.filter((item) => item.id !== order.id)].slice(0, 5));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "创建支付订单失败");
         } finally {
@@ -287,6 +293,8 @@ export default function WalletPage() {
 
                 <RechargeNotice policy={wallet?.policy} paymentConfig={paymentConfig} onPay={beginPayment} />
 
+                <RecentPaymentOrders orders={recentPayments} onOpen={setActivePayment} />
+
                 <section className="wallet-ledger-panel app-workspace-surface mt-9 rounded-lg p-4 backdrop-blur-xl sm:p-5">
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -445,7 +453,7 @@ function PaymentCheckout({ order }: { order: PaymentOrder }) {
         <div className="flex flex-col items-center py-4 text-center">
             <div className="text-sm text-foreground/55">应付金额</div>
             <strong className="mt-1 text-3xl tabular-nums">¥{formatCents(order.amountCents)}</strong>
-            {qrValue ? <QRCode className="mt-5" value={qrValue} size={210} /> : null}
+            {order.qrCodeImage ? <img className="mt-5 size-[210px] rounded-lg object-contain" src={order.qrCodeImage} alt={`${paymentTypeLabel(order.payType)}付款二维码`} referrerPolicy="no-referrer" /> : qrValue ? <QRCode className="mt-5" value={qrValue} size={210} /> : null}
             <p className="mt-4 text-sm text-foreground/55">请使用{paymentTypeLabel(order.payType)}完成支付，页面会自动确认到账。</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {order.checkoutUrl ? (
@@ -462,6 +470,36 @@ function PaymentCheckout({ order }: { order: PaymentOrder }) {
             <div className="mt-5 font-mono text-[11px] text-foreground/35">订单号 {order.id}</div>
         </div>
     );
+}
+
+function RecentPaymentOrders({ orders, onOpen }: { orders: PaymentOrder[]; onOpen: (order: PaymentOrder) => void }) {
+    if (!orders.length) return null;
+    return (
+        <section className="app-workspace-surface mt-6 rounded-lg p-5 backdrop-blur-xl sm:p-6" aria-labelledby="wallet-payment-orders-title">
+            <div>
+                <h2 id="wallet-payment-orders-title" className="text-base font-semibold">最近充值订单</h2>
+                <p className="mt-1 text-xs text-foreground/55">可重新打开待支付订单，已支付订单不会重复入账。</p>
+            </div>
+            <div className="mt-4 grid gap-2">
+                {orders.map((order) => (
+                    <button key={order.id} type="button" className="flex w-full items-center justify-between gap-4 rounded-lg border border-border/70 bg-foreground/[.025] px-4 py-3 text-left transition-colors hover:bg-foreground/[.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" onClick={() => onOpen(order)}>
+                        <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{order.planName}</span>
+                            <span className="mt-1 block text-xs text-foreground/45">{formatTime(order.createdAt)} · {paymentTypeLabel(order.payType)}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3">
+                            <strong className="text-sm tabular-nums">¥{formatCents(order.amountCents)}</strong>
+                            <Tag color={order.status === "paid" ? "success" : order.status === "failed" ? "error" : "processing"}>{paymentOrderStatusLabel(order.status)}</Tag>
+                        </span>
+                    </button>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function paymentOrderStatusLabel(status: PaymentOrder["status"]) {
+    return status === "paid" ? "已到账" : status === "failed" ? "创建失败" : "待支付";
 }
 
 function paymentTypeLabel(type: PaymentOrder["payType"]) {

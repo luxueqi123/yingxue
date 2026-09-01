@@ -34,6 +34,9 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	if !db.Migrator().HasTable(&model.PaymentOrder{}) {
 		t.Fatal("schema migration v4 did not create payment_orders")
 	}
+	if !db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+		t.Fatal("schema migration v5 did not create payment_orders.qr_code_image")
+	}
 	if err := MigrateSchema(db); err != nil {
 		t.Fatalf("migration should be idempotent: %v", err)
 	}
@@ -55,6 +58,28 @@ func TestMigrateSchemaV4CreatesPaymentOrders(t *testing.T) {
 	}
 	if !db.Migrator().HasIndex(&model.PaymentOrder{}, "idx_payment_user_idempotency") {
 		t.Fatal("payment order idempotency index missing after migration")
+	}
+}
+
+func TestMigrateSchemaV5AddsQRCodeImage(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-payment-order-qrcode-image?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchemaV4(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&model.PaymentOrder{}, "QRCodeImage"); err != nil {
+		t.Fatal(err)
+	}
+	if db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+		t.Fatal("qr_code_image unexpectedly exists before migration")
+	}
+	if err := migrateSchemaV5(db); err != nil {
+		t.Fatal(err)
+	}
+	if !db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+		t.Fatal("qr_code_image missing after migration")
 	}
 }
 

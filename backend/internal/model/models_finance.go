@@ -90,6 +90,7 @@ type PaymentOrder struct {
 	ProviderError       string             `json:"providerError,omitempty" gorm:"size:500"`
 	CheckoutURL         string             `json:"checkoutUrl,omitempty" gorm:"size:2000"`
 	QRCode              string             `json:"qrCode,omitempty" gorm:"size:2000"`
+	QRCodeImage         string             `json:"qrCodeImage,omitempty" gorm:"size:2000"`
 	URLScheme           string             `json:"urlScheme,omitempty" gorm:"size:2000"`
 	PaidAt              *time.Time         `json:"paidAt" gorm:"index"`
 	CreatedAt           time.Time          `json:"createdAt" gorm:"index"`

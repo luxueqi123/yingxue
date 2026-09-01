@@ -28,6 +28,9 @@ func TestNormalizePaymentSettingKeepsOnlySupportedUniqueTypes(t *testing.T) {
 	if setting.BaseURL != defaultEPayBaseURL {
 		t.Fatalf("BaseURL = %q", setting.BaseURL)
 	}
+	if setting.APIPath != defaultEPayAPIPath {
+		t.Fatalf("APIPath = %q", setting.APIPath)
+	}
 	if len(setting.PayTypes) != 2 || setting.PayTypes[0] != "wxpay" || setting.PayTypes[1] != "alipay" {
 		t.Fatalf("PayTypes = %#v", setting.PayTypes)
 	}
@@ -56,11 +59,24 @@ func TestParsePaymentMoneyUsesExactCents(t *testing.T) {
 }
 
 func TestValidatePaymentCheckoutRejectsUnknownScheme(t *testing.T) {
-	if err := validatePaymentCheckout("", "javascript:alert(1)", ""); err == nil {
+	if err := validatePaymentCheckout("", "javascript:alert(1)", "", ""); err == nil {
 		t.Fatal("expected unknown checkout scheme to be rejected")
 	}
-	if err := validatePaymentCheckout("", "weixin://wxpay/bizpayurl?pr=test", ""); err != nil {
+	if err := validatePaymentCheckout("", "weixin://wxpay/bizpayurl?pr=test", "", ""); err != nil {
 		t.Fatalf("expected documented weixin scheme to pass: %v", err)
+	}
+}
+
+func TestValidatePaymentAPIPath(t *testing.T) {
+	for _, value := range []string{"/mapi.php", "/xpay/epay/mapi.php"} {
+		if err := validatePaymentAPIPath(value); err != nil {
+			t.Fatalf("validatePaymentAPIPath(%q) = %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "mapi.php", "//evil.example/mapi.php", "https://evil.example/mapi.php", "/mapi.php?redirect=1", "/../mapi.php", "/%2e%2e/mapi.php"} {
+		if err := validatePaymentAPIPath(value); err == nil {
+			t.Fatalf("validatePaymentAPIPath(%q) should fail", value)
+		}
 	}
 }
 
@@ -95,6 +111,15 @@ func TestValidateEPayNotification(t *testing.T) {
 				t.Fatal("expected invalid notification to be rejected")
 			}
 		})
+	}
+
+	providerTradeNo := "provider-original"
+	order.ProviderTradeNo = &providerTradeNo
+	mismatched := cloneURLValues(base)
+	mismatched.Set("trade_no", "provider-other")
+	mismatched.Set("sign", paymentSign(mismatched, "secret"))
+	if _, err := validateEPayNotification(mismatched, order, "secret"); err == nil {
+		t.Fatal("expected mismatched provider trade number to be rejected")
 	}
 }
 

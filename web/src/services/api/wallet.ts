@@ -67,6 +67,7 @@ export type PaymentOrder = {
     providerError?: string;
     checkoutUrl?: string;
     qrCode?: string;
+    qrCodeImage?: string;
     urlScheme?: string;
     paidAt?: string;
     createdAt: string;
@@ -75,6 +76,7 @@ export type PaymentOrder = {
 
 export type PaymentSetting = PaymentConfig & {
     baseUrl: string;
+    apiPath: string;
     merchantId: string;
     merchantKey?: string;
     hasMerchantKey: boolean;
@@ -341,6 +343,10 @@ export function getAdminPaymentSetting() {
 
 export function updateAdminPaymentSetting(input: Partial<PaymentSetting>) {
     return request<{ setting: PaymentSetting }>(api.patch("/admin/settings/payment", input));
+}
+
+export function listAdminPaymentOrders(limit = 20) {
+    return request<{ orders: PaymentOrder[] }>(api.get("/admin/payment-orders", { params: { limit } }));
 }
 
 export function listAdminChannelModels(channelId: string) {

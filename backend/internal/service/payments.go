@@ -24,10 +24,12 @@ import (
 
 const paymentSettingKey = "payment"
 const defaultEPayBaseURL = "https://m.ooeao.com"
+const defaultEPayAPIPath = "/xpay/epay/mapi.php"
 
 type PaymentSettingRequest struct {
 	Enabled     bool     `json:"enabled"`
 	BaseURL     string   `json:"baseUrl"`
+	APIPath     string   `json:"apiPath"`
 	MerchantID  string   `json:"merchantId"`
 	MerchantKey string   `json:"merchantKey"`
 	SiteURL     string   `json:"siteUrl"`
@@ -37,6 +39,7 @@ type PaymentSettingRequest struct {
 type PublicPaymentSetting struct {
 	Enabled        bool      `json:"enabled"`
 	BaseURL        string    `json:"baseUrl"`
+	APIPath        string    `json:"apiPath"`
 	MerchantID     string    `json:"merchantId"`
 	HasMerchantKey bool      `json:"hasMerchantKey"`
 	SiteURL        string    `json:"siteUrl"`
@@ -54,6 +57,7 @@ type PublicPaymentConfig struct {
 type paymentSettingValue struct {
 	Enabled     bool     `json:"enabled"`
 	BaseURL     string   `json:"baseUrl"`
+	APIPath     string   `json:"apiPath"`
 	MerchantID  string   `json:"merchantId"`
 	MerchantKey string   `json:"merchantKey"`
 	SiteURL     string   `json:"siteUrl"`
@@ -76,6 +80,7 @@ type ePayCreateResponse struct {
 	TradeNo   string `json:"trade_no"`
 	PayURL    string `json:"payurl"`
 	QRCode    string `json:"qrcode"`
+	ImageURL  string `json:"img"`
 	URLScheme string `json:"urlscheme"`
 }
 
@@ -90,6 +95,13 @@ func (s *Service) AdminPaymentSetting(actor *model.User) (*PublicPaymentSetting,
 	return publicPaymentSetting(setting, value), nil
 }
 
+func (s *Service) AdminPaymentOrders(actor *model.User, limit int) ([]model.PaymentOrder, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	return s.repo.PaymentOrders(limit)
+}
+
 func (s *Service) UpdatePaymentSetting(actor *model.User, req PaymentSettingRequest) (*PublicPaymentSetting, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
@@ -99,7 +111,7 @@ func (s *Service) UpdatePaymentSetting(actor *model.User, req PaymentSettingRequ
 		return nil, err
 	}
 	next := normalizePaymentSetting(paymentSettingValue{
-		Enabled: req.Enabled, BaseURL: req.BaseURL, MerchantID: req.MerchantID,
+		Enabled: req.Enabled, BaseURL: req.BaseURL, APIPath: req.APIPath, MerchantID: req.MerchantID,
 		MerchantKey: req.MerchantKey, SiteURL: req.SiteURL, PayTypes: req.PayTypes,
 	})
 	if next.MerchantKey == "" {
@@ -124,7 +136,7 @@ func (s *Service) UpdatePaymentSetting(actor *model.User, req PaymentSettingRequ
 	if err := s.repo.SaveSystemSetting(&setting); err != nil {
 		return nil, err
 	}
-	if err := s.appendAdminAudit(actor, "payment_setting.update", "system_setting", paymentSettingKey, "更新在线支付配置", map[string]any{"enabled": next.Enabled, "baseUrl": next.BaseURL, "merchantId": next.MerchantID, "siteUrl": next.SiteURL, "payTypes": next.PayTypes}); err != nil {
+	if err := s.appendAdminAudit(actor, "payment_setting.update", "system_setting", paymentSettingKey, "更新在线支付配置", map[string]any{"enabled": next.Enabled, "baseUrl": next.BaseURL, "apiPath": next.APIPath, "merchantId": next.MerchantID, "siteUrl": next.SiteURL, "payTypes": next.PayTypes}); err != nil {
 		return nil, err
 	}
 	return publicPaymentSetting(&setting, next), nil
@@ -181,7 +193,7 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, user *model.User, req 
 	if err != nil {
 		return nil, err
 	}
-	if !created && (order.CheckoutURL != "" || order.QRCode != "" || order.URLScheme != "" || order.Status == model.PaymentOrderPaid) {
+	if !created && (order.CheckoutURL != "" || order.QRCode != "" || order.QRCodeImage != "" || order.URLScheme != "" || order.Status == model.PaymentOrderPaid) {
 		return &PaymentCheckoutResult{Order: order}, nil
 	}
 
@@ -207,7 +219,7 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, user *model.User, req 
 		"sign_type":    {"MD5"},
 	}
 	params.Set("sign", paymentSign(params, setting.MerchantKey))
-	target := base.ResolveReference(&url.URL{Path: "/xpay/epay/mapi.php"})
+	target := base.ResolveReference(&url.URL{Path: setting.APIPath})
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, err
@@ -215,13 +227,13 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, user *model.User, req 
 	httpRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := s.OutboundHTTPClientForChannel(20*time.Second, target, false).Do(httpRequest)
 	if err != nil {
-		_ = s.repo.MarkPaymentOrderFailed(order.ID, truncateRunes(err.Error(), 500))
+		_ = s.repo.MarkPaymentOrderFailed(order.ID, "支付平台连接失败")
 		return nil, WrapAppError(http.StatusBadGateway, "支付平台暂时不可用，请稍后重试", err)
 	}
 	defer response.Body.Close()
 	body, readErr := io.ReadAll(io.LimitReader(response.Body, 64<<10))
 	if readErr != nil {
-		_ = s.repo.MarkPaymentOrderFailed(order.ID, truncateRunes(readErr.Error(), 500))
+		_ = s.repo.MarkPaymentOrderFailed(order.ID, "支付平台响应读取失败")
 		return nil, WrapAppError(http.StatusBadGateway, "读取支付平台响应失败", readErr)
 	}
 	var upstream ePayCreateResponse
@@ -230,14 +242,14 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, user *model.User, req 
 		if message == "" {
 			message = fmt.Sprintf("支付平台返回状态 %d", response.StatusCode)
 		}
-		_ = s.repo.MarkPaymentOrderFailed(order.ID, truncateRunes(message, 500))
+		_ = s.repo.MarkPaymentOrderFailed(order.ID, "支付平台拒绝创建订单")
 		return nil, WrapAppError(http.StatusBadGateway, "创建支付订单失败，请稍后重试", errors.New(message))
 	}
-	if err := validatePaymentCheckout(upstream.PayURL, upstream.QRCode, upstream.URLScheme); err != nil {
-		_ = s.repo.MarkPaymentOrderFailed(order.ID, truncateRunes(err.Error(), 500))
+	if err := validatePaymentCheckout(upstream.PayURL, upstream.QRCode, upstream.ImageURL, upstream.URLScheme); err != nil {
+		_ = s.repo.MarkPaymentOrderFailed(order.ID, "支付平台返回的收银台地址无效")
 		return nil, WrapAppError(http.StatusBadGateway, "支付平台返回了无效收银台地址", err)
 	}
-	if err := s.repo.SavePaymentCheckout(order.ID, upstream.TradeNo, upstream.PayURL, upstream.QRCode, upstream.URLScheme); err != nil {
+	if err := s.repo.SavePaymentCheckout(order.ID, upstream.TradeNo, upstream.PayURL, upstream.QRCode, upstream.ImageURL, upstream.URLScheme); err != nil {
 		return nil, err
 	}
 	order, err = s.repo.PaymentOrderForUser(user.ID, order.ID)
@@ -306,6 +318,9 @@ func validateEPayNotification(values url.Values, order *model.PaymentOrder, merc
 	if providerTradeNo == "" {
 		return "", BadAuthRequest("支付通知交易号无效")
 	}
+	if order.ProviderTradeNo != nil && strings.TrimSpace(*order.ProviderTradeNo) != "" && providerTradeNo != strings.TrimSpace(*order.ProviderTradeNo) {
+		return "", BadAuthRequest("支付通知交易号与原订单不匹配")
+	}
 	return providerTradeNo, nil
 }
 
@@ -332,6 +347,10 @@ func normalizePaymentSetting(value paymentSettingValue) paymentSettingValue {
 	value.BaseURL = strings.TrimRight(strings.TrimSpace(value.BaseURL), "/")
 	if value.BaseURL == "" {
 		value.BaseURL = defaultEPayBaseURL
+	}
+	value.APIPath = strings.TrimSpace(value.APIPath)
+	if value.APIPath == "" {
+		value.APIPath = defaultEPayAPIPath
 	}
 	value.MerchantID = strings.TrimSpace(value.MerchantID)
 	value.MerchantKey = strings.TrimSpace(value.MerchantKey)
@@ -362,6 +381,9 @@ func validatePaymentSetting(value paymentSettingValue) error {
 	if _, err := ValidateOutboundURL(value.BaseURL); err != nil {
 		return BadAuthRequest("支付平台地址必须是可公开访问的 HTTPS 地址")
 	}
+	if err := validatePaymentAPIPath(value.APIPath); err != nil {
+		return BadAuthRequest("支付接口路径必须是以 / 开头且不含查询参数的站内路径")
+	}
 	parsed, err := url.Parse(value.SiteURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return BadAuthRequest("本站公网地址必须是无查询参数的 HTTPS 地址")
@@ -374,7 +396,7 @@ func paymentSettingReady(value paymentSettingValue) bool {
 }
 
 func publicPaymentSetting(setting *model.SystemSetting, value paymentSettingValue) *PublicPaymentSetting {
-	result := &PublicPaymentSetting{Enabled: value.Enabled, BaseURL: value.BaseURL, MerchantID: value.MerchantID, HasMerchantKey: value.MerchantKey != "", SiteURL: value.SiteURL, PayTypes: append([]string(nil), value.PayTypes...)}
+	result := &PublicPaymentSetting{Enabled: value.Enabled, BaseURL: value.BaseURL, APIPath: value.APIPath, MerchantID: value.MerchantID, HasMerchantKey: value.MerchantKey != "", SiteURL: value.SiteURL, PayTypes: append([]string(nil), value.PayTypes...)}
 	if setting != nil {
 		result.UpdatedBy = setting.UpdatedBy
 		result.CreatedAt = setting.CreatedAt
@@ -477,12 +499,17 @@ func formatPaymentCredits(microcredits int64) string {
 	return fmt.Sprintf("%.6f", float64(microcredits)/float64(CreditScale))
 }
 
-func validatePaymentCheckout(payURL string, qrCode string, urlScheme string) error {
-	if payURL == "" && qrCode == "" && urlScheme == "" {
+func validatePaymentCheckout(payURL string, qrCode string, imageURL string, urlScheme string) error {
+	if payURL == "" && qrCode == "" && imageURL == "" && urlScheme == "" {
 		return errors.New("支付平台未返回收银台地址")
 	}
 	if payURL != "" {
 		if _, err := ValidateOutboundURL(payURL); err != nil {
+			return err
+		}
+	}
+	if imageURL != "" {
+		if _, err := ValidateOutboundURL(imageURL); err != nil {
 			return err
 		}
 	}
@@ -504,6 +531,19 @@ func validatePaymentCheckout(payURL string, qrCode string, urlScheme string) err
 		case "weixin", "alipays", "alipay":
 		default:
 			return errors.New("支付平台返回了不受支持的跳转协议")
+		}
+	}
+	return nil
+}
+
+func validatePaymentAPIPath(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || parsed.IsAbs() || parsed.Host != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("invalid payment api path")
+	}
+	for _, part := range strings.Split(parsed.EscapedPath(), "/") {
+		if part == "." || part == ".." || strings.EqualFold(part, "%2e") || strings.EqualFold(part, "%2e%2e") {
+			return errors.New("invalid payment api path")
 		}
 	}
 	return nil

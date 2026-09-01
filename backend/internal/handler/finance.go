@@ -282,6 +282,20 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"setting": setting})
 	})
+	r.GET("/admin/payment-orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		orders, err := svc.AdminPaymentOrders(user, limit)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"orders": orders})
+	})
 	r.PATCH("/admin/settings/payment", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

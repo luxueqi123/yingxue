@@ -10,12 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 4
+const CurrentSchemaVersion int64 = 5
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
 const assetTaxonomyCandidateIdentityChecksum = "sha256:asset-taxonomy-candidate-identity-v3-20260831-r1"
 const paymentOrdersChecksum = "sha256:payment-orders-v4-20260902-r1"
+const paymentOrderQRCodeImageChecksum = "sha256:payment-order-qrcode-image-v5-20260902-r1"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -46,6 +47,7 @@ var schemaMigrations = []migration{
 	{version: 2, name: "schema_migrations_applied_at_index", checksum: schemaMigrationAppliedAtIndexChecksum, apply: migrateSchemaV2},
 	{version: 3, name: "asset_taxonomy_candidate_identity", checksum: assetTaxonomyCandidateIdentityChecksum, apply: migrateSchemaV3},
 	{version: 4, name: "payment_orders", checksum: paymentOrdersChecksum, apply: migrateSchemaV4},
+	{version: 5, name: "payment_order_qrcode_image", checksum: paymentOrderQRCodeImageChecksum, apply: migrateSchemaV5},
 }
 
 func migrateSchemaV2(tx *gorm.DB) error {
@@ -94,6 +96,13 @@ func migrateSchemaV3(tx *gorm.DB) error {
 func migrateSchemaV4(tx *gorm.DB) error {
 	if err := tx.AutoMigrate(&model.PaymentOrder{}); err != nil {
 		return fmt.Errorf("创建在线支付订单表：%w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV5(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.PaymentOrder{}); err != nil {
+		return fmt.Errorf("扩展在线支付二维码图片字段：%w", err)
 	}
 	return nil
 }
