@@ -8,6 +8,7 @@ import { formatCredits } from "@/constant/credits";
 import { PaginationBar, TableSurface } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { aceternityMotion } from "@/lib/aceternity-motion";
+import { subscribeServerSettingUpdated } from "@/lib/server-setting-sync";
 import {
     checkinCredits,
     createPaymentOrder,
@@ -96,6 +97,20 @@ export default function WalletPage() {
                 .then(({ order }) => setActivePayment(order))
                 .catch(() => undefined);
         }
+    }, [refreshPaymentConfig]);
+
+    useEffect(() => {
+        const refreshWhenVisible = () => {
+            if (document.visibilityState === "visible") void refreshPaymentConfig();
+        };
+        const unsubscribe = subscribeServerSettingUpdated("payment", refreshPaymentConfig);
+        window.addEventListener("focus", refreshWhenVisible);
+        document.addEventListener("visibilitychange", refreshWhenVisible);
+        return () => {
+            unsubscribe();
+            window.removeEventListener("focus", refreshWhenVisible);
+            document.removeEventListener("visibilitychange", refreshWhenVisible);
+        };
     }, [refreshPaymentConfig]);
 
     useEffect(() => {

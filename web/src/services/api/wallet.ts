@@ -290,7 +290,7 @@ export function checkinCredits() {
 }
 
 export function getPaymentConfig() {
-    return request<{ config: PaymentConfig }>(api.get("/payments/config"));
+    return request<{ config: PaymentConfig }>(api.get("/payments/config", { headers: { "Cache-Control": "no-cache" } }));
 }
 
 export function createPaymentOrder(input: { planId: string; payType: PaymentOrder["payType"] }, idempotencyKey: string) {

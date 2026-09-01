@@ -6,6 +6,7 @@ import { BadgeCheck, Coins, CreditCard, Plus, RefreshCw, Search, Trash2, Undo2 }
 import { PaginationBar } from "@/components/layout/workspace-page";
 import { formatCredits } from "@/constant/credits";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { publishServerSettingUpdated } from "@/lib/server-setting-sync";
 import { listAdminUsers, type AdminReferenceData, type AdminUser } from "@/services/api/auth";
 import {
     adjustAdminUserCredits,
@@ -53,6 +54,7 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [savingPayment, setSavingPayment] = useState(false);
     const [hasMerchantKey, setHasMerchantKey] = useState(false);
+    const [savedPaymentEnabled, setSavedPaymentEnabled] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
     const [resolving, setResolving] = useState(false);
     const [keyword, setKeyword] = useState("");
@@ -149,6 +151,7 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
             .then(([{ setting }, { orders: nextPaymentOrders }]) => {
                 if (!active) return;
                 setHasMerchantKey(setting.hasMerchantKey);
+                setSavedPaymentEnabled(setting.enabled);
                 setPaymentOrders(nextPaymentOrders);
                 paymentForm.setFieldsValue({
                     enabled: setting.enabled,
@@ -233,25 +236,42 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
         }
     };
 
-    const savePayment = async (values: PaymentFormValues) => {
+    const persistPayment = async (values: PaymentFormValues, closeAfterSave: boolean) => {
         setSavingPayment(true);
         try {
             const { setting } = await updateAdminPaymentSetting({
                 enabled: values.enabled,
                 baseUrl: values.baseUrl.trim(),
+                apiPath: values.apiPath.trim(),
                 merchantId: values.merchantId.trim(),
                 merchantKey: values.merchantKey?.trim() || undefined,
                 siteUrl: values.siteUrl.trim(),
                 payTypes: values.payTypes,
             });
             setHasMerchantKey(setting.hasMerchantKey);
-            message.success(setting.enabled ? "在线支付已启用" : "在线支付配置已保存，当前保持关闭");
-            onOperationChange(null);
+            setSavedPaymentEnabled(setting.enabled);
+            paymentForm.setFieldsValue({ ...setting, merchantKey: "" });
+            publishServerSettingUpdated("payment");
+            message.success(setting.enabled ? "在线支付已启用，用户端将立即同步" : "在线支付已关闭，用户端将立即同步");
+            if (closeAfterSave) onOperationChange(null);
+            return true;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "保存在线支付配置失败");
+            return false;
         } finally {
             setSavingPayment(false);
         }
+    };
+
+    const savePayment = async (values: PaymentFormValues) => {
+        await persistPayment(values, true);
+    };
+
+    const changePaymentEnabled = async (enabled: boolean) => {
+        if (savingPayment) return;
+        const values = paymentForm.getFieldsValue(true) as PaymentFormValues;
+        const saved = await persistPayment({ ...values, enabled }, false);
+        if (!saved) paymentForm.setFieldValue("enabled", savedPaymentEnabled);
     };
 
     const previewAdjustment = (values: AdjustmentFormValues) => {
@@ -699,8 +719,8 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                         onFinish={(values) => void savePayment(values)}
                     >
                         <section className="admin-credit-drawer-section">
-                            <Form.Item name="enabled" label="开放在线支付" valuePropName="checked">
-                                <Switch checkedChildren="已开放" unCheckedChildren="已关闭" />
+                            <Form.Item name="enabled" label="开放在线支付" valuePropName="checked" extra="此开关会立即写入服务器；地址、接口或商户参数修改后仍需点击底部保存。">
+                                <Switch loading={savingPayment} disabled={loadingPayment || savingPayment} checkedChildren="已开放" unCheckedChildren="已关闭" onChange={(enabled) => void changePaymentEnabled(enabled)} />
                             </Form.Item>
                             <Form.Item
                                 name="baseUrl"

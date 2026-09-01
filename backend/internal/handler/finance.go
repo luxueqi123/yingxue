@@ -67,6 +67,7 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, gin.H{"account": account, "granted": true})
 	})
 	r.GET("/payments/config", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)

@@ -180,6 +180,22 @@ test("admin tables keep requested filters and actions in the intended positions"
     expect(operationColumn).toContain('fixed: "right"');
 });
 
+test("payment availability is persisted by the switch and refreshed across user surfaces", async () => {
+    const [adminSource, walletSource, apiSource] = await Promise.all([
+        Bun.file(new URL("../src/pages/admin/components/credit-operations-panel.tsx", import.meta.url)).text(),
+        Bun.file(new URL("../src/pages/wallet/index.tsx", import.meta.url)).text(),
+        Bun.file(new URL("../src/services/api/wallet.ts", import.meta.url)).text(),
+    ]);
+
+    expect(adminSource).toContain("const changePaymentEnabled = async (enabled: boolean)");
+    expect(adminSource).toContain("onChange={(enabled) => void changePaymentEnabled(enabled)}");
+    expect(adminSource).toContain('publishServerSettingUpdated("payment")');
+    expect(adminSource).toContain("apiPath: values.apiPath.trim()");
+    expect(walletSource).toContain('subscribeServerSettingUpdated("payment", refreshPaymentConfig)');
+    expect(walletSource).toContain('window.addEventListener("focus", refreshWhenVisible)');
+    expect(apiSource).toContain('headers: { "Cache-Control": "no-cache" }');
+});
+
 test("request logs display user credit billing independently from upstream cost", async () => {
     const [listSource, detailSource, apiSource] = await Promise.all([
         Bun.file(new URL("../src/pages/admin/logs/logs-page.tsx", import.meta.url)).text(),
