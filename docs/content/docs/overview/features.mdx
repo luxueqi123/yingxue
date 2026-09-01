@@ -14,7 +14,7 @@ description: 映雪当前已实现的核心工作台能力与使用入口
 - 同时兼容易支付返回二维码内容、二维码图片、URL Scheme 和收银台链接。
 - 异步回调验签，并校验金额、支付方式及上游交易号后幂等入账；重复回调不会重复增加积分。
 - 前台保留最近充值订单，可重新打开待支付订单；确认服务端已入账后自动刷新余额。
-- 未配置真实商户参数时明确显示“在线支付尚未开放”。
+- 套餐卡始终可点击：支付可用时进入付款方式选择和下单，未配置、加载中或读取失败时展示对应状态并支持重新检测，不再留下无响应的占位卡片。
 - 兑换码充值保留为独立入口；页面不再展示“充值请联系本人”的个人联系方式。
 
 相关实现：`backend/internal/service/payments.go`、`backend/internal/repository/payments.go`、`web/src/pages/wallet/index.tsx` 和 `web/src/pages/admin/components/credit-operations-panel.tsx`。

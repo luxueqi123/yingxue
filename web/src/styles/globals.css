@@ -5603,6 +5603,43 @@
     .wallet-balance-metric strong { margin-top: 3px; overflow: hidden; font-size: var(--fs-heading); font-variant-numeric: tabular-nums; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
     .wallet-balance-metric small { margin-top: 2px; overflow: hidden; color: color-mix(in srgb, var(--foreground) 35%, transparent); font-size: var(--fs-tiny); text-overflow: ellipsis; white-space: nowrap; }
     .wallet-library-page .wallet-redeem-icon { background: color-mix(in srgb, var(--foreground) 6%, transparent); color: color-mix(in srgb, var(--foreground) 72%, transparent); }
+    .wallet-recharge-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .wallet-payment-status { display: inline-flex; min-height: 30px; flex: 0 0 auto; align-items: center; gap: 8px; border: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent); border-radius: 999px; padding: 5px 11px; background: color-mix(in srgb, var(--foreground) 3%, transparent); color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: var(--fs-label); font-weight: 560; }
+    .wallet-payment-status > span { width: 7px; height: 7px; border-radius: 999px; background: color-mix(in srgb, var(--foreground) 32%, transparent); }
+    .wallet-payment-status.is-ready { border-color: color-mix(in srgb, var(--palette-status-success, var(--primary)) 22%, transparent); background: color-mix(in srgb, var(--palette-status-success, var(--primary)) 8%, transparent); color: color-mix(in srgb, var(--palette-status-success, var(--primary)) 82%, var(--foreground)); }
+    .wallet-payment-status.is-ready > span { background: var(--palette-status-success, var(--primary)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--palette-status-success, var(--primary)) 14%, transparent); }
+    .wallet-plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 22px; }
+    .wallet-recharge-plan { position: relative; display: flex; min-width: 0; min-height: 188px; flex-direction: column; overflow: hidden; appearance: none; border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); border-radius: var(--r-lg); padding: 17px; background: color-mix(in srgb, var(--foreground) 2.5%, var(--workspace-surface-strong)); color: var(--foreground); cursor: pointer; font: inherit; text-align: left; box-shadow: 0 1px 3px color-mix(in srgb, var(--foreground) 5%, transparent); transition: border-color var(--motion-fast) ease-out, background-color var(--motion-fast) ease-out, transform var(--motion-fast) ease-out, box-shadow var(--motion-fast) ease-out; }
+    .wallet-recharge-plan::before { position: absolute; inset: 0 0 auto; height: 2px; background: transparent; content: ""; }
+    .wallet-recharge-plan:hover { border-color: color-mix(in srgb, var(--primary) 30%, transparent); background: color-mix(in srgb, var(--primary) 5%, var(--workspace-surface-strong)); box-shadow: 0 10px 28px -22px color-mix(in srgb, var(--primary) 52%, transparent); transform: translateY(-2px); }
+    .wallet-recharge-plan:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+    .wallet-recharge-plan.is-featured { border-color: color-mix(in srgb, var(--primary) 28%, transparent); background: color-mix(in srgb, var(--primary) 6%, var(--workspace-surface-strong)); }
+    .wallet-recharge-plan.is-featured::before { background: var(--primary); }
+    .wallet-plan-top { display: flex; min-height: 24px; align-items: center; justify-content: space-between; gap: 8px; color: color-mix(in srgb, var(--foreground) 50%, transparent); font-size: var(--fs-label); font-weight: 560; }
+    .wallet-plan-bonus { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; background: color-mix(in srgb, var(--primary) 11%, transparent); color: color-mix(in srgb, var(--primary) 72%, var(--foreground)); font-size: var(--fs-tiny); font-weight: 650; }
+    .wallet-plan-price { display: flex; align-items: flex-start; gap: 3px; margin-top: 17px; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+    .wallet-plan-price small { margin-top: 5px; font-size: var(--fs-caption); font-weight: 650; }
+    .wallet-plan-price strong { font-size: 30px; font-weight: 680; line-height: 1; }
+    .wallet-plan-credits { display: flex; flex-direction: column; gap: 3px; margin-top: 14px; }
+    .wallet-plan-credits small { color: color-mix(in srgb, var(--foreground) 43%, transparent); font-size: var(--fs-tiny); }
+    .wallet-plan-credits strong { font-size: var(--fs-caption); font-variant-numeric: tabular-nums; font-weight: 620; }
+    .wallet-plan-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 18px; color: color-mix(in srgb, var(--primary) 72%, var(--foreground)); font-size: var(--fs-label); font-weight: 620; }
+    .wallet-plan-action svg { width: 15px; height: 15px; transition: transform var(--motion-fast) ease-out; }
+    .wallet-recharge-plan:hover .wallet-plan-action svg { transform: translateX(2px); }
+    .wallet-recharge-footnote { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 320px); gap: 28px; margin-top: 22px; border-top: 1px solid color-mix(in srgb, var(--foreground) 7%, transparent); padding-top: 20px; }
+    .wallet-recharge-footnote > p { margin: 0; align-self: end; color: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: var(--fs-label); line-height: 1.7; text-align: right; }
+    .wallet-payment-modal-plan { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); border-radius: var(--r-lg); padding: 16px 18px; background: color-mix(in srgb, var(--primary) 5%, transparent); }
+    .wallet-payment-modal-plan > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+    .wallet-payment-modal-plan > div > span { color: color-mix(in srgb, var(--foreground) 48%, transparent); font-size: var(--fs-label); }
+    .wallet-payment-modal-plan strong { overflow-wrap: anywhere; font-size: var(--fs-heading); font-variant-numeric: tabular-nums; }
+    .wallet-payment-modal-price { flex: 0 0 auto; font-size: var(--fs-heading-lg); font-variant-numeric: tabular-nums; font-weight: 680; }
+    .wallet-payment-unavailable { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; margin-top: 18px; border-radius: var(--r-lg); padding: 16px; background: color-mix(in srgb, var(--foreground) 4%, transparent); color: color-mix(in srgb, var(--foreground) 64%, transparent); }
+    .wallet-payment-unavailable > svg { margin: 2px 0 0 7px; color: color-mix(in srgb, var(--foreground) 48%, transparent); }
+    .wallet-payment-unavailable strong { color: var(--foreground); font-size: var(--fs-caption); }
+    .wallet-payment-unavailable p { margin: 5px 0 0; color: color-mix(in srgb, var(--foreground) 52%, transparent); font-size: var(--fs-label); line-height: 1.7; }
+    .wallet-payment-methods { display: flex; flex-wrap: wrap; gap: 8px; }
+    .wallet-payment-methods .ant-radio-button-wrapper { min-width: 108px; height: 44px; border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent) !important; border-radius: var(--r-md) !important; line-height: 42px; text-align: center; }
+    .wallet-payment-methods .ant-radio-button-wrapper::before { display: none !important; }
     .wallet-library-page .wallet-ledger-panel { margin-top: 28px; }
     .wallet-library-page .wallet-ledger-panel .app-table-surface { border: 0; box-shadow: none; }
     .wallet-library-page .wallet-ledger-table .ant-table-thead > tr > th { height: 38px; padding: 8px 12px !important; background: color-mix(in srgb, var(--foreground) 4%, var(--background)) !important; color: color-mix(in srgb, var(--foreground) 52%, transparent) !important; font-size: var(--fs-label); font-weight: 500; }
@@ -5614,6 +5651,11 @@
         .wallet-account-status { grid-row: 2; grid-column: 1 / -1; justify-self: start; }
     }
     @media (max-width: 520px) {
+        .wallet-recharge-header { flex-direction: column; gap: 12px; }
+        .wallet-plan-grid { grid-template-columns: minmax(0, 1fr); }
+        .wallet-recharge-plan { min-height: 174px; }
+        .wallet-recharge-footnote { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+        .wallet-recharge-footnote > p { text-align: left; }
         .wallet-balance-inner { min-height: 0; gap: 22px; padding: 20px; }
         .wallet-balance-number { margin-top: 32px; }
         .wallet-balance-details { grid-template-columns: minmax(0, 1fr); gap: 16px; }

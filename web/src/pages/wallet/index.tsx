@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { App, Button, Grid, Input, Modal, QRCode, Radio, Segmented, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowDownLeft, ArrowUpRight, CalendarCheck, CircleCheckBig, Coins, CreditCard, ExternalLink, RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, TicketCheck } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarCheck, ChevronRight, CircleCheckBig, Coins, CreditCard, ExternalLink, RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, TicketCheck } from "lucide-react";
 
 import { formatCredits } from "@/constant/credits";
 import { PaginationBar, TableSurface } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { aceternityMotion } from "@/lib/aceternity-motion";
-import { checkinCredits, createPaymentOrder, getPaymentConfig, getPaymentOrder, getWallet, listPaymentOrders, redeemCredits, type CreditLedgerEntry, type PaymentConfig, type PaymentOrder, type PublicRechargePlan, type WalletSummary } from "@/services/api/wallet";
+import {
+    checkinCredits,
+    createPaymentOrder,
+    getPaymentConfig,
+    getPaymentOrder,
+    getWallet,
+    listPaymentOrders,
+    redeemCredits,
+    type CreditLedgerEntry,
+    type PaymentConfig,
+    type PaymentOrder,
+    type PublicRechargePlan,
+    type WalletSummary,
+} from "@/services/api/wallet";
 import { modelDisplayName, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 type LedgerFilter = "all" | "income" | "consume" | "refund";
@@ -34,6 +47,7 @@ export default function WalletPage() {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
+    const [paymentConfigStatus, setPaymentConfigStatus] = useState<"loading" | "ready" | "error">("loading");
     const [selectedPaymentPlan, setSelectedPaymentPlan] = useState<PublicRechargePlan | null>(null);
     const [payType, setPayType] = useState<PaymentOrder["payType"]>("alipay");
     const [activePayment, setActivePayment] = useState<PaymentOrder | null>(null);
@@ -58,13 +72,21 @@ export default function WalletPage() {
         void reload(page, pageSize);
     }, [filter, page, pageSize]);
 
+    const refreshPaymentConfig = useCallback(async () => {
+        setPaymentConfigStatus("loading");
+        try {
+            const { config: nextConfig } = await getPaymentConfig();
+            setPaymentConfig(nextConfig);
+            if (nextConfig.payTypes.length) setPayType(nextConfig.payTypes[0]);
+            setPaymentConfigStatus("ready");
+        } catch {
+            setPaymentConfig({ enabled: false, payTypes: [] });
+            setPaymentConfigStatus("error");
+        }
+    }, []);
+
     useEffect(() => {
-        void getPaymentConfig()
-            .then(({ config: nextConfig }) => {
-                setPaymentConfig(nextConfig);
-                if (nextConfig.payTypes.length) setPayType(nextConfig.payTypes[0]);
-            })
-            .catch(() => setPaymentConfig({ enabled: false, payTypes: [] }));
+        void refreshPaymentConfig();
         void listPaymentOrders(5)
             .then(({ orders }) => setRecentPayments(orders))
             .catch(() => setRecentPayments([]));
@@ -74,7 +96,7 @@ export default function WalletPage() {
                 .then(({ order }) => setActivePayment(order))
                 .catch(() => undefined);
         }
-    }, []);
+    }, [refreshPaymentConfig]);
 
     useEffect(() => {
         if (!activePayment || activePayment.status !== "pending") return;
@@ -109,7 +131,11 @@ export default function WalletPage() {
     };
 
     const submitPayment = async () => {
-        if (!selectedPaymentPlan || !paymentConfig?.enabled) return;
+        if (!selectedPaymentPlan) return;
+        if (!paymentConfig?.enabled || !paymentConfig.payTypes.length) {
+            message.warning("在线支付尚未启用，请稍后再试");
+            return;
+        }
         setStartingPayment(true);
         try {
             const { order } = await createPaymentOrder({ planId: selectedPaymentPlan.id, payType }, crypto.randomUUID());
@@ -291,7 +317,7 @@ export default function WalletPage() {
                     </motion.div>
                 </section>
 
-                <RechargeNotice policy={wallet?.policy} paymentConfig={paymentConfig} onPay={beginPayment} />
+                <RechargeNotice policy={wallet?.policy} paymentConfig={paymentConfig} paymentConfigStatus={paymentConfigStatus} onPay={beginPayment} />
 
                 <RecentPaymentOrders orders={recentPayments} onOpen={setActivePayment} />
 
@@ -339,7 +365,7 @@ export default function WalletPage() {
             </div>
 
             <Modal
-                title="在线充值"
+                title={activePayment ? "充值订单" : "确认充值套餐"}
                 open={Boolean(selectedPaymentPlan || activePayment)}
                 footer={null}
                 destroyOnHidden
@@ -352,25 +378,49 @@ export default function WalletPage() {
                     <PaymentCheckout order={activePayment} />
                 ) : selectedPaymentPlan ? (
                     <div className="py-2">
-                        <div className="rounded-lg border border-border/70 bg-foreground/[.025] p-4">
-                            <div className="text-sm text-foreground/55">充值套餐</div>
-                            <div className="mt-2 flex items-end justify-between gap-4">
-                                <strong className="text-xl">{formatCredits(selectedPaymentPlan.creditsMicrocredits)} 积分</strong>
-                                <span className="text-lg font-semibold tabular-nums">¥{formatCents(selectedPaymentPlan.priceCents)}</span>
+                        <div className="wallet-payment-modal-plan">
+                            <div>
+                                <span>本次充值</span>
+                                <strong>{formatCredits(selectedPaymentPlan.creditsMicrocredits)} 积分</strong>
                             </div>
+                            <span className="wallet-payment-modal-price">¥{formatCents(selectedPaymentPlan.priceCents)}</span>
                         </div>
-                        <div className="mt-5 text-sm font-medium">选择支付方式</div>
-                        <Radio.Group className="mt-3" value={payType} onChange={(event) => setPayType(event.target.value)}>
-                            {(paymentConfig?.payTypes || []).map((type) => (
-                                <Radio.Button key={type} value={type}>
-                                    {paymentTypeLabel(type)}
-                                </Radio.Button>
-                            ))}
-                        </Radio.Group>
-                        <Button className="mt-6" block size="large" type="primary" icon={<CreditCard className="size-4" />} loading={startingPayment} onClick={() => void submitPayment()}>
-                            创建支付订单
-                        </Button>
-                        <p className="mt-3 text-center text-xs leading-5 text-foreground/45">到账以服务端签名回调为准，请勿重复支付同一订单。</p>
+
+                        {paymentConfigStatus === "loading" ? (
+                            <div className="wallet-payment-unavailable" role="status">
+                                <RefreshCw className="size-5 animate-spin" />
+                                <div>
+                                    <strong>正在读取支付状态</strong>
+                                    <p>确认可用的付款方式后即可继续。</p>
+                                </div>
+                            </div>
+                        ) : paymentConfigStatus === "error" || !paymentConfig?.enabled || !paymentConfig.payTypes.length ? (
+                            <div className="wallet-payment-unavailable" role="status">
+                                <CreditCard className="size-5" />
+                                <div>
+                                    <strong>{paymentConfigStatus === "error" ? "支付状态读取失败" : "在线支付暂未启用"}</strong>
+                                    <p>{paymentConfigStatus === "error" ? "网络恢复后重新检测，不会创建订单或扣款。" : "完成商户配置并启用支付后，即可在这里选择付款方式。"}</p>
+                                    <Button className="mt-4" icon={<RefreshCw className="size-4" />} onClick={() => void refreshPaymentConfig()}>
+                                        重新检测
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="mt-5 text-sm font-medium">选择支付方式</div>
+                                <Radio.Group className="wallet-payment-methods mt-3" value={payType} onChange={(event) => setPayType(event.target.value)}>
+                                    {paymentConfig.payTypes.map((type) => (
+                                        <Radio.Button key={type} value={type}>
+                                            {paymentTypeLabel(type)}
+                                        </Radio.Button>
+                                    ))}
+                                </Radio.Group>
+                                <Button className="mt-6" block size="large" type="primary" icon={<CreditCard className="size-4" />} loading={startingPayment} onClick={() => void submitPayment()}>
+                                    支付 ¥{formatCents(selectedPaymentPlan.priceCents)}
+                                </Button>
+                                <p className="mt-3 text-center text-xs leading-5 text-foreground/45">支付成功后自动到账，请勿重复支付同一订单。</p>
+                            </>
+                        )}
                     </div>
                 ) : null}
             </Modal>
@@ -378,53 +428,63 @@ export default function WalletPage() {
     );
 }
 
-function RechargeNotice({ policy, paymentConfig, onPay }: { policy?: WalletSummary["policy"]; paymentConfig: PaymentConfig | null; onPay: (plan: PublicRechargePlan) => void }) {
+function RechargeNotice({ policy, paymentConfig, paymentConfigStatus, onPay }: { policy?: WalletSummary["policy"]; paymentConfig: PaymentConfig | null; paymentConfigStatus: "loading" | "ready" | "error"; onPay: (plan: PublicRechargePlan) => void }) {
     const plans = policy?.rechargePlans || [];
     if (!plans.length) return null;
+    const paymentReady = paymentConfigStatus === "ready" && Boolean(paymentConfig?.enabled && paymentConfig.payTypes.length);
     return (
         <section className="wallet-recharge-panel app-workspace-surface mt-6 rounded-lg p-5 backdrop-blur-xl sm:p-6" aria-labelledby="wallet-recharge-title">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="wallet-recharge-header">
                 <div>
                     <h2 id="wallet-recharge-title" className="text-base font-semibold">
-                        充值与价格公示
+                        选择充值套餐
                     </h2>
-                    <p className="mt-1 text-xs leading-5 text-foreground/65">{paymentConfig?.enabled ? "支持支付宝、微信等在线支付，支付成功后积分自动到账。" : "在线支付尚未开放，可继续使用兑换码充值。"}</p>
-                    <p className="mt-2 text-xs leading-5 text-foreground/45">充值积分不直接等同人民币余额。</p>
+                    <p className="mt-1 text-xs leading-5 text-foreground/60">选择金额后确认支付方式，支付成功后积分自动到账。</p>
                 </div>
+                <span className={`wallet-payment-status ${paymentReady ? "is-ready" : ""}`}>
+                    <span aria-hidden="true" />
+                    {paymentConfigStatus === "loading" ? "检测支付状态" : paymentConfigStatus === "error" ? "支付状态异常" : paymentReady ? "在线支付可用" : "在线支付未启用"}
+                </span>
             </div>
 
-            {plans.length ? (
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    {plans.map((plan, index) => (
-                        <div key={plan.id} className={`wallet-recharge-plan rounded-lg border px-4 py-4 ${index === 2 ? "border-primary/50 bg-primary/[.06]" : "border-border/70 bg-foreground/[.025]"}`}>
-                            <div className="flex items-start justify-between gap-2">
-                                <span className="text-xs font-medium text-foreground/55">充值档位</span>
-                                {plan.bonusPercent > 0 ? <Tag color="gold">赠 {plan.bonusPercent}%</Tag> : null}
-                            </div>
-                            <div className="mt-3 flex items-baseline gap-1">
-                                <strong className="text-2xl font-semibold tabular-nums">¥{formatCents(plan.priceCents)}</strong>
-                            </div>
-                            <div className="mt-2 text-sm font-medium tabular-nums">到账 {formatCredits(plan.creditsMicrocredits)} 积分</div>
-                            {paymentConfig?.enabled ? (
-                                <Button className="mt-4" block type={index === 2 ? "primary" : "default"} onClick={() => onPay(plan)}>
-                                    在线充值
-                                </Button>
-                            ) : (
-                                <div className="mt-1 text-xs text-foreground/45">等待管理员开放在线支付</div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            ) : null}
+            <div className="wallet-plan-grid">
+                {plans.map((plan, index) => (
+                    <button
+                        key={plan.id}
+                        type="button"
+                        className={`wallet-recharge-plan ${index === 2 ? "is-featured" : ""}`}
+                        aria-label={`选择 ${formatCents(plan.priceCents)} 元充值套餐，到账 ${formatCredits(plan.creditsMicrocredits)} 积分`}
+                        onClick={() => onPay(plan)}
+                    >
+                        <span className="wallet-plan-top">
+                            <span>充值金额</span>
+                            {plan.bonusPercent > 0 ? <span className="wallet-plan-bonus">赠 {plan.bonusPercent}%</span> : null}
+                        </span>
+                        <span className="wallet-plan-price">
+                            <small>¥</small>
+                            <strong>{formatCents(plan.priceCents)}</strong>
+                        </span>
+                        <span className="wallet-plan-credits">
+                            <small>预计到账</small>
+                            <strong>{formatCredits(plan.creditsMicrocredits)} 积分</strong>
+                        </span>
+                        <span className="wallet-plan-action">
+                            {paymentReady ? "选择并充值" : "查看支付状态"}
+                            <ChevronRight aria-hidden="true" />
+                        </span>
+                    </button>
+                ))}
+            </div>
 
-            <div className="mt-6 border-t border-border/60 pt-5">
-                <div>
+            <div className="wallet-recharge-footnote">
+                <div className="min-w-0">
                     <h3 className="text-sm font-semibold">换算公式</h3>
                     <p className="mt-2 text-xs leading-6 text-foreground/58">
                         1 元 = {policy?.creditPerYuan || 10} 积分；扣除积分 = ⌈使用秒数 × 标价（元/秒） × {policy?.creditPerYuan || 10}⌉。
                     </p>
                     <p className="mt-1 text-xs leading-6 text-foreground/45">实际扣费以任务命中的渠道、分辨率和结算账单为准；失败任务按系统账单状态处理。</p>
                 </div>
+                <p>充值积分用于平台内模型调用，不等同人民币余额。</p>
             </div>
         </section>
     );
@@ -453,7 +513,11 @@ function PaymentCheckout({ order }: { order: PaymentOrder }) {
         <div className="flex flex-col items-center py-4 text-center">
             <div className="text-sm text-foreground/55">应付金额</div>
             <strong className="mt-1 text-3xl tabular-nums">¥{formatCents(order.amountCents)}</strong>
-            {order.qrCodeImage ? <img className="mt-5 size-[210px] rounded-lg object-contain" src={order.qrCodeImage} alt={`${paymentTypeLabel(order.payType)}付款二维码`} referrerPolicy="no-referrer" /> : qrValue ? <QRCode className="mt-5" value={qrValue} size={210} /> : null}
+            {order.qrCodeImage ? (
+                <img className="mt-5 size-[210px] rounded-lg object-contain" src={order.qrCodeImage} alt={`${paymentTypeLabel(order.payType)}付款二维码`} referrerPolicy="no-referrer" />
+            ) : qrValue ? (
+                <QRCode className="mt-5" value={qrValue} size={210} />
+            ) : null}
             <p className="mt-4 text-sm text-foreground/55">请使用{paymentTypeLabel(order.payType)}完成支付，页面会自动确认到账。</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {order.checkoutUrl ? (
@@ -477,15 +541,24 @@ function RecentPaymentOrders({ orders, onOpen }: { orders: PaymentOrder[]; onOpe
     return (
         <section className="app-workspace-surface mt-6 rounded-lg p-5 backdrop-blur-xl sm:p-6" aria-labelledby="wallet-payment-orders-title">
             <div>
-                <h2 id="wallet-payment-orders-title" className="text-base font-semibold">最近充值订单</h2>
+                <h2 id="wallet-payment-orders-title" className="text-base font-semibold">
+                    最近充值订单
+                </h2>
                 <p className="mt-1 text-xs text-foreground/55">可重新打开待支付订单，已支付订单不会重复入账。</p>
             </div>
             <div className="mt-4 grid gap-2">
                 {orders.map((order) => (
-                    <button key={order.id} type="button" className="flex w-full items-center justify-between gap-4 rounded-lg border border-border/70 bg-foreground/[.025] px-4 py-3 text-left transition-colors hover:bg-foreground/[.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50" onClick={() => onOpen(order)}>
+                    <button
+                        key={order.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-4 rounded-lg border border-border/70 bg-foreground/[.025] px-4 py-3 text-left transition-colors hover:bg-foreground/[.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        onClick={() => onOpen(order)}
+                    >
                         <span className="min-w-0">
                             <span className="block truncate text-sm font-medium">{order.planName}</span>
-                            <span className="mt-1 block text-xs text-foreground/45">{formatTime(order.createdAt)} · {paymentTypeLabel(order.payType)}</span>
+                            <span className="mt-1 block text-xs text-foreground/45">
+                                {formatTime(order.createdAt)} · {paymentTypeLabel(order.payType)}
+                            </span>
                         </span>
                         <span className="flex shrink-0 items-center gap-3">
                             <strong className="text-sm tabular-nums">¥{formatCents(order.amountCents)}</strong>
