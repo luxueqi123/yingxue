@@ -79,7 +79,7 @@ func TestMigrateSchemaV5AddsQRCodeImage(t *testing.T) {
 	if err := migrateSchemaV4(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropColumn("payment_orders", "qr_code_image"); err != nil {
+	if err := db.Migrator().DropColumn(&paymentOrderQRCodeImageMigration{}, "QRCodeImage"); err != nil {
 		t.Fatal(err)
 	}
 	if db.Migrator().HasColumn("payment_orders", "qr_code_image") {
