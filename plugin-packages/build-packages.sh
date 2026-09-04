@@ -27,7 +27,7 @@ for manifest in "$root_dir"/*/manifest.json; do
   rm -f "$temporary_file"
   (
     cd "$package_dir"
-    find manifest.json README.md docs assets web backend LICENSE -type f 2>/dev/null | LC_ALL=C sort | zip -X -q "$temporary_file" -@
+    find manifest.json README.md docs assets web backend LICENSE -type f 2>/dev/null | LC_ALL=C sort | zip -X -D -q "$temporary_file" -@
   )
   mv "$temporary_file" "$output_file"
 done

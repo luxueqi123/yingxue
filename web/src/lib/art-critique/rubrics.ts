@@ -36,12 +36,66 @@ export const ART_CRITIQUE_RUBRIC: readonly ArtCritiqueRubricSection[] = [
         label: "构图与视觉层级",
         references: ["CADB / SAMP-Net", "CG-IAA", "PhotoFramer-Assessment"],
         checks: [
-            { id: "subject-placement", label: "主体位置", check: "主体位置是否服务于画面意图和叙事方向", flagWhen: "主体位置让画面失去方向感，或明显削弱了主题表达", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.55, mergeKeys: ["subject", "placement"] },
-            { id: "visual-balance", label: "视觉平衡", check: "左右、上下和前后景的视觉重量是否合理", flagWhen: "一侧重量明显压住另一侧，且不是有意制造的不平衡", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.55, mergeKeys: ["balance", "weight"] },
-            { id: "negative-space", label: "留白与呼吸", check: "留白是否提供呼吸感、方向感或叙事空间", flagWhen: "留白挤压主体、切断动作方向，或空白区域没有发挥作用", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.55, mergeKeys: ["negative-space", "space"] },
-            { id: "visual-flow", label: "视觉动线", check: "第一视觉焦点、第二焦点和视线移动路径是否清楚", flagWhen: "背景或局部高对比抢走主体注意力，视线无法自然进入画面", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.55, mergeKeys: ["flow", "focus"] },
-            { id: "composition-pattern", label: "构图模式", check: "当前画面更接近居中、三分、黄金比例、三角、水平、垂直、对角、对称、曲线、放射、消失点、pattern 或 fill-frame 中的哪一种", flagWhen: "构图模式与画面意图冲突（不能仅因没有使用三分法就报告）", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.6, mergeKeys: ["pattern", "intent"] },
-            { id: "crop-and-depth", label: "裁切与景深", check: "裁切、遮挡和前中后景是否强化主体关系", flagWhen: "裁切破坏主体结构，或空间层次让画面关系难以理解", applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"], evidenceRequired: true, minConfidence: 0.55, mergeKeys: ["crop", "depth"] },
+            {
+                id: "subject-placement",
+                label: "主体位置",
+                check: "主体位置是否服务于画面意图和叙事方向",
+                flagWhen: "主体位置让画面失去方向感，或明显削弱了主题表达",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.55,
+                mergeKeys: ["subject", "placement"],
+            },
+            {
+                id: "visual-balance",
+                label: "视觉平衡",
+                check: "左右、上下和前后景的视觉重量是否合理",
+                flagWhen: "一侧重量明显压住另一侧，且不是有意制造的不平衡",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.55,
+                mergeKeys: ["balance", "weight"],
+            },
+            {
+                id: "negative-space",
+                label: "留白与呼吸",
+                check: "留白是否提供呼吸感、方向感或叙事空间",
+                flagWhen: "留白挤压主体、切断动作方向，或空白区域没有发挥作用",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.55,
+                mergeKeys: ["negative-space", "space"],
+            },
+            {
+                id: "visual-flow",
+                label: "视觉动线",
+                check: "第一视觉焦点、第二焦点和视线移动路径是否清楚",
+                flagWhen: "背景或局部高对比抢走主体注意力，视线无法自然进入画面",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.55,
+                mergeKeys: ["flow", "focus"],
+            },
+            {
+                id: "composition-pattern",
+                label: "构图模式",
+                check: "当前画面更接近居中、三分、黄金比例、三角、水平、垂直、对角、对称、曲线、放射、消失点、pattern 或 fill-frame 中的哪一种",
+                flagWhen: "构图模式与画面意图冲突（不能仅因没有使用三分法就报告）",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.6,
+                mergeKeys: ["pattern", "intent"],
+            },
+            {
+                id: "crop-and-depth",
+                label: "裁切与景深",
+                check: "裁切、遮挡和前中后景是否强化主体关系",
+                flagWhen: "裁切破坏主体结构，或空间层次让画面关系难以理解",
+                applicableImageTypes: ["portrait", "landscape", "product", "illustration", "concept-art", "architecture", "still-life", "other"],
+                evidenceRequired: true,
+                minConfidence: 0.55,
+                mergeKeys: ["crop", "depth"],
+            },
         ],
     },
     {
@@ -71,7 +125,16 @@ export const ART_CRITIQUE_RUBRIC: readonly ArtCritiqueRubricSection[] = [
         label: "比例、结构与透视",
         references: ["HumanAesExpert", "PhotoFramer-Assessment", "CG-IAA"],
         checks: [
-            { id: "human-proportion", label: "人物比例", check: "人物的脸部、五官、手脚、肢体长度和头身关系是否自然", flagWhen: "可见的结构异常影响可信度（不要把正常透视变化误判为畸形）", applicableImageTypes: ["portrait"], evidenceRequired: true, minConfidence: 0.7, mergeKeys: ["human", "proportion"] },
+            {
+                id: "human-proportion",
+                label: "人物比例",
+                check: "人物的脸部、五官、手脚、肢体长度和头身关系是否自然",
+                flagWhen: "可见的结构异常影响可信度（不要把正常透视变化误判为畸形）",
+                applicableImageTypes: ["portrait"],
+                evidenceRequired: true,
+                minConfidence: 0.7,
+                mergeKeys: ["human", "proportion"],
+            },
             { id: "object-scale", label: "物体相对尺寸", check: "物体之间的相对大小是否符合场景关系", flagWhen: "关键物体大小关系破坏空间或叙事逻辑" },
             { id: "perspective", label: "透视与遮挡", check: "消失方向、近大远小、地面关系和遮挡顺序是否一致", flagWhen: "透视线索互相冲突，或遮挡关系让空间无法成立" },
             { id: "detail-consistency", label: "细节一致性", check: "关键边缘、纹理、清晰度和风格是否保持一致", flagWhen: "局部明显崩坏、重复、异常，且会影响主体阅读" },
@@ -98,10 +161,17 @@ export const ART_CRITIQUE_REFERENCE_METHODS = [
 export function buildArtCritiqueRubricPrompt(options: ArtCritiqueRubricPromptOptions = {}) {
     const selectedCategories = options.categories?.length ? new Set(options.categories) : undefined;
     const sectionsToRender = selectedCategories ? ART_CRITIQUE_RUBRIC.filter((section) => selectedCategories.has(section.category)) : ART_CRITIQUE_RUBRIC;
-    const sections = sectionsToRender.map((section) => {
-        const checks = section.checks.map((item) => `- ${item.label}（规则 ID：${item.id}；适用图片：${(item.applicableImageTypes || ["所有图片"]).join("、")}；最低置信度：${item.minConfidence ?? 0.55}；需要证据：${item.evidenceRequired !== false ? "是" : "否"}；合并关键词：${(item.mergeKeys || []).join("、")}）：检查${item.check}；只有在${item.flagWhen}时才报告。`).join("\n");
-        return [`【${section.label}｜${section.category}】`, `方法参考：${section.references.join("、")}`, checks].join("\n");
-    }).join("\n\n");
+    const sections = sectionsToRender
+        .map((section) => {
+            const checks = section.checks
+                .map(
+                    (item) =>
+                        `- ${item.label}（规则 ID：${item.id}；适用图片：${(item.applicableImageTypes || ["所有图片"]).join("、")}；最低置信度：${item.minConfidence ?? 0.55}；需要证据：${item.evidenceRequired !== false ? "是" : "否"}；合并关键词：${(item.mergeKeys || []).join("、")}）：检查${item.check}；只有在${item.flagWhen}时才报告。`,
+                )
+                .join("\n");
+            return [`【${section.label}｜${section.category}】`, `方法参考：${section.references.join("、")}`, checks].join("\n");
+        })
+        .join("\n\n");
     const includeReferenceMapping = options.includeReferenceMapping ?? !selectedCategories;
 
     return [

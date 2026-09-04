@@ -34,10 +34,7 @@ test("announcement editor preserves image and pinned fields through edit and sav
 });
 
 test("plugin upload owns native drops and price availability text remains readable", async () => {
-    const [pluginSource, adminCss] = await Promise.all([
-        Bun.file(new URL("../src/pages/plugins/plugin-documentation-modals.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text(),
-    ]);
+    const [pluginSource, adminCss] = await Promise.all([Bun.file(new URL("../src/pages/plugins/plugin-documentation-modals.tsx", import.meta.url)).text(), Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text()]);
     const toggleCss = sourceSection(adminCss, ".admin-price-tier-toggle span {", ".admin-model-editor-add-tier.ant-btn {");
 
     expect(pluginSource).toContain("event.preventDefault()");
@@ -217,7 +214,7 @@ test("payment availability is owned by the dedicated payment runtime and consume
     expect(walletSource).toContain("Promise.all([listTopupProducts(), listPaymentProviders()])");
     expect(walletSource).toContain("createPaymentOrder({");
     expect(apiSource).toContain('apiClient.get("/payments/providers")');
-    expect(apiSource).toContain('apiClient.put(`/admin/payments/providers/${encodeURIComponent(id)}/config`, input)');
+    expect(apiSource).toContain("apiClient.put(`/admin/payments/providers/${encodeURIComponent(id)}/config`, input)");
 });
 
 test("request logs display user credit billing independently from upstream cost", async () => {

@@ -136,7 +136,12 @@ export function AdminShell() {
                             <AppChangelogButton
                                 className={cn("admin-sidebar-brand-button", collapsed && "is-collapsed")}
                                 icon={
-                                    <BrandLogoFrame className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background" logoClassName="size-5 object-contain" alt="" fallback={<YingxueBrandMark className="size-5" variant="inverse" />} />
+                                    <BrandLogoFrame
+                                        className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background"
+                                        logoClassName="size-5 object-contain"
+                                        alt=""
+                                        fallback={<YingxueBrandMark className="size-5" variant="inverse" />}
+                                    />
                                 }
                                 label={appearance.brandName}
                                 showLabel={!collapsed}

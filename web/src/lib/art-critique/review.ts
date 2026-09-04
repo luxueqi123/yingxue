@@ -93,14 +93,7 @@ export type ArtCritiqueReviewInput = {
 
 export async function reviewArtCritiqueImage(config: AiConfig, input: ArtCritiqueReviewInput, options?: ArtCritiquePipelineOptions) {
     options?.onStage?.("reviewing");
-    const response = await requestToolResponse(
-        config,
-        artCritiqueMessages(input),
-        [artCritiqueTool],
-        { type: "function", name: ART_CRITIQUE_TOOL_NAME },
-        undefined,
-        { signal: options?.signal },
-    );
+    const response = await requestToolResponse(config, artCritiqueMessages(input), [artCritiqueTool], { type: "function", name: ART_CRITIQUE_TOOL_NAME }, undefined, { signal: options?.signal });
     return parseArtCritiqueResponse(response, input);
 }
 

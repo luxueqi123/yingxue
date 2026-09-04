@@ -46,19 +46,21 @@ export function listRemoteAssets() {
 }
 
 export function listRemoteAssetsPage(options: { page: number; pageSize: number; kind?: string; category?: string; folderId?: string; uncategorized?: boolean; status?: string; query?: string; signal?: AbortSignal }) {
-    return request<RemoteAssetPage>(api.get("/assets", {
-        signal: options.signal,
-        params: compactApiParams({
-            page: options.page,
-            page_size: options.pageSize,
-            kind: options.kind,
-            category: options.category,
-            folder_id: options.folderId,
-            uncategorized: options.uncategorized ? 1 : undefined,
-            status: options.status,
-            q: options.query,
+    return request<RemoteAssetPage>(
+        api.get("/assets", {
+            signal: options.signal,
+            params: compactApiParams({
+                page: options.page,
+                page_size: options.pageSize,
+                kind: options.kind,
+                category: options.category,
+                folder_id: options.folderId,
+                uncategorized: options.uncategorized ? 1 : undefined,
+                status: options.status,
+                q: options.query,
+            }),
         }),
-    }));
+    );
 }
 
 export function listAssetFolders() {

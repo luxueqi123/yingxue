@@ -88,7 +88,11 @@ export function TableSurface({ children, className }: { children: ReactNode; cla
 }
 
 export function CollectionGrid({ children, className, style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
-    return <div className={cn("mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(248px,1fr))]", className)} style={style}>{children}</div>;
+    return (
+        <div className={cn("mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(248px,1fr))]", className)} style={style}>
+            {children}
+        </div>
+    );
 }
 
 /* 自研轻量分页：页码胶囊 + 省略号 + 每页条数 + 总数，替代 AntD Pagination（无 AntD 残留样式，与工具栏容器同语言）。 */

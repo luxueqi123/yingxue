@@ -214,15 +214,78 @@ function referenceBox(x: number, y: number, width: number, height: number): ArtC
 }
 
 function referencePoints({ left, right, top, bottom }: { left: boolean; right: boolean; top: boolean; bottom: boolean }): ArtCritiqueTarget {
-    if (left && top) return { type: "points", points: [{ x: 0.18, y: 0.18 }, { x: 0.26, y: 0.3 }] };
-    if (right && top) return { type: "points", points: [{ x: 0.74, y: 0.18 }, { x: 0.82, y: 0.3 }] };
-    if (left && bottom) return { type: "points", points: [{ x: 0.18, y: 0.7 }, { x: 0.26, y: 0.82 }] };
-    if (right && bottom) return { type: "points", points: [{ x: 0.74, y: 0.7 }, { x: 0.82, y: 0.82 }] };
-    if (left && !right) return { type: "points", points: [{ x: 0.18, y: 0.25 }, { x: 0.2, y: 0.66 }] };
-    if (right && !left) return { type: "points", points: [{ x: 0.76, y: 0.25 }, { x: 0.8, y: 0.66 }] };
-    if (top && !bottom) return { type: "points", points: [{ x: 0.28, y: 0.18 }, { x: 0.72, y: 0.18 }] };
-    if (bottom && !top) return { type: "points", points: [{ x: 0.28, y: 0.72 }, { x: 0.72, y: 0.72 }] };
-    return { type: "points", points: [{ x: 0.26, y: 0.2 }, { x: 0.74, y: 0.2 }, { x: 0.52, y: 0.68 }] };
+    if (left && top)
+        return {
+            type: "points",
+            points: [
+                { x: 0.18, y: 0.18 },
+                { x: 0.26, y: 0.3 },
+            ],
+        };
+    if (right && top)
+        return {
+            type: "points",
+            points: [
+                { x: 0.74, y: 0.18 },
+                { x: 0.82, y: 0.3 },
+            ],
+        };
+    if (left && bottom)
+        return {
+            type: "points",
+            points: [
+                { x: 0.18, y: 0.7 },
+                { x: 0.26, y: 0.82 },
+            ],
+        };
+    if (right && bottom)
+        return {
+            type: "points",
+            points: [
+                { x: 0.74, y: 0.7 },
+                { x: 0.82, y: 0.82 },
+            ],
+        };
+    if (left && !right)
+        return {
+            type: "points",
+            points: [
+                { x: 0.18, y: 0.25 },
+                { x: 0.2, y: 0.66 },
+            ],
+        };
+    if (right && !left)
+        return {
+            type: "points",
+            points: [
+                { x: 0.76, y: 0.25 },
+                { x: 0.8, y: 0.66 },
+            ],
+        };
+    if (top && !bottom)
+        return {
+            type: "points",
+            points: [
+                { x: 0.28, y: 0.18 },
+                { x: 0.72, y: 0.18 },
+            ],
+        };
+    if (bottom && !top)
+        return {
+            type: "points",
+            points: [
+                { x: 0.28, y: 0.72 },
+                { x: 0.72, y: 0.72 },
+            ],
+        };
+    return {
+        type: "points",
+        points: [
+            { x: 0.26, y: 0.2 },
+            { x: 0.74, y: 0.2 },
+            { x: 0.52, y: 0.68 },
+        ],
+    };
 }
 
 function globalTarget(): ArtCritiqueTarget {

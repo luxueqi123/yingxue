@@ -38,6 +38,15 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	if !db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
 		t.Fatal("schema migration v5 did not create payment_orders.qr_code_image")
 	}
+	if !db.Migrator().HasColumn(&model.Resource{}, "upload_key") {
+		t.Fatal("schema migration v6 did not create resources.upload_key")
+	}
+	if !db.Migrator().HasTable(&model.PaymentNotification{}) {
+		t.Fatal("schema migration v7 did not create payment_notifications")
+	}
+	if !db.Migrator().HasTable(&model.AssetFolder{}) {
+		t.Fatal("schema migration v8 did not create asset_folders")
+	}
 	if err := MigrateSchema(db); err != nil {
 		t.Fatalf("migration should be idempotent: %v", err)
 	}
@@ -136,7 +145,7 @@ func TestMigrateSchemaV3NormalizesLegacyAccessoryCategory(t *testing.T) {
 	}
 }
 
-func TestMigrateSchemaV4AddsResourceUploadKeyToExistingSchema(t *testing.T) {
+func TestMigrateSchemaV6AddsResourceUploadKeyToExistingSchema(t *testing.T) {
 	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-resource-upload-key?mode=memory&cache=shared"})
 	if err != nil {
 		t.Fatal(err)
