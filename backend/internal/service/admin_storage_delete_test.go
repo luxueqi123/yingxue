@@ -122,14 +122,10 @@ func TestDeleteAdminResourcesRollsBackWhenAuditInsertFails(t *testing.T) {
 	svc, db, _, admin := newAdminStorageDeleteTestService(t)
 	resource := model.Resource{ID: "resource-rollback", UserID: admin.ID, Kind: "image", Status: model.ResourceStatusReady, Provider: "local"}
 	binding := model.ArkPrivateAssetBinding{ID: "binding-1", UserID: admin.ID, ResourceID: resource.ID, ProjectName: "project", Status: "active"}
-	draft := model.AnnouncementImageDraft{ResourceID: resource.ID, UserID: admin.ID}
 	if err := db.Create(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&binding).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&draft).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("CREATE TRIGGER fail_resource_audit BEFORE INSERT ON admin_audit_events WHEN NEW.action = 'resource.delete' BEGIN SELECT RAISE(ABORT, 'forced audit failure'); END;").Error; err != nil {
@@ -141,7 +137,6 @@ func TestDeleteAdminResourcesRollsBackWhenAuditInsertFails(t *testing.T) {
 	}
 	assertModelCount(t, db, &model.Resource{}, "id = ?", 1, resource.ID)
 	assertModelCount(t, db, &model.ArkPrivateAssetBinding{}, "resource_id = ?", 1, resource.ID)
-	assertModelCount(t, db, &model.AnnouncementImageDraft{}, "resource_id = ?", 1, resource.ID)
 	assertModelCount(t, db, &model.ResourceDeletionJob{}, "1 = 1", 0)
 }
 

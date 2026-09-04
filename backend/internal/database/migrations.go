@@ -38,6 +38,14 @@ type schemaMigration struct {
 
 func (schemaMigration) TableName() string { return "schema_migrations" }
 
+// paymentOrderQRCodeImageMigration preserves the historical v5 schema after
+// QR code payloads moved out of the current PaymentOrder model.
+type paymentOrderQRCodeImageMigration struct {
+	QRCodeImage string `gorm:"column:qr_code_image;type:text"`
+}
+
+func (paymentOrderQRCodeImageMigration) TableName() string { return "payment_orders" }
+
 type migration struct {
 	version  int64
 	name     string
@@ -107,7 +115,7 @@ func migrateSchemaV4(tx *gorm.DB) error {
 }
 
 func migrateSchemaV5(tx *gorm.DB) error {
-	if err := tx.AutoMigrate(&model.PaymentOrder{}); err != nil {
+	if err := tx.AutoMigrate(&paymentOrderQRCodeImageMigration{}); err != nil {
 		return fmt.Errorf("扩展在线支付二维码图片字段：%w", err)
 	}
 	return nil

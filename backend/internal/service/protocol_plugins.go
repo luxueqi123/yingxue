@@ -339,6 +339,15 @@ func (c *pluginRuntime) reload() error {
 			plugins[id] = record
 			continue
 		}
+		if len(manifest.Contributes.Workflows) > 0 && len(manifest.Contributes.Providers) == 0 {
+			if record.Metadata.Enabled {
+				record.Status = "enabled"
+			} else {
+				record.Status = "disabled"
+			}
+			plugins[id] = record
+			continue
+		}
 		adapters, loadErr := protocol.LoadInstalledProviders(record.Raw, nil)
 		if loadErr != nil {
 			record.Metadata.Enabled = false

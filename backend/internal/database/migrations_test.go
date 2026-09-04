@@ -35,7 +35,7 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	if !db.Migrator().HasTable(&model.PaymentOrder{}) {
 		t.Fatal("schema migration v4 did not create payment_orders")
 	}
-	if !db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+	if !db.Migrator().HasColumn("payment_orders", "qr_code_image") {
 		t.Fatal("schema migration v5 did not create payment_orders.qr_code_image")
 	}
 	if !db.Migrator().HasColumn(&model.Resource{}, "upload_key") {
@@ -79,16 +79,16 @@ func TestMigrateSchemaV5AddsQRCodeImage(t *testing.T) {
 	if err := migrateSchemaV4(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropColumn(&model.PaymentOrder{}, "QRCodeImage"); err != nil {
+	if err := db.Migrator().DropColumn("payment_orders", "qr_code_image"); err != nil {
 		t.Fatal(err)
 	}
-	if db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+	if db.Migrator().HasColumn("payment_orders", "qr_code_image") {
 		t.Fatal("qr_code_image unexpectedly exists before migration")
 	}
 	if err := migrateSchemaV5(db); err != nil {
 		t.Fatal(err)
 	}
-	if !db.Migrator().HasColumn(&model.PaymentOrder{}, "QRCodeImage") {
+	if !db.Migrator().HasColumn("payment_orders", "qr_code_image") {
 		t.Fatal("qr_code_image missing after migration")
 	}
 }
