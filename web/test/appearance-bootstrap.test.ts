@@ -97,6 +97,14 @@ test("appearance management exposes light and dark logo uploads plus the frame s
     expect(globalStyles).toContain('.brand-logo-frame[data-logo-frame-enabled="false"] > :is(img, svg)');
 });
 
+test("configured brand logos fall back locally after an image load failure", async () => {
+    const source = await Bun.file(new URL("../src/components/brand/brand-logo.tsx", import.meta.url)).text();
+
+    expect(source).toContain("failedLogoURL");
+    expect(source).toContain("failedLogoURL === logoURL");
+    expect(source).toContain("onError={() => setFailedLogoURL(logoURL)}");
+});
+
 test("object storage can adopt the configured English brand identifier without replacing saved prefixes automatically", async () => {
     const source = await Bun.file(new URL("../src/pages/admin/settings/storage-settings-page.tsx", import.meta.url)).text();
 

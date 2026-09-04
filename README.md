@@ -150,8 +150,8 @@ cd backend && go test ./...
 # Canvas Agent
 cd canvas-agent && npm test && npm run build
 
-# 文档站
-cd docs && bun run types:check
+# 文档（当前为 Markdown/MDX 源文件，无独立构建脚本）
+# 读回改动，并检查 docs/index.md 索引与相对链接
 ```
 
 UI 改动还应检查关键路由、明暗主题、弹窗、滚动、空态和核心交互。当前待验证事项记录在[待测试清单](docs/content/docs/progress/pending-test.mdx)。

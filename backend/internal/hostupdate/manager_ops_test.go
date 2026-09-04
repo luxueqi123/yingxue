@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +21,7 @@ type recordingRunner struct {
 	calls      [][]string
 	inputCalls [][]string
 	output     string
+	runErr     error
 }
 
 func (r *recordingRunner) Run(_ context.Context, _ string, args, _ []string, stdout, _ io.Writer) error {
@@ -29,7 +33,7 @@ func (r *recordingRunner) Run(_ context.Context, _ string, args, _ []string, std
 		}
 		_, _ = io.WriteString(stdout, value)
 	}
-	return nil
+	return r.runErr
 }
 
 func (r *recordingRunner) RunWithInput(_ context.Context, _ string, args, _ []string, input io.Reader, stdout, _ io.Writer) error {
@@ -139,6 +143,174 @@ func TestCurrentVersionRejectsLatest(t *testing.T) {
 	if _, err := manager.currentVersion(); err == nil {
 		t.Fatal("latest tag was accepted")
 	}
+}
+
+func TestStartRollbackRejectsAlreadyRestoredVersion(t *testing.T) {
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=1.2.4-yingxue.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{
+		config: Config{InstallDir: installDir, EnvFile: ".env", StateDir: installDir, StepTimeout: time.Second},
+		runner: &recordingRunner{runErr: errors.New("stop")},
+		state: persistedState{
+			LastBackup:      &Backup{ID: "backup-1", Version: "v1.2.4-yingxue.1"},
+			RollbackVersion: "v1.2.4-yingxue.1",
+			Operation:       Operation{Phase: PhaseRolledBack},
+		},
+	}
+
+	status, err := manager.StartRollback("repeat")
+	if err == nil {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			manager.mu.Lock()
+			active := manager.state.Operation.Phase.Active()
+			manager.mu.Unlock()
+			if !active {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if err == nil || !strings.Contains(err.Error(), "当前已是回退版本") {
+		t.Fatalf("repeat rollback error = %v", err)
+	}
+	if status.Operation.Phase != PhaseRolledBack {
+		t.Fatalf("operation phase = %s, want %s", status.Operation.Phase, PhaseRolledBack)
+	}
+}
+
+func TestStartRollbackRejectsTargetNewerThanCurrentVersion(t *testing.T) {
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=1.2.3-yingxue.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{
+		config: Config{InstallDir: installDir, EnvFile: ".env", StateDir: installDir, StepTimeout: time.Second},
+		runner: &recordingRunner{runErr: errors.New("stop")},
+		state: persistedState{
+			LastBackup:      &Backup{ID: "backup-newer", Version: "v1.2.4-yingxue.1"},
+			RollbackVersion: "v1.2.4-yingxue.1",
+			Operation:       Operation{Phase: PhaseRolledBack},
+		},
+	}
+
+	_, err := manager.StartRollback("invalid direction")
+	if err == nil || !strings.Contains(err.Error(), "必须低于当前版本") {
+		t.Fatalf("newer rollback target error = %v", err)
+	}
+}
+
+func TestSuccessfulRollbackConsumesRollbackSnapshot(t *testing.T) {
+	installDir := t.TempDir()
+	stateDir := filepath.Join(installDir, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=1.2.5-yingxue.1\nPOSTGRES_USER=canvas\nPOSTGRES_DB=canvas\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup := writeRollbackTestBackup(t, installDir, "v1.2.4-yingxue.1")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"code":0,"data":{"build":{"version":"v1.2.4-yingxue.1"}}}`)
+	}))
+	defer server.Close()
+	manager := &Manager{
+		config: Config{
+			InstallDir:   installDir,
+			ComposeFile:  "docker-compose.deploy.yml",
+			EnvFile:      ".env",
+			StateDir:     stateDir,
+			HealthURL:    server.URL,
+			StableWindow: time.Nanosecond,
+			StepTimeout:  time.Second,
+		},
+		runner:     &recordingRunner{},
+		httpClient: server.Client(),
+		state: persistedState{
+			LastBackup:      &backup,
+			RollbackVersion: backup.Version,
+			Operation:       Operation{Phase: PhaseRollingBack},
+		},
+	}
+
+	manager.runRollback(backup.Version, backup, false)
+
+	if manager.state.Operation.Phase != PhaseRolledBack {
+		t.Fatalf("operation phase = %s, want %s", manager.state.Operation.Phase, PhaseRolledBack)
+	}
+	if manager.state.RollbackVersion != "" || manager.state.LastBackup != nil {
+		t.Fatalf("rollback snapshot remains available: version=%q backup=%#v", manager.state.RollbackVersion, manager.state.LastBackup)
+	}
+}
+
+func TestFailedRollbackKeepsRollbackSnapshotForManualRecovery(t *testing.T) {
+	installDir := t.TempDir()
+	stateDir := filepath.Join(installDir, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=1.2.5-yingxue.1\nPOSTGRES_USER=canvas\nPOSTGRES_DB=canvas\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup := Backup{ID: "backup-manual", Path: filepath.Join(installDir, "missing.zip"), Checksum: "sha256:missing", Version: "v1.2.4-yingxue.1"}
+	manager := &Manager{
+		config: Config{
+			InstallDir:  installDir,
+			ComposeFile: "docker-compose.deploy.yml",
+			EnvFile:     ".env",
+			StateDir:    stateDir,
+			StepTimeout: time.Second,
+		},
+		runner: &recordingRunner{runErr: errors.New("docker unavailable")},
+		state: persistedState{
+			LastBackup:      &backup,
+			RollbackVersion: backup.Version,
+			Operation:       Operation{Phase: PhaseRollingBack},
+		},
+	}
+
+	manager.runRollback(backup.Version, backup, false)
+
+	if manager.state.Operation.Phase != PhaseManualIntervention {
+		t.Fatalf("operation phase = %s, want %s", manager.state.Operation.Phase, PhaseManualIntervention)
+	}
+	if manager.state.RollbackVersion != backup.Version || manager.state.LastBackup == nil || manager.state.LastBackup.ID != backup.ID {
+		t.Fatalf("manual recovery snapshot was lost: version=%q backup=%#v", manager.state.RollbackVersion, manager.state.LastBackup)
+	}
+}
+
+func writeRollbackTestBackup(t *testing.T, directory, version string) Backup {
+	t.Helper()
+	path := filepath.Join(directory, "rollback-test.zip")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := zip.NewWriter(file)
+	for name, content := range map[string]string{"metadata.json": "{}", "database.dump": "db", "backend-data.tar": "data"} {
+		entry, createErr := archive.Create(name)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := io.WriteString(entry, content); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(data)
+	return Backup{ID: "backup-rollback", Path: path, Checksum: "sha256:" + hex.EncodeToString(hash[:]), Version: version}
 }
 
 func TestCreateBackupReadsBackendDataAsRoot(t *testing.T) {

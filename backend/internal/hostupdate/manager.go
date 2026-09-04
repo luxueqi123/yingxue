@@ -223,8 +223,14 @@ func (m *Manager) StartRollback(reason string) (Status, error) {
 	if err != nil {
 		return m.snapshotLocked(), err
 	}
-	now := time.Now().UTC()
 	target := m.state.RollbackVersion
+	switch comparison := CompareVersions(current, target); {
+	case comparison == 0:
+		return m.snapshotLocked(), errors.New("当前已是回退版本，不能重复恢复同一份备份")
+	case comparison < 0:
+		return m.snapshotLocked(), errors.New("回退目标必须低于当前版本")
+	}
+	now := time.Now().UTC()
 	m.state.Operation = Operation{
 		ID:            randomID(),
 		Phase:         PhaseRollingBack,
@@ -410,6 +416,8 @@ func (m *Manager) runRollback(targetVersion string, backup Backup, automatic boo
 	} else {
 		m.state.Operation.Phase = PhaseRolledBack
 		m.state.Operation.RollbackError = ""
+		m.state.RollbackVersion = ""
+		m.state.LastBackup = nil
 		m.appendLogLocked(PhaseRolledBack, fmt.Sprintf("已恢复到 %s", targetVersion))
 	}
 	_ = m.saveStateLocked()

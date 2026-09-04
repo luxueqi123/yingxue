@@ -35,7 +35,7 @@ description: Host Updater、Release 检查、数据库备份迁移、健康验�
 5. 使用 `pg_restore --clean --if-exists` 恢复 PostgreSQL；
 6. 恢复旧 `CANVAS_IMAGE_TAG`，启动旧服务并重新进行稳定窗口验证。
 
-回退任一步失败时状态变为 `manual_intervention`，不伪造成功。管理后台仅在存在旧版本和已校验备份时开放人工回退按钮。
+回退任一步失败时状态变为 `manual_intervention`，不伪造成功，并保留旧版本和备份供人工恢复。回退成功后会清空 `rollbackVersion` 和 `lastBackup`，撤销这份快照的一次性回退资格；回退目标等于或高于当前运行版本时，Host Updater 也会直接拒绝，避免重复恢复同一快照或执行方向错误的“回退”。管理后台仅在存在旧版本和已校验备份时开放人工回退按钮。
 
 ## 安装与升级约束
 

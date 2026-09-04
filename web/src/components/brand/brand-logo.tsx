@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { appearanceLogoURL, useAppearanceStore } from "@/stores/use-appearance-store";
@@ -14,8 +14,10 @@ type BrandLogoProps = {
 export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: BrandLogoProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const currentTheme = useThemeStore((state) => state.theme);
-    if (!appearance.logoConfigured) return <>{fallback}</>;
-    return <img src={appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme)} alt={alt} className={cn("block object-contain", className)} draggable={false} />;
+    const [failedLogoURL, setFailedLogoURL] = useState<string | null>(null);
+    const logoURL = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
+    if (!appearance.logoConfigured || failedLogoURL === logoURL) return <>{fallback}</>;
+    return <img src={logoURL} alt={alt} className={cn("block object-contain", className)} draggable={false} onError={() => setFailedLogoURL(logoURL)} />;
 }
 
 export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto" }: BrandLogoProps & { logoClassName?: string }) {
