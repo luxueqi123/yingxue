@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
-  issues: write
 
 concurrency:
   group: sync-upstream-release
@@ -86,6 +84,15 @@ jobs:
           PY
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Upload merge conflict report
+        if: failure() && steps.merge.outputs.conflict == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-${{ steps.upstream.outputs.tag }}-conflicts
+          path: ${{ runner.temp }}/conflicts.txt
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Set up Go
         if: steps.pending.outputs.value == 'true'
         uses: actions/setup-go@v5
@@ -105,6 +112,14 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.9
+
+      - name: Verify Canvas Agent
+        if: steps.pending.outputs.value == 'true'
+        working-directory: canvas-agent
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+          bun run test
 
       - name: Verify web
         if: steps.pending.outputs.value == 'true'
@@ -126,24 +141,21 @@ jobs:
           git tag -a "${{ steps.merge.outputs.version }}" -m "${{ steps.merge.outputs.version }}"
           git push origin HEAD:main "refs/tags/${{ steps.merge.outputs.version }}"
 
-      - name: Start image and Release publishing
-        if: steps.pending.outputs.value == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: gh workflow run publish-images.yml --ref "${{ steps.merge.outputs.version }}"
-
       - name: Report blocked automatic sync
         if: failure() && steps.pending.outputs.value == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          title="上游自动同步失败：${{ steps.upstream.outputs.tag }}"
           url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
-          if [[ -z "$existing" ]]; then
-            gh issue create --title "$title" --body "自动合并或验收没有通过，未发布映雪版本，生产环境不会看到这次更新。运行记录：$url"
-          else
-            gh issue comment "$existing" --body "再次失败，仍未发布。运行记录：$url"
-          fi
+          {
+            echo "## 上游自动同步被阻断"
+            echo
+            echo "- 上游版本：\`${{ steps.upstream.outputs.tag }}\`"
+            echo "- 结果：未创建提交、标签、镜像或 Release，生产环境不会变化。"
+            if [[ "${{ steps.merge.outputs.conflict }}" == "true" ]]; then
+              echo "- 原因：上游合并冲突。"
+              echo "- 冲突清单：见本次运行的 \`upstream-${{ steps.upstream.outputs.tag }}-conflicts\` 构件。"
+            else
+              echo "- 原因：合并后的验证或发布步骤失败；本次没有冲突清单构件。"
+            fi
+            echo "- 运行记录：${url}"
+          } >> "$GITHUB_STEP_SUMMARY"

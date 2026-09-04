@@ -9,6 +9,7 @@ import {
     ChevronDown,
     CloudUpload,
     Coins,
+    CreditCard,
     Database,
     FileClock,
     HardDrive,
@@ -19,6 +20,7 @@ import {
     Mail,
     MessageSquareText,
     Moon,
+    Palette,
     Paintbrush,
     PlugZap,
     RadioTower,
@@ -35,6 +37,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
+import { BrandLogoFrame } from "@/components/brand/brand-logo";
+import { YingxueBrandMark } from "@/components/brand/yingxue-brand-mark";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { publishWorkspaceSidebarCollapsed, readWorkspaceSidebarCollapsed, subscribeWorkspaceSidebarCollapsed } from "@/components/layout/workspace-sidebar-state";
 import { getAdminAntThemeConfig } from "@/lib/app-theme";
@@ -42,6 +46,7 @@ import { cn } from "@/lib/utils";
 import "@/styles/admin-ui.css";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useAppearanceStore } from "@/stores/use-appearance-store";
 
 type AdminNavigationItem = {
     path: string;
@@ -71,6 +76,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
         label: "运营",
         items: [
             { path: "/admin/announcements", label: "系统公告", description: "发布、关闭与历史公告", icon: <BellRing className="size-4" /> },
+            { path: "/admin/payments", label: "支付充值", description: "支付渠道、订单与对账", icon: <CreditCard className="size-4" /> },
             { path: "/admin/credit-operations", label: "积分运营", description: "人工调账与异常计费", icon: <Coins className="size-4" /> },
             { path: "/admin/redemption-codes", label: "兑换码", description: "生成与查看兑换码批次", icon: <TicketCheck className="size-4" /> },
             { path: "/admin/logs", label: "请求明细", description: "上游调用与费用", icon: <FileClock className="size-4" /> },
@@ -79,6 +85,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
     {
         label: "系统配置",
         items: [
+            { path: "/admin/settings/appearance", label: "外观管理", description: "品牌、Logo 与登录影片", icon: <Palette className="size-4" /> },
             { path: "/admin/settings/features", label: "功能开放", description: "工作台、插件与模型能力", icon: <ToggleLeft className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", description: "画布绘图节点默认引擎", icon: <Paintbrush className="size-4" /> },
             { path: "/admin/settings/runtime-policy", label: "资源与策略", description: "配额、并发、频控与超时", icon: <Settings2 className="size-4" /> },
@@ -101,6 +108,7 @@ function isAdminNavigationPath(pathname: string, navigationPath: string) {
 }
 
 export function AdminShell() {
+    const appearance = useAppearanceStore((state) => state.appearance);
     const [collapsed, setCollapsed] = useState(readWorkspaceSidebarCollapsed);
     const dark = useThemeStore((state) => state.theme === "dark");
 
@@ -128,11 +136,9 @@ export function AdminShell() {
                             <AppChangelogButton
                                 className={cn("admin-sidebar-brand-button", collapsed && "is-collapsed")}
                                 icon={
-                                    <span className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background">
-                                        <InfinityIcon className="size-4" />
-                                    </span>
+                                    <BrandLogoFrame className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background" logoClassName="size-5 object-contain" alt="" fallback={<YingxueBrandMark className="size-5" variant="inverse" />} />
                                 }
-                                label="映雪"
+                                label={appearance.brandName}
                                 showLabel={!collapsed}
                                 showVersion={!collapsed}
                                 labelClassName="admin-sidebar-brand-title"
@@ -144,7 +150,7 @@ export function AdminShell() {
                     <div className="admin-sidebar-footer shrink-0">
                         <Tooltip mouseEnterDelay={0.1} title={collapsed ? "返回创作台" : undefined} placement="right" rootClassName="app-workspace-sidebar-tooltip">
                             <NavLink
-                                to="/home"
+                                to="/"
                                 aria-label={collapsed ? "返回创作台" : undefined}
                                 className={cn("app-workspace-nav-link group flex h-8 items-center text-foreground/62 transition-colors hover:bg-surface-hover hover:text-foreground", collapsed ? "justify-center px-0" : "gap-2.5 px-2.5")}
                             >
@@ -260,7 +266,7 @@ function MobileAdminNavigation() {
             </Dropdown>
             <div className="flex shrink-0 items-center gap-1">
                 <Tooltip title="返回创作台">
-                    <Link to="/home" className="admin-mobile-navigation-action" aria-label="返回创作台">
+                    <Link to="/" className="admin-mobile-navigation-action" aria-label="返回创作台">
                         <Home className="size-4" aria-hidden="true" />
                     </Link>
                 </Tooltip>

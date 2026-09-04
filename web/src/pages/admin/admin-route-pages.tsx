@@ -1,5 +1,5 @@
 import { Button } from "antd";
-import { CreditCard, Plus, Settings2, UserRoundCog } from "lucide-react";
+import { Plus, Settings2, UserRoundCog } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 
 import { useAdminContext } from "./admin-context";
@@ -62,7 +62,7 @@ export function AnnouncementsPage() {
 
 export function CreditOperationsPage() {
     const { references } = useAdminContext();
-    const [activeOperation, setActiveOperation] = useState<"policy" | "payment" | "adjustment" | null>(null);
+    const [activeOperation, setActiveOperation] = useState<"policy" | "adjustment" | null>(null);
     return (
         <AdminPageFrame
             title="积分运营"
@@ -71,9 +71,6 @@ export function CreditOperationsPage() {
                 <>
                     <Button icon={<Settings2 className="size-4" />} onClick={() => setActiveOperation("policy")}>
                         积分策略
-                    </Button>
-                    <Button icon={<CreditCard className="size-4" />} onClick={() => setActiveOperation("payment")}>
-                        在线支付
                     </Button>
                     <Button type="primary" icon={<UserRoundCog className="size-4" />} onClick={() => setActiveOperation("adjustment")}>
                         人工调账

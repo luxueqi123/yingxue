@@ -4,15 +4,54 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+
+      - name: Verify backend
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l .)"
+          go test ./...
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Verify Canvas Agent
+        working-directory: canvas-agent
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+          bun run test
+
+      - name: Verify web
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run test
+          bun run build
+
   publish:
     name: Publish ${{ matrix.image }}
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -119,7 +158,7 @@ jobs:
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > dist/RELEASE_NOTES.md
-          test -s dist/RELEASE_NOTES.md || printf '影策 %s\n' "$version" > dist/RELEASE_NOTES.md
+          test -s dist/RELEASE_NOTES.md || printf '映雪 %s\n' "$version" > dist/RELEASE_NOTES.md
 
       - name: Create GitHub Release
         env:

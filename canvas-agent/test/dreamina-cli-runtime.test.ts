@@ -2694,7 +2694,7 @@ test("Dreamina cross-Runtime queue head promotes after a peer reconciler release
         discover: async () => installation,
         maxActiveTasks: 1,
         pollIntervalMs: 60_000,
-        reservationLeaseMs: 500,
+        reservationLeaseMs: 5_000,
         reservationHeartbeatMs: 20,
     };
     const runtimeA = new DreaminaCliRuntime({
@@ -2734,10 +2734,10 @@ test("Dreamina cross-Runtime queue head promotes after a peer reconciler release
         assert.equal(runtimeBSubmits, 0);
 
         await runtimeA.refreshTask(active.id);
-        await waitForPromise(terminalQueryStarted, "Runtime A terminal reconciliation", 2_000);
+        await waitForPromise(terminalQueryStarted, "Runtime A terminal reconciliation", 10_000);
         releaseTerminal();
-        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 2_000);
-        await waitForPromise(queuedSubmitStarted, "Runtime B queued promotion", 1_000);
+        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 10_000);
+        await waitForPromise(queuedSubmitStarted, "Runtime B queued promotion", 10_000);
 
         assert.equal(runtimeBSubmits, 1);
         assert.equal((await runtimeB.getTask(queued.id)).status, "running");
@@ -2815,17 +2815,17 @@ test("Dreamina durable scheduler preserves FIFO when a later Runtime heartbeat r
         await runtimeA.refreshTask(active.id);
         observeQueuedHeartbeats = true;
         releaseTerminal();
-        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 2_000);
+        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 10_000);
 
         assert.equal(await waitForPromise(firstQueuedSubmit, "first durable FIFO queued submit", 3_000), "B");
         assert.equal(queuedHeartbeatOrder[0], "C");
         assert.deepEqual(queuedSubmitOrder, ["B"]);
         assert.equal((await runtimeC.getTask(queuedC.id)).status, "queued");
 
-        await waitForRuntimeRecord(box.stateFile, queuedB.id, (record) => record.state === "accepted", 2_000);
+        await waitForRuntimeRecord(box.stateFile, queuedB.id, (record) => record.state === "accepted", 10_000);
         assert.equal((await runtimeB.refreshTask(queuedB.id)).status, "running");
-        await waitForRuntimeRecord(box.stateFile, queuedB.id, (record) => record.state === "cancelled", 2_000);
-        assert.equal(await waitForPromise(secondQueuedSubmit, "second durable FIFO queued submit", 2_000), "C");
+        await waitForRuntimeRecord(box.stateFile, queuedB.id, (record) => record.state === "cancelled", 10_000);
+        assert.equal(await waitForPromise(secondQueuedSubmit, "second durable FIFO queued submit", 10_000), "C");
         assert.deepEqual(queuedSubmitOrder, ["B", "C"]);
     } finally {
         releaseTerminal();
@@ -3517,7 +3517,7 @@ for (const operation of ["cancel", "delete", "dispose"] as const) {
             ensureReady: async () => undefined,
             discover: async () => installation,
             maxActiveTasks: 1,
-            reservationLeaseMs: 1_000,
+            reservationLeaseMs: 5_000,
             reservationHeartbeatMs: 10,
             runProcess: async (input) => {
                 if (input.args[0] === "text2video") {

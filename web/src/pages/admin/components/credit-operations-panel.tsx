@@ -1,37 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Form, Input, InputNumber, Modal, Select, Switch } from "antd";
+import { App, Button, Drawer, Form, Input, InputNumber, Modal, Select } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { BadgeCheck, Coins, CreditCard, Plus, RefreshCw, Search, Trash2, Undo2 } from "lucide-react";
+import { BadgeCheck, Coins, Plus, RefreshCw, Search, Trash2, Undo2 } from "lucide-react";
 
 import { PaginationBar } from "@/components/layout/workspace-page";
 import { formatCredits } from "@/constant/credits";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { publishServerSettingUpdated } from "@/lib/server-setting-sync";
 import { listAdminUsers, type AdminReferenceData, type AdminUser } from "@/services/api/auth";
-import {
-    adjustAdminUserCredits,
-    getAdminCreditPolicy,
-    getAdminPaymentSetting,
-    listAdminBillingOrders,
-    listAdminPaymentOrders,
-    resolveAdminBillingOrder,
-    resolveAdminBillingOrders,
-    updateAdminCreditPolicy,
-    updateAdminPaymentSetting,
-    type BillingOrder,
-    type PaymentOrder,
-    type PaymentSetting,
-} from "@/services/api/wallet";
+import { adjustAdminUserCredits, getAdminCreditPolicy, listAdminBillingOrders, resolveAdminBillingOrder, resolveAdminBillingOrders, updateAdminCreditPolicy, type BillingOrder } from "@/services/api/wallet";
 
 import { AdminBatchBar, AdminDataTable, AdminRowActions, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
 
-export type CreditOperation = "policy" | "payment" | "adjustment" | null;
+export type CreditOperation = "policy" | "adjustment" | null;
 
 type AdjustmentFormValues = { userId: string; amount: number; note: string };
 type ResolutionFormValues = { note: string };
 type PolicyMultiplierRow = { model?: string; multiplier?: number };
 type PolicyFormValues = { signupBonus: number; checkinBonus: number; defaultMultiplier: number; modelMultipliers: PolicyMultiplierRow[] };
-type PaymentFormValues = Pick<PaymentSetting, "enabled" | "baseUrl" | "apiPath" | "merchantId" | "siteUrl" | "payTypes"> & { merchantKey?: string };
 type BillingResolutionAction = "settle" | "refund";
 type AdjustmentUser = AdminReferenceData["users"][number] & Partial<Pick<AdminUser, "email" | "availableMicrocredits" | "reservedMicrocredits">>;
 type BillingResolutionTarget = { kind: "single"; order: BillingOrder; action: BillingResolutionAction } | { kind: "batch"; orders: BillingOrder[]; action: BillingResolutionAction };
@@ -50,11 +35,6 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [loading, setLoading] = useState(true);
     const [loadingPolicy, setLoadingPolicy] = useState(false);
     const [savingPolicy, setSavingPolicy] = useState(false);
-    const [loadingPayment, setLoadingPayment] = useState(false);
-    const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
-    const [savingPayment, setSavingPayment] = useState(false);
-    const [hasMerchantKey, setHasMerchantKey] = useState(false);
-    const [savedPaymentEnabled, setSavedPaymentEnabled] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
     const [resolving, setResolving] = useState(false);
     const [keyword, setKeyword] = useState("");
@@ -73,7 +53,6 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     const [adjustmentForm] = Form.useForm<AdjustmentFormValues>();
     const [resolutionForm] = Form.useForm<ResolutionFormValues>();
     const [policyForm] = Form.useForm<PolicyFormValues>();
-    const [paymentForm] = Form.useForm<PaymentFormValues>();
     const ordersRequestRef = useRef(0);
     const userSearchRequestRef = useRef(0);
     const selectedAdjustmentUserId = Form.useWatch("userId", adjustmentForm);
@@ -144,37 +123,6 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
     }, [activeOperation, message, policyForm]);
 
     useEffect(() => {
-        if (activeOperation !== "payment") return;
-        let active = true;
-        setLoadingPayment(true);
-        void Promise.all([getAdminPaymentSetting(), listAdminPaymentOrders(20)])
-            .then(([{ setting }, { orders: nextPaymentOrders }]) => {
-                if (!active) return;
-                setHasMerchantKey(setting.hasMerchantKey);
-                setSavedPaymentEnabled(setting.enabled);
-                setPaymentOrders(nextPaymentOrders);
-                paymentForm.setFieldsValue({
-                    enabled: setting.enabled,
-                    baseUrl: setting.baseUrl || "https://m.ooeao.com",
-                    apiPath: setting.apiPath || "/xpay/epay/mapi.php",
-                    merchantId: setting.merchantId,
-                    merchantKey: "",
-                    siteUrl: setting.siteUrl || "https://tianyayingxue.cn",
-                    payTypes: setting.payTypes,
-                });
-            })
-            .catch((error) => {
-                if (active) message.error(error instanceof Error ? error.message : "读取在线支付配置失败");
-            })
-            .finally(() => {
-                if (active) setLoadingPayment(false);
-            });
-        return () => {
-            active = false;
-        };
-    }, [activeOperation, message, paymentForm]);
-
-    useEffect(() => {
         if (activeOperation !== "adjustment") return;
         adjustmentForm.resetFields();
         setPendingAdjustment(null);
@@ -234,44 +182,6 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
         } finally {
             setSavingPolicy(false);
         }
-    };
-
-    const persistPayment = async (values: PaymentFormValues, closeAfterSave: boolean) => {
-        setSavingPayment(true);
-        try {
-            const { setting } = await updateAdminPaymentSetting({
-                enabled: values.enabled,
-                baseUrl: values.baseUrl.trim(),
-                apiPath: values.apiPath.trim(),
-                merchantId: values.merchantId.trim(),
-                merchantKey: values.merchantKey?.trim() || undefined,
-                siteUrl: values.siteUrl.trim(),
-                payTypes: values.payTypes,
-            });
-            setHasMerchantKey(setting.hasMerchantKey);
-            setSavedPaymentEnabled(setting.enabled);
-            paymentForm.setFieldsValue({ ...setting, merchantKey: "" });
-            publishServerSettingUpdated("payment");
-            message.success(setting.enabled ? "在线支付已启用，用户端将立即同步" : "在线支付已关闭，用户端将立即同步");
-            if (closeAfterSave) onOperationChange(null);
-            return true;
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "保存在线支付配置失败");
-            return false;
-        } finally {
-            setSavingPayment(false);
-        }
-    };
-
-    const savePayment = async (values: PaymentFormValues) => {
-        await persistPayment(values, true);
-    };
-
-    const changePaymentEnabled = async (enabled: boolean) => {
-        if (savingPayment) return;
-        const values = paymentForm.getFieldsValue(true) as PaymentFormValues;
-        const saved = await persistPayment({ ...values, enabled }, false);
-        if (!saved) paymentForm.setFieldValue("enabled", savedPaymentEnabled);
     };
 
     const previewAdjustment = (values: AdjustmentFormValues) => {
@@ -667,136 +577,6 @@ export default function CreditOperationsPanel({ users, activeOperation, onOperat
                                     </>
                                 )}
                             </Form.List>
-                        </section>
-                    </Form>
-                )}
-            </Drawer>
-
-            <Drawer
-                title="在线支付"
-                open={activeOperation === "payment"}
-                size="min(700px, 100vw)"
-                onClose={() => {
-                    if (!savingPayment) onOperationChange(null);
-                }}
-                rootClassName="admin-drawer admin-credit-drawer"
-                destroyOnHidden
-                mask={{ closable: !savingPayment }}
-                keyboard={!savingPayment}
-                footer={
-                    <div className="flex justify-end gap-2">
-                        <Button disabled={savingPayment} onClick={() => onOperationChange(null)}>
-                            取消
-                        </Button>
-                        <Button type="primary" loading={savingPayment} disabled={loadingPayment} icon={<CreditCard className="size-4" />} onClick={() => paymentForm.submit()}>
-                            保存支付配置
-                        </Button>
-                    </div>
-                }
-            >
-                <div className="admin-credit-drawer-intro is-warning">
-                    <strong>真实资金配置</strong>
-                    <p>启用后，用户可在积分中心选择套餐并进入支付二维码或收银台；请只填写已确认的易支付商户参数。</p>
-                </div>
-                {loadingPayment ? (
-                    <div className="admin-credit-drawer-loading" role="status">
-                        正在读取在线支付配置…
-                    </div>
-                ) : (
-                    <Form
-                        form={paymentForm}
-                        layout="vertical"
-                        requiredMark={false}
-                        initialValues={{
-                            enabled: false,
-                            baseUrl: "https://m.ooeao.com",
-                            apiPath: "/xpay/epay/mapi.php",
-                            merchantId: "",
-                            merchantKey: "",
-                            siteUrl: "https://tianyayingxue.cn",
-                            payTypes: ["alipay", "wxpay"],
-                        }}
-                        onFinish={(values) => void savePayment(values)}
-                    >
-                        <section className="admin-credit-drawer-section">
-                            <Form.Item name="enabled" label="开放在线支付" valuePropName="checked" extra="此开关会立即写入服务器；地址、接口或商户参数修改后仍需点击底部保存。">
-                                <Switch loading={savingPayment} disabled={loadingPayment || savingPayment} checkedChildren="已开放" unCheckedChildren="已关闭" onChange={(enabled) => void changePaymentEnabled(enabled)} />
-                            </Form.Item>
-                            <Form.Item
-                                name="baseUrl"
-                                label="支付平台地址"
-                                rules={[
-                                    { required: true, whitespace: true, message: "请填写支付平台地址" },
-                                    { type: "url", message: "请输入完整 HTTPS 地址" },
-                                ]}
-                            >
-                                <Input placeholder="https://m.ooeao.com" autoComplete="url" />
-                            </Form.Item>
-                            <Form.Item
-                                name="apiPath"
-                                label="下单接口路径"
-                                extra="境安码当前使用 /xpay/epay/mapi.php；标准易支付通常使用 /mapi.php。"
-                                rules={[
-                                    { required: true, whitespace: true, message: "请填写下单接口路径" },
-                                    { pattern: /^\/(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^?#]*$/, message: "请输入以 / 开头且不含查询参数的站内路径" },
-                                ]}
-                            >
-                                <Input placeholder="/xpay/epay/mapi.php" autoComplete="off" />
-                            </Form.Item>
-                            <Form.Item name="merchantId" label="商户 ID" rules={[{ required: true, whitespace: true, message: "请填写商户 ID" }]}>
-                                <Input placeholder="易支付商户 ID" autoComplete="off" />
-                            </Form.Item>
-                            <Form.Item name="merchantKey" label="商户密钥" extra={hasMerchantKey ? "已保存密钥；留空将继续使用现有密钥。" : "首次启用前必须填写，保存后不会回显。"}>
-                                <Input.Password placeholder={hasMerchantKey ? "留空保留现有密钥" : "请输入商户密钥"} autoComplete="new-password" />
-                            </Form.Item>
-                            <Form.Item
-                                name="siteUrl"
-                                label="本站公网地址"
-                                rules={[
-                                    { required: true, whitespace: true, message: "请填写本站公网地址" },
-                                    { type: "url", message: "请输入完整 HTTPS 地址" },
-                                ]}
-                            >
-                                <Input placeholder="https://tianyayingxue.cn" autoComplete="url" />
-                            </Form.Item>
-                            <Form.Item name="payTypes" label="开放支付方式" rules={[{ required: true, type: "array", min: 1, message: "请至少选择一种支付方式" }]}>
-                                <Checkbox.Group
-                                    options={[
-                                        { label: "支付宝", value: "alipay" },
-                                        { label: "微信支付", value: "wxpay" },
-                                        { label: "QQ 钱包", value: "qqpay" },
-                                        { label: "网银", value: "bank" },
-                                        { label: "京东支付", value: "jdpay" },
-                                        { label: "PayPal", value: "paypal" },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </section>
-                        <section className="admin-credit-drawer-section mt-5">
-                            <div className="mb-3">
-                                <strong className="text-sm">最近收款订单</strong>
-                                <p className="mt-1 text-xs text-foreground/50">显示最近 20 笔下单记录，最终到账状态以后端验签回调为准。</p>
-                            </div>
-                            {paymentOrders.length ? (
-                                <div className="grid gap-2">
-                                    {paymentOrders.map((order) => (
-                                        <div key={order.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-foreground/[.025] px-3 py-3">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-medium">{order.planName}</div>
-                                                <div className="mt-1 truncate text-xs text-foreground/45">{userLabels.get(order.userId) || order.userId} · {new Date(order.createdAt).toLocaleString("zh-CN", { hour12: false })}</div>
-                                            </div>
-                                            <div className="shrink-0 text-right">
-                                                <div className="text-sm font-medium tabular-nums">¥{(order.amountCents / 100).toFixed(2)}</div>
-                                                <div className={`mt-1 text-xs ${order.status === "paid" ? "text-emerald-600 dark:text-emerald-400" : order.status === "failed" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>
-                                                    {order.status === "paid" ? "已到账" : order.status === "failed" ? "创建失败" : "待支付"}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-xs text-foreground/45">暂无在线收款订单</div>
-                            )}
                         </section>
                     </Form>
                 )}

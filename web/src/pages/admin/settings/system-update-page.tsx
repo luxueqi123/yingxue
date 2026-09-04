@@ -198,7 +198,7 @@ export default function SystemUpdatePage() {
                                 <dt>当前版本</dt><dd>{status?.currentVersion || "未识别"}</dd>
                                 <dt>部署方式</dt><dd>{status?.deployment || "未知"}</dd>
                                 <dt>发布时间</dt><dd>{formatDate(status?.latestRelease?.publishedAt)}</dd>
-                                <dt>代码仓库</dt><dd>{status?.repository || "ddcat-ai/open-ai-canvas"}</dd>
+                                <dt>代码仓库</dt><dd>{status?.repository || "luxueqi123/yingxue"}</dd>
                             </dl>
                             {status?.latestRelease ? (
                                 <div className="admin-system-update-notes">

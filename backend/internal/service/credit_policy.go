@@ -22,51 +22,10 @@ type CreditPolicy struct {
 }
 
 type PublicCreditPolicy struct {
-	SignupBonusMicrocredits  int64                `json:"signupBonusMicrocredits"`
-	CheckinBonusMicrocredits int64                `json:"checkinBonusMicrocredits"`
-	CheckedInToday           bool                 `json:"checkedInToday"`
-	CreditPerYuan            int64                `json:"creditPerYuan"`
-	RechargePlans            []PublicRechargePlan `json:"rechargePlans"`
-	PricingNotice            PublicPricingNotice  `json:"pricingNotice"`
+	SignupBonusMicrocredits  int64 `json:"signupBonusMicrocredits"`
+	CheckinBonusMicrocredits int64 `json:"checkinBonusMicrocredits"`
+	CheckedInToday           bool  `json:"checkedInToday"`
 }
-
-// PublicRechargePlan 是积分中心展示和在线收款订单使用的稳定套餐快照。
-// 金额使用分，积分使用微积分，避免前后端浮点换算误差。
-type PublicRechargePlan struct {
-	ID                  string `json:"id"`
-	PriceCents          int64  `json:"priceCents"`
-	CreditsMicrocredits int64  `json:"creditsMicrocredits"`
-	BonusPercent        int64  `json:"bonusPercent"`
-}
-
-type PublicPricingRate struct {
-	Channel                      string `json:"channel"`
-	Resolution                   string `json:"resolution"`
-	PriceCentsPerSecond          int64  `json:"priceCentsPerSecond"`
-	CreditsMicrocreditsPerSecond int64  `json:"creditsMicrocreditsPerSecond"`
-}
-
-type PublicPricingNotice struct {
-	Rates []PublicPricingRate `json:"rates"`
-}
-
-const publicCreditPerYuan int64 = 10
-
-var publicRechargePlans = []PublicRechargePlan{
-	{ID: "yingxue-10", PriceCents: 1_000, CreditsMicrocredits: 105 * CreditScale, BonusPercent: 5},
-	{ID: "yingxue-50", PriceCents: 5_000, CreditsMicrocredits: 550 * CreditScale, BonusPercent: 10},
-	{ID: "yingxue-100", PriceCents: 10_000, CreditsMicrocredits: 1_150 * CreditScale, BonusPercent: 15},
-	{ID: "yingxue-300", PriceCents: 30_000, CreditsMicrocredits: 3_600 * CreditScale, BonusPercent: 20},
-	{ID: "yingxue-1000", PriceCents: 100_000, CreditsMicrocredits: 12_000 * CreditScale, BonusPercent: 20},
-}
-
-var publicPricingNotice = PublicPricingNotice{Rates: []PublicPricingRate{
-	{Channel: "AutoDL ComfyUI H3", Resolution: "480p", PriceCentsPerSecond: 4, CreditsMicrocreditsPerSecond: 400_000},
-	{Channel: "AutoDL ComfyUI H3", Resolution: "768p", PriceCentsPerSecond: 7, CreditsMicrocreditsPerSecond: 700_000},
-	{Channel: "AutoDL ComfyUI H3", Resolution: "1080p", PriceCentsPerSecond: 12, CreditsMicrocreditsPerSecond: 1_200_000},
-	{Channel: "秘塔 H3（MiniMax-H3）", Resolution: "768P", PriceCentsPerSecond: 15, CreditsMicrocreditsPerSecond: 1_500_000},
-	{Channel: "秘塔 H3（MiniMax-H3）", Resolution: "2K", PriceCentsPerSecond: 25, CreditsMicrocreditsPerSecond: 2_500_000},
-}}
 
 func defaultCreditPolicy() CreditPolicy {
 	return CreditPolicy{SignupBonusMicrocredits: 100 * CreditScale, CheckinBonusMicrocredits: 10 * CreditScale, DefaultMultiplierBPS: 10_000, ModelMultiplierBPS: map[string]int64{}}
@@ -186,20 +145,7 @@ func (s *Service) publicCreditPolicy(userID string) (PublicCreditPolicy, error) 
 	}
 	reference := "checkin:" + userID + ":" + time.Now().UTC().Format("2006-01-02")
 	checked, err := s.repo.CreditLedgerReferenceExists(reference)
-	return PublicCreditPolicy{
-		SignupBonusMicrocredits:  policy.SignupBonusMicrocredits,
-		CheckinBonusMicrocredits: policy.CheckinBonusMicrocredits,
-		CheckedInToday:           checked,
-		CreditPerYuan:            publicCreditPerYuan,
-		RechargePlans:            clonePublicRechargePlans(),
-		PricingNotice:            publicPricingNotice,
-	}, err
-}
-
-func clonePublicRechargePlans() []PublicRechargePlan {
-	plans := make([]PublicRechargePlan, len(publicRechargePlans))
-	copy(plans, publicRechargePlans)
-	return plans
+	return PublicCreditPolicy{SignupBonusMicrocredits: policy.SignupBonusMicrocredits, CheckinBonusMicrocredits: policy.CheckinBonusMicrocredits, CheckedInToday: checked}, err
 }
 
 // 单价、数量和倍率全程使用整数并向上取整，避免浮点误差造成少扣积分。

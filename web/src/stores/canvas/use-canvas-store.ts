@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 
 import { nanoid } from "nanoid";
-import { normalizeCanvasAppearance, readCanvasAppearanceDefault, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
+import { DEFAULT_CANVAS_BACKGROUND_MODE, normalizeCanvasAppearance, readCanvasAppearanceDefault, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorageDocument, type CanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -260,6 +260,7 @@ function pendingGenerationAttempt(scope: string, projectId: string, effectKeys?:
 }
 
 function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, durableProject: CanvasProject | undefined) {
+    if (!hasGenerationEffectKeys(project) && !hasGenerationEffectKeys(durableProject)) return project;
     const durableNodes = new Map((durableProject?.nodes || []).map((node) => [node.id, node]));
     const durableSessions = new Map((durableProject?.chatSessions || []).map((session) => [session.id, session]));
     let changed = false;
@@ -288,7 +289,7 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
             }
             continue;
         }
-        if (JSON.stringify(localKeys) === JSON.stringify(durableKeys)) {
+        if (sameGenerationEffectKeys(localKeys, durableKeys)) {
             nodes.push(node);
             continue;
         }
@@ -318,7 +319,7 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
             }
             continue;
         }
-        if (JSON.stringify(session.generationEffectKeys) === JSON.stringify(durableKeys)) {
+        if (sameGenerationEffectKeys(session.generationEffectKeys, durableKeys)) {
             chatSessions.push(session);
             continue;
         }
@@ -339,6 +340,19 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
         };
     }
     return changed ? { ...project, nodes, chatSessions } : project;
+}
+
+function hasGenerationEffectKeys(value: CanvasProject | undefined) {
+    if (!value) return false;
+    return value.nodes.some((node) => Boolean(node.metadata?.generationEffectKeys?.length))
+        || value.chatSessions.some((session) => Boolean(session.generationEffectKeys?.length));
+}
+
+function sameGenerationEffectKeys(left?: readonly string[], right?: readonly string[]) {
+    if (left === right) return true;
+    if (!left?.length && !right?.length) return true;
+    if (!left || !right || left.length !== right.length) return false;
+    return left.every((value, index) => value === right[index]);
 }
 
 function ordinaryCanvasPersistenceState(scope: string, state: PersistedCanvasState, durableProjects: CanvasProject[]) {
@@ -434,7 +448,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     chatSessions: [],
                     activeChatId: null,
                     appearance: appearanceDefault?.appearance,
-                    backgroundMode: appearanceDefault?.backgroundMode || "lines",
+                    backgroundMode: appearanceDefault?.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
                     showImageInfo: false,
                     viewport: initialViewport,
                     directorScenes: [],
@@ -456,7 +470,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     activeChatId: source.activeChatId || null,
                     starterMode: source.starterMode,
                     appearance: source.appearance ? normalizeCanvasAppearance(source.appearance, "dark") : undefined,
-                    backgroundMode: source.backgroundMode || "lines",
+                    backgroundMode: source.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
                     showImageInfo: source.showImageInfo || false,
                     viewport: source.viewport || initialViewport,
                     directorScenes: source.directorScenes || [],

@@ -311,7 +311,7 @@ export default function LibTVSettingsPage() {
                         className="admin-third-party-section admin-third-party-credential-section"
                         icon={<KeyRound className="size-4" aria-hidden="true" />}
                         title="1. 配置 LibTV 服务端访问凭据"
-                        description="Token 只提交到影策服务端，保存后浏览器不会再收到或显示明文。"
+                        description="Token 只提交到映雪服务端，保存后浏览器不会再收到或显示明文。"
                         status={<AdminStatusBadge label={credentialDraftLabel} tone={clearTokenDraft ? "warning" : draftHasToken ? "success" : "neutral"} />}
                         footer={!draftHasToken ? <ThirdPartySaveFooter setting={setting} dirty={dirty} saving={saving} refreshing={refreshing} onReset={resetDraft} onSave={submitSave} /> : undefined}
                     >
@@ -399,7 +399,7 @@ export default function LibTVSettingsPage() {
                                 <span aria-hidden="true">→</span>
                                 <FlowStep icon={<Wifi className="size-4" />} label="读取画布" detail="按 UUID 请求" />
                                 <span aria-hidden="true">→</span>
-                                <FlowStep icon={<CloudDownload className="size-4" />} label="导入影策" detail="生成节点与连线" />
+                                <FlowStep icon={<CloudDownload className="size-4" />} label="导入映雪" detail="生成节点与连线" />
                             </div>
                         </SettingsSectionCard>
                     </div>
@@ -411,7 +411,7 @@ export default function LibTVSettingsPage() {
                             className="admin-third-party-section admin-third-party-test-card"
                             icon={<Wifi className="size-4" aria-hidden="true" />}
                             title="3. 验证已保存的 LibTV 凭据"
-                            description="使用服务端当前保存的 Token 发起一次只读请求，不会向 LibTV 或当前影策画布写入内容。"
+                            description="使用服务端当前保存的 Token 发起一次只读请求，不会向 LibTV 或当前映雪画布写入内容。"
                             status={<TestStatus status={testStatus} />}
                         >
                             <div className="admin-third-party-test-controls">

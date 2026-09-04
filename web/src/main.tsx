@@ -1,4 +1,5 @@
 import { runLocalRuntimeBootstrap } from "@/services/local-runtime-bootstrap";
+import { bootstrapAppearance } from "@/services/appearance-bootstrap";
 
 const staleReleaseRecoveryKey = "yingxue:stale-release-recovery-at";
 const staleReleaseRecoveryWindowMs = 60_000;
@@ -46,6 +47,6 @@ runLocalRuntimeBootstrap(
         },
     },
     () => {
-        void import("./application");
+        void bootstrapAppearance().finally(() => import("./application"));
     },
 );

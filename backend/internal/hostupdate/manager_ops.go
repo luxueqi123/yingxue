@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -267,8 +266,16 @@ func (m *Manager) compose(composePath, imageTag string, timeout time.Duration, s
 }
 
 func (m *Manager) verifyImages(targetVersion string) error {
-	owner := strings.SplitN(m.config.Repository, "/", 2)[0]
-	for _, image := range []string{"ghcr.io/" + owner + "/open-ai-canvas-backend:", "ghcr.io/" + owner + "/open-ai-canvas-web:"} {
+	values, err := readEnvFile(m.envPath())
+	if err != nil {
+		return err
+	}
+	imageRepository := strings.TrimRight(strings.TrimSpace(values["CANVAS_IMAGE_REPOSITORY"]), "/")
+	if imageRepository == "" {
+		owner := strings.SplitN(m.config.Repository, "/", 2)[0]
+		imageRepository = "ghcr.io/" + owner
+	}
+	for _, image := range []string{imageRepository + "/open-ai-canvas-backend:", imageRepository + "/open-ai-canvas-web:"} {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		var output bytes.Buffer
 		var stderr bytes.Buffer
@@ -438,30 +445,56 @@ func (m *Manager) restoreDatabase(backup Backup) error {
 	defer cancel()
 	args := []string{"compose", "--env-file", m.envPath(), "-f", m.composePath(), "exec", "-T", "postgres", "pg_restore", "-U", postgresUser, "-d", postgresDB, "--no-owner", "--no-privileges"}
 	var stderr bytes.Buffer
-	command := execCommandWithInput{runner: m.runner, input: reader}
-	if err := command.Run(ctx, "docker", args, []string{"CANVAS_IMAGE_TAG=" + strings.TrimPrefix(backup.Version, "v")}, io.Discard, &stderr); err != nil {
+	if err := m.runWithInput(ctx, "docker", args, []string{"CANVAS_IMAGE_TAG=" + strings.TrimPrefix(backup.Version, "v")}, reader, io.Discard, &stderr); err != nil {
 		return fmt.Errorf("恢复 PostgreSQL：%s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
 
-type execCommandWithInput struct {
-	runner commandRunner
-	input  io.Reader
+func (m *Manager) restoreBackendData(backup Backup) error {
+	if err := verifyZipBackup(backup.Path, backup.Checksum); err != nil {
+		return fmt.Errorf("拒绝恢复未通过校验的备份：%w", err)
+	}
+	archive, err := zip.OpenReader(backup.Path)
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+	var dataArchive *zip.File
+	for _, entry := range archive.File {
+		if entry.Name == "backend-data.tar" {
+			dataArchive = entry
+			break
+		}
+	}
+	if dataArchive == nil {
+		return errors.New("备份中不存在 backend-data.tar")
+	}
+	reader, err := dataArchive.Open()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), m.config.StepTimeout)
+	defer cancel()
+	args := []string{
+		"compose", "--env-file", m.envPath(), "-f", m.composePath(),
+		"run", "--rm", "--no-deps", "-T", "--user", "root", "--entrypoint", "sh", "backend", "-c",
+		"find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data -xf -",
+	}
+	var stderr bytes.Buffer
+	if err := m.runWithInput(ctx, "docker", args, []string{"CANVAS_IMAGE_TAG=" + strings.TrimPrefix(backup.Version, "v")}, reader, io.Discard, &stderr); err != nil {
+		return fmt.Errorf("恢复后端数据目录：%s", strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
-func (c execCommandWithInput) Run(ctx context.Context, name string, args, environment []string, stdout, stderr io.Writer) error {
-	runner, ok := c.runner.(execRunner)
+func (m *Manager) runWithInput(ctx context.Context, name string, args, environment []string, input io.Reader, stdout, stderr io.Writer) error {
+	runner, ok := m.runner.(inputCommandRunner)
 	if !ok {
 		return errors.New("当前命令执行器不支持标准输入")
 	}
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = runner.dir
-	command.Env = append(os.Environ(), environment...)
-	command.Stdin = c.input
-	command.Stdout = stdout
-	command.Stderr = stderr
-	return command.Run()
+	return runner.RunWithInput(ctx, name, args, environment, input, stdout, stderr)
 }
 
 func (m *Manager) verifyHealthy(targetVersion string) error {

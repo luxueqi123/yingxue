@@ -993,9 +993,17 @@ func (r *Repository) UserStoredFileBytes(userID string) (int64, error) {
 	var total int64
 	err := r.db.Raw(`
 		SELECT
-			(SELECT COALESCE(SUM(size), 0) FROM resources WHERE user_id = ?)
+			COALESCE((
+				SELECT SUM(physical_resources.size)
+				FROM (
+					SELECT MAX(size) AS size
+					FROM resources
+					WHERE user_id = ? AND status = ?
+					GROUP BY COALESCE(NULLIF(provider, ''), 'local'), endpoint, bucket, object_key
+				) AS physical_resources
+			), 0)
 			+ (SELECT COALESCE(SUM(size), 0) FROM session_files WHERE user_id = ?)
-	`, userID, userID).Scan(&total).Error
+	`, userID, model.ResourceStatusReady, userID).Scan(&total).Error
 	return total, err
 }
 
@@ -1011,6 +1019,21 @@ func (r *Repository) CreateResource(resource *model.Resource) error {
 
 func (r *Repository) SaveResource(resource *model.Resource) error {
 	return r.db.Save(resource).Error
+}
+
+func (r *Repository) ResourceByUploadKey(userID string, uploadKey string) (*model.Resource, error) {
+	var resource model.Resource
+	if err := r.db.First(&resource, "user_id = ? AND upload_key = ?", userID, uploadKey).Error; err != nil {
+		return nil, err
+	}
+	return &resource, nil
+}
+
+func (r *Repository) ClaimFailedResourceUpload(userID string, id string) (bool, error) {
+	result := r.db.Model(&model.Resource{}).
+		Where("id = ? AND user_id = ? AND status = ?", id, userID, model.ResourceStatusFailed).
+		Updates(map[string]any{"status": model.ResourceStatusPending, "error": "", "updated_at": time.Now()})
+	return result.RowsAffected == 1, result.Error
 }
 
 func (r *Repository) DeleteResource(userID string, id string) error {
@@ -1042,6 +1065,19 @@ func (r *Repository) Resources(userID string, limit int) ([]model.Resource, erro
 	return resources, err
 }
 
+func (r *Repository) ResourceCleanupCandidates(incompleteBefore time.Time, readyBefore time.Time, limit int) ([]model.Resource, error) {
+	var resources []model.Resource
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	err := r.db.Where(
+		"(status IN ? AND updated_at <= ?) OR (status = ? AND created_at <= ?)",
+		[]model.ResourceStatus{model.ResourceStatusPending, model.ResourceStatusFailed}, incompleteBefore,
+		model.ResourceStatusReady, readyBefore,
+	).Order("created_at asc, id asc").Limit(limit).Find(&resources).Error
+	return resources, err
+}
+
 func (r *Repository) Assets(userID string) ([]model.Asset, error) {
 	var assets []model.Asset
 	err := r.db.Order("updated_at desc").Find(&assets, "user_id = ?", userID).Error
@@ -1050,7 +1086,7 @@ func (r *Repository) Assets(userID string) ([]model.Asset, error) {
 
 func (r *Repository) AssetSummaries(userID string) ([]model.Asset, error) {
 	var assets []model.Asset
-	err := r.db.Select("id", "kind", "category", "status", "primary_version_id", "title", "created_at", "updated_at").Order("updated_at desc").Find(&assets, "user_id = ?", userID).Error
+	err := r.db.Select("id", "folder_id", "kind", "category", "status", "primary_version_id", "title", "created_at", "updated_at").Order("updated_at desc").Find(&assets, "user_id = ?", userID).Error
 	return assets, err
 }
 
@@ -1062,10 +1098,19 @@ func (r *Repository) AssetForUser(userID string, id string) (*model.Asset, error
 	return &asset, nil
 }
 
+func (r *Repository) AssetsForUserIDs(userID string, ids []string) ([]model.Asset, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var assets []model.Asset
+	err := r.db.Find(&assets, "user_id = ? AND id IN ?", userID, ids).Error
+	return assets, err
+}
+
 func (r *Repository) UpsertAsset(asset *model.Asset) error {
 	result := r.db.Model(&model.Asset{}).
 		Where("id = ? AND user_id = ?", asset.ID, asset.UserID).
-		Updates(map[string]any{"kind": asset.Kind, "category": asset.Category, "status": asset.Status, "primary_version_id": asset.PrimaryVersionID, "title": asset.Title, "payload_json": asset.PayloadJSON, "updated_at": asset.UpdatedAt})
+		Updates(map[string]any{"folder_id": asset.FolderID, "kind": asset.Kind, "category": asset.Category, "status": asset.Status, "primary_version_id": asset.PrimaryVersionID, "title": asset.Title, "payload_json": asset.PayloadJSON, "updated_at": asset.UpdatedAt})
 	if result.Error != nil || result.RowsAffected > 0 {
 		return result.Error
 	}
@@ -1074,6 +1119,18 @@ func (r *Repository) UpsertAsset(asset *model.Asset) error {
 
 func (r *Repository) DeleteAsset(userID string, id string) error {
 	return r.DeleteAssetAndResources(userID, id, nil, nil)
+}
+
+func (r *Repository) FindExpiredArchivedAssets(cutoff time.Time, limit int) ([]model.Asset, error) {
+	var assets []model.Asset
+	if limit <= 0 {
+		limit = 100
+	}
+	err := r.db.Where("status = ? AND updated_at <= ?", model.AssetVersionStatusArchived, cutoff).
+		Order("updated_at asc, id asc").
+		Limit(limit).
+		Find(&assets).Error
+	return assets, err
 }
 
 func (r *Repository) ReplaceAssets(userID string, assets []model.Asset) error {

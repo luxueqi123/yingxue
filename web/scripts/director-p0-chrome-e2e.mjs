@@ -74,7 +74,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 启动 Vite DEV，等待 ready 行或 TCP 可连接；超时即抛。 */
 async function launchVite(port) {
-    const child = spawn("bunx", ["vite", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+    const child = spawn(process.execPath, ["x", "vite", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
     });
@@ -172,6 +172,33 @@ async function connectCdp(cdpPort) {
     const pending = new Map();
     let nextId = 0;
     const problems = [];
+    const appearanceBody = Buffer.from(
+        JSON.stringify({
+            code: 0,
+            data: {
+                appearance: {
+                    schemaVersion: 3,
+                    brandName: "映雪",
+                    brandSlug: "open-ai-canvas",
+                    authHeroTitle: "让一个故事，从文字走向银幕。",
+                    authHeroDescription: "",
+                    logoUrl: "/logo.svg",
+                    darkLogoUrl: "/logo.svg",
+                    logoFrameEnabled: true,
+                    authVideoUrl: "",
+                    authVideoPosterUrl: "",
+                    skinId: "classic",
+                    logoConfigured: false,
+                    darkLogoConfigured: false,
+                    authVideoConfigured: false,
+                    authVideoPosterConfigured: false,
+                    configured: false,
+                    revision: "e2e",
+                },
+            },
+            msg: "success",
+        }),
+    ).toString("base64");
     const record = (kind, text) => {
         const clean = String(text ?? "").trim();
         if (!clean) return;
@@ -188,8 +215,9 @@ async function connectCdp(cdpPort) {
         }
 
         if (msg.id && pending.has(msg.id)) {
-            const { resolve, reject } = pending.get(msg.id);
+            const { resolve, reject, timer } = pending.get(msg.id);
             pending.delete(msg.id);
+            clearTimeout(timer);
             if (msg.error) reject(new Error(`CDP error: ${JSON.stringify(msg.error)}`));
             else resolve(msg.result);
             return;
@@ -214,6 +242,14 @@ async function connectCdp(cdpPort) {
                     record("network.status", `${p.response.status} ${p.response.url}`);
                 }
                 break;
+            case "Fetch.requestPaused":
+                void send("Fetch.fulfillRequest", {
+                    requestId: p.requestId,
+                    responseCode: 200,
+                    responseHeaders: [{ name: "Content-Type", value: "application/json; charset=utf-8" }],
+                    body: appearanceBody,
+                });
+                break;
             default:
                 break;
         }
@@ -222,14 +258,14 @@ async function connectCdp(cdpPort) {
     const send = (method, params = {}) => {
         const id = ++nextId;
         return new Promise((resolve, reject) => {
-            pending.set(id, { resolve, reject });
-            ws.send(JSON.stringify({ id, method, params }));
-            setTimeout(() => {
+            const timer = setTimeout(() => {
                 if (pending.has(id)) {
                     pending.delete(id);
                     reject(new Error(`CDP timeout: ${method}`));
                 }
             }, 30000);
+            pending.set(id, { resolve, reject, timer });
+            ws.send(JSON.stringify({ id, method, params }));
         });
     };
 
@@ -237,6 +273,7 @@ async function connectCdp(cdpPort) {
     await send("Page.enable");
     await send("Log.enable");
     await send("Network.enable");
+    await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/public/appearance", requestStage: "Request" }] });
 
     const evaluate = async (expression) => {
         const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -311,12 +348,40 @@ async function connectCdp(cdpPort) {
         // 必须在导航前清空：导航后再清会吞掉 bootstrap 阶段的真实异常。
         problems.length = 0;
         await send("Page.navigate", { url });
-        const ok = await poll(`!!document.querySelector('[data-testid="inject-local-model"]')`, "lab mounted", 60000);
-        if (!ok) throw new Error("Repro lab did not mount within 60s");
+        // GitHub 新 Runner 与 Windows 冷缓存下，Vite 首次转换导演台依赖图可能超过 120s；
+        // 后续导航会复用模块图。保持硬截止，但给首次真实冷加载留出确定窗口。
+        const ok = await poll(`!!document.querySelector('[data-testid="inject-local-model"]')`, "lab mounted", 180000);
+        if (!ok) {
+            const state = await evaluate(`(() => ({
+                href: location.href,
+                readyState: document.readyState,
+                title: document.title,
+                body: (document.body?.innerText || '').slice(0, 500),
+            }))()`);
+            throw new Error(`Repro lab did not mount within 180s: ${JSON.stringify({ state, problems })}`);
+        }
         return true;
     };
 
-    return { send, evaluate, poll, click, clickText, navigateFresh, problems, close: () => ws.close() };
+    const close = () =>
+        new Promise((resolve) => {
+            if (ws.readyState === WebSocket.CLOSED) {
+                resolve();
+                return;
+            }
+            const timer = setTimeout(resolve, 2000);
+            ws.addEventListener(
+                "close",
+                () => {
+                    clearTimeout(timer);
+                    resolve();
+                },
+                { once: true },
+            );
+            ws.close(1000, "e2e complete");
+        });
+
+    return { send, evaluate, poll, click, clickText, navigateFresh, problems, close };
 }
 
 /**
@@ -328,7 +393,16 @@ async function connectCdp(cdpPort) {
 async function stopExact(child, name) {
     if (!child) return;
     const stopped = () => child.exitCode !== null || child.signalCode !== null;
-    if (stopped()) return;
+    const releasePipes = () => {
+        for (const stream of [child.stdout, child.stderr]) {
+            stream?.removeAllListeners();
+            stream?.destroy();
+        }
+    };
+    if (stopped()) {
+        releasePipes();
+        return;
+    }
 
     try {
         child.kill("SIGTERM");
@@ -351,6 +425,7 @@ async function stopExact(child, name) {
     if (!stopped()) {
         throw new Error(`Failed to stop ${name} (pid=${child.pid}) after SIGTERM and SIGKILL`);
     }
+    releasePipes();
     console.log(`      stopped ${name} (pid=${child.pid}, exit=${child.exitCode}, signal=${child.signalCode})`);
 }
 
@@ -670,17 +745,48 @@ async function saveFailureCloseGuard(cdp, baseUrl) {
     const modalShown = await cdp.poll(`!!document.querySelector('.ant-modal-confirm') && (document.body.innerText || "").includes('留在导演台')`, "close confirm modal", 40000);
     assert(modalShown, "F5 close is guarded by a confirm dialog, not silent exit");
 
-    const stayClicked = await cdp.clickText("留在导演台");
+    const stayClicked = await cdp.click(".ant-modal-confirm .ant-btn-default");
     if (!stayClicked) throw new Error("F: 留在导演台 button not clickable");
     const modalGone = await cdp.poll(
-        `![...document.querySelectorAll('button')].some((button) => {
+        `![...document.querySelectorAll('.ant-modal-confirm button')].some((button) => {
             const text = (button.textContent || '').trim();
-            return (text === '仍然离开' || text === '留在导演台') && button.getClientRects().length > 0;
+            if (text !== '仍然离开' && text !== '留在导演台') return false;
+            const style = getComputedStyle(button);
+            const wrap = button.closest('.ant-modal-wrap');
+            const wrapStyle = wrap ? getComputedStyle(wrap) : null;
+            return button.getClientRects().length > 0
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && Number(style.opacity) > 0
+                && (!wrapStyle || (wrapStyle.display !== 'none' && wrapStyle.visibility !== 'hidden' && Number(wrapStyle.opacity) > 0));
         })`,
         "modal dismissed",
         20000,
     );
-    assert(modalGone, "F6 confirm dialog dismissed after choosing 留在导演台");
+    const modalState = modalGone
+        ? ""
+        : JSON.stringify(
+              await cdp.evaluate(`(() => ({
+                  active: document.activeElement?.outerHTML?.slice(0, 300) || '',
+                  confirms: [...document.querySelectorAll('.ant-modal-confirm')].map((modal) => ({
+                      className: modal.className,
+                      ariaHidden: modal.getAttribute('aria-hidden'),
+                      rect: modal.getBoundingClientRect().toJSON(),
+                      style: {
+                          display: getComputedStyle(modal).display,
+                          visibility: getComputedStyle(modal).visibility,
+                          opacity: getComputedStyle(modal).opacity,
+                          pointerEvents: getComputedStyle(modal).pointerEvents,
+                      },
+                      buttons: [...modal.querySelectorAll('button')].map((button) => ({
+                          text: (button.textContent || '').trim(),
+                          className: button.className,
+                          disabled: button.disabled,
+                      })),
+                  })),
+              }))()`),
+          );
+    assert(modalGone, "F6 confirm dialog dismissed after choosing 留在导演台", modalState);
 
     await sleep(1000);
     const stillOpen = await cdp.evaluate(`document.querySelectorAll('.director-viewport-shell').length`);
@@ -714,7 +820,11 @@ async function main() {
         cdp = await connectCdp(cdpPort);
         console.log("      CDP connected (Runtime, Page, Log, Network enabled)");
 
-        for (const scenario of [smokeWorkbench, localModel, missingRetry, deleteWhileLoading, webglLossRestore, saveFailureCloseGuard]) {
+        const allScenarios = [smokeWorkbench, localModel, missingRetry, deleteWhileLoading, webglLossRestore, saveFailureCloseGuard];
+        const requestedScenario = String(process.env.DIRECTOR_E2E_SCENARIO || "").trim();
+        const scenarios = requestedScenario ? allScenarios.filter((scenario) => scenario.name === requestedScenario) : allScenarios;
+        if (requestedScenario && scenarios.length === 0) throw new Error(`Unknown DIRECTOR_E2E_SCENARIO: ${requestedScenario}`);
+        for (const scenario of scenarios) {
             try {
                 await scenario(cdp, baseUrl);
             } catch (error) {
@@ -723,7 +833,7 @@ async function main() {
         }
     } finally {
         try {
-            cdp?.close();
+            await cdp?.close();
         } catch {
             /* socket already closed */
         }

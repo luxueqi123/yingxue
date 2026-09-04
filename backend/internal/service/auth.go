@@ -93,7 +93,7 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, LinuxDOEnabled: s.LinuxDOEnabled(), EmailEnabled: emailEnabled, EmailCodeRequired: true}, nil
+	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, LinuxDOEnabled: s.LinuxDOEnabled(), EmailEnabled: emailEnabled, EmailCodeRequired: false}, nil
 }
 
 func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
@@ -117,7 +117,6 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	var verifiedCode *model.EmailVerificationCode
 	if count > 0 {
 		registrationEnabled, err := s.RegistrationEnabled()
 		if err != nil {
@@ -125,13 +124,6 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		}
 		if !registrationEnabled {
 			return nil, Forbidden("管理员未开放新用户注册")
-		}
-		if email == "" {
-			return nil, BadAuthRequest("请输入邮箱")
-		}
-		verifiedCode, err = s.VerifyRegistrationEmailCode(email, req.EmailCode)
-		if err != nil {
-			return nil, err
 		}
 	}
 	if _, err := s.repo.UserByUsername(username); err == nil {
@@ -165,11 +157,7 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	if count == 0 {
 		user.Role = model.UserRoleAdmin
 	}
-	if verifiedCode != nil {
-		if err := s.repo.CreateUserWithEmailVerification(&user, verifiedCode.ID, time.Now()); err != nil {
-			return nil, err
-		}
-	} else if err := s.repo.Create(&user); err != nil {
+	if err := s.repo.Create(&user); err != nil {
 		return nil, err
 	}
 	if err := s.ensureSignupBonus(user.ID); err != nil {

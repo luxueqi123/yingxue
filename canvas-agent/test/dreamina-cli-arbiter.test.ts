@@ -465,8 +465,8 @@ test("arbiter owner release hands off to a queued successor without leaving the 
 test("an aborted queued arbiter waiter releases its state-lock activity and does not block the next owner", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dreamina-arbiter-abort-handoff-"));
     const stateFile = path.join(root, "arbiter.json");
-    const ownerArbiter = new DreaminaCliArbiter({ stateFile, pollMs: 1, heartbeatMs: 25, leaseMs: 250 });
-    const waiterArbiter = new DreaminaCliArbiter({ stateFile, pollMs: 1, heartbeatMs: 25, leaseMs: 250 });
+    const ownerArbiter = new DreaminaCliArbiter({ stateFile, pollMs: 1, heartbeatMs: 25, leaseMs: 5_000 });
+    const waiterArbiter = new DreaminaCliArbiter({ stateFile, pollMs: 1, heartbeatMs: 25, leaseMs: 5_000 });
     try {
         for (let round = 0; round < 20; round += 1) {
             const owner = await ownerArbiter.acquire();

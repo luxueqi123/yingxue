@@ -14,11 +14,12 @@ export type CreditAccount = {
 export type CreditLedgerEntry = {
     id: string;
     userId: string;
-    type: "redeem" | "recharge" | "admin_grant" | "consume" | "refund" | "admin_adjustment" | "signup_bonus" | "checkin_bonus";
+    type: "redeem" | "payment_topup" | "admin_grant" | "consume" | "refund" | "admin_adjustment" | "signup_bonus" | "checkin_bonus";
     amountMicrocredits: number;
     availableAfterMicrocredits: number;
     reservedAfterMicrocredits: number;
     billingOrderId?: string;
+    paymentOrderId?: string;
     model?: string;
     channelId?: string;
     scene?: string;
@@ -36,65 +37,7 @@ export type WalletSummary = {
         signupBonusMicrocredits: number;
         checkinBonusMicrocredits: number;
         checkedInToday: boolean;
-        creditPerYuan: number;
-        rechargePlans: PublicRechargePlan[];
-        pricingNotice: PublicPricingNotice;
     };
-};
-
-export type PublicRechargePlan = {
-    id: string;
-    priceCents: number;
-    creditsMicrocredits: number;
-    bonusPercent: number;
-};
-
-export type PaymentConfig = {
-    enabled: boolean;
-    payTypes: Array<"alipay" | "wxpay" | "qqpay" | "bank" | "jdpay" | "paypal">;
-};
-
-export type PaymentOrder = {
-    id: string;
-    userId: string;
-    planId: string;
-    planName: string;
-    amountCents: number;
-    creditsMicrocredits: number;
-    payType: PaymentConfig["payTypes"][number];
-    status: "pending" | "paid" | "failed";
-    providerTradeNo?: string;
-    providerError?: string;
-    checkoutUrl?: string;
-    qrCode?: string;
-    qrCodeImage?: string;
-    urlScheme?: string;
-    paidAt?: string;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type PaymentSetting = PaymentConfig & {
-    baseUrl: string;
-    apiPath: string;
-    merchantId: string;
-    merchantKey?: string;
-    hasMerchantKey: boolean;
-    siteUrl: string;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
-};
-
-export type PublicPricingRate = {
-    channel: string;
-    resolution: string;
-    priceCentsPerSecond: number;
-    creditsMicrocreditsPerSecond: number;
-};
-
-export type PublicPricingNotice = {
-    rates: PublicPricingRate[];
 };
 
 export type CreditPolicy = {
@@ -289,22 +232,6 @@ export function checkinCredits() {
     return request<{ account: CreditAccount; granted: boolean }>(api.post("/wallet/checkin"));
 }
 
-export function getPaymentConfig() {
-    return request<{ config: PaymentConfig }>(api.get("/payments/config", { headers: { "Cache-Control": "no-cache" } }));
-}
-
-export function createPaymentOrder(input: { planId: string; payType: PaymentOrder["payType"] }, idempotencyKey: string) {
-    return request<{ order: PaymentOrder }>(api.post("/payments/orders", input, { headers: { "Idempotency-Key": idempotencyKey } }));
-}
-
-export function getPaymentOrder(id: string) {
-    return request<{ order: PaymentOrder }>(api.get(`/payments/orders/${encodeURIComponent(id)}`));
-}
-
-export function listPaymentOrders(limit = 20) {
-    return request<{ orders: PaymentOrder[] }>(api.get("/payments/orders", { params: { limit } }));
-}
-
 export function getAdminCreditPolicy() {
     return request<{ policy: CreditPolicy }>(api.get("/admin/settings/credits"));
 }
@@ -335,18 +262,6 @@ export function getAdminEmailSetting() {
 
 export function updateAdminEmailSetting(input: Partial<EmailSetting>) {
     return request<{ setting: EmailSetting }>(api.patch("/admin/settings/email", input));
-}
-
-export function getAdminPaymentSetting() {
-    return request<{ setting: PaymentSetting }>(api.get("/admin/settings/payment"));
-}
-
-export function updateAdminPaymentSetting(input: Partial<PaymentSetting>) {
-    return request<{ setting: PaymentSetting }>(api.patch("/admin/settings/payment", input));
-}
-
-export function listAdminPaymentOrders(limit = 20) {
-    return request<{ orders: PaymentOrder[] }>(api.get("/admin/payment-orders", { params: { limit } }));
 }
 
 export function listAdminChannelModels(channelId: string) {

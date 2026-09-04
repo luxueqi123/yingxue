@@ -516,14 +516,14 @@ func autoDLH3VideosAdapter() Adapter {
 					return RequestSpec{}, fmt.Errorf("AutoDL H3 参考素材必须是上游可访问的 HTTP(S) URL")
 				}
 			}
-			return RequestSpec{Method: http.MethodPost, Path: "/api/v1/comfyui/comfyui_workflow/" + url.PathEscape(workflowID), ContentType: "application/json", AuthMode: AuthRawAuthorization, Body: body}, nil
+			return RequestSpec{Method: http.MethodPost, Path: "/api/v1/comfyui/comfyui_workflow/" + url.PathEscape(workflowID), ContentType: "application/json", Auth: ManifestAuth{Type: "header", Field: "apiKey", Header: "Authorization"}, Body: body}, nil
 		},
 		parseCreate: parseAutoDLH3Create,
 		poll: func(c PollContext) (RequestSpec, error) {
 			if strings.TrimSpace(c.TaskID) == "" {
 				return RequestSpec{}, fmt.Errorf("AutoDL H3 查询任务缺少 task_id")
 			}
-			return RequestSpec{Method: http.MethodGet, Path: "/api/v1/comfyui/comfyui_workflow/result/" + url.PathEscape(c.TaskID), AuthMode: AuthRawAuthorization}, nil
+			return RequestSpec{Method: http.MethodGet, Path: "/api/v1/comfyui/comfyui_workflow/result/" + url.PathEscape(c.TaskID), Auth: ManifestAuth{Type: "header", Field: "apiKey", Header: "Authorization"}}, nil
 		},
 		parsePoll: parseAutoDLH3Poll,
 	}
@@ -1187,7 +1187,9 @@ func normalizeStatus(raw string) Status {
 		return StatusProcessing
 	case "succeeded", "success", "completed", "complete", "done", "task_status_succeed":
 		return StatusSucceeded
-	case "failed", "failure", "error", "cancelled", "canceled", "expired":
+	case "cancelled", "canceled", "aborted":
+		return StatusCancelled
+	case "failed", "failure", "error", "expired":
 		return StatusFailed
 	default:
 		return ""

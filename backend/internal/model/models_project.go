@@ -19,25 +19,27 @@ const AssetIDMaxLength = 80
 
 type Resource struct {
 	ID       string         `json:"id" gorm:"primaryKey;size:36"`
-	UserID   string         `json:"userId" gorm:"index;size:36;index:idx_resources_user_created,priority:1"`
+	UserID   string         `json:"userId" gorm:"index;size:36;index:idx_resources_user_created,priority:1;uniqueIndex:idx_resources_user_upload_key,priority:1"`
 	Kind     string         `json:"kind" gorm:"index;size:24"`
 	Status   ResourceStatus `json:"status" gorm:"index;size:24"`
 	Provider string         `json:"provider" gorm:"size:24"`
 	Endpoint string         `json:"endpoint"`
 	Bucket   string         `json:"bucket" gorm:"size:160"`
 	// 用户 OSS 每次修改都会生成新版本，资源固定引用创建时的存储与密钥；只有同一存储位置才可复用当前 CDN。
-	StorageSettingID string    `json:"-" gorm:"index;size:36"`
-	ObjectKey        string    `json:"objectKey" gorm:"index"`
-	PublicURL        string    `json:"publicUrl"`
-	MimeType         string    `json:"mimeType" gorm:"size:120"`
-	Size             int64     `json:"size"`
-	Width            int       `json:"width"`
-	Height           int       `json:"height"`
-	DurationMs       int64     `json:"durationMs"`
-	ETag             string    `json:"etag" gorm:"size:160"`
-	Error            string    `json:"error"`
-	CreatedAt        time.Time `json:"createdAt" gorm:"index:idx_resources_user_created,priority:2"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	StorageSettingID string `json:"-" gorm:"index;size:36"`
+	ObjectKey        string `json:"objectKey" gorm:"index"`
+	PublicURL        string `json:"publicUrl"`
+	MimeType         string `json:"mimeType" gorm:"size:120"`
+	Size             int64  `json:"size"`
+	Width            int    `json:"width"`
+	Height           int    `json:"height"`
+	DurationMs       int64  `json:"durationMs"`
+	ETag             string `json:"etag" gorm:"size:160"`
+	// UploadKey 是客户端逻辑上传身份的摘要；NULL 表示不参与幂等约束。
+	UploadKey *string   `json:"-" gorm:"size:64;uniqueIndex:idx_resources_user_upload_key,priority:2"`
+	Error     string    `json:"error"`
+	CreatedAt time.Time `json:"createdAt" gorm:"index:idx_resources_user_created,priority:2"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ResourceDeletionJob is the durable handoff between database deletion and
@@ -73,6 +75,7 @@ type AnnouncementImageDraft struct {
 type Asset struct {
 	ID               string             `json:"id" gorm:"primaryKey;size:80"`
 	UserID           string             `json:"userId" gorm:"index;size:36;index:idx_assets_user_updated,priority:1"`
+	FolderID         string             `json:"folderId,omitempty" gorm:"index;size:36"`
 	Kind             string             `json:"kind" gorm:"index;size:24"`
 	Category         AssetCategory      `json:"category" gorm:"index;size:32"`
 	Status           AssetVersionStatus `json:"status" gorm:"index;size:24"`
@@ -81,6 +84,17 @@ type Asset struct {
 	PayloadJSON      string             `json:"payloadJson" gorm:"type:text"`
 	CreatedAt        time.Time          `json:"createdAt"`
 	UpdatedAt        time.Time          `json:"updatedAt" gorm:"index:idx_assets_user_updated,priority:2"`
+}
+
+// AssetFolder 是用户素材库的一层自定义分类；业务分类仍由 Asset.Category 表达。
+type AssetFolder struct {
+	ID        string    `json:"id" gorm:"primaryKey;size:36"`
+	UserID    string    `json:"userId" gorm:"index;size:36;uniqueIndex:idx_asset_folders_user_name,priority:1"`
+	Name      string    `json:"name" gorm:"size:80"`
+	NameKey   string    `json:"-" gorm:"size:80;uniqueIndex:idx_asset_folders_user_name,priority:2"`
+	Position  int       `json:"position" gorm:"index"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type ProjectAssetLink struct {

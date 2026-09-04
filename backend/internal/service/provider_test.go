@@ -59,6 +59,8 @@ func TestChannelAPIURLNormalizesConfiguredVersionPrefix(t *testing.T) {
 		{name: "same v1beta is not duplicated", base: "http://provider.test:8000/v1beta", path: "/v1beta/models/model", want: "http://provider.test:8000/v1beta/models/model"},
 		{name: "path carries v2", base: "http://provider.test:8000/v1", path: "/v2/tasks", want: "http://provider.test:8000/v2/tasks"},
 		{name: "ark v3", base: "https://ark.example.com/api/v3", path: "/images/generations", want: "https://ark.example.com/api/v3/images/generations"},
+		{name: "ark v3 chat", base: "https://ark.example.com/api/v3", path: "/chat/completions", want: "https://ark.example.com/api/v3/chat/completions"},
+		{name: "ark v3 responses", base: "https://ark.example.com/api/v3", path: "/responses", want: "https://ark.example.com/api/v3/responses"},
 		{name: "path carries ark v3", base: "https://ark.example.com", path: "/api/v3/images/generations", want: "https://ark.example.com/api/v3/images/generations"},
 		{name: "path carries autodl api v1", base: "https://autodl.art", path: "/api/v1/comfyui/comfyui_workflow/workflow-1", want: "https://autodl.art/api/v1/comfyui/comfyui_workflow/workflow-1"},
 	}
@@ -94,7 +96,7 @@ func TestProtocolRequestURLCanResolveSameOriginRootPath(t *testing.T) {
 	}
 }
 
-func TestRunVideoTaskUsesHostBackedAgnesJSONProtocol(t *testing.T) {
+func TestRunVideoTaskUsesDeclarativeAgnesJSONProtocol(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	center, err := newPluginRuntime(t.TempDir())
 	if err != nil {
@@ -102,9 +104,9 @@ func TestRunVideoTaskUsesHostBackedAgnesJSONProtocol(t *testing.T) {
 	}
 	adapter, ok := center.registrySnapshot().Resolve("agnes-video")
 	if !ok {
-		t.Fatal("host-backed Agnes adapter is missing")
+		t.Fatal("declarative Agnes adapter is missing")
 	}
-	if metadata := adapter.Metadata(); metadata.Version != "1.2.0" || metadata.Execution != "host:agnes-video" || !metadata.RequiresPublicMediaURLs {
+	if metadata := adapter.Metadata(); metadata.Version != "2.0.0" || metadata.Execution != "declarative" || !metadata.RequiresPublicMediaURLs {
 		t.Fatalf("Agnes runtime metadata = %#v", metadata)
 	}
 
@@ -165,9 +167,54 @@ func TestRunVideoTaskUsesHostBackedAgnesJSONProtocol(t *testing.T) {
 	if !ok || video["dataUrl"] != "data:video/mp4;base64,dmlkZW8=" {
 		t.Fatalf("video = %#v", result["video"])
 	}
-	wantPaths := "POST /v1/videos,GET /agnesapi?video_id=video-1&model_name=agnes-video-2.5,GET /video.mp4"
+	wantPaths := "POST /v1/videos,GET /agnesapi?model_name=agnes-video-2.5&video_id=video-1,GET /video.mp4"
 	if got := strings.Join(paths, ","); got != wantPaths {
 		t.Fatalf("paths = %q, want %q", got, wantPaths)
+	}
+}
+
+func TestRunVideoTaskDownloadsAuthenticatedDeclarativeResult(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	center, err := newPluginRuntime(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/videos":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"video-1","status":"completed"}`))
+		case "/v1/videos/video-1/content":
+			if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+				t.Errorf("Authorization = %q", got)
+			}
+			if got := r.Header.Get("Accept"); got != "video/mp4" {
+				t.Errorf("Accept = %q", got)
+			}
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx := withProtocolRegistry(context.Background(), center.registrySnapshot())
+	result, err := runVideoTask(ctx, canvasGenerationInput{
+		Mode: "video", Prompt: "cinematic shot",
+		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", InterfaceType: "newapi", Model: "sora-2", VideoSeconds: "5", Size: "1280x720"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	video, _ := result["video"].(map[string]interface{})
+	if video["dataUrl"] != "data:video/mp4;base64,dmlkZW8=" {
+		t.Fatalf("video = %#v", video)
+	}
+	if got := strings.Join(paths, ","); got != "POST /v1/videos,GET /v1/videos/video-1/content" {
+		t.Fatalf("paths = %q", got)
 	}
 }
 
@@ -1989,6 +2036,63 @@ func TestProtocolRequestPreservesVideoImageIDsAndRoles(t *testing.T) {
 	})
 	if request.Images[0].Role != "reference_image" {
 		t.Fatalf("reference operation image = %#v", request.Images[0])
+	}
+}
+
+func TestProtocolRequestRestoresDeclaredVideoResolutionEnum(t *testing.T) {
+	tests := []struct {
+		name        string
+		quality     string
+		resolutions []string
+		want        string
+	}{
+		{name: "lowercase suffix", quality: "480", resolutions: []string{"480p", "720p"}, want: "480p"},
+		{name: "provider casing", quality: "1080", resolutions: []string{"720P", "1080P"}, want: "1080P"},
+		{name: "opaque enum", quality: "768p竖", resolutions: []string{"768p竖", "768p横"}, want: "768p竖"},
+		{name: "unmatched custom value", quality: "native", resolutions: []string{"720p"}, want: "native"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := protocolRequestFromInput(canvasGenerationInput{
+				Mode:            "video",
+				Config:          providerConfig{VQuality: test.quality},
+				VideoCapability: &VideoCapabilityConfig{Resolutions: test.resolutions},
+			})
+			if request.Resolution != test.want || request.Output.Resolution != test.want {
+				t.Fatalf("resolution = %q, output resolution = %q, want %q", request.Resolution, request.Output.Resolution, test.want)
+			}
+		})
+	}
+}
+
+func TestVolcengineArkDeclarativeRequestUsesResolutionSuffix(t *testing.T) {
+	profile := DefaultModelCapabilityConfigForModel("volcengine-ark-video", "doubao-seedance-2-0-fast-260128").Video
+	request := protocolRequestFromInput(canvasGenerationInput{
+		Mode:   "video",
+		Prompt: "make it move",
+		Config: providerConfig{
+			InterfaceType: "volcengine-ark-video",
+			Model:         "doubao-seedance-2-0-fast-260128",
+			Size:          "16:9",
+			VQuality:      "480",
+			VideoSeconds:  "4",
+		},
+		VideoCapability: profile,
+	})
+	adapter, ok := loadOfficialFallbackRegistry().Resolve("volcengine-ark-video")
+	if !ok {
+		t.Fatal("Volcengine Ark declarative adapter is unavailable")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := spec.Body.(map[string]any)
+	if !ok {
+		t.Fatalf("body = %#v", spec.Body)
+	}
+	if body["resolution"] != "480p" {
+		t.Fatalf("resolution = %#v, want 480p", body["resolution"])
 	}
 }
 

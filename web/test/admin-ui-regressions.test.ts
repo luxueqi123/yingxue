@@ -33,6 +33,25 @@ test("announcement editor preserves image and pinned fields through edit and sav
     expect(safetySource).toContain("pinned?: boolean");
 });
 
+test("plugin upload owns native drops and price availability text remains readable", async () => {
+    const [pluginSource, adminCss] = await Promise.all([
+        Bun.file(new URL("../src/pages/plugins/plugin-documentation-modals.tsx", import.meta.url)).text(),
+        Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text(),
+    ]);
+    const toggleCss = sourceSection(adminCss, ".admin-price-tier-toggle span {", ".admin-model-editor-add-tier.ant-btn {");
+
+    expect(pluginSource).toContain("event.preventDefault()");
+    expect(pluginSource).toContain("onDragOver={(event)");
+    expect(pluginSource).toContain("onDrop={handlePluginDrop}");
+    expect(pluginSource).toContain("点击选择插件文件，也可拖拽到此处");
+    expect(pluginSource).toContain("释放文件以上传插件");
+    expect(pluginSource).toContain("isDraggingPlugin");
+    expect(compactSource(adminCss)).toContain(".admin-price-tier-controls { display: grid !important; grid-template-columns: minmax(0, 1fr);");
+    expect(toggleCss).toContain("overflow-wrap: anywhere;");
+    expect(toggleCss).toContain("white-space: normal;");
+    expect(toggleCss).not.toContain("text-overflow: ellipsis;");
+});
+
 test("analytics keeps fixed range presets distinct and uses enabled channel models for pricing", async () => {
     const source = compactSource(await Bun.file(new URL("../src/pages/admin/components/analytics-panel.tsx", import.meta.url)).text());
 
@@ -45,7 +64,10 @@ test("analytics keeps fixed range presets distinct and uses enabled channel mode
     expect(source).toContain("onChange={handlePricingModelChange}");
     expect(source).toContain('hasOwnProperty.call(changedValues, "model")');
     expect(source).toContain('if (matchingChannels.length) form.setFieldValue("channelId", matchingChannels[0].id)');
-    expect(source).toContain("const sourceChannels = channels.filter((channel) => channel.enabled !== false)");
+    expect(source).toContain("const sourceChannels = channels.filter(");
+    expect(source).toContain('Form.useWatch("channelId", form)');
+    expect(source).toContain("pricingChannelId");
+    expect(source).toContain("channel.id === pricingChannelId");
     expect(source).toContain('inputMode="decimal"');
     expect(source).toContain('className="admin-analytics-price-input"');
     expect(source).toContain('className="admin-analytics-price-field"');
@@ -180,20 +202,22 @@ test("admin tables keep requested filters and actions in the intended positions"
     expect(operationColumn).toContain('fixed: "right"');
 });
 
-test("payment availability is persisted by the switch and refreshed across user surfaces", async () => {
-    const [adminSource, walletSource, apiSource] = await Promise.all([
+test("payment availability is owned by the dedicated payment runtime and consumed by the wallet", async () => {
+    const [adminSource, creditSource, walletSource, apiSource] = await Promise.all([
+        Bun.file(new URL("../src/pages/admin/payments/payments-page.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/components/credit-operations-panel.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/wallet/index.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/services/api/wallet.ts", import.meta.url)).text(),
+        Bun.file(new URL("../src/services/api/payments.ts", import.meta.url)).text(),
     ]);
 
-    expect(adminSource).toContain("const changePaymentEnabled = async (enabled: boolean)");
-    expect(adminSource).toContain("onChange={(enabled) => void changePaymentEnabled(enabled)}");
-    expect(adminSource).toContain('publishServerSettingUpdated("payment")');
-    expect(adminSource).toContain("apiPath: values.apiPath.trim()");
-    expect(walletSource).toContain('subscribeServerSettingUpdated("payment", refreshPaymentConfig)');
-    expect(walletSource).toContain('window.addEventListener("focus", refreshWhenVisible)');
-    expect(apiSource).toContain('headers: { "Cache-Control": "no-cache" }');
+    expect(adminSource).toContain("await updateAdminPaymentProvider(providerDrawer.id");
+    expect(adminSource).toContain("enabled: values.enabled");
+    expect(adminSource).toContain("values: Object.fromEntries");
+    expect(creditSource).not.toContain("changePaymentEnabled");
+    expect(walletSource).toContain("Promise.all([listTopupProducts(), listPaymentProviders()])");
+    expect(walletSource).toContain("createPaymentOrder({");
+    expect(apiSource).toContain('apiClient.get("/payments/providers")');
+    expect(apiSource).toContain('apiClient.put(`/admin/payments/providers/${encodeURIComponent(id)}/config`, input)');
 });
 
 test("request logs display user credit billing independently from upstream cost", async () => {
@@ -205,9 +229,15 @@ test("request logs display user credit billing independently from upstream cost"
 
     const billingSummary = sourceSection(listSource, "function BillingSummary", "function MediaResult");
     expect(listSource).toContain('title: "积分计费"');
+    expect(listSource).toContain('title: "请求阶段 / 状态"');
+    expect(listSource).toContain('description="模型生成、状态查询与结果下载；仅计费调用扣除积分"');
     expect(billingSummary).toContain("billingAmountMicrocredits");
     expect(billingSummary).toContain("billingAvailable");
+    expect(billingSummary).toContain("!log.billable");
+    expect(billingSummary).toContain("不计费");
     expect(billingSummary).not.toContain("costAvailable");
+    expect(detailSource).toContain('["请求阶段", requestKindText(log.requestKind)]');
+    expect(detailSource).toContain('["计费属性", log.billable ? "计费调用" : "不计费"]');
     expect(detailSource).toContain('["积分计费", billingText(log)]');
     expect(detailSource).toContain('["上游成本", log.costAvailable');
     expect(apiSource).toContain("billingAmountMicrocredits: number");

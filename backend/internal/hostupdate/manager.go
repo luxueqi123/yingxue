@@ -41,12 +41,26 @@ type commandRunner interface {
 	Run(context.Context, string, []string, []string, io.Writer, io.Writer) error
 }
 
+type inputCommandRunner interface {
+	RunWithInput(context.Context, string, []string, []string, io.Reader, io.Writer, io.Writer) error
+}
+
 type execRunner struct{ dir string }
 
 func (r execRunner) Run(ctx context.Context, name string, args, environment []string, stdout, stderr io.Writer) error {
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = r.dir
 	command.Env = append(os.Environ(), environment...)
+	command.Stdout = stdout
+	command.Stderr = stderr
+	return command.Run()
+}
+
+func (r execRunner) RunWithInput(ctx context.Context, name string, args, environment []string, input io.Reader, stdout, stderr io.Writer) error {
+	command := exec.CommandContext(ctx, name, args...)
+	command.Dir = r.dir
+	command.Env = append(os.Environ(), environment...)
+	command.Stdin = input
 	command.Stdout = stdout
 	command.Stderr = stderr
 	return command.Run()
@@ -70,7 +84,7 @@ type Manager struct {
 func NewManager(config Config) (*Manager, error) {
 	config.Repository = strings.TrimSpace(config.Repository)
 	if config.Repository == "" {
-		config.Repository = "ddcat-ai/open-ai-canvas"
+		config.Repository = "luxueqi123/yingxue"
 	}
 	if config.InstallDir == "" {
 		config.InstallDir = "/opt/open-ai-canvas"
@@ -363,6 +377,9 @@ func (m *Manager) runRollback(targetVersion string, backup Backup, automatic boo
 		if err := replaceFile(m.previousComposePath(), m.composePath(), 0o600); err != nil {
 			failures = append(failures, fmt.Errorf("恢复旧 Compose 配置：%w", err))
 		}
+	}
+	if err := m.restoreBackendData(backup); err != nil {
+		failures = append(failures, err)
 	}
 	if err := m.restoreDatabase(backup); err != nil {
 		failures = append(failures, err)

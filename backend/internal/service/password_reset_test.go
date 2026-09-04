@@ -35,7 +35,7 @@ func TestPasswordResetChangesPasswordConsumesCodeAndRevokesSessions(t *testing.T
 
 	var deliveredCode string
 	svc.mailSender = func(_ emailSettingValue, recipient string, subject string, body string) error {
-		if recipient != user.Email || subject != "影策密码重置验证码" {
+		if recipient != user.Email || subject != "映雪密码重置验证码" {
 			t.Fatalf("unexpected reset email: recipient=%q subject=%q", recipient, subject)
 		}
 		deliveredCode = codeFromEmailBody(body)
@@ -196,7 +196,7 @@ func newPasswordResetTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err := db.AutoMigrate(&model.User{}, &model.AuthSession{}, &model.EmailVerificationCode{}, &model.SystemSetting{}); err != nil {
 		t.Fatal(err)
 	}
-	settingJSON, err := json.Marshal(emailSettingValue{Enabled: true, Host: "smtp.example.com", Port: 587, Encryption: "starttls", FromEmail: "noreply@example.com", FromName: "影策"})
+	settingJSON, err := json.Marshal(emailSettingValue{Enabled: true, Host: "smtp.example.com", Port: 587, Encryption: "starttls", FromEmail: "noreply@example.com", FromName: "映雪"})
 	if err != nil {
 		t.Fatal(err)
 	}

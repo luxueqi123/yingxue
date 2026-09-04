@@ -31,8 +31,9 @@ description: Host Updater、Release 检查、数据库备份迁移、健康验�
 1. 停止目标 web/backend；
 2. 恢复更新前保存的 Compose 文件；
 3. 再次校验备份 ZIP 和 SHA-256；
-4. 使用 `pg_restore --clean --if-exists` 恢复 PostgreSQL；
-5. 恢复旧 `CANVAS_IMAGE_TAG`，启动旧服务并重新进行稳定窗口验证。
+4. 清空后端 `/data` 并从备份中的 `backend-data.tar` 恢复上传文件、插件包和本地运行数据；
+5. 使用 `pg_restore --clean --if-exists` 恢复 PostgreSQL；
+6. 恢复旧 `CANVAS_IMAGE_TAG`，启动旧服务并重新进行稳定窗口验证。
 
 回退任一步失败时状态变为 `manual_intervention`，不伪造成功。管理后台仅在存在旧版本和已校验备份时开放人工回退按钮。
 
@@ -42,7 +43,7 @@ GHCR 镜像部署必须把 `CANVAS_IMAGE_TAG` 固定到具体 Release，不可�
 
 ```bash
 cd /opt/open-ai-canvas
-curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/scripts/install-host-updater.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/luxueqi123/yingxue/main/scripts/install-host-updater.sh | sudo bash
 sudo docker compose --env-file .env -f docker-compose.deploy.yml up -d --force-recreate backend web --wait
 ```
 
@@ -51,11 +52,11 @@ sudo docker compose --env-file .env -f docker-compose.deploy.yml up -d --force-r
 自维护发行版必须同时固定 Release 仓库和镜像命名空间，不能只修改页面显示名称：
 
 ```bash
-CANVAS_UPDATER_REPOSITORY=owner/repository
-CANVAS_IMAGE_REPOSITORY=ghcr.io/owner
+CANVAS_UPDATER_REPOSITORY=luxueqi123/yingxue
+CANVAS_IMAGE_REPOSITORY=ghcr.io/luxueqi123
 ```
 
-安装时通过 `REPOSITORY=owner/repository` 传入发行仓库。安装脚本会把仓库写入 Host Updater 的 root-only 环境文件，并在 `.env` 缺少镜像命名空间时按仓库所有者补齐。这样检查 Release、自更新更新器、拉取 Compose 和校验目标镜像始终属于同一发行方，避免自维护版本在线更新后切回上游原版。
+映雪安装脚本默认使用上面的仓库和镜像命名空间；其他自维护发行版安装时可通过 `REPOSITORY=owner/repository` 覆盖。安装脚本会把仓库写入 Host Updater 的 root-only 环境文件，并在 `.env` 缺少镜像命名空间时按仓库所有者补齐。这样检查 Release、自更新更新器、拉取 Compose 和校验目标镜像始终属于同一发行方，避免在线更新后切回作者上游原版。
 
 ## 运维检查
 

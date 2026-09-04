@@ -21,6 +21,7 @@ type CreditLedgerEntry struct {
 	AvailableAfterMicrocredits int64            `json:"availableAfterMicrocredits"`
 	ReservedAfterMicrocredits  int64            `json:"reservedAfterMicrocredits"`
 	BillingOrderID             string           `json:"billingOrderId,omitempty" gorm:"index;size:36"`
+	PaymentOrderID             string           `json:"paymentOrderId,omitempty" gorm:"index;size:36"`
 	RedeemCodeID               string           `json:"redeemCodeId,omitempty" gorm:"index;size:36"`
 	ActorUserID                string           `json:"actorUserId,omitempty" gorm:"index;size:36"`
 	Model                      string           `json:"model,omitempty" gorm:"size:120;index"`
@@ -71,30 +72,6 @@ type BillingOrder struct {
 	RefundedAt                   *time.Time    `json:"refundedAt"`
 	CreatedAt                    time.Time     `json:"createdAt" gorm:"index"`
 	UpdatedAt                    time.Time     `json:"updatedAt"`
-}
-
-// PaymentOrder 只记录用户向平台充值的收款订单；模型调用产生的费用仍由 BillingOrder 管理。
-type PaymentOrder struct {
-	ID                  string             `json:"id" gorm:"primaryKey;size:36"`
-	UserID              string             `json:"userId" gorm:"size:36;index;uniqueIndex:idx_payment_user_idempotency,priority:1"`
-	IdempotencyKey      string             `json:"-" gorm:"size:160;uniqueIndex:idx_payment_user_idempotency,priority:2"`
-	PlanID              string             `json:"planId" gorm:"size:64;index"`
-	PlanName            string             `json:"planName" gorm:"size:120"`
-	AmountCents         int64              `json:"amountCents"`
-	CreditsMicrocredits int64              `json:"creditsMicrocredits"`
-	PayType             string             `json:"payType" gorm:"size:24;index"`
-	Status              PaymentOrderStatus `json:"status" gorm:"size:24;index"`
-	MerchantID          string             `json:"-" gorm:"size:160"`
-	MerchantKeyCipher   string             `json:"-" gorm:"type:text"`
-	ProviderTradeNo     *string            `json:"providerTradeNo,omitempty" gorm:"size:160;uniqueIndex"`
-	ProviderError       string             `json:"providerError,omitempty" gorm:"size:500"`
-	CheckoutURL         string             `json:"checkoutUrl,omitempty" gorm:"size:2000"`
-	QRCode              string             `json:"qrCode,omitempty" gorm:"size:2000"`
-	QRCodeImage         string             `json:"qrCodeImage,omitempty" gorm:"size:2000"`
-	URLScheme           string             `json:"urlScheme,omitempty" gorm:"size:2000"`
-	PaidAt              *time.Time         `json:"paidAt" gorm:"index"`
-	CreatedAt           time.Time          `json:"createdAt" gorm:"index"`
-	UpdatedAt           time.Time          `json:"updatedAt"`
 }
 
 type RedeemBatch struct {

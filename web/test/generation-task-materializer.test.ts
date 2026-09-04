@@ -3065,7 +3065,7 @@ describe("generation task materializer", () => {
     });
 
     test("Canvas asset sync freezes its account key and is aborted by account lifecycle cleanup", async () => {
-        const source = await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text();
+        const source = (await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text()).replace(/\r\n/g, "\n");
         expect(source).toContain("const scope = getActiveUserScope();");
         expect(source).toContain("const key = [scope,");
         expect(source).toContain("runGenerationConsumer(options.signal");
@@ -3073,9 +3073,9 @@ describe("generation task materializer", () => {
     });
 
     test("generic task materialization never treats a local Canvas id as a backend project id", async () => {
-        const source = await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text();
+        const source = (await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text()).replace(/\r\n/g, "\n");
         expect(source).not.toContain("if (input.task.projectId) await syncAssetToProject(assetId, input.task.projectId");
-        expect(source).toContain("if (!options.domainProjectId) return");
+        expect(source).toMatch(/if \(!options\.domainProjectId\) \{[\s\S]*?linkedToProject: false[\s\S]*?\}/);
         expect(source).toContain("await syncAssetToProject(asset.id, options.domainProjectId");
     });
 

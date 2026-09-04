@@ -8,18 +8,35 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type recordingRunner struct {
-	calls [][]string
+	calls      [][]string
+	inputCalls [][]string
+	output     string
 }
 
 func (r *recordingRunner) Run(_ context.Context, _ string, args, _ []string, stdout, _ io.Writer) error {
 	r.calls = append(r.calls, append([]string(nil), args...))
 	if stdout != nil {
-		_, _ = io.WriteString(stdout, "backup-fixture")
+		value := r.output
+		if value == "" {
+			value = "backup-fixture"
+		}
+		_, _ = io.WriteString(stdout, value)
+	}
+	return nil
+}
+
+func (r *recordingRunner) RunWithInput(_ context.Context, _ string, args, _ []string, input io.Reader, stdout, _ io.Writer) error {
+	r.inputCalls = append(r.inputCalls, append([]string(nil), args...))
+	_, _ = io.Copy(io.Discard, input)
+	if stdout != nil {
+		_, _ = io.WriteString(stdout, r.output)
 	}
 	return nil
 }
@@ -45,8 +62,28 @@ func TestSetEnvValuePreservesOtherSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stat.Mode().Perm() != 0o640 {
+	if runtime.GOOS != "windows" && stat.Mode().Perm() != 0o640 {
 		t.Fatalf("mode=%o, want 640", stat.Mode().Perm())
+	}
+}
+
+func TestVerifyImagesUsesConfiguredImageRepository(t *testing.T) {
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_REPOSITORY=ghcr.io/luxueqi123\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{output: `["ghcr.io/luxueqi123/open-ai-canvas@sha256:abc"]`}
+	manager := &Manager{config: Config{InstallDir: installDir, EnvFile: ".env", Repository: "another/project"}, runner: runner}
+	if err := manager.verifyImages("v1.2.5-yingxue.1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 2 {
+		t.Fatalf("image inspect calls = %d", len(runner.calls))
+	}
+	for _, call := range runner.calls {
+		if !strings.Contains(strings.Join(call, " "), "ghcr.io/luxueqi123/open-ai-canvas-") {
+			t.Fatalf("unexpected image inspection: %#v", call)
+		}
 	}
 }
 
@@ -128,6 +165,49 @@ func TestCreateBackupReadsBackendDataAsRoot(t *testing.T) {
 		}
 	}
 	t.Fatalf("backend data backup did not use root: %#v", runner.calls)
+}
+
+func TestRestoreBackendDataClearsAndExtractsTheVerifiedArchive(t *testing.T) {
+	directory := t.TempDir()
+	backupPath := filepath.Join(directory, "backup.zip")
+	file, err := os.Create(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := zip.NewWriter(file)
+	for name, content := range map[string]string{"metadata.json": "{}", "database.dump": "db", "backend-data.tar": "tar-data"} {
+		entry, createErr := archive.Create(name)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := io.WriteString(entry, content); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(data)
+	runner := &recordingRunner{}
+	manager := &Manager{config: Config{InstallDir: directory, EnvFile: ".env", ComposeFile: "docker-compose.deploy.yml", StepTimeout: time.Minute}, runner: runner}
+	backup := Backup{Path: backupPath, Checksum: "sha256:" + hex.EncodeToString(hash[:]), Version: "v1.2.4-yingxue.1"}
+	if err := manager.restoreBackendData(backup); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.inputCalls) != 1 {
+		t.Fatalf("restore input calls = %d", len(runner.inputCalls))
+	}
+	joined := strings.Join(runner.inputCalls[0], " ")
+	if !strings.Contains(joined, "run --rm --no-deps -T --user root --entrypoint sh backend") || !strings.Contains(joined, "find /data -mindepth 1 -maxdepth 1") || !strings.Contains(joined, "tar -C /data -xf -") {
+		t.Fatalf("unexpected restore command: %s", joined)
+	}
 }
 
 func TestCheckWritableDirectory(t *testing.T) {

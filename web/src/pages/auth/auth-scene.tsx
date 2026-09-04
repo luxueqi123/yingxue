@@ -4,13 +4,15 @@ import { ConfigProvider, Tabs } from "antd";
 import { ArrowLeft, Play } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { YingxueBrandLockup } from "@/components/brand/yingxue-brand-lockup";
 import { getAntThemeConfig } from "@/lib/app-theme";
+import { brandStudioLabel, useAppearanceStore } from "@/stores/use-appearance-store";
 
 const AUTH_VIDEO_MOBILE_URL = "/brand/yingxue-auth-full-mobile.mp4";
 const AUTH_VIDEO_DESKTOP_URL = "/brand/yingxue-auth-full-desktop-1080.mp4";
-const AUTH_VIDEO_POSTER = "/brand/yingxue-auth-full-poster.webp";
+const BUILTIN_AUTH_POSTER = "/brand/yingxue-auth-full-poster.webp";
 const AUTH_TABS = [
     { key: "login", label: "登录" },
     { key: "register", label: "注册" },
@@ -48,12 +50,15 @@ export function LinuxDOIcon() {
 }
 
 export function AuthScene() {
+    const appearance = useAppearanceStore((state) => state.appearance);
     const location = useLocation();
     const navigate = useNavigate();
     const reducedMotion = useReducedMotion();
     const videoRef = useRef<HTMLVideoElement>(null);
     const recovery = location.pathname === "/forgot-password";
     const [authVideoUrl, setAuthVideoUrl] = useState(() => getAuthVideoUrl());
+    const videoSource = appearance.authVideoConfigured ? appearance.authVideoUrl : authVideoUrl;
+    const posterSource = appearance.authVideoConfigured ? appearance.authVideoPosterUrl || undefined : BUILTIN_AUTH_POSTER;
     const activeTab = location.pathname === "/register" ? "register" : "login";
     const copy = recovery ? authCopy.recovery : activeTab === "register" ? authCopy.register : authCopy.login;
 
@@ -107,12 +112,12 @@ export function AuthScene() {
     return (
         <main className="h-dvh min-h-0 overflow-y-auto bg-[#08090c] text-white lg:overflow-hidden">
             <div className="grid min-h-full lg:h-full lg:grid-cols-[minmax(0,1.32fr)_minmax(520px,1fr)]">
-                <section className="relative min-h-[250px] overflow-hidden sm:min-h-[320px] lg:min-h-0" aria-label="映雪品牌影片">
+                <section className="relative min-h-[250px] overflow-hidden sm:min-h-[320px] lg:min-h-0" aria-label={`${appearance.brandName}品牌影片`}>
                     <video
                         ref={videoRef}
-                        src={authVideoUrl}
+                        src={videoSource}
                         className="absolute inset-0 size-full object-cover [transform:translateZ(0)]"
-                        poster={AUTH_VIDEO_POSTER}
+                        poster={posterSource}
                         autoPlay
                         muted
                         loop
@@ -130,8 +135,8 @@ export function AuthScene() {
                     <div aria-hidden className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,5,8,.58),transparent_42%,rgba(4,5,8,.74))]" />
                     <div aria-hidden className="absolute inset-y-0 right-0 hidden w-[clamp(120px,14vw,240px)] bg-[linear-gradient(90deg,transparent_0%,rgba(11,12,16,.68)_58%,#0b0c10_100%)] lg:block" />
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-5 sm:p-7 lg:p-9">
-                        <Link to="/" aria-label="映雪首页" className="inline-flex items-center transition-opacity hover:opacity-80">
-                            <YingxueBrandLockup className="h-14 w-auto sm:h-[67px] lg:h-[78px]" />
+                        <Link to="/" aria-label={`${appearance.brandName}首页`} className="inline-flex items-center transition-opacity hover:opacity-80">
+                            <BrandLogo theme="dark" alt={appearance.brandName} className="h-14 w-auto sm:h-[67px] lg:h-[78px]" fallback={<YingxueBrandLockup className="h-14 w-auto sm:h-[67px] lg:h-[78px]" />} />
                         </Link>
                         <button
                             type="button"
@@ -149,12 +154,9 @@ export function AuthScene() {
                         transition={{ duration: aceternityMotion.duration.panel, ease: aceternityMotion.easing.enter }}
                         className="absolute inset-x-0 bottom-0 max-w-2xl p-5 sm:p-7 lg:p-10"
                     >
-                        <p className="text-xs font-semibold tracking-[0.18em] text-white/58">YINGXUE STUDIO</p>
-                        <h1 className="mt-3 max-w-xl text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">
-                            让一个故事，
-                            <br className="hidden sm:inline" />
-                            从文字走向银幕。
-                        </h1>
+                        <p className="text-xs font-semibold tracking-[0.18em] text-white/58">{brandStudioLabel(appearance)}</p>
+                        <h1 className="mt-3 max-w-xl whitespace-pre-line text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">{appearance.authHeroTitle}</h1>
+                        {appearance.authHeroDescription ? <p className="mt-3 max-w-xl text-sm leading-6 text-white/66">{appearance.authHeroDescription}</p> : null}
                     </motion.div>
                 </section>
 

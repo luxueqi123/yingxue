@@ -3,14 +3,16 @@
 set -Eeuo pipefail
 
 REPOSITORY_REF="${REPOSITORY_REF:-main}"
+REPOSITORY="${REPOSITORY:-luxueqi123/yingxue}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/open-ai-canvas}"
 CANVAS_HTTP_PORT="${CANVAS_HTTP_PORT:-3000}"
 REQUESTED_IMAGE_TAG="${CANVAS_IMAGE_TAG:-}"
 CANVAS_IMAGE_TAG="${REQUESTED_IMAGE_TAG:-latest}"
 CANVAS_IMAGE_TAG="${CANVAS_IMAGE_TAG#v}"
 COMPOSE_FILE="docker-compose.deploy.yml"
-COMPOSE_URL="${COMPOSE_URL:-https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/${REPOSITORY_REF}/${COMPOSE_FILE}}"
-UPDATER_INSTALL_URL="${UPDATER_INSTALL_URL:-https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/${REPOSITORY_REF}/scripts/install-host-updater.sh}"
+CANVAS_IMAGE_REPOSITORY="${CANVAS_IMAGE_REPOSITORY:-ghcr.io/${REPOSITORY%%/*}}"
+COMPOSE_URL="${COMPOSE_URL:-https://raw.githubusercontent.com/${REPOSITORY}/${REPOSITORY_REF}/${COMPOSE_FILE}}"
+UPDATER_INSTALL_URL="${UPDATER_INSTALL_URL:-https://raw.githubusercontent.com/${REPOSITORY}/${REPOSITORY_REF}/scripts/install-host-updater.sh}"
 
 step() {
     printf '\n==> %s\n' "$1"
@@ -85,6 +87,8 @@ prepare_environment() {
         grep -Eq '^POSTGRES_PASSWORD=.+$' .env || fail "现有 .env 缺少 POSTGRES_PASSWORD"
         grep -Eq '^DATABASE_URL=.+$' .env || fail "现有 .env 缺少 DATABASE_URL"
         grep -Eq '^CANVAS_SKILL_MEDIA_PATH=.+$' .env || printf '\nCANVAS_SKILL_MEDIA_PATH=%s/skill-media\n' "$INSTALL_DIR" >>.env
+        grep -Eq '^CANVAS_IMAGE_REPOSITORY=.+$' .env || printf 'CANVAS_IMAGE_REPOSITORY=%s\n' "$CANVAS_IMAGE_REPOSITORY" >>.env
+        grep -Eq '^CANVAS_UPDATER_REPOSITORY=.+$' .env || printf 'CANVAS_UPDATER_REPOSITORY=%s\n' "$REPOSITORY" >>.env
 
         local configured_http_port
         configured_http_port="$(sed -n 's/^CANVAS_HTTP_PORT=//p' .env | tail -n 1)"
@@ -125,6 +129,8 @@ POSTGRES_PASSWORD=${database_password}
 DATABASE_URL=postgresql://open_ai_canvas:${database_password}@postgres:5432/open_ai_canvas?sslmode=disable
 CANVAS_HTTP_PORT=${CANVAS_HTTP_PORT}
 CANVAS_IMAGE_TAG=${CANVAS_IMAGE_TAG}
+CANVAS_IMAGE_REPOSITORY=${CANVAS_IMAGE_REPOSITORY}
+CANVAS_UPDATER_REPOSITORY=${REPOSITORY}
 CANVAS_SKILL_MEDIA_PATH=${INSTALL_DIR}/skill-media
 CANVAS_REGISTRATION_ENABLED=false
 CANVAS_ALLOW_PRIVATE_UPSTREAMS=false
@@ -150,7 +156,7 @@ install_host_updater() {
     local installer
     installer="$(mktemp)"
     curl -fsSL "$UPDATER_INSTALL_URL" -o "$installer"
-    INSTALL_DIR="$INSTALL_DIR" bash "$installer"
+    INSTALL_DIR="$INSTALL_DIR" REPOSITORY="$REPOSITORY" bash "$installer"
     rm -f "$installer"
 }
 
