@@ -352,6 +352,8 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
                 closable: false,
                 mask: { closable: false },
                 keyboard: false,
+                transitionName: "",
+                maskTransitionName: "",
                 onOk: () => onClose(),
                 onCancel: () => {
                     closingRef.current = false;
