@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      publish_current:
+        description: Revalidate and publish the already merged upstream version
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -48,7 +54,9 @@ jobs:
         id: pending
         shell: bash
         run: |
-          if git merge-base --is-ancestor "upstream-${{ steps.upstream.outputs.tag }}" HEAD; then
+          if [[ "${{ inputs.publish_current }}" == "true" ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "upstream-${{ steps.upstream.outputs.tag }}" HEAD; then
             echo "value=false" >> "$GITHUB_OUTPUT"
             echo "Yingxue already contains ${{ steps.upstream.outputs.tag }}"
           else
