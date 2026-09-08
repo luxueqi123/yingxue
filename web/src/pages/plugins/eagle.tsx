@@ -1,6 +1,8 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Download, FileAudio, FileBox, FileImage, FileVideo, FolderOpen, FolderPlus, RefreshCw, Search, Settings2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { App, Button, Drawer, Empty, Input, Spin, Tag, Tree, Typography } from "antd";
+import { App, Button, Drawer, Input, Spin, Tag, Tree, Typography } from "antd";
+import { IconButton } from "@/components/ui/base/buttons";
+import { EmptyState } from "@/components/ui/product/empty-state";
 import type { DataNode } from "antd/es/tree";
 import { useNavigate } from "react-router";
 
@@ -8,6 +10,7 @@ import "@/lib/plugins/builtin";
 import { createEagleAssetSource, EAGLE_DEFAULT_BASE_URL, eagleAssetPlugin } from "@/lib/plugins/builtin/eagle";
 import type { ExternalAssetFolder, ExternalAssetItem } from "@/lib/plugins/plugin-types";
 import type { Asset } from "@/stores/use-asset-store";
+import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { CollectionGrid, ListToolbar, PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/asset-library-card";
@@ -16,6 +19,7 @@ import "./eagle.css";
 export default function EagleLibraryPage() {
     const navigate = useNavigate();
     const { message } = App.useApp();
+    const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const installations = usePluginStore((state) => state.installations);
     const hydrated = usePluginStore((state) => state.hydrated);
     const ensurePlugin = usePluginStore((state) => state.ensurePlugin);
@@ -133,13 +137,13 @@ export default function EagleLibraryPage() {
             <WorkspacePage grid className="library-page eagle-library-page">
                 <PageHeader
                     title="Eagle 素材库"
-                    description="把 Eagle 作为映雪的外部素材来源，直接浏览和管理 Eagle 原始文件。"
-                    actions={<Button icon={<ArrowLeft className="size-3.5" />} onClick={() => navigate("/assets")}>返回映雪素材库</Button>}
+                    description={`把 Eagle 作为${brandName}的外部素材来源，直接浏览和管理 Eagle 原始文件。`}
+                    actions={<Button icon={<ArrowLeft className="size-3.5" />} onClick={() => navigate("/assets")}>返回{brandName}素材库</Button>}
                 />
                 <section className="mt-4 library-card-surface flex min-h-72 flex-col items-center justify-center rounded-[var(--r-xl)] px-6 py-10 text-center">
                     <span className="grid size-14 place-items-center rounded-[var(--r-lg)] bg-[var(--workspace-accent-soft)] text-[var(--workspace-accent)]"><FolderOpen className="size-7" aria-hidden="true" /></span>
                     <h2 className="mt-4 text-base font-semibold">先启用 Eagle 素材来源</h2>
-                    <p className="mt-2 max-w-md text-sm leading-6 text-foreground/55">启用后，这里会直接显示 Eagle 原本的文件夹和文件，不会把素材复制成映雪本地素材。</p>
+                    <p className="mt-2 max-w-md text-sm leading-6 text-foreground/55">启用后，这里会直接显示 Eagle 原本的文件夹和文件，不会把素材复制成{brandName}本地素材。</p>
                     <Button type="primary" className="mt-5" icon={<Settings2 className="size-4" />} onClick={() => navigate("/plugins")}>去插件中心启用</Button>
                 </section>
             </WorkspacePage>
@@ -152,13 +156,13 @@ export default function EagleLibraryPage() {
                 <div className="studio-band">
                     <PageHeader
                         title="Eagle 素材库"
-                        description="Eagle 是映雪的外部素材来源；这里复用映雪素材库的浏览方式，直接读取和写入 Eagle 原始文件。"
+                        description={`Eagle 是${brandName}的外部素材来源；这里复用${brandName}素材库的浏览方式，直接读取和写入 Eagle 原始文件。`}
                         meta={<span className="app-projects-header-meta assets-header-meta">{error ? "Eagle · 连接异常" : "Eagle · 已连接"}</span>}
                         actions={(
                             <div className="assets-header-actions">
                                 <div className="assets-header-action-buttons">
                                     <Button className="library-primary-action" type="primary" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()} disabled={working}>写入素材</Button>
-                                    <Button icon={<ArrowLeft className="size-3.5" />} onClick={() => navigate("/assets")}>映雪素材库</Button>
+                                    <Button icon={<ArrowLeft className="size-3.5" />} onClick={() => navigate("/assets")}>{brandName}素材库</Button>
                                     <Button icon={<Settings2 className="size-3.5" />} onClick={() => navigate("/plugins")}>插件设置</Button>
                                 </div>
                             </div>
@@ -181,7 +185,7 @@ export default function EagleLibraryPage() {
                         <aside className="eagle-folder-sidebar thin-scrollbar flex gap-2 overflow-x-auto py-3 lg:sticky lg:top-0 lg:block lg:max-h-[calc(100vh-190px)] lg:overflow-y-auto lg:pr-3">
                             <div className="eagle-folder-sidebar-header">
                                 <span className="text-[var(--fs-label)] font-semibold">Eagle 文件夹</span>
-                                <Button type="text" size="small" icon={<RefreshCw className="size-3.5" />} aria-label="刷新 Eagle 文件夹" loading={loading} onClick={() => void load()} />
+                                <IconButton size="sm" variant="ghost" icon={RefreshCw} aria-label="刷新 Eagle 文件夹" loading={loading} onClick={() => void load()} />
                             </div>
                             <button type="button" className={"assets-filter-item " + (selectedFolder === "" ? "is-active" : "")} aria-pressed={selectedFolder === ""} onClick={() => handleFolderSelect("root")}>
                                 <span className="assets-filter-item-label">全部素材</span>
@@ -210,7 +214,7 @@ export default function EagleLibraryPage() {
                                         <h2 className="text-base font-semibold">{currentFolder?.name || "全部素材"}</h2>
                                         <span className="app-projects-header-meta">{items.length} 个素材</span>
                                     </div>
-                                    <p className="mt-1 text-xs text-foreground/48">{currentFolder ? "当前文件夹由 Eagle 管理，映雪只负责展示和调用。" : "当前展示 Eagle 素材库中的全部文件。"}</p>
+                                    <p className="mt-1 text-xs text-foreground/48">{currentFolder ? `当前文件夹由 Eagle 管理，${brandName}只负责展示和调用。` : "当前展示 Eagle 素材库中的全部文件。"}</p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     <Button icon={<FolderPlus className="size-3.5" />} onClick={() => setFolderName((value) => value ? "" : "新文件夹")}>新建文件夹</Button>
@@ -231,7 +235,7 @@ export default function EagleLibraryPage() {
                                     </CollectionGrid>
                                     <PaginationBar current={page} pageSize={pageSize} total={items.length} pageSizeOptions={[20, 40, 80]} onChange={(nextPage, nextPageSize) => { setPage(nextPageSize !== pageSize ? 1 : nextPage); setPageSize(nextPageSize); }} />
                                 </>
-                            ) : <div className="eagle-empty-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前 Eagle 文件夹没有文件" /></div>}
+                            ) : <div className="eagle-empty-state"><EmptyState size="compact" title="当前 Eagle 文件夹没有文件" /></div>}
                         </section>
                     </div>
                 </div>

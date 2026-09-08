@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 8
+const CurrentSchemaVersion int64 = 10
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -20,6 +20,9 @@ const paymentOrderQRCodeImageChecksum = "sha256:payment-order-qrcode-image-v5-20
 const resourceUploadKeyChecksum = "sha256:resource-upload-key-v6-20260905"
 const paymentTopupChecksum = "sha256:payment-topup-v7-20260905"
 const assetLibraryFoldersChecksum = "sha256:asset-library-folders-v8-20260905"
+
+const resourcePlaybackChecksum = "sha256:resource-playback-v9-20260908"
+const logicalModelActiveCodeChecksum = "sha256:logical-model-active-code-v10-20260908"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -62,6 +65,8 @@ var schemaMigrations = []migration{
 	{version: 6, name: "resource_upload_key", checksum: resourceUploadKeyChecksum, apply: migrateSchemaV6},
 	{version: 7, name: "payment_topup", checksum: paymentTopupChecksum, apply: migrateSchemaV7},
 	{version: 8, name: "asset_library_folders", checksum: assetLibraryFoldersChecksum, apply: migrateSchemaV8},
+	{version: 9, name: "resource_playback_variant", checksum: resourcePlaybackChecksum, apply: migrateSchemaV9},
+	{version: 10, name: "logical_model_active_code", checksum: logicalModelActiveCodeChecksum, apply: migrateSchemaV10},
 }
 
 func migrateSchemaV2(tx *gorm.DB) error {
@@ -154,6 +159,41 @@ func migrateSchemaV7(tx *gorm.DB) error {
 func migrateSchemaV8(tx *gorm.DB) error {
 	if err := tx.AutoMigrate(&model.Asset{}, &model.AssetFolder{}); err != nil {
 		return fmt.Errorf("创建个人素材分类并扩展素材目录字段：%w", err)
+	}
+	return nil
+}
+
+func migrateSchemaV9(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Resource{}) {
+		return fmt.Errorf("资源表不存在")
+	}
+	if !tx.Migrator().HasColumn(&model.Resource{}, "playback_status") {
+		if err := tx.Migrator().AddColumn(&model.Resource{}, "PlaybackStatus"); err != nil {
+			return fmt.Errorf("增加播放副本状态列：%w", err)
+		}
+	}
+	if !tx.Migrator().HasColumn(&model.Resource{}, "playback_object_key") {
+		if err := tx.Migrator().AddColumn(&model.Resource{}, "PlaybackObjectKey"); err != nil {
+			return fmt.Errorf("增加播放副本对象键列：%w", err)
+		}
+	}
+	if !tx.Migrator().HasColumn(&model.Resource{}, "playback_error") {
+		if err := tx.Migrator().AddColumn(&model.Resource{}, "PlaybackError"); err != nil {
+			return fmt.Errorf("增加播放副本错误列：%w", err)
+		}
+	}
+	return nil
+}
+
+func migrateSchemaV10(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.LogicalModel{}) {
+		return nil
+	}
+	if err := tx.Exec("DROP INDEX IF EXISTS idx_logical_models_code").Error; err != nil {
+		return fmt.Errorf("移除前台模型旧 code 唯一索引：%w", err)
+	}
+	if err := tx.Exec("CREATE UNIQUE INDEX idx_logical_models_code ON logical_models(code) WHERE archived_at IS NULL").Error; err != nil {
+		return fmt.Errorf("创建前台模型活动 code 唯一索引：%w", err)
 	}
 	return nil
 }

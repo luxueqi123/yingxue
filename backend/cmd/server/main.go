@@ -123,6 +123,7 @@ func run(ctx context.Context) error {
 	handler.RegisterAdminAnalyticsRoutes(api, svc)
 	handler.RegisterAdminStorageRoutes(api, svc)
 	handler.RegisterAdminUpdateRoutes(api, svc)
+	handler.RegisterAdminSystemPerformanceRoutes(api, svc)
 	handler.RegisterAnnouncementRoutes(api, svc)
 	handler.RegisterFinanceRoutes(api, svc)
 	handler.RegisterPaymentRoutes(api, svc)
@@ -141,6 +142,7 @@ func run(ctx context.Context) error {
 	handler.RegisterSkillRoutes(api, svc)
 	handler.RegisterPromptRoutes(api, svc)
 	handler.RegisterUserDataRoutes(api, svc)
+	handler.RegisterChunkedUploadRoutes(api, svc)
 	handler.RegisterDiagnosticsRoutes(api, svc)
 	handler.RegisterPluginRoutes(api, svc)
 	projectAPI := api.Group("")
@@ -160,10 +162,12 @@ func run(ctx context.Context) error {
 	}
 	httpServer := &http.Server{Handler: r, ReadHeaderTimeout: 10 * time.Second}
 	svc.StartWorker()
+	// 启动后回填存量视频的播放副本转码（幂等，无待处理项即退出）。
+	go svc.BackfillPlaybackTranscodes()
 	status.markStarted()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.Serve(listener) }()
-	log.Printf("映雪 backend listening on %s", addr)
+	log.Printf("backend listening on %s", addr)
 
 	var serveFailure error
 	select {
@@ -193,7 +197,7 @@ func run(ctx context.Context) error {
 	if err := errors.Join(shutdownFailures...); err != nil {
 		return err
 	}
-	log.Printf("映雪 backend stopped gracefully")
+	log.Printf("backend stopped gracefully")
 	return nil
 }
 

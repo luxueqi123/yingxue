@@ -85,7 +85,14 @@ func ModelRequestIntentFromTaskInput(input map[string]any, taskType string, oper
 }
 
 func normalizeModelRequestOption(name string, value any) any {
-	if canonicalCapabilityOptionName(name) != "vquality" {
+	canonicalName := canonicalCapabilityOptionName(name)
+	if canonicalName == "quality" || canonicalName == "size" {
+		if text, ok := value.(string); ok {
+			return strings.ToLower(strings.TrimSpace(text))
+		}
+		return value
+	}
+	if canonicalName != "vquality" {
 		return value
 	}
 	resolution, ok := value.(string)
@@ -353,8 +360,9 @@ func capabilityOptionValuesEqual(name string, candidate any, value any) bool {
 	left := normalizedScalar(candidate)
 	right := normalizedScalar(value)
 	if canonicalCapabilityOptionName(name) == "vquality" {
-		left = strings.TrimSuffix(left, "p")
-		right = strings.TrimSuffix(right, "p")
+		// Compare using the same aliases as request intents and price tiers.
+		left = strings.TrimSuffix(normalizedScalar(normalizeModelRequestOption(name, left)), "p")
+		right = strings.TrimSuffix(normalizedScalar(normalizeModelRequestOption(name, right)), "p")
 	}
 	return left == right
 }
@@ -448,15 +456,23 @@ func isProviderCapabilityOption(name string) bool {
 }
 
 func (s *Service) invalidateRouteCatalog() {
+	s.routeCatalogRefreshMu.Lock()
 	s.routeCatalogMu.Lock()
 	s.routeCatalog = nil
 	s.routeCatalogVersion++
+	s.routeCatalogRetryAt = time.Time{}
+	s.routeCatalogRefreshError = nil
 	s.routeCatalogMu.Unlock()
+	s.routeCatalogRefreshMu.Unlock()
 	if s.coordinator != nil {
-		if err := s.coordinator.bumpRouteCatalogVersion(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), runtimeCoordinationTimeout)
+		defer cancel()
+		if err := s.coordinator.bumpRouteCatalogVersion(ctx); err != nil {
 			log.Printf("logical model route catalog distributed invalidation failed: %v", err)
 		}
 	}
+	s.initReadCaches()
+	s.routeVersionReadCache.clear()
 }
 
 func (s *Service) routeCatalogSnapshot() (*routeCatalogSnapshot, error) {
@@ -482,15 +498,26 @@ func (s *Service) routeCatalogSnapshot() (*routeCatalogSnapshot, error) {
 	}
 	s.routeCatalogMu.RUnlock()
 
+	// 刷新锁只能防止并行回源，失败后还需要冷却，否则等待者会逐个重打数据库。
+	if s.routeCatalogRefreshError != nil && now.Before(s.routeCatalogRetryAt) {
+		if snapshot != nil && snapshot.CatalogVersion == version && now.Sub(snapshot.LoadedAt) <= s.routeCatalogMaxStale {
+			return snapshot, nil
+		}
+		return nil, s.routeCatalogRefreshError
+	}
 	loaded, err := s.loadRouteCatalog()
 	if err != nil {
+		s.routeCatalogRefreshError = err
+		s.routeCatalogRetryAt = time.Now().Add(2 * time.Second)
+		log.Printf("logical model route catalog refresh failed; retry cooled down: %v", err)
 		// 已有快照过期时允许短暂继续服务，数据库首次加载失败则明确失败。
-		if snapshot != nil && now.Sub(snapshot.LoadedAt) <= s.routeCatalogMaxStale {
-			log.Printf("logical model route catalog refresh failed, serving stale snapshot age=%s: %v", now.Sub(snapshot.LoadedAt).Round(time.Second), err)
+		if snapshot != nil && snapshot.CatalogVersion == version && now.Sub(snapshot.LoadedAt) <= s.routeCatalogMaxStale {
 			return snapshot, nil
 		}
 		return nil, err
 	}
+	s.routeCatalogRefreshError = nil
+	s.routeCatalogRetryAt = time.Time{}
 	s.routeCatalogMu.Lock()
 	s.routeCatalog = loaded
 	s.routeCatalogMu.Unlock()
@@ -504,11 +531,17 @@ func (s *Service) currentRouteCatalogVersion() int64 {
 	if s.coordinator == nil || s.coordinator.redis == nil {
 		return localVersion
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	s.initReadCaches()
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeCoordinationTimeout)
 	defer cancel()
-	version, err := s.coordinator.routeCatalogVersion(ctx)
+	version, err := s.routeVersionReadCache.get(ctx, routeCatalogVersionKey, func(ctx context.Context) (int64, int, error) {
+		value, err := s.coordinator.routeCatalogVersion(ctx)
+		if err != nil {
+			log.Printf("logical model route catalog distributed version check failed: %v", err)
+		}
+		return value, 256, err
+	})
 	if err != nil {
-		log.Printf("logical model route catalog distributed version check failed: %v", err)
 		return localVersion
 	}
 	if version > localVersion {
@@ -518,12 +551,15 @@ func (s *Service) currentRouteCatalogVersion() int64 {
 }
 
 func (s *Service) loadRouteCatalog() (*routeCatalogSnapshot, error) {
-	items, err := s.repo.LogicalModels(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	repo := s.repo.WithContext(ctx)
+	items, err := repo.LogicalModels(false)
 	if err != nil {
 		return nil, err
 	}
 	snapshot := &routeCatalogSnapshot{LoadedAt: time.Now(), CatalogVersion: s.currentRouteCatalogVersion(), Models: make(map[string]cachedLogicalModel), Ordered: make([]string, 0, len(items))}
-	graphs, err := s.repo.LogicalModelGraphs(items, false)
+	graphs, err := repo.LogicalModelGraphs(items, false)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +572,7 @@ func (s *Service) loadRouteCatalog() (*routeCatalogSnapshot, error) {
 			systemChannelIDs = append(systemChannelIDs, channelModel.ChannelID)
 		}
 	}
-	systemChannels, err := s.repo.SystemChannelsByIDs(systemChannelIDs, false)
+	systemChannels, err := repo.SystemChannelsByIDs(systemChannelIDs, false)
 	if err != nil {
 		return nil, err
 	}
@@ -704,13 +740,54 @@ func skuSelectorForIntent(intent ModelRequestIntent) map[string]string {
 			selector["videoSeconds"] = strconv.Itoa(seconds)
 		}
 	case "image":
+		if intent.Inputs["image"] > 0 {
+			selector["operation"] = "image_to_image"
+		} else {
+			selector["operation"] = "text_to_image"
+		}
+		rawQuality, _ := intent.Options["quality"].(string)
+		rawSize, _ := intent.Options["size"].(string)
+		if quality := normalizeImagePriceQuality(rawQuality, rawSize); quality != "" {
+			selector["quality"] = quality
+		}
 		for _, key := range []string{"quality", "size"} {
-			if value := strings.ToLower(strings.TrimSpace(fmt.Sprint(intent.Options[key]))); value != "" && value != "auto" && value != "any" {
+			if key == "quality" && selector["quality"] != "" {
+				continue
+			}
+			text, _ := intent.Options[key].(string)
+			if value := strings.ToLower(strings.TrimSpace(text)); value != "" && value != "auto" && value != "any" {
 				selector[key] = value
 			}
 		}
 	}
 	return selector
+}
+
+func normalizeImagePriceQuality(rawQuality string, rawSize string) string {
+	quality := strings.ToLower(strings.TrimSpace(rawQuality))
+	if quality != "" && quality != "auto" && quality != "any" {
+		return quality
+	}
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(rawSize)), "x")
+	if len(parts) != 2 {
+		return ""
+	}
+	width, widthErr := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	height, heightErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 || width > (1<<32)/height {
+		return ""
+	}
+	pixels := width * height
+	switch {
+	case pixels <= 2_000_000:
+		return "1k"
+	case pixels <= 4_300_000:
+		return "2k"
+	case pixels <= 8_294_400:
+		return "4k"
+	default:
+		return ""
+	}
 }
 
 func skuSelectorForTier(tier model.ChannelModelPriceTier) map[string]string {

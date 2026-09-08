@@ -1,4 +1,6 @@
-import { App, Button, Drawer, Form, Input, Select, Switch } from "antd";
+import { App, Button, Drawer, Form, Input } from "antd";
+import { Select } from "@/components/ui/base/select";
+import { Switch } from "@/components/ui/base/switch";
 import { Minus, Plus, Save, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -97,7 +99,7 @@ export function SkillEditorDrawer({ open, skill, onClose, onSaved }: { open: boo
     };
 
     return (
-        <Drawer className="library-drawer" open={open} size={720} destroyOnHidden maskClosable={!dirty} title={skill ? "编辑技能" : "创建技能"} onClose={requestClose} extra={<Button type="primary" loading={saving} icon={<Save className="size-4" />} onClick={() => form.submit()}>保存技能</Button>}>
+        <Drawer className="library-drawer" open={open} size={720} destroyOnHidden mask={{ closable: !dirty }} title={skill ? "编辑技能" : "创建技能"} onClose={requestClose} extra={<Button type="primary" loading={saving} icon={<Save className="size-4" />} onClick={() => form.submit()}>保存技能</Button>}>
             {!isPackageSkill ? <div className="mb-4 rounded-xl border bg-foreground/[.02] p-3">
                 <div className="mb-2 flex items-center gap-1.5 text-sm font-medium">
                     <Wand2 className="size-4" />

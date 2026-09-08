@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
 )
 
+const newAPIChannel2TaskSyncMaxAge = 5 * time.Minute
+
 // taskWorkerCoordinator 收敛任务领取、租约维护和执行结果落库，避免 Service 同时承担 worker 生命周期与业务命令。
 type taskWorkerCoordinator struct {
 	service *Service
 }
+
+const workerSlotLeaseDuration = time.Minute
 
 func newTaskWorkerCoordinator(service *Service) *taskWorkerCoordinator {
 	return &taskWorkerCoordinator{service: service}
@@ -41,30 +46,40 @@ func (w *taskWorkerCoordinator) start(ctx context.Context) {
 			}
 			setting, err := s.runtimeConcurrencySetting()
 			if err != nil {
+				log.Printf("task dispatch paused: stage=runtime_policy worker_id=%s error=%v", s.workerID, err)
 				return
 			}
 			workerConcurrency := setting.WorkerConcurrency
 			for len(slots) < workerConcurrency {
-				releaseGlobal, acquired, err := s.coordinator.acquire(ctx, "workers", workerConcurrency, 45*time.Minute)
+				globalSlot, acquired, err := s.coordinator.acquireLease(ctx, "workers", workerConcurrency, workerSlotLeaseDuration)
 				if err != nil || !acquired {
+					if err != nil {
+						log.Printf("task dispatch paused: stage=global_slot worker_id=%s error=%v", s.workerID, err)
+					}
 					return
 				}
-				task, err := s.repo.ClaimNextTask(s.workerID, 45*time.Second)
+				claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
+				// 每次领取使用独立 owner，防止同一进程内旧执行者恢复后覆盖新执行者。
+				task, err := s.repo.WithContext(claimCtx).ClaimNextTask(globalSlot.token, 45*time.Second)
+				cancelClaim()
 				if err != nil || task == nil {
-					releaseGlobal()
+					globalSlot.release()
+					if err != nil {
+						log.Printf("task dispatch paused: stage=claim worker_id=%s error=%v", s.workerID, err)
+					}
 					return
 				}
 				slots <- struct{}{}
 				started := s.runWorkerTask(func() {
-					defer func() { <-slots; releaseGlobal() }()
-					if err := w.processClaimedTask(task); err != nil {
+					defer func() { <-slots; globalSlot.release() }()
+					if err := w.processClaimedTask(task, globalSlot); err != nil {
 						_ = s.log(task.UserID, task.ID, "error", "后台任务处理失败", err.Error())
 					}
 				})
 				if !started {
 					<-slots
-					releaseGlobal()
-					_ = s.repo.ReleaseTaskLease(task.ID, s.workerID)
+					globalSlot.release()
+					_ = s.repo.ReleaseTaskLease(task.ID, task.LeaseOwner)
 					return
 				}
 			}
@@ -86,18 +101,20 @@ func (w *taskWorkerCoordinator) start(ctx context.Context) {
 
 func (w *taskWorkerCoordinator) processNextTask() error {
 	s := w.service
-	task, err := s.repo.ClaimNextTask(s.workerID, 45*time.Second)
+	task, err := s.repo.ClaimNextTask(s.workerID+":"+newID(), 45*time.Second)
 	if err != nil || task == nil {
 		return err
 	}
-	return w.processClaimedTask(task)
+	return w.processClaimedTask(task, nil)
 }
 
-func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
+func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot *runtimeSlotLease) error {
 	s := w.service
 	terminal := s.terminalCoordinator()
-	_ = s.log(task.UserID, task.ID, "info", "后端任务开始处理", "")
-	policy, err := s.RuntimePolicy()
+	policyCtx, cancelPolicy := context.WithTimeout(context.Background(), 3*time.Second)
+	reader := &Service{repo: s.repo.WithContext(policyCtx)}
+	policy, err := reader.RuntimePolicy()
+	cancelPolicy()
 	if err != nil {
 		return err
 	}
@@ -105,13 +122,23 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
 	defer cancel()
 	leaseDone := make(chan struct{})
 	leaseLost := make(chan error, 1)
+	taskID, leaseOwner := task.ID, task.LeaseOwner
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				if err := s.repo.RenewTaskLease(task.ID, s.workerID, 45*time.Second); err != nil {
+				renewCtx, cancelRenew := context.WithTimeout(ctx, 5*time.Second)
+				var err error
+				if globalSlot != nil {
+					err = globalSlot.renew(renewCtx)
+				}
+				if err == nil {
+					err = s.repo.WithContext(renewCtx).RenewTaskLease(taskID, leaseOwner, 45*time.Second)
+				}
+				cancelRenew()
+				if err != nil {
 					leaseLost <- err
 					cancel()
 					return
@@ -122,12 +149,22 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
 		}
 	}()
 	defer close(leaseDone)
+	_ = s.log(task.UserID, task.ID, "info", "后端任务开始处理", "")
 	s.registerActiveTask(task.ID, cancel)
 	defer s.unregisterActiveTask(task.ID)
 	// 取消请求可能在任务领取和注册 worker context 之间到达；再次读取终态
 	// 可以避免这种极窄窗口仍然向上游发起调用。
 	if latest, latestErr := s.repo.Task(task.ID); latestErr == nil && latest.Status == model.TaskStatusCancelled {
 		return terminal.handleAlreadyCancelled(*latest)
+	}
+
+	// 时间线转写由本地 whisper.cpp 执行，不经计费与模型渠道路由，
+	// 在进入通用生成流程前按类型分叉到独立执行器。
+	if task.Type == model.TaskTypeTimelineTranscription {
+		return w.processTimelineTranscription(task, ctx)
+	}
+	if task.Type == model.TaskTypeTimelineRender {
+		return w.processTimelineRender(task, ctx)
 	}
 
 	task.Stage = "调用生成模型"
@@ -138,7 +175,7 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
 		task.Stage = "正在连接上游"
 		task.Progress = 0
 	}
-	if err := s.repo.UpdateTaskProgress(task.ID, task.Stage, task.Progress); err != nil {
+	if err := s.repo.UpdateTaskProgressForLease(task.ID, task.LeaseOwner, task.Stage, task.Progress); err != nil {
 		return fmt.Errorf("更新任务进度失败，任务暂未调用上游：%w", err)
 	}
 	routeAttempt, err := s.beginTaskRouteAttempt(task)
@@ -151,6 +188,11 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
 	routeResult, stateErr := s.routeExecutor().execute(ctx, task, routeAttempt)
 	if stateErr != nil {
 		return stateErr
+	}
+	select {
+	case leaseErr := <-leaseLost:
+		return fmt.Errorf("任务租约失效，停止保存上游结果：%w", leaseErr)
+	default:
 	}
 	result, canvasOps, err := routeResult.result, routeResult.canvasOps, routeResult.err
 	providerSucceeded := routeResult.providerSucceeded
@@ -171,15 +213,25 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task) error {
 			return leaseErr
 		default:
 		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			decryptedInput, decryptErr := s.decryptTaskInputJSON(task.InputJSON)
-			if decryptErr == nil && s.shouldDeferVideoProviderTask(*task, decryptedInput, err) {
-				if deferErr := s.repo.DeferRunningTaskForProviderPoll(task.ID, task.LeaseOwner, "后台仍在生成", 15*time.Second); deferErr != nil {
-					return deferErr
-				}
-				_ = s.log(task.UserID, task.ID, "info", "前台等待结束，上游视频仍在生成，将继续回查原任务", task.PollStage)
-				return nil
+		decryptedInput, decryptErr := s.decryptTaskInputJSON(task.InputJSON)
+		if decryptErr == nil && s.shouldDeferVideoProviderTask(*task, decryptedInput, err) {
+			stage := "后台仍在生成"
+			message := "前台等待结束，上游视频仍在生成，将继续回查原任务"
+			var pendingErr providerStatePendingError
+			if errors.As(err, &pendingErr) {
+				stage = "等待上游任务同步"
+				message = "上游任务状态暂未同步，将继续回查原任务"
 			}
+			if deferErr := s.repo.DeferRunningTaskForProviderPoll(task.ID, task.LeaseOwner, stage, 15*time.Second); deferErr != nil {
+				return deferErr
+			}
+			_ = s.log(task.UserID, task.ID, "info", message, task.PollStage)
+			return nil
+		}
+		if newAPIChannel2TaskSyncExpired(*task, err, time.Now()) {
+			err = errors.New("上游任务长时间未同步，已停止自动查询，请确认渠道任务状态后重试。")
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
 			err = errors.New(taskTimeoutMessage(task.Type))
 		}
 		return terminal.handleExecutionFailure(task, err, providerSucceeded, channelSlotFailedBeforeRequest)
@@ -231,13 +283,28 @@ func taskExecutionTimeoutWithPolicy(taskType string, policy RuntimeTaskPolicy) t
 		return time.Duration(policy.AudioTimeoutMinutes) * time.Minute
 	case strings.HasPrefix(taskType, "canvas_text"):
 		return time.Duration(policy.TextTimeoutMinutes) * time.Minute
+	case taskType == model.TaskTypeTimelineTranscription:
+		// 本地转写受媒体时长影响，给出独立宽松超时。
+		return 20 * time.Minute
+	case taskType == model.TaskTypeTimelineRender:
+		// 渲染是整条时间线的重编码，耗时随长度线性增长。
+		return 60 * time.Minute
 	default:
 		return time.Duration(policy.DefaultTimeoutMinutes) * time.Minute
 	}
 }
 
 func (s *Service) shouldDeferVideoProviderTask(task model.Task, decryptedInput string, err error) bool {
-	if !errors.Is(err, context.DeadlineExceeded) || strings.TrimSpace(task.ProviderRequestID) == "" || (!strings.HasPrefix(task.Type, "canvas_video") && !strings.HasPrefix(task.Type, "video_")) {
+	providerRequestID := strings.TrimSpace(task.ProviderRequestID)
+	if providerRequestID == "" || (!strings.HasPrefix(task.Type, "canvas_video") && !strings.HasPrefix(task.Type, "video_")) {
+		return false
+	}
+	deferSignal := errors.Is(err, context.DeadlineExceeded)
+	var pendingErr providerStatePendingError
+	if errors.As(err, &pendingErr) {
+		deferSignal = strings.TrimSpace(pendingErr.TaskID) == providerRequestID && !newAPIChannel2TaskSyncExpired(task, err, time.Now())
+	}
+	if !deferSignal {
 		return false
 	}
 	var input canvasGenerationInput
@@ -246,6 +313,17 @@ func (s *Service) shouldDeferVideoProviderTask(task model.Task, decryptedInput s
 	}
 	resolved, resolveErr := s.resolveProviderConfig(input.Config)
 	return resolveErr == nil && resolved.InterfaceType == string(model.ChannelInterfaceNewAPIChannel2)
+}
+
+func newAPIChannel2TaskSyncExpired(task model.Task, err error, now time.Time) bool {
+	var pendingErr providerStatePendingError
+	if !errors.As(err, &pendingErr) || strings.TrimSpace(pendingErr.TaskID) == "" || strings.TrimSpace(pendingErr.TaskID) != strings.TrimSpace(task.ProviderRequestID) {
+		return false
+	}
+	if task.StartedAt == nil {
+		return true
+	}
+	return !now.Before(task.StartedAt.Add(newAPIChannel2TaskSyncMaxAge))
 }
 
 func taskTimeoutMessage(taskType string) string {

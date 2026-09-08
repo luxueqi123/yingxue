@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { App, Button, Modal, Progress, Select, Tag } from "antd";
+import { StatusBadge } from "@/components/ui/base/badges";
 import { FileImage, UploadCloud, X } from "lucide-react";
 
 import { ASSET_CATEGORY_OPTIONS, type AssetCategory } from "@/lib/asset-category";

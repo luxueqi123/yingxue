@@ -1,4 +1,5 @@
-import { App, Button, Input, Modal, Select, Switch, Typography } from "antd";
+import { App, Button, Input, Modal, Select, Typography } from "antd";
+import { Switch } from "@/components/ui/base/switch";
 import { AudioLines, CalendarDays, CheckCircle2, Clock3, CreditCard, ExternalLink, Film, FolderOpen, Image as ImageIcon, MessageSquareText, PlugZap, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -9,9 +10,10 @@ import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { COMFYUI_PLUGIN_ID, RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { ART_CRITIQUE_PLUGIN_ID } from "@/lib/art-critique/contracts";
-import type { PluginManifest, RegisteredPlugin } from "@/lib/plugins/plugin-types";
+import type { PluginManifest, PluginManifestV2, RegisteredPlugin } from "@/lib/plugins/plugin-types";
 import { getEagleLibrary, type EagleFolder } from "@/services/api/eagle";
 import { fetchPlugins, setUserPluginEnabled, type BackendPlugin, type PluginState } from "@/services/api/plugins";
+import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -64,6 +66,7 @@ const protocolSectionMeta = [
 export default function PluginsPage() {
     const { message } = App.useApp();
     const navigate = useNavigate();
+    const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const user = useUserStore((state) => state.user);
     const features = useUserStore((state) => state.features);
     const installations = usePluginStore((state) => state.installations);
@@ -157,8 +160,8 @@ export default function PluginsPage() {
         () => [
             ...protocolSectionMeta.map((section) => ({ ...section, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, section.key)) })),
             { key: "other", label: "应用插件", description: "画布、素材与工作流扩展", icon: PlugZap, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, "other")) },
-        ],
-        [filteredPlugins],
+        ].filter((section) => categoryFilter === "all" || section.key === categoryFilter),
+        [categoryFilter, filteredPlugins],
     );
 
     const selectCategory = (key: string) => {
@@ -516,14 +519,14 @@ export default function PluginsPage() {
                                                 <div className="min-w-0">
                                                     <label htmlFor="eagle-base-url">Eagle 本地 API 地址</label>
                                                     <Input id="eagle-base-url" aria-label="Eagle 本地 API 地址" value={eagleBaseUrl} onChange={(event) => setEagleBaseUrl(event.target.value)} placeholder="http://localhost:41595" />
-                                                    <p>Eagle 必须在本机运行；映雪通过插件直接读取和写入 Eagle 原始文件。</p>
+                                                    <p>Eagle 必须在本机运行；{brandName}通过插件直接读取和写入 Eagle 原始文件。</p>
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="plugin-setting-label-row">
                                                         <label htmlFor="eagle-auto-upload-generated">自动归档生成结果</label>
                                                         <Switch id="eagle-auto-upload-generated" checked={eagleAutoUploadGenerated} onChange={setEagleAutoUploadGenerated} aria-label="自动归档生成结果到 Eagle" />
                                                     </div>
-                                                    <p>图片、视频和音频生成成功后，自动写入 Eagle；映雪本地素材仍会保留。</p>
+                                                    <p>图片、视频和音频生成成功后，自动写入 Eagle；{brandName}本地素材仍会保留。</p>
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="plugin-setting-label-row">
@@ -629,7 +632,7 @@ function pluginSourceLabel(plugin: RegisteredPlugin, state?: PluginState) {
     return "系统插件";
 }
 
-function contributionKindsFor(manifest: PluginManifest): string[] {
+function contributionKindsFor(manifest: PluginManifest | PluginManifestV2): string[] {
     const contributions = manifest.contributes;
     const kinds: string[] = [];
     if (contributions.providers?.length) kinds.push("provider");
@@ -645,11 +648,11 @@ function contributionKindsFor(manifest: PluginManifest): string[] {
     return kinds;
 }
 
-function providerCapabilitiesFor(manifest: PluginManifest) {
+function providerCapabilitiesFor(manifest: PluginManifest | PluginManifestV2) {
     return [...new Set((manifest.contributes.providers || []).flatMap((provider) => provider.capabilities))];
 }
 
-function pluginMatchesCategory(manifest: PluginManifest, category: string) {
+function pluginMatchesCategory(manifest: PluginManifest | PluginManifestV2, category: string) {
     const providerCapabilities = providerCapabilitiesFor(manifest);
     const isPaymentProtocol = Boolean(manifest.contributes.paymentProviders?.length);
     if (category === "payment") return isPaymentProtocol;

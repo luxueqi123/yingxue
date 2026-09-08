@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Drawer, Dropdown, Form, Input, Modal, Popconfirm, Progress, Select, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
+import { IconButton } from "@/components/ui/base/buttons";
 import { useNavigate } from "react-router";
 
 import { CollectionGrid, ListToolbar, PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
@@ -24,7 +25,7 @@ import { uploadMediaFile } from "@/services/file-storage";
 import { flushAssetStorePersistence, useAssetStore, type Asset, type AssetCategory, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 import { AssetStorageUsage, assetStorageUsageQueryKey } from "./asset-storage-usage";
-import { deleteAssetWithRemoteSync, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { deleteAssetWithRemoteSync, loadAssetLibraryPage, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { useUserStore } from "@/stores/use-user-store";
 import { createAssetFolder, deleteAssetFolder, listAssetFolders, listRemoteAssetsPage, moveRemoteAssetsToFolder, updateAssetFolder, type AssetFolder } from "@/services/api/user-data";
 import { AssetBatchUploadModal } from "./asset-batch-upload-modal";
@@ -161,7 +162,7 @@ export default function AssetsPage() {
 
     const assetPageQuery = useQuery({
         queryKey: [...ASSET_LIBRARY_QUERY_KEY, page, pageSize, viewMode, kindFilter, categoryFilter, folderFilter, debouncedKeyword],
-        queryFn: ({ signal }) => listRemoteAssetsPage({
+        queryFn: ({ signal }) => loadAssetLibraryPage({
             page,
             pageSize,
             status: viewMode === "trash" ? "archived" : "active",
@@ -613,7 +614,7 @@ export default function AssetsPage() {
                                             <Button icon={<FolderOpen className="size-3.5" />} onClick={() => navigate("/plugins/eagle")}>
                                                 Eagle 素材库
                                             </Button>
-                                            <Button title="导出全部素材" aria-label="导出全部素材" icon={<Download className="size-4" />} onClick={() => void exportAllAssets()} />
+                                            <IconButton variant="solid" icon={Download} aria-label="导出全部素材" title="导出全部素材" onClick={() => void exportAllAssets()} />
                                             <Dropdown
                                                 trigger={["click"]}
                                                 menu={{
@@ -623,7 +624,7 @@ export default function AssetsPage() {
                                                     ],
                                                 }}
                                             >
-                                                <Button title="导入素材" aria-label="导入素材" icon={<FileUp className="size-4" />} />
+                                                <IconButton variant="solid" icon={FileUp} aria-label="导入素材" title="导入素材" />
                                             </Dropdown>
                                         </>
                                     )}
@@ -1179,8 +1180,13 @@ function AssetCard({
     );
 }
 
+function isKnownAssetKind(kind: unknown): kind is AssetKind {
+    return kind === "image" || kind === "video" || kind === "audio" || kind === "model" || kind === "text";
+}
+
 function AssetCover({ asset, selected, isTrash = false, onSelect, onOpen, menuItems }: { asset: LibraryAsset; selected: boolean; isTrash?: boolean; onSelect?: (selected: boolean) => void; onOpen: () => void; menuItems: MenuProps["items"] }) {
-    const KindIcon = assetKindIcons[asset.kind];
+    const kind = isKnownAssetKind(asset.kind) ? asset.kind : undefined;
+    const KindIcon = kind ? assetKindIcons[kind] : FileText;
     const clock = asset.kind === "video" || asset.kind === "audio" ? formatAssetClock(asset.data.durationMs) : null;
     const showPlay = asset.kind === "video";
     const isLight = asset.kind === "audio" || asset.kind === "text" || asset.kind === "model";
@@ -1215,7 +1221,7 @@ function AssetCover({ asset, selected, isTrash = false, onSelect, onOpen, menuIt
             <span className="assets-cover-badges">
                 <span className="assets-cover-badge is-kind">
                     <KindIcon />
-                    {assetKindLabel(asset.kind)}
+                    {kind ? assetKindLabel(kind) : "素材"}
                 </span>
                 {isTrash ? <span className="assets-cover-badge is-category !bg-amber-500/85 !text-white">回收站</span> : <span className="assets-cover-badge is-category">{assetCategoryLabel(asset.category)}</span>}
             </span>
@@ -1402,7 +1408,8 @@ function AssetFilterGroup({
 
 function AssetDrawer({ asset, onClose, onCopy, onDownload, onSaveToAssets }: { asset: LibraryAsset | null; onClose: () => void; onCopy: (asset: LibraryAsset) => void; onDownload: (asset: LibraryAsset) => void; onSaveToAssets?: () => void }) {
     const facts = asset ? assetArchiveFacts(asset) : [];
-    const KindIcon = asset ? assetKindIcons[asset.kind] : Clapperboard;
+    const kind = asset && isKnownAssetKind(asset.kind) ? asset.kind : undefined;
+    const KindIcon = asset ? (kind ? assetKindIcons[kind] : FileText) : Clapperboard;
     return (
         <Drawer className="library-drawer" title="素材档案" open={Boolean(asset)} size="large" onClose={onClose}>
             {asset ? (

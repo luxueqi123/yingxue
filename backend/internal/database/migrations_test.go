@@ -236,3 +236,28 @@ func TestRequireSchemaVersionRejectsUninitializedDatabase(t *testing.T) {
 		t.Fatalf("expected missing migration error, got %v", err)
 	}
 }
+
+func TestMigrateSchemaV10AllowsReusingArchivedLogicalModelCode(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-logical-model-active-code?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE logical_models (id text PRIMARY KEY, code text NOT NULL, archived_at datetime)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX idx_logical_models_code ON logical_models(code)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO logical_models(id, code, archived_at) VALUES ('archived', 'gpt-image-2', CURRENT_TIMESTAMP)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateSchemaV10(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO logical_models(id, code, archived_at) VALUES ('active', 'gpt-image-2', NULL)`).Error; err != nil {
+		t.Fatalf("reusing archived code after migration: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO logical_models(id, code, archived_at) VALUES ('duplicate', 'gpt-image-2', NULL)`).Error; err == nil {
+		t.Fatal("active logical model code must remain unique")
+	}
+}

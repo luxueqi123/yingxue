@@ -1,6 +1,12 @@
 name: Publish container images
 
 on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Verified release tag to build and publish
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -9,6 +15,9 @@ permissions:
   contents: write
   packages: write
 
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+
 jobs:
   verify:
     name: Verify release source
@@ -16,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -68,17 +79,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Resolve and validate build version
         id: build-info
         shell: bash
         run: |
           version="$(tr -d '\r\n' < VERSION)"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            [[ "$version" == "$GITHUB_REF_NAME" ]] || { echo "VERSION=$version does not match tag $GITHUB_REF_NAME" >&2; exit 1; }
+          if [[ "$RELEASE_TAG" == v* ]]; then
+            [[ "$version" == "$RELEASE_TAG" ]] || { echo "VERSION=$version does not match tag $RELEASE_TAG" >&2; exit 1; }
             grep -Fqx "## $version" CHANGELOG.md || { echo "CHANGELOG.md is missing ## $version" >&2; exit 1; }
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "image_tag=${version#v}" >> "$GITHUB_OUTPUT"
           if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
             echo "is_semver=true" >> "$GITHUB_OUTPUT"
@@ -106,9 +120,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=${{ steps.build-info.outputs.image_tag }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=semver,pattern={{version}},enable=${{ steps.build-info.outputs.is_semver == 'true' }}
-            type=sha,prefix=sha-
+            type=raw,value=${{ steps.build-info.outputs.image_tag }}
+            type=semver,pattern={{version}},value=${{ steps.build-info.outputs.version }},enable=${{ steps.build-info.outputs.is_semver == 'true' }}
+            type=raw,value=sha-${{ steps.build-info.outputs.commit }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -119,7 +133,7 @@ jobs:
           push: true
           build-args: |
             BUILD_VERSION=${{ steps.build-info.outputs.version }}
-            BUILD_COMMIT=${{ github.sha }}
+            BUILD_COMMIT=${{ steps.build-info.outputs.commit }}
             BUILD_TIME=${{ steps.build-info.outputs.build_time }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
@@ -128,12 +142,14 @@ jobs:
 
   release:
     name: Publish release assets
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/v')
     needs: publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -155,7 +171,7 @@ jobs:
       - name: Prepare release notes
         shell: bash
         run: |
-          version="$GITHUB_REF_NAME"
+          version="$RELEASE_TAG"
           awk -v heading="## $version" '
             $0 == heading { found=1; next }
             found && /^## / { exit }
@@ -169,15 +185,15 @@ jobs:
         shell: bash
         run: |
           prerelease_args=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+          if [[ "$RELEASE_TAG" == *-* || "$RELEASE_TAG" == *.rc* ]]; then
             prerelease_args+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             dist/open-ai-canvas-host-updater-linux-amd64 \
             dist/open-ai-canvas-host-updater-linux-arm64 \
             dist/SHA256SUMS \
             docker-compose.deploy.yml \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "$RELEASE_TAG" \
             --notes-file dist/RELEASE_NOTES.md \
             "${prerelease_args[@]}"

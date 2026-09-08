@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,6 +95,47 @@ func TestAliyunOSSUploadRequestStillUsesEndpointWhenCDNConfigured(t *testing.T) 
 	}
 	if req.URL.Host != "private-bucket.oss-cn-test.aliyuncs.com" || req.URL.Path != "/users/u-1/image/test.png" {
 		t.Fatalf("Aliyun OSS upload URL = %q", req.URL.String())
+	}
+}
+
+func TestNewOSSRequestBodyCloseDoesNotCloseCallerFile(t *testing.T) {
+	// 服务端提前返回 403（不读 body）时，http.Transport 会关闭 Request.Body。
+	// newOSSRequest 必须用 no-op close 包装请求体，否则调用方持有的 *os.File
+	// 会被关掉，OSS 失败后的“降级本地存储”Seek 重读将报 file already closed。
+	f, err := os.CreateTemp(t.TempDir(), "merged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("payload-bytes"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	req, err := newOSSRequest(http.MethodPut, ossSettingValue{
+		Provider: aliyunOSSProvider, Endpoint: "https://oss-cn-test.aliyuncs.com",
+		Bucket: "private-bucket", AccessKeyID: "access-id", AccessKeySecret: "secret-value",
+	}, "users/u-1/video/clip.mp4", "video/mp4", f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Body == nil {
+		t.Fatal("newOSSRequest() body is nil")
+	}
+	// 模拟 Transport 在服务端提前响应后关闭请求体：
+	if err := req.Body.Close(); err != nil {
+		t.Fatalf("close request body: %v", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("caller file was closed by transport: %v", err)
+	}
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "payload-bytes" {
+		t.Fatalf("payload after body close = %q", got)
 	}
 }
 
@@ -692,13 +736,13 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedOSSURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	media := providerMedia{StorageKey: "resource:resource-1", DataURL: "data:image/png;base64,old"}
-	if err := svc.hydrateProviderMedia("user-1", &media, true); err != nil {
+	if err := svc.hydrateProviderMedia("user-1", &media, providerMediaHydrationPolicy{requireURL: true}); err != nil {
 		t.Fatalf("hydrateProviderMedia() error = %v", err)
 	}
 	if !strings.HasPrefix(media.URL, "https://private-bucket.oss-cn-test.aliyuncs.com/") || media.DataURL != "" || !strings.Contains(media.URL, "Signature=") {
 		t.Fatalf("media = %#v", media)
 	}
-	if err := svc.hydrateProviderMedia("other-user", &providerMedia{StorageKey: "resource:resource-1"}, true); err == nil {
+	if err := svc.hydrateProviderMedia("other-user", &providerMedia{StorageKey: "resource:resource-1"}, providerMediaHydrationPolicy{requireURL: true}); err == nil {
 		t.Fatal("hydrateProviderMedia() allowed another user's resource")
 	}
 }
@@ -717,7 +761,7 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedLocalURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	media := providerMedia{StorageKey: "resource:resource-local"}
-	if err := svc.hydrateProviderMedia("user-1", &media, true); err != nil {
+	if err := svc.hydrateProviderMedia("user-1", &media, providerMediaHydrationPolicy{requireURL: true}); err != nil {
 		t.Fatalf("hydrateProviderMedia() error = %v", err)
 	}
 	if !strings.HasPrefix(media.URL, server.URL+"/api/public/resources/resource-local/file/resource-local.png?") || !strings.Contains(media.URL, "signature=") || media.DataURL != "" {
@@ -726,6 +770,51 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedLocalURL(t *testing.T) {
 	stored, err := svc.repo.Resource("resource-local")
 	if err != nil || stored.Provider != "local" {
 		t.Fatalf("resource provider changed: %#v, %v", stored, err)
+	}
+}
+
+func TestHydratePreferredURLUsesObjectStorageAndFallsBackLocal(t *testing.T) {
+	svc := newResourceTestService(t)
+	settingJSON, _ := json.Marshal(ossSettingValue{
+		Enabled: true, Provider: "aliyun", Endpoint: "https://oss-cn-test.aliyuncs.com", Bucket: "private-bucket",
+		AccessKeyID: "access-id", AccessKeySecret: "secret-value",
+	})
+	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: ossSettingKey, ValueJSON: string(settingJSON)}); err != nil {
+		t.Fatal(err)
+	}
+	objectResource := model.Resource{
+		ID: "resource-oss", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady,
+		Provider: "aliyun", Endpoint: "https://oss-cn-test.aliyuncs.com", Bucket: "private-bucket",
+		ObjectKey: "users/user-1/image/prefer.png", MimeType: "image/png",
+	}
+	if err := svc.repo.CreateResource(&objectResource); err != nil {
+		t.Fatal(err)
+	}
+	media := providerMedia{StorageKey: "resource:resource-oss", DataURL: "data:image/png;base64,old"}
+	if err := svc.hydrateProviderMedia("user-1", &media, providerMediaHydrationPolicy{preferURL: true}); err != nil {
+		t.Fatalf("hydrateProviderMedia(prefer object) error = %v", err)
+	}
+	if !strings.HasPrefix(media.URL, "https://private-bucket.oss-cn-test.aliyuncs.com/") || media.DataURL != "" || !strings.Contains(media.URL, "Signature=") {
+		t.Fatalf("object media = %#v", media)
+	}
+
+	localDir := filepath.Join(svc.dataDir, "resources", "users", "user-1", "image")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "local.png"), []byte("png-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	localResource := model.Resource{ID: "resource-local-bytes", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/user-1/image/local.png", MimeType: "image/png"}
+	if err := svc.repo.CreateResource(&localResource); err != nil {
+		t.Fatal(err)
+	}
+	localMedia := providerMedia{StorageKey: "resource:resource-local-bytes"}
+	if err := svc.hydrateProviderMedia("user-1", &localMedia, providerMediaHydrationPolicy{preferURL: true}); err != nil {
+		t.Fatalf("hydrateProviderMedia(prefer local) error = %v", err)
+	}
+	if localMedia.URL != "" || !strings.HasPrefix(localMedia.DataURL, "data:image/png;base64,") {
+		t.Fatalf("local media = %#v", localMedia)
 	}
 }
 
@@ -836,14 +925,14 @@ func newResourceTestService(t *testing.T) *Service {
 func TestStoreResourceReusesReadyUploadIdentity(t *testing.T) {
 	svc := newResourceTestService(t)
 	uploadKey := normalizedResourceUploadKey([]string{"image:user-1:logical-upload"})
-	first, stored, err := svc.storeResource("user-1", "image", "first.png", "image/png", 7, 1, 1, 0, bytes.NewReader([]byte("payload")), uploadKey)
+	first, stored, err := svc.storeResource("user-1", "image", "first.png", "image/png", 7, 1, 1, 0, bytes.NewReader([]byte("payload")), uploadKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !stored {
 		t.Fatal("first upload was not stored")
 	}
-	second, stored, err := svc.storeResource("user-1", "image", "second.png", "image/png", 7, 1, 1, 0, bytes.NewReader([]byte("payload")), uploadKey)
+	second, stored, err := svc.storeResource("user-1", "image", "second.png", "image/png", 7, 1, 1, 0, bytes.NewReader([]byte("payload")), uploadKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -962,7 +1051,7 @@ func TestPersistGeneratedMediaAppliesStoredFileQuota(t *testing.T) {
 	_, err := svc.persistGeneratedMediaResult("user-1", map[string]interface{}{
 		"image": map[string]interface{}{"dataUrl": "data:image/png;base64,YQ=="},
 	})
-	if err == nil || !strings.Contains(err.Error(), "2GB 上限") {
+	if err == nil || !strings.Contains(err.Error(), "20GB 上限") {
 		t.Fatalf("persistGeneratedMediaResult() error = %v", err)
 	}
 }

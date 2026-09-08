@@ -1,5 +1,7 @@
+import { App, Button, Segmented } from "antd";
+import { Tooltip } from "@/components/ui/base/tooltip";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { App, Button, Segmented, Tooltip } from "antd";
+
 import copyToClipboard from "copy-to-clipboard";
 import { CheckCircle2, Copy, ExternalLink, FolderOpen, History, LoaderCircle, PlugZap, Plus, RefreshCw, Terminal, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -1201,7 +1203,7 @@ function parseEventJson<T>(data: string) {
 
 function formatLogText(logs: AgentEventLog[], context: AgentLogContext) {
     const head = [
-        "映雪 Canvas Agent 诊断日志",
+        "站点 Canvas Agent 诊断日志",
         `连接: ${context.connected ? "在线" : context.enabled ? "连接中" : "未启用"}`,
         `状态: ${context.activity}`,
         `waiting: ${context.waiting}`,

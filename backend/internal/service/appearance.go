@@ -8,6 +8,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +31,7 @@ const (
 )
 
 const (
-	appearanceSchemaVersion        = 3
+	appearanceSchemaVersion        = 7
 	appearanceLogoMaxBytes   int64 = 5 << 20
 	appearancePosterMaxBytes int64 = 10 << 20
 	appearanceVideoMaxBytes  int64 = 256 << 20
@@ -46,38 +48,54 @@ const (
 )
 
 type AppearanceSetting struct {
-	SchemaVersion             int    `json:"schemaVersion"`
-	BrandName                 string `json:"brandName"`
-	BrandSlug                 string `json:"brandSlug"`
-	AuthHeroTitle             string `json:"authHeroTitle"`
-	AuthHeroDescription       string `json:"authHeroDescription"`
-	LogoResourceID            string `json:"logoResourceId"`
-	DarkLogoResourceID        string `json:"darkLogoResourceId"`
-	LogoFrameEnabled          bool   `json:"logoFrameEnabled"`
-	AuthVideoResourceID       string `json:"authVideoResourceId"`
-	AuthVideoPosterResourceID string `json:"authVideoPosterResourceId"`
-	SkinID                    string `json:"skinId"`
+	SchemaVersion             int                   `json:"schemaVersion"`
+	BrandName                 string                `json:"brandName"`
+	BrandSlug                 string                `json:"brandSlug"`
+	AuthHeroTitle             string                `json:"authHeroTitle"`
+	AuthHeroDescription       string                `json:"authHeroDescription"`
+	LogoResourceID            string                `json:"logoResourceId"`
+	DarkLogoResourceID        string                `json:"darkLogoResourceId"`
+	LogoFrameEnabled          bool                  `json:"logoFrameEnabled"`
+	AuthVideoResourceID       string                `json:"authVideoResourceId"`
+	AuthVideoPosterResourceID string                `json:"authVideoPosterResourceId"`
+	AuthVideoAutoplay         bool                  `json:"authVideoAutoplay"`
+	SkinID                    string                `json:"skinId"`
+	SkinThemes                []AppearanceSkinTheme `json:"skinThemes"`
+	SEOTitle                  string                `json:"seoTitle"`
+	SEODescription            string                `json:"seoDescription"`
+	SEOKeywords               string                `json:"seoKeywords"`
+	FooterCopyright           string                `json:"footerCopyright"`
+	ICPFilingEnabled          bool                  `json:"icpFilingEnabled"`
+	ICPFilingNumber           string                `json:"icpFilingNumber"`
 }
 
 type PublicAppearanceSetting struct {
-	SchemaVersion             int       `json:"schemaVersion"`
-	BrandName                 string    `json:"brandName"`
-	BrandSlug                 string    `json:"brandSlug"`
-	AuthHeroTitle             string    `json:"authHeroTitle"`
-	AuthHeroDescription       string    `json:"authHeroDescription"`
-	LogoURL                   string    `json:"logoUrl"`
-	DarkLogoURL               string    `json:"darkLogoUrl"`
-	LogoFrameEnabled          bool      `json:"logoFrameEnabled"`
-	AuthVideoURL              string    `json:"authVideoUrl"`
-	AuthVideoPosterURL        string    `json:"authVideoPosterUrl"`
-	SkinID                    string    `json:"skinId"`
-	LogoConfigured            bool      `json:"logoConfigured"`
-	DarkLogoConfigured        bool      `json:"darkLogoConfigured"`
-	AuthVideoConfigured       bool      `json:"authVideoConfigured"`
-	AuthVideoPosterConfigured bool      `json:"authVideoPosterConfigured"`
-	Configured                bool      `json:"configured"`
-	Revision                  string    `json:"revision"`
-	UpdatedAt                 time.Time `json:"updatedAt,omitempty"`
+	SchemaVersion             int                 `json:"schemaVersion"`
+	BrandName                 string              `json:"brandName"`
+	BrandSlug                 string              `json:"brandSlug"`
+	AuthHeroTitle             string              `json:"authHeroTitle"`
+	AuthHeroDescription       string              `json:"authHeroDescription"`
+	LogoURL                   string              `json:"logoUrl"`
+	DarkLogoURL               string              `json:"darkLogoUrl"`
+	LogoFrameEnabled          bool                `json:"logoFrameEnabled"`
+	AuthVideoURL              string              `json:"authVideoUrl"`
+	AuthVideoPosterURL        string              `json:"authVideoPosterUrl"`
+	AuthVideoAutoplay         bool                `json:"authVideoAutoplay"`
+	SkinID                    string              `json:"skinId"`
+	ActiveSkin                AppearanceSkinTheme `json:"activeSkin"`
+	SEOTitle                  string              `json:"seoTitle"`
+	SEODescription            string              `json:"seoDescription"`
+	SEOKeywords               string              `json:"seoKeywords"`
+	FooterCopyright           string              `json:"footerCopyright"`
+	ICPFilingEnabled          bool                `json:"icpFilingEnabled"`
+	ICPFilingNumber           string              `json:"icpFilingNumber"`
+	LogoConfigured            bool                `json:"logoConfigured"`
+	DarkLogoConfigured        bool                `json:"darkLogoConfigured"`
+	AuthVideoConfigured       bool                `json:"authVideoConfigured"`
+	AuthVideoPosterConfigured bool                `json:"authVideoPosterConfigured"`
+	Configured                bool                `json:"configured"`
+	Revision                  string              `json:"revision"`
+	UpdatedAt                 time.Time           `json:"updatedAt,omitempty"`
 }
 
 type AdminAppearanceSetting struct {
@@ -91,12 +109,14 @@ type AdminAppearanceSetting struct {
 
 func defaultAppearanceSetting() AppearanceSetting {
 	return AppearanceSetting{
-		SchemaVersion:    appearanceSchemaVersion,
-		BrandName:        defaultAppearanceBrandName,
-		BrandSlug:        defaultAppearanceBrandSlug,
-		AuthHeroTitle:    defaultAppearanceHeroTitle,
-		LogoFrameEnabled: true,
-		SkinID:           defaultAppearanceSkinID,
+		SchemaVersion:     appearanceSchemaVersion,
+		BrandName:         defaultAppearanceBrandName,
+		BrandSlug:         defaultAppearanceBrandSlug,
+		AuthHeroTitle:     defaultAppearanceHeroTitle,
+		AuthVideoAutoplay: true,
+		LogoFrameEnabled:  true,
+		SkinID:            defaultAppearanceSkinID,
+		SkinThemes:        defaultAppearanceSkinThemes(),
 	}
 }
 
@@ -118,6 +138,7 @@ func (s *Service) Appearance() (*PublicAppearanceSetting, error) {
 	if err != nil {
 		return nil, err
 	}
+	value = s.resolveAvailableAppearanceAssets(value)
 	return publicAppearanceSetting(setting, value), nil
 }
 
@@ -129,6 +150,7 @@ func (s *Service) AdminAppearance(actor *model.User) (*AdminAppearanceSetting, e
 	if err != nil {
 		return nil, err
 	}
+	value = s.resolveAvailableAppearanceAssets(value)
 	result := &AdminAppearanceSetting{
 		AppearanceSetting: value,
 		Public:            *publicAppearanceSetting(setting, value),
@@ -156,6 +178,15 @@ func (s *Service) UpdateAppearance(actor *model.User, value AppearanceSetting) (
 	value.AuthVideoResourceID = strings.TrimSpace(value.AuthVideoResourceID)
 	value.AuthVideoPosterResourceID = strings.TrimSpace(value.AuthVideoPosterResourceID)
 	value.SkinID = strings.TrimSpace(value.SkinID)
+	if len(value.SkinThemes) == 0 {
+		value.SkinThemes = defaultAppearanceSkinThemes()
+	}
+	value.SkinThemes = normalizeAppearanceSkinThemes(value.SkinThemes)
+	value.SEOTitle = normalizeAppearanceSingleLine(value.SEOTitle)
+	value.SEODescription = normalizeAppearanceCopy(value.SEODescription)
+	value.SEOKeywords = normalizeAppearanceSingleLine(value.SEOKeywords)
+	value.FooterCopyright = normalizeAppearanceSingleLine(value.FooterCopyright)
+	value.ICPFilingNumber = normalizeAppearanceSingleLine(value.ICPFilingNumber)
 	if err := validateAppearanceSetting(value); err != nil {
 		return nil, err
 	}
@@ -233,7 +264,15 @@ func (s *Service) UploadAppearanceAsset(actor *model.User, slot string, header *
 	if slot == AppearanceAssetVideo {
 		kind = "video"
 	}
-	resource, err := s.UploadResource(actor.ID, header, kind, 0, 0, 0)
+	var resource *model.Resource
+	// Logos are tiny, installation-owned assets. Keep them in the server's
+	// persistent resource directory so their availability and cost do not
+	// depend on the administrator's currently selected object storage.
+	if slot == AppearanceAssetLogo || slot == AppearanceAssetDarkLogo {
+		resource, err = s.uploadLocalResource(actor.ID, header, kind, 0, 0, 0)
+	} else {
+		resource, err = s.UploadResource(actor.ID, header, kind, 0, 0, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +367,52 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 	if value.SkinID == "" {
 		value.SkinID = defaultAppearanceSkinID
 	}
+	if len(value.SkinThemes) == 0 {
+		value.SkinThemes = defaultAppearanceSkinThemes()
+	}
+	value.SkinThemes = normalizeAppearanceSkinThemes(value.SkinThemes)
+	value.SEOTitle = normalizeAppearanceSingleLine(value.SEOTitle)
+	value.SEODescription = normalizeAppearanceCopy(value.SEODescription)
+	value.SEOKeywords = normalizeAppearanceSingleLine(value.SEOKeywords)
+	value.FooterCopyright = normalizeAppearanceSingleLine(value.FooterCopyright)
+	value.ICPFilingNumber = normalizeAppearanceSingleLine(value.ICPFilingNumber)
 	return setting, value, nil
+}
+
+// resolveAvailableAppearanceAssets prevents stale resource references from
+// being advertised to anonymous clients or echoed back into the admin editor.
+// Remote objects are not probed on every appearance request; the frontend has
+// its own load-error fallback for objects that disappear outside the system.
+func (s *Service) resolveAvailableAppearanceAssets(value AppearanceSetting) AppearanceSetting {
+	for _, slot := range []string{AppearanceAssetLogo, AppearanceAssetDarkLogo, AppearanceAssetVideo, AppearanceAssetPoster} {
+		resourceID := appearanceResourceID(value, slot)
+		if resourceID == "" || s.appearanceAssetAvailable(slot, resourceID) {
+			continue
+		}
+		switch slot {
+		case AppearanceAssetLogo:
+			value.LogoResourceID = ""
+		case AppearanceAssetDarkLogo:
+			value.DarkLogoResourceID = ""
+		case AppearanceAssetVideo:
+			value.AuthVideoResourceID = ""
+		case AppearanceAssetPoster:
+			value.AuthVideoPosterResourceID = ""
+		}
+	}
+	return value
+}
+
+func (s *Service) appearanceAssetAvailable(slot string, resourceID string) bool {
+	resource, err := s.repo.Resource(resourceID)
+	if err != nil || validateAppearanceResourceType(slot, resource) != nil {
+		return false
+	}
+	if resource.Provider != "local" {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(s.dataDir, "resources", filepath.FromSlash(resource.ObjectKey)))
+	return err == nil && !info.IsDir()
 }
 
 func validateAppearanceSetting(value AppearanceSetting) error {
@@ -349,8 +433,26 @@ func validateAppearanceSetting(value AppearanceSetting) error {
 	if err := validateAppearanceCopy(value.AuthHeroDescription, "登录页说明文案", 160, false); err != nil {
 		return err
 	}
-	if value.SkinID != defaultAppearanceSkinID {
-		return BadAuthRequest("当前版本仅支持经典皮肤")
+	if err := validateAppearanceSkinThemes(value.SkinThemes, value.SkinID); err != nil {
+		return err
+	}
+	for _, field := range []struct {
+		value string
+		label string
+		max   int
+	}{
+		{value.SEOTitle, "SEO 标题", 70},
+		{value.SEODescription, "SEO 描述", 200},
+		{value.SEOKeywords, "SEO 关键词", 300},
+		{value.FooterCopyright, "版权信息", 160},
+		{value.ICPFilingNumber, "备案号", 64},
+	} {
+		if err := validateAppearanceCopy(field.value, field.label, field.max, false); err != nil {
+			return err
+		}
+	}
+	if value.ICPFilingEnabled && value.ICPFilingNumber == "" {
+		return BadAuthRequest("显示备案号前请先填写备案号")
 	}
 	for _, resourceID := range []string{value.LogoResourceID, value.DarkLogoResourceID, value.AuthVideoResourceID, value.AuthVideoPosterResourceID} {
 		if len(resourceID) > 80 {
@@ -362,6 +464,10 @@ func validateAppearanceSetting(value AppearanceSetting) error {
 
 func normalizeAppearanceCopy(value string) string {
 	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n"))
+}
+
+func normalizeAppearanceSingleLine(value string) string {
+	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", " "), "\r", " "))
 }
 
 func validAppearanceBrandSlug(value string) bool {
@@ -516,7 +622,15 @@ func publicAppearanceSetting(setting *model.SystemSetting, value AppearanceSetti
 		LogoFrameEnabled:    value.LogoFrameEnabled,
 		AuthVideoURL:        defaultAppearanceVideoURL,
 		AuthVideoPosterURL:  defaultAppearancePosterURL,
+		AuthVideoAutoplay:   value.AuthVideoAutoplay,
 		SkinID:              value.SkinID,
+		ActiveSkin:          activeAppearanceSkin(value.SkinThemes, value.SkinID),
+		SEOTitle:            effectiveAppearanceSEOTitle(value),
+		SEODescription:      effectiveAppearanceSEODescription(value),
+		SEOKeywords:         value.SEOKeywords,
+		FooterCopyright:     effectiveAppearanceCopyright(value),
+		ICPFilingEnabled:    value.ICPFilingEnabled && value.ICPFilingNumber != "",
+		ICPFilingNumber:     value.ICPFilingNumber,
 		Configured:          setting != nil,
 		Revision:            revision,
 	}
@@ -554,6 +668,40 @@ func publicAppearanceSetting(setting *model.SystemSetting, value AppearanceSetti
 		result.AuthVideoPosterURL = appearanceAssetURL(AppearanceAssetPoster, revision)
 	}
 	return result
+}
+
+func effectiveAppearanceSEOTitle(value AppearanceSetting) string {
+	if value.SEOTitle != "" {
+		return value.SEOTitle
+	}
+	return value.BrandName
+}
+
+func effectiveAppearanceSEODescription(value AppearanceSetting) string {
+	if value.SEODescription != "" {
+		return value.SEODescription
+	}
+	return value.BrandName + "，面向 AI 影视与短剧创作的工作台。"
+}
+
+func effectiveAppearanceCopyright(value AppearanceSetting) string {
+	if value.FooterCopyright != "" {
+		return value.FooterCopyright
+	}
+	return fmt.Sprintf("© %d %s. All rights reserved.", time.Now().Year(), value.BrandName)
+}
+
+func (s *Service) appearanceBrandName() string {
+	brandName, _ := s.appearanceIdentity()
+	return brandName
+}
+
+func (s *Service) appearanceIdentity() (string, string) {
+	_, value, err := s.readAppearance()
+	if err != nil || strings.TrimSpace(value.BrandName) == "" {
+		return defaultAppearanceBrandName, defaultAppearanceBrandSlug
+	}
+	return value.BrandName, value.BrandSlug
 }
 
 func appearanceAssetURL(slot string, revision string) string {
