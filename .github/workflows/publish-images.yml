@@ -119,6 +119,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.build-info.outputs.commit }}
           tags: |
             type=raw,value=${{ steps.build-info.outputs.image_tag }}
             type=semver,pattern={{version}},value=${{ steps.build-info.outputs.version }},enable=${{ steps.build-info.outputs.is_semver == 'true' }}

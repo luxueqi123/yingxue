@@ -59,6 +59,7 @@ jobs:
           elif git merge-base --is-ancestor "upstream-${{ steps.upstream.outputs.tag }}" HEAD; then
             echo "value=false" >> "$GITHUB_OUTPUT"
             echo "Yingxue already contains ${{ steps.upstream.outputs.tag }}"
+            echo "已包含上游 ${{ steps.upstream.outputs.tag }}；本次不执行新版本合并，只检查是否有待续跑的发布。" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "value=true" >> "$GITHUB_OUTPUT"
           fi
@@ -74,14 +75,15 @@ jobs:
           if ! git rev-parse --verify "refs/tags/$version" >/dev/null 2>&1; then
             exit 0
           fi
-          test "$(git rev-list -n 1 "refs/tags/$version")" = "$(git rev-parse HEAD)"
           if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$version" --silent 2>"$RUNNER_TEMP/release-error.txt"; then
+            echo "Release $version 已存在；本次未触发构建或发布。" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-error.txt"; then
             cat "$RUNNER_TEMP/release-error.txt" >&2
             exit 1
           fi
+          echo "恢复发布标签 $version 对应的提交；不会将主分支后续提交包含到该标签。" >> "$GITHUB_STEP_SUMMARY"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Merge upstream without publishing
