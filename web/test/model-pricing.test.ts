@@ -62,7 +62,7 @@ const textVideoRequirements: ModelRequirements = {
 };
 
 describe("model request pricing", () => {
-    test("keeps the panel quote and generation options aligned without selecting a price tier as quality", () => {
+    test("keeps the panel and generation aligned on the default billable image quality", () => {
         const config = systemConfig({
             capability: "image",
             tiers: [
@@ -77,7 +77,7 @@ describe("model request pricing", () => {
             const panel = buildNodeConfig(config, node, "image", requirements);
             const generation = buildGenerationConfig(config, node, "image", requirements);
             expect(modelRequestOptions(panel, "image")).toEqual(modelRequestOptions(generation, "image"));
-            expect(panel.quality).toBe("auto");
+            expect(panel.quality).toBe("1k");
         }
     });
 

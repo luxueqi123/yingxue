@@ -18,7 +18,7 @@ jobs:
     name: Merge, verify and publish
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.commit.outputs.version }}
+      version: ${{ steps.commit.outputs.version || steps.resume.outputs.version }}
     env:
       UPSTREAM_REPOSITORY: ddcat-ai/open-ai-canvas
     steps:
@@ -54,6 +54,27 @@ jobs:
           else
             echo "value=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Resume a tagged release whose publication failed
+        if: steps.pending.outputs.value != 'true'
+        id: resume
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          if ! git rev-parse --verify "refs/tags/$version" >/dev/null 2>&1; then
+            exit 0
+          fi
+          test "$(git rev-list -n 1 "refs/tags/$version")" = "$(git rev-parse HEAD)"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$version" --silent 2>"$RUNNER_TEMP/release-error.txt"; then
+            exit 0
+          fi
+          if ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-error.txt"; then
+            cat "$RUNNER_TEMP/release-error.txt" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Merge upstream without publishing
         if: steps.pending.outputs.value == 'true'

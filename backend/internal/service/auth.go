@@ -125,6 +125,11 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		if !registrationEnabled {
 			return nil, Forbidden("管理员未开放新用户注册")
 		}
+		if email != "" {
+			if err := s.validateRegistrationEmailDomain(email); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if _, err := s.repo.UserByUsername(username); err == nil {
 		return nil, BadAuthRequest("用户名已存在")

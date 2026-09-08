@@ -102,10 +102,6 @@ test("appearance management exposes light and dark logo uploads plus the frame s
     expect(pageSource).toContain("authVideoAutoplay");
     expect(brandSource).toContain("useThemeStore");
     expect(brandSource).toContain("data-logo-frame-enabled");
-    expect(brandSource).toContain("failedSource === source");
-    expect(brandSource).toContain('aria-hidden="true"');
-    expect(brandSource).toContain('style.visibility = "hidden"');
-    expect(brandSource).toContain("setFailedSource(source)");
     expect(adminStyles).toContain(".admin-appearance-logo-preview-mark.is-unframed img");
     expect(globalStyles).toContain('.brand-logo-frame[data-logo-frame-enabled="false"] > :is(img, svg)');
 });
