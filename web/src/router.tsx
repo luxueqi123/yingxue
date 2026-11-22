@@ -50,6 +50,7 @@ const AdminSkillsPage = lazyAdminPage(() => import("@/pages/admin/skills/skills-
 const AdminSkillWorkbenchPage = lazyAdminPage(() => import("@/pages/admin/skills/admin-skill-workbench-page"));
 const AdminPaymentsPage = lazyAdminPage(() => import("@/pages/admin/payments/payments-page"));
 const AdminMembershipPage = lazyAdminPage(() => import("@/pages/admin/membership"));
+const AdminMembershipPreviewPage = lazyAdminPage(() => import("@/pages/dev/membership-preview-lab"));
 const MembershipPage = lazy(() => import("@/pages/membership"));
 const LogsPage = lazyAdminPage(() => import("@/pages/admin/logs/logs-page"));
 const LoginLogsPage = lazyAdminPage(() => import("@/pages/admin/login-logs/login-logs-page"));
@@ -156,10 +157,12 @@ function RootLayout() {
  */
 function devRoutes() {
     const FolderPreviewLab = lazy(() => import("@/pages/dev/folder-preview-lab"));
+    const MembershipPreviewLab = lazy(() => import("@/pages/dev/membership-preview-lab"));
     const PrevisReproLab = lazy(() => import("@/pages/dev/previs-repro-lab"));
     const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
     return [
         { path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> },
+        { path: "/dev/membership", element: fullScreenDeferred(<MembershipPreviewLab />), errorElement: <RouteErrorPage /> },
         { path: "/dev/previs-repro", element: fullScreenDeferred(<PrevisReproLab />), errorElement: <RouteErrorPage /> },
         { path: "/test-voice-recording", element: <RequireAuth>{fullScreenDeferred(<TestVoiceRecording />)}</RequireAuth>, errorElement: <RouteErrorPage /> },
     ];
@@ -371,6 +374,11 @@ const routes: RouteObject[] = [
             },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
             { path: "/referral", element: <RequireAuth>{deferred(<ReferralPage />)}</RequireAuth> },
+            {
+                path: "/membership-preview",
+                element: <RequireAuth>{deferred(<AdminPage />)}</RequireAuth>,
+                children: [{ index: true, element: <AdminMembershipPreviewPage /> }],
+            },
             {
                 path: "/canvas/:id",
                 element: (

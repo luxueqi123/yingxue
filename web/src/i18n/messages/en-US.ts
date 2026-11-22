@@ -92,7 +92,7 @@ export const enUS: Messages = {
         expandSidebarMenu: "Expand sidebar menu",
         breadcrumb: "Current location",
         credits: "Credits",
-        openWallet: "Open credits center, {{balance}} credits available",
+        openWallet: "Open credits store, {{balance}} credits available",
         toggleTheme: "Toggle theme",
         darkMode: "Dark mode",
         brandHome: "{{brand}} home",

@@ -25,20 +25,24 @@ const cloudAgentOperation = "cloud_agent"
 // turns reference the previous run, not a mutable in-memory conversation. This
 // reuses transactional billing, worker leases, cancellation and text replay.
 type CloudAgentRequest struct {
-	PageContext *CloudAgentPageContext `json:"pageContext,omitempty"`
-	ReasoningMode   string   `json:"reasoningMode,omitempty"`
-	ProfileRevision string   `json:"profileRevision,omitempty"`
-	CanvasID        string   `json:"canvasId"`
-	Prompt          string   `json:"prompt"`
-	Model           string   `json:"model,omitempty"`
-	LogicalModelID  string   `json:"logicalModelId,omitempty"`
-	ChannelID       string   `json:"channelId,omitempty"`
-	ChannelModelKey string   `json:"channelModelKey,omitempty"`
-	PermissionMode  string   `json:"permissionMode"`
-	SkillIDs        []string `json:"skillIds,omitempty"`
-	ContextScope    []string `json:"contextScope"`
-	FocusNodeIDs    []string `json:"focusNodeIds,omitempty"`
-	Budget          struct {
+	// PageContext 是当前页面冻结的业务对象身份；镜头工具只允许在这份上下文内读写。
+	PageContext     *CloudAgentPageContext `json:"pageContext,omitempty"`
+	ReasoningMode   string                 `json:"reasoningMode,omitempty"`
+	ProfileRevision string                 `json:"profileRevision,omitempty"`
+	CanvasID        string                 `json:"canvasId"`
+	Prompt          string                 `json:"prompt"`
+	Model           string                 `json:"model,omitempty"`
+	LogicalModelID  string                 `json:"logicalModelId,omitempty"`
+	ChannelID       string                 `json:"channelId,omitempty"`
+	ChannelModelKey string                 `json:"channelModelKey,omitempty"`
+	PermissionMode  string                 `json:"permissionMode"`
+	SkillIDs        []string               `json:"skillIds,omitempty"`
+	// PinnedSkillIDs 是用户为对话固定或在本条消息里点名的技能；其他已安装技能可按需检索。
+	PinnedSkillIDs        []string `json:"pinnedSkillIds,omitempty"`
+	ContextScope          []string `json:"contextScope"`
+	FocusNodeIDs          []string `json:"focusNodeIds,omitempty"`
+	FocusNodeOmittedCount int      `json:"focusNodeOmittedCount,omitempty"`
+	Budget                struct {
 		MaxCredits         float64 `json:"maxCredits"`
 		MaxGenerationTasks int     `json:"maxGenerationTasks,omitempty"`
 		MaxVideoSeconds    int     `json:"maxVideoSeconds,omitempty"`
@@ -50,10 +54,7 @@ type CloudAgentRequest struct {
 	// （text.references.maxImages > 0）重新推导并覆盖，客户端传入值一律被忽略；
 	// 必须持久化：工具授权校验每步都从落库状态重建，丢掉这个标记会让模型看得见工具
 	// 却被判为"未获本轮权限授权"。
-	VisionEnabled  bool     `json:"visionEnabled,omitempty"`
-	PinnedSkillIDs []string `json:"pinnedSkillIds,omitempty"`
-
-	FocusNodeOmittedCount int `json:"focusNodeOmittedCount,omitempty"`
+	VisionEnabled bool `json:"visionEnabled,omitempty"`
 
 	// cloudAgentAskUserMaxFields 让长流程开工前的问卷一次问完，不必拆成多轮确认。
 	DramaLinked bool `json:"dramaLinked,omitempty"`
@@ -103,24 +104,24 @@ type cloudAgentState struct {
 }
 
 type CloudAgentRun struct {
-	PageContext *CloudAgentPageContext `json:"pageContext,omitempty"`
-	ID             string              `json:"id"`
-	CanvasID       string              `json:"canvasId"`
-	ParentID       string              `json:"parentId,omitempty"`
-	Status         string              `json:"status"`
-	Revision       int64               `json:"revision"`
-	CleanupPending bool                `json:"cleanupPending,omitempty"`
-	FailureMessage string              `json:"failureMessage,omitempty"`
-	PermissionMode string              `json:"permissionMode"`
-	Model          string              `json:"model"`
-	CreatedAt      time.Time           `json:"createdAt"`
-	UpdatedAt      time.Time           `json:"updatedAt"`
-	Events         []CloudAgentEvent   `json:"events,omitempty"`
-	Skills         []cloudAgentSkill   `json:"skills,omitempty"`
-	Approval       *cloudAgentApproval `json:"approval,omitempty"`
-	SpentCredits   float64             `json:"spentCredits"`
-	Step           int                 `json:"step"`
-	ActiveMessage  map[string]string   `json:"activeMessage,omitempty"`
+	PageContext    *CloudAgentPageContext `json:"pageContext,omitempty"`
+	ID             string                 `json:"id"`
+	CanvasID       string                 `json:"canvasId"`
+	ParentID       string                 `json:"parentId,omitempty"`
+	Status         string                 `json:"status"`
+	Revision       int64                  `json:"revision"`
+	CleanupPending bool                   `json:"cleanupPending,omitempty"`
+	FailureMessage string                 `json:"failureMessage,omitempty"`
+	PermissionMode string                 `json:"permissionMode"`
+	Model          string                 `json:"model"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	UpdatedAt      time.Time              `json:"updatedAt"`
+	Events         []CloudAgentEvent      `json:"events,omitempty"`
+	Skills         []cloudAgentSkill      `json:"skills,omitempty"`
+	Approval       *cloudAgentApproval    `json:"approval,omitempty"`
+	SpentCredits   float64                `json:"spentCredits"`
+	Step           int                    `json:"step"`
+	ActiveMessage  map[string]string      `json:"activeMessage,omitempty"`
 	// 事件已全量落库，运行详情只返回一页，因此必须把"这一页在整条日志里的位置"说清楚：
 	// EventSeqBase 是本次返回的首条事件之前已入库的条数（不变量 events[i].seq ==
 	// eventSeqBase + i + 1），EventCount 是该运行累计事件条数，LatestSeq 可直接当作下次
@@ -313,6 +314,9 @@ func validateCloudAgentRequest(req *CloudAgentRequest) error {
 
 	}
 
+	if len(req.PinnedSkillIDs) == 0 {
+		req.PinnedSkillIDs = req.SkillIDs
+	}
 	if len(req.PinnedSkillIDs) > cloudAgentSkillPinnedMax {
 
 		return BadAuthRequest(fmt.Sprintf("每轮最多固定 %d 个技能", cloudAgentSkillPinnedMax))
@@ -337,15 +341,6 @@ func validateCloudAgentRequest(req *CloudAgentRequest) error {
 
 	}
 
-	legacySeen := map[string]bool{}
-	for i, id := range req.SkillIDs {
-		id = strings.TrimSpace(id)
-		if err := validateCloudAgentID(id, "技能 ID", 80); err != nil || legacySeen[id] {
-			return BadAuthRequest("技能 ID 无效或重复")
-		}
-		req.SkillIDs[i] = id
-		legacySeen[id] = true
-	}
 	switch req.MemoryMode {
 
 	case "", model.AgentMemoryDocumentModeAuto, model.AgentMemoryDocumentModeReview, model.AgentMemoryDocumentModeOff:
@@ -666,9 +661,7 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	} else {
 		creativeAnchor = cloudAgentCreativeAnchor{Version: 2, UserPrompt: req.Prompt}
 	}
-	// 技能范围（已安装且允许自动使用 + 本轮固定）与记忆快照都在建 run 时冻结：目录进 system，
-	// 固定技能提示和记忆作为有来源的数据消息在每次模型请求前重新插入。
-	skillPool, err := s.cloudAgentBuildSkillPool(userID, req.Prompt, req.PinnedSkillIDs, s.cloudAgentContextBudgetForRequest(req))
+	skillPool, err := s.cloudAgentBuildSkillPool(userID, req.Prompt, req.PinnedSkillIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -695,7 +688,7 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	if err != nil {
 		return nil, err
 	}
-	system, policy, err := compileCloudAgentPolicies(req, appearance.Canvas.AgentName, &skillPool.Catalog, "", profile, creativeAnchor)
+	system, policy, err := compileCloudAgentPolicies(req, appearance.Canvas.AgentName, "", profile, creativeAnchor)
 	if err != nil {
 		return nil, err
 	}

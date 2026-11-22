@@ -12,12 +12,15 @@ export function resilientPreload(): Plugin {
             return {
                 code:
                     'import { warmPreloadResources } from "@/lib/module-preload";\n' +
+                    'const supportsNativePreload = document.createElement("link").relList?.supports?.("modulepreload");\n' +
                     code.replace(
                         entry,
                         "async function preload(baseModule, deps, importerUrl) {\n" +
+                            "if (!supportsNativePreload) {\n" +
                             "try {\n" +
                             "await warmPreloadResources((deps || []).map(dep => new URL(assetsURL(dep, importerUrl), importerUrl || import.meta.url).href));\n" +
-                            "} catch (error) { return handlePreloadError(error); }\n",
+                            "} catch (error) { return handlePreloadError(error); }\n" +
+                            "}\n",
                     ),
                 map: null,
             };

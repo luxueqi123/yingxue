@@ -184,7 +184,7 @@ func TestSystemWorkerRestartReevaluatesStoredLocalFlagAgainstServerCapability(t 
 	}
 	repo := repository.New(db)
 	open := &Service{repo: repo, runtimeCapabilities: RuntimeCapabilities{desktopLocalChannels: true}}
-	resolved, err := open.resolveProviderConfig(providerConfig{ChannelID: channel.ID, Model: "text-model"})
+	resolved, err := open.resolveProviderConfig(providerConfig{ChannelID: channel.ID, Model: "text-model"}, nil)
 	if err != nil {
 		t.Fatalf("desktop resolveProviderConfig() error = %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSystemWorkerRestartReevaluatesStoredLocalFlagAgainstServerCapability(t 
 		t.Fatal(err)
 	}
 	closedAfterRestart := &Service{repo: repo, runtimeCapabilities: RuntimeCapabilities{desktopLocalChannels: false}}
-	if _, err := closedAfterRestart.resolveProviderConfig(recovered); err == nil {
+	if _, err := closedAfterRestart.resolveProviderConfig(recovered, nil); err == nil {
 		t.Fatal("restart with server capability=false must reject a DB/task payload that still carries allowLocalChannel=true")
 	}
 }
@@ -225,11 +225,11 @@ func TestCustomTaskInputRecoveryReevaluatesLocalFlagAgainstServerCapability(t *t
 		t.Fatal("task InputJSON recovery lost allowLocalChannel")
 	}
 	closed := &Service{}
-	if _, err := closed.resolveProviderConfig(recovered.Config); err == nil {
+	if _, err := closed.resolveProviderConfig(recovered.Config, nil); err == nil {
 		t.Fatal("recovered custom task must fail closed when server capability=false")
 	}
 	open := &Service{runtimeCapabilities: RuntimeCapabilities{desktopLocalChannels: true}}
-	resolved, err := open.resolveProviderConfig(recovered.Config)
+	resolved, err := open.resolveProviderConfig(recovered.Config, nil)
 	if err != nil || !resolved.AllowLocalChannel {
 		t.Fatalf("desktop recovered config = %#v, error = %v", resolved, err)
 	}

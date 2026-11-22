@@ -12,6 +12,7 @@ const walletBalanceQueryKey = (userId: string) => (workspaceTeamId ? (["wallet-b
 
 export type WalletSnapshot = {
     availableMicrocredits: number;
+    reservedMicrocredits: number;
     policy: WalletSummary["policy"] | null;
 };
 
@@ -25,11 +26,11 @@ export function useWalletBalance(userId?: string, enabled = true) {
         queryFn: async ({ signal }): Promise<WalletSnapshot> => {
             if (workspaceTeamId) {
                 const { myAccount } = await getTeamWallet(workspaceTeamId, signal);
-                return { availableMicrocredits: myAccount.availableMicrocredits, policy: null };
+                return { availableMicrocredits: myAccount.availableMicrocredits, reservedMicrocredits: myAccount.reservedMicrocredits, policy: null };
             }
-            const wallet = await getWallet(1, 1);
+            const wallet = await getWallet(1, 1, "all", signal);
             if (wallet.account.userId !== activeUserId) throw new Error("积分账户与当前用户不一致");
-            return { availableMicrocredits: wallet.account.availableMicrocredits, policy: wallet.policy };
+            return { availableMicrocredits: wallet.account.availableMicrocredits, reservedMicrocredits: wallet.account.reservedMicrocredits, policy: wallet.policy };
         },
         staleTime: WALLET_STALE_TIME_MS,
         refetchOnWindowFocus: false,
@@ -50,6 +51,7 @@ export function useWalletBalance(userId?: string, enabled = true) {
 
     return {
         availableMicrocredits: query.data?.availableMicrocredits ?? null,
+        reservedMicrocredits: query.data?.reservedMicrocredits ?? null,
         policy: query.data?.policy ?? null,
         refreshing: query.isFetching,
         refresh: query.refetch,

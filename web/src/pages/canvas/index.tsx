@@ -5,9 +5,10 @@ import { useNavigate, useSearchParams, useLocation } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { workspaceBackTarget } from "@/lib/workspace-navigation";
 import { canvasToolLabels, readCanvasToolLaunch } from "@/lib/canvas/canvas-tool-launch";
-import { App, Button, Dropdown, Input, Modal } from "antd";
+import { App, Button, Dropdown, Modal } from "antd";
 import { Select } from "@/components/ui/base/select";
-import { ArrowDownAZ, Clock3, Download, FileUp, History, ListFilter, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDownAZ, Clock3, Download, FileUp, History, ListFilter, LoaderCircle, MoreHorizontal, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
 
 import { CollectionGrid, PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
@@ -506,7 +507,7 @@ export default function CanvasPage() {
                         </Button>
                     }
                 >
-                    <Input prefix={<Search />} value={keyword} allowClear placeholder={t("canvasLibrarySearch")} aria-label={t("canvasLibrarySearch")} onChange={(event) => setKeyword(event.target.value)} />
+                    <ListSearchInput value={keyword} placeholder={t("canvasLibrarySearch")} aria-label={t("canvasLibrarySearch")} onValueChange={setKeyword} />
                     {!workspaceTeamId && (
                         <Dropdown trigger={["click"]} placement="bottomLeft" menu={{ items: projectFilterItems, selectedKeys: [projectFilter], onClick: ({ key }) => setProjectFilter(String(key)) }}>
                             <Button icon={<SlidersHorizontal />} aria-label={t("canvasLibraryFilter")}>

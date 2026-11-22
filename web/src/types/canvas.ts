@@ -673,6 +673,7 @@ export type CanvasNodeMetadata = {
     videoDepth?: { sourceNodeId: string; model: string };
     videoEditOperation?: CanvasVideoEditOperation;
     videoReferenceMode?: CanvasVideoReferenceMode;
+    videoRemake?: boolean;
     arkPrivateAssetUpload?: string;
     videoCameraMoveId?: string;
     videoCameraMovePrompt?: string;

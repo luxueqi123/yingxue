@@ -28,7 +28,7 @@ export const zhCN = {
             assets: "素材",
             skills: "技能库",
             plugins: "插件中心",
-            wallet: "积分中心",
+            wallet: "积分商城",
             settings: "设置",
         },
         sections: {
@@ -95,7 +95,7 @@ export const zhCN = {
         expandSidebarMenu: "展开侧栏菜单",
         breadcrumb: "当前位置",
         credits: "积分",
-        openWallet: "打开积分中心，可用 {{balance}} 积分",
+        openWallet: "打开积分商城，可用 {{balance}} 积分",
         toggleTheme: "切换主题",
         darkMode: "深色模式",
         brandHome: "{{brand}}首页",

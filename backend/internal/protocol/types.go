@@ -193,27 +193,29 @@ type Parameter struct {
 }
 
 type Metadata struct {
-	ID                      string                  `json:"id"`
-	Version                 string                  `json:"version"`
-	Name                    string                  `json:"name"`
-	Vendor                  string                  `json:"vendor"`
-	Description             string                  `json:"description,omitempty"`
-	Categories              []Capability            `json:"categories"`
-	Scopes                  []Surface               `json:"scopes"`
-	Parameters              []Parameter             `json:"parameters,omitempty"`
-	ImageParameters         []ImageParameter        `json:"imageParameters,omitempty"`
-	VideoReferences         *VideoReferenceContract `json:"videoReferences,omitempty"`
-	Create                  string                  `json:"-"`
-	Agent                   string                  `json:"-"`
-	Poll                    string                  `json:"-"`
-	Cancel                  string                  `json:"-"`
-	ContentType             string                  `json:"-"`
-	Documentation           string                  `json:"documentation,omitempty"`
-	LegacyAliases           []string                `json:"-"`
-	Enabled                 bool                    `json:"enabled"`
-	Installable             bool                    `json:"installable"`
-	Execution               string                  `json:"-"`
-	RequiresPublicMediaURLs bool                    `json:"-"`
+	ID                      string                      `json:"id"`
+	Version                 string                      `json:"version"`
+	Name                    string                      `json:"name"`
+	Vendor                  string                      `json:"vendor"`
+	Description             string                      `json:"description,omitempty"`
+	Categories              []Capability                `json:"categories"`
+	Scopes                  []Surface                   `json:"scopes"`
+	Parameters              []Parameter                 `json:"parameters,omitempty"`
+	ImageParameters         []ImageParameter            `json:"imageParameters,omitempty"`
+	VideoReferences         *VideoReferenceContract     `json:"videoReferences,omitempty"`
+	VideoModes              VideoModelModes             `json:"videoModes,omitempty"`
+	VideoOutputs            map[string]VideoOutputLimit `json:"videoOutputs,omitempty"`
+	Create                  string                      `json:"-"`
+	Agent                   string                      `json:"-"`
+	Poll                    string                      `json:"-"`
+	Cancel                  string                      `json:"-"`
+	ContentType             string                      `json:"-"`
+	Documentation           string                      `json:"documentation,omitempty"`
+	LegacyAliases           []string                    `json:"-"`
+	Enabled                 bool                        `json:"enabled"`
+	Installable             bool                        `json:"installable"`
+	Execution               string                      `json:"-"`
+	RequiresPublicMediaURLs bool                        `json:"-"`
 	// DetachedPolling 表示上游可能排队数小时：提交后释放 worker，由任务调度按间隔回查原任务。
 	DetachedPolling bool `json:"-"`
 	// IdempotentCreate 表示 create 以宿主幂等键作为上游任务 ID，同一键重复提交不会重复扣费，可安全重试。
@@ -256,6 +258,7 @@ type Manifest struct {
 	Auth            ManifestAuth           `json:"-"`
 	Validations     []ManifestValidation   `json:"-"`
 	Upload          *ManifestUpload        `json:"-"`
+	RequestBindings []ManifestBinding      `json:"-"`
 }
 
 // Manifest JSON is the public plugin contract. Metadata is an internal
@@ -387,31 +390,32 @@ type ManifestPaymentResponse struct {
 }
 
 type ManifestProvider struct {
-	ID                      string                  `json:"id"`
-	Label                   string                  `json:"label"`
-	Capabilities            []Capability            `json:"capabilities"`
-	Scopes                  []Surface               `json:"scopes"`
-	BaseURL                 string                  `json:"baseUrl,omitempty"`
-	RequiresPublicMediaURLs bool                    `json:"requiresPublicMediaUrls,omitempty"`
-	InputImages             *ImageInputRequirements `json:"inputImages,omitempty"`
-	Auth                    ManifestAuth            `json:"auth,omitempty"`
-	Parameters              []Parameter             `json:"parameters,omitempty"`
-	Validations             []ManifestValidation    `json:"validations,omitempty"`
-	Create                  ManifestOperation       `json:"create"`
-	Agent                   *ManifestOperation      `json:"agent,omitempty"`
-	Poll                    *ManifestOperation      `json:"poll,omitempty"`
-	Cancel                  *ManifestOperation      `json:"cancel,omitempty"`
-	Result                  *ManifestOperation      `json:"result,omitempty"`
-	Response                ManifestResponse        `json:"response"`
-	AgentResponse           *ManifestAgentResponse  `json:"agentResponse,omitempty"`
-	Upload                  *ManifestUpload         `json:"upload,omitempty"`
-	Kind                    ProviderKind            `json:"kind,omitempty"`
-
-	DetachedPolling  bool `json:"detachedPolling,omitempty"`
-	IdempotentCreate bool `json:"idempotentCreate,omitempty"`
-
-	VideoReferences *VideoReferenceContract `json:"videoReferences,omitempty"`
-	ImageParameters []ImageParameter        `json:"imageParameters,omitempty"`
+	ID                      string                      `json:"id"`
+	Label                   string                      `json:"label"`
+	Kind                    ProviderKind                `json:"kind,omitempty"`
+	Capabilities            []Capability                `json:"capabilities"`
+	Scopes                  []Surface                   `json:"scopes"`
+	BaseURL                 string                      `json:"baseUrl,omitempty"`
+	RequiresPublicMediaURLs bool                        `json:"requiresPublicMediaUrls,omitempty"`
+	InputImages             *ImageInputRequirements     `json:"inputImages,omitempty"`
+	DetachedPolling         bool                        `json:"detachedPolling,omitempty"`
+	IdempotentCreate        bool                        `json:"idempotentCreate,omitempty"`
+	Auth                    ManifestAuth                `json:"auth,omitempty"`
+	Parameters              []Parameter                 `json:"parameters,omitempty"`
+	ImageParameters         []ImageParameter            `json:"imageParameters,omitempty"`
+	VideoReferences         *VideoReferenceContract     `json:"videoReferences,omitempty"`
+	VideoModes              VideoModelModes             `json:"videoModes,omitempty"`
+	VideoOutputs            map[string]VideoOutputLimit `json:"videoOutputs,omitempty"`
+	Validations             []ManifestValidation        `json:"validations,omitempty"`
+	RequestBindings         []ManifestBinding           `json:"requestBindings,omitempty"`
+	Create                  ManifestOperation           `json:"create"`
+	Upload                  *ManifestUpload             `json:"upload,omitempty"`
+	Agent                   *ManifestOperation          `json:"agent,omitempty"`
+	Poll                    *ManifestOperation          `json:"poll,omitempty"`
+	Cancel                  *ManifestOperation          `json:"cancel,omitempty"`
+	Result                  *ManifestOperation          `json:"result,omitempty"`
+	Response                ManifestResponse            `json:"response"`
+	AgentResponse           *ManifestAgentResponse      `json:"agentResponse,omitempty"`
 }
 
 // ImageInputRequirements is enforced by the host against immutable input bytes,
@@ -450,6 +454,26 @@ type ManifestAuth struct {
 type ManifestValidation struct {
 	Assert  any    `json:"assert"`
 	Message string `json:"message"`
+}
+
+type ManifestBinding struct {
+	Name  string `json:"name"`
+	Value any    `json:"value"`
+}
+
+type VideoModelModes map[string]map[string]VideoModeLimit
+
+type VideoOutputLimit struct {
+	Resolutions   []string `json:"resolutions"`
+	MinSeconds    int      `json:"minSeconds"`
+	MaxSeconds    int      `json:"maxSeconds"`
+	GenerateAudio *bool    `json:"generateAudio,omitempty"`
+}
+
+type VideoModeLimit struct {
+	MaxImages  int      `json:"maxImages"`
+	InputRoles []string `json:"inputRoles"`
+	Ratios     []string `json:"ratios"`
 }
 
 type ManifestWorkflow struct {

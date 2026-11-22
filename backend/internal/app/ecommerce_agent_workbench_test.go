@@ -172,7 +172,7 @@ func TestEcommerceWorkbenchAnalysisModelsAreFixedByAdministrator(t *testing.T) {
 	save(`{"logicalModelId":"","channelModelId":"cm-planner-test","channelId":"channel","modelKey":"planner-test","vision":{"channelModelId":"cm-vision-test","channelId":"channel","modelKey":"vision-test"}}`)
 	vision, err := svc.ecommerceVisionText("user", ecommerceConfig())
 	if err != nil || vision.TextProvider == nil || vision.TextProvider.ChannelModelKey != "vision-test" || vision.TextProvider.APIKey != "server-owned" {
-		_, resolveErr := svc.resolveProviderConfig(providerConfig{ChannelID: "channel", ChannelModelKey: "vision-test", Model: "vision-test"})
+		_, resolveErr := svc.resolveProviderConfig(providerConfig{ChannelID: "channel", ChannelModelKey: "vision-test", Model: "vision-test"}, nil)
 		t.Fatalf("recognition model = %+v, %v, resolver=%v", vision.TextProvider, err, resolveErr)
 	}
 	planning, err := svc.ecommerceConfiguredText("user", ecommerceConfig())

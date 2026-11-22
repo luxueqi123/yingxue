@@ -20,6 +20,86 @@ func buildManifestOperation(operation ManifestOperation, auth ManifestAuth, requ
 	return buildManifestOperationWithEnv(operation, auth, request, taskID, extra)
 }
 
+// buildManifestOperationWithEnv 允许宿主为单次请求追加只读变量（如上传步骤的当前 media）；
+// request 与 taskId 始终由宿主提供，追加变量不能覆盖它们。
+func buildManifestOperationWithEnv(operation ManifestOperation, auth ManifestAuth, request GenerationRequest, taskID string, extra map[string]any) (RequestSpec, error) {
+	return renderManifestOperation(operation, auth, request, taskID, manifestRequestEnv(request, taskID, extra))
+}
+
+func manifestRequestEnv(request GenerationRequest, taskID string, extra map[string]any) map[string]any {
+	env := map[string]any{"request": manifestRequestValues(request), "taskId": taskID}
+	for key, value := range extra {
+		if _, reserved := env[key]; !reserved {
+			env[key] = value
+		}
+	}
+	return env
+}
+
+func renderManifestOperation(operation ManifestOperation, auth ManifestAuth, request GenerationRequest, taskID string, env map[string]any) (RequestSpec, error) {
+	if err := validateManifestRequest(operation.Validations, env); err != nil {
+		return RequestSpec{}, err
+	}
+	var body any
+	if operation.Body != nil {
+		value, err := evaluateManifestValue(operation.Body, env)
+		if err != nil {
+			return RequestSpec{}, fmt.Errorf("evaluate request body: %w", err)
+		}
+		body = normalizeManifestValue(value)
+	} else if len(operation.Fields) > 0 {
+		legacyBody := make(map[string]any, len(operation.Fields))
+		for key, expression := range operation.Fields {
+			value := manifestExpressionValue(expression, request, taskID)
+			if value == nil {
+				continue
+			}
+			setMapPath(legacyBody, key, value)
+		}
+		body = normalizeManifestValue(legacyBody)
+	}
+	pathValue := any(operation.Path)
+	if operation.PathTemplate != nil {
+		pathValue = operation.PathTemplate
+	}
+	evaluatedPath, err := evaluateManifestValue(pathValue, env)
+	if err != nil {
+		return RequestSpec{}, fmt.Errorf("evaluate request path: %w", err)
+	}
+	path := strings.ReplaceAll(manifestString(evaluatedPath), "{{taskId}}", url.PathEscape(taskID))
+	// Model identifiers from async aggregators commonly contain path segments
+	// (for example openai/gpt-image/edit). Escape each segment while preserving
+	// the provider's intentional slash separators in the manifest path.
+	escapedModel := strings.ReplaceAll(url.PathEscape(request.Model), "%2F", "/")
+	path = strings.ReplaceAll(path, "{{model}}", escapedModel)
+	path = interpolateManifestString(path, env)
+	if !isRelativePath(path) {
+		return RequestSpec{}, fmt.Errorf("evaluated request path must be relative: %q", path)
+	}
+	headers, err := evaluateManifestStringMap(operation.Headers, env)
+	if err != nil {
+		return RequestSpec{}, fmt.Errorf("evaluate request headers: %w", err)
+	}
+	query, err := evaluateManifestQuery(operation.Query, env)
+	if err != nil {
+		return RequestSpec{}, fmt.Errorf("evaluate request query: %w", err)
+	}
+	files, err := evaluateManifestFiles(operation.Files, env)
+	if err != nil {
+		return RequestSpec{}, err
+	}
+	contentTypeValue := any(operation.ContentType)
+	if operation.ContentTypeTemplate != nil {
+		contentTypeValue = operation.ContentTypeTemplate
+	}
+	evaluatedContentType, err := evaluateManifestValue(contentTypeValue, env)
+	if err != nil {
+		return RequestSpec{}, fmt.Errorf("evaluate request content type: %w", err)
+	}
+	contentType := defaultValue(manifestString(evaluatedContentType), "application/json")
+	return RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, OriginPath: operation.OriginPath, ContentType: contentType, Headers: headers, Query: query, Body: body, Files: files, Auth: auth}, nil
+}
+
 func evaluateManifestStringMap(values map[string]any, env map[string]any) (map[string]string, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -565,75 +645,6 @@ func manifestSplitDataURL(value string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSuffix(header, ";base64"), data, true
-}
-
-func buildManifestOperationWithEnv(operation ManifestOperation, auth ManifestAuth, request GenerationRequest, taskID string, extra map[string]any) (RequestSpec, error) {
-	requestValues := manifestRequestValues(request)
-	env := map[string]any{"request": requestValues, "taskId": taskID}
-	for key, value := range extra {
-		if _, reserved := env[key]; !reserved {
-			env[key] = value
-		}
-	}
-	if err := validateManifestRules(operation.Validations, env); err != nil {
-		return RequestSpec{}, err
-	}
-	var body any
-	if operation.Body != nil {
-		value, err := evaluateManifestValue(operation.Body, env)
-		if err != nil {
-			return RequestSpec{}, fmt.Errorf("evaluate request body: %w", err)
-		}
-		body = normalizeManifestValue(value)
-	} else if len(operation.Fields) > 0 {
-		legacyBody := make(map[string]any, len(operation.Fields))
-		for key, expression := range operation.Fields {
-			value := manifestExpressionValue(expression, request, taskID)
-			if value == nil {
-				continue
-			}
-			setMapPath(legacyBody, key, value)
-		}
-		body = normalizeManifestValue(legacyBody)
-	}
-	pathValue := any(operation.Path)
-	if operation.PathTemplate != nil {
-		pathValue = operation.PathTemplate
-	}
-	evaluatedPath, err := evaluateManifestValue(pathValue, env)
-	if err != nil {
-		return RequestSpec{}, fmt.Errorf("evaluate request path: %w", err)
-	}
-	path := strings.ReplaceAll(manifestString(evaluatedPath), "{{taskId}}", url.PathEscape(taskID))
-
-	escapedModel := strings.ReplaceAll(url.PathEscape(request.Model), "%2F", "/")
-	path = strings.ReplaceAll(path, "{{model}}", escapedModel)
-	path = interpolateManifestString(path, env)
-	if !isRelativePath(path) {
-		return RequestSpec{}, fmt.Errorf("evaluated request path must be relative: %q", path)
-	}
-	headers, err := evaluateManifestStringMap(operation.Headers, env)
-	if err != nil {
-		return RequestSpec{}, fmt.Errorf("evaluate request headers: %w", err)
-	}
-	query, err := evaluateManifestQuery(operation.Query, env)
-	if err != nil {
-		return RequestSpec{}, fmt.Errorf("evaluate request query: %w", err)
-	}
-	files, err := evaluateManifestFiles(operation.Files, env)
-	if err != nil {
-		return RequestSpec{}, err
-	}
-	contentTypeValue := any(operation.ContentType)
-	if operation.ContentTypeTemplate != nil {
-		contentTypeValue = operation.ContentTypeTemplate
-	}
-	evaluatedContentType, err := evaluateManifestValue(contentTypeValue, env)
-	if err != nil {
-		return RequestSpec{}, fmt.Errorf("evaluate request content type: %w", err)
-	}
-	contentType := defaultValue(manifestString(evaluatedContentType), "application/json")
-	return RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, OriginPath: operation.OriginPath, ContentType: contentType, Headers: headers, Query: query, Body: body, Files: files, Auth: auth}, nil
 }
 
 const MediaUploadIDKey = "uploadId"

@@ -18,49 +18,67 @@ export type ModelProtocolWorkflow = {
 };
 /** 后端按插件 create 路径识别的文本请求格式；识别不出（插件自定义接口）时缺省。 */
 export type TextWire = "chat-completion" | "responses" | "claude-api";
-export type ModelProtocolDefinition = {
-  value: ModelProtocol;
-  label: string;
-  vendor?: string;
-  capability: ProtocolCapability;
-  create: string;
-  contentType: string;
-  poll?: string;
-  media: string;
-  enabled?: boolean;
-  baseUrl?: string;
-  parameters?: ModelProtocolParameter[];
-  imageParameters?: import("./image-parameters").ImageParameter[];
-  workflows?: ModelProtocolWorkflow[];
-  textWire?: TextWire;
-  /** 插件 auth 声明了第二把密钥（Secret Key），渠道必须同时填写。 */
-  requiresSecretKey?: boolean;
+export type VideoModelModes = Record<string, Record<string, { maxImages: number; ratios: string[]; inputRoles?: string[] | null }>>;
+export type VideoOutputLimit = { resolutions: string[]; minSeconds: number; maxSeconds: number; generateAudio?: boolean };
+export type ModelProtocolRelease = {
+    pluginId: string;
+    version: string;
+    sha256: string;
+    current: boolean;
+    create: string;
+    poll?: string;
+    imageParameters?: import("./image-parameters").ImageParameter[] | null;
+    workflows?: ModelProtocolWorkflow[];
+    videoModes?: VideoModelModes;
+    videoOutputs?: Record<string, VideoOutputLimit>;
 };
+export type ModelProtocolDefinition = {
+    value: ModelProtocol;
+    label: string;
+    vendor?: string;
+    version?: string;
+    releases?: ModelProtocolRelease[];
+    videoModes?: VideoModelModes;
+    videoOutputs?: Record<string, VideoOutputLimit>;
+    capability: ProtocolCapability;
+    create: string;
+    contentType: string;
+    poll?: string;
+    media: string;
+    enabled?: boolean;
+    baseUrl?: string;
+    parameters?: ModelProtocolParameter[];
+    imageParameters?: import("./image-parameters").ImageParameter[];
+    workflows?: ModelProtocolWorkflow[];
+    textWire?: TextWire;
+    /** 插件 auth 声明了第二把密钥（Secret Key），渠道必须同时填写。 */
+    requiresSecretKey?: boolean;
+};
+
+export function definitionForRelease(definition: ModelProtocolDefinition | undefined, digest?: string) {
+    const release = definition?.releases?.find((item) => item.sha256 === digest);
+    if (!definition || !digest) return definition;
+    if (!release) return undefined;
+    return { ...definition, version: release.version, create: release.create, poll: release.poll, imageParameters: release.imageParameters ?? undefined, workflows: release.workflows, videoModes: release.videoModes, videoOutputs: release.videoOutputs };
+}
+
 export function isTextWire(value: unknown): value is TextWire {
   return value === "chat-completion" || value === "responses" || value === "claude-api";
 }
 export function protocolGroups(protocols: ModelProtocolDefinition[]) {
-  return (["text", "image", "video", "audio"] as ProtocolCapability[]).map(capability => ({
-    label: {
-      text: "文本",
-      image: "图片",
-      video: "视频",
-      audio: "音频"
-    }[capability],
-    options: protocols.filter(item => item.capability === capability && item.enabled !== false).map(item => ({
-      label: `${item.label} · ${item.create.replace(/^POST /, "")}`,
-      value: item.value
-    }))
-  }));
+    return (["text", "image", "video", "audio"] as ProtocolCapability[]).map((capability) => ({
+        label: { text: "文本", image: "图片", video: "视频", audio: "音频" }[capability],
+        options: protocols.filter((item) => item.capability === capability && item.enabled !== false).map((item) => ({ label: `${item.label} · ${item.create.replace(/^POST /, "")}`, value: item.value })),
+    }));
 }
 export function modelProtocolDefinition(value: string | undefined, definitions: ModelProtocolDefinition[] = []) {
-  return definitions.find(item => item.value === value);
+    return definitions.find((item) => item.value === value);
 }
 export function modelProtocolLabel(value: string | undefined, definitions: ModelProtocolDefinition[] = []) {
-  return modelProtocolDefinition(value, definitions)?.label || (value ? value : "未安装协议");
+    return modelProtocolDefinition(value, definitions)?.label || (value ? value : "未安装协议");
 }
 export function modelProtocolCapability(value: string | undefined, definitions: ModelProtocolDefinition[] = []) {
-  return modelProtocolDefinition(value, definitions)?.capability;
+    return modelProtocolDefinition(value, definitions)?.capability;
 }
 export function isVolcengineArkImageProtocol(protocol?: string) {
   return protocol === "volcengine-ark-image" || protocol === "volcengine-ark-agent-plan-image";

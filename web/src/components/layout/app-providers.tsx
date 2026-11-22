@@ -33,7 +33,7 @@ import { AuthSessionHydrator } from "@/components/auth/auth-session-hydrator";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { applySkinTheme } from "@/lib/skin-themes";
 import { appQueryClient } from "@/lib/query-client";
-import { isIsolatedPrevisRepro } from "@/lib/dev-repro";
+import { isIsolatedDevRepro } from "@/lib/dev-repro";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { applyAppearanceMetadata, useAppearanceStore } from "@/stores/use-appearance-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -67,6 +67,18 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const appearanceResolved = useAppearanceStore((state) => state.resolved);
     const skin = useEffectiveSkin();
+    useEffect(() => {
+        const root = document.documentElement;
+        const pointer = () => root.toggleAttribute("data-pointer-focus", true);
+        const keyboard = () => root.removeAttribute("data-pointer-focus");
+        document.addEventListener("pointerdown", pointer, { capture: true, passive: true });
+        document.addEventListener("keydown", keyboard, true);
+        return () => {
+            document.removeEventListener("pointerdown", pointer, true);
+            document.removeEventListener("keydown", keyboard, true);
+            root.removeAttribute("data-pointer-focus");
+        };
+    }, []);
 
     useLayoutEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
@@ -79,10 +91,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         }
     }, [appearance, appearanceResolved, dark, theme, skin]);
 
-    // DEV 复现台必须是同源本地确定性场景：AuthSessionHydrator 会打 /api/auth/session，
-    // ClientRootInit 会打 /api/model-catalog，没有后端时产生真实 502，与导演台无关却会污染判据。
+    // 独立 DEV 预览使用本地场景，跳过登录态、外观和模型目录的后端初始化。
     // 与启动入口共用精确路径边界；生产构建中 import.meta.env.DEV 为 false，始终不启用隔离。
-    const isolateDevRepro = typeof window !== "undefined" && isIsolatedPrevisRepro(import.meta.env.DEV, window.location.pathname);
+    const isolateDevRepro = typeof window !== "undefined" && isIsolatedDevRepro(import.meta.env.DEV, window.location.pathname);
 
     useEffect(() => {
         if (isolateDevRepro) return;

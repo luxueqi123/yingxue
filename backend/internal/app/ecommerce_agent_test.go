@@ -166,7 +166,7 @@ func TestEcommerceAgentLiveImageUsesConfiguredChannelModel(t *testing.T) {
 	req.ModelKey = selected.ModelKey
 	cfg, err := svc.ecommerceLiveImageConfig(req, ecommerceConfig())
 	if err != nil || cfg.ImageProvider == nil || cfg.ImageProvider.ChannelID != channel.ID || cfg.ImageProvider.CapabilityConfig == nil {
-		_, resolveErr := svc.resolveProviderConfig(providerConfig{ChannelID: channel.ID, ChannelModelKey: selected.ModelKey, Model: selected.ModelKey})
+		_, resolveErr := svc.resolveProviderConfig(providerConfig{ChannelID: channel.ID, ChannelModelKey: selected.ModelKey, Model: selected.ModelKey}, nil)
 		t.Fatalf("live image channel=%+v err=%v resolver=%v", cfg.ImageProvider, err, resolveErr)
 	}
 	req.ModelKey = "gpt-image-2-1K"

@@ -190,7 +190,7 @@ func (s *Service) generateStoryboardPlan(ctx context.Context, task model.Task, i
 		assets = normalizeStoryboardAssets(extractStoryboardAssets(input.CanvasSnapshot))
 	}
 	input.CanvasAssets = assets
-	config, err := s.resolveProviderConfig(input.Config)
+	config, err := s.resolveProviderConfig(input.Config, nil)
 	if err != nil {
 		return agentStoryboardPlan{}, nil, err
 	}

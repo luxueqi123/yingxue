@@ -77,6 +77,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		return err
 	}
 	cmd := exec.CommandContext(ctx, ffmpegBin, args...)
+	hideCommandWindow(cmd)
 	cmd.Dir = workDir
 	output, runErr := cmd.CombinedOutput()
 	if runErr != nil {
@@ -320,6 +321,7 @@ func probeHasAudioStream(ctx context.Context, path string) (bool, error) {
 	cmd := exec.CommandContext(ctx, bin,
 		"-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index",
 		"-of", "csv=p=0", path)
+	hideCommandWindow(cmd)
 	output, runErr := cmd.Output()
 	if runErr != nil {
 		// 探测失败按无音轨处理，渲染仍可产出静音视频。

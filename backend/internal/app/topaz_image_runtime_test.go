@@ -176,13 +176,13 @@ func TestTopazImageCancellationRuntime(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	config := providerConfig{BaseURL: server.URL + "/image/v1", APIKey: "test-key", Model: "CGI", InterfaceType: "topaz-image-enhance", AllowLocalChannel: true}
+	config := providerConfig{BaseURL: server.URL + "/image/v1", APIKey: "test-key", Model: "CGI", InterfaceType: "topaz-image-enhance", AllowLocalChannel: true, registry: registry}
 	ctx := withProviderOutboundPolicy(withProtocolRegistry(context.Background(), registry), config)
 	svc := &Service{pluginRuntime: &pluginRuntime{registry: registry}}
-	if !svc.supportsProviderCancellation(config.InterfaceType) {
+	if !canCancelProviderConfig(config) {
 		t.Fatal("installed cancellation not discovered")
 	}
-	if (&Service{pluginRuntime: &pluginRuntime{registry: emptyProtocolRegistry}}).supportsProviderCancellation(config.InterfaceType) {
+	if canCancelProviderConfig(providerConfig{InterfaceType: config.InterfaceType, registry: emptyProtocolRegistry}) {
 		t.Fatal("uninstalled protocol accepted")
 	}
 	if err := svc.cancelProviderTask(ctx, canvasGenerationInput{Mode: "image", Config: config}, "job-1"); err != nil {

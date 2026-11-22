@@ -74,8 +74,11 @@ export function WorkspaceTopBar({ sidebarOpen, onToggleSidebar }: { sidebarOpen:
                                 查看额度
                             </Link>
                         ) : (
-                            <button type="button" className="app-workspace-topbar-topup" onClick={() => openWorkspaceWallet({ tab: "topup", category: "credits" })}>
-                                {t("account.wallet.tabTopup")}
+                            <button
+                                type="button" className="app-workspace-topbar-topup"
+                                onClick={() => user ? openWorkspaceWallet() : navigate(`/login?next=${encodeURIComponent("/wallet")}`)}
+                            >
+                                {t("account.wallet.shop.title")}
                             </button>
                         )}
                     </div>

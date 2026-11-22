@@ -17,33 +17,33 @@ func TestAutoDLPluginArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2.4.0 保留十五个专用视频工作流，并新增通用工作流。
-	if pkg.Manifest.Metadata.Version != "2.4.0" || len(pkg.Manifest.Contributes.Workflows) != 16 {
-		t.Fatalf("plugin manifest = version:%q workflows:%d, want 2.4.0 and 16", pkg.Manifest.Metadata.Version, len(pkg.Manifest.Contributes.Workflows))
+	// 2.5.0 保留通用工作流和已有专用工作流，并新增 zm_u30。
+	if pkg.Manifest.Metadata.Version != "2.5.0" || len(pkg.Manifest.Contributes.Workflows) != 17 {
+		t.Fatalf("plugin manifest = version:%q workflows:%d, want 2.5.0 and 17", pkg.Manifest.Metadata.Version, len(pkg.Manifest.Contributes.Workflows))
 	}
 	providers := pkg.Manifest.Contributes.Providers
 	if len(providers) != 1 || providers[0].ID != "autodl-comfyui" || len(providers[0].Capabilities) != 1 || providers[0].Capabilities[0] != CapabilityVideo {
-		t.Fatalf("2.4.0 provider contract = %#v", providers)
+		t.Fatalf("2.5.0 provider contract = %#v", providers)
 	}
 	workflows := map[string]bool{
-		"*": false,
+		"*":                  false,
 		"minimax_h3_b99_002": false, "minimax_h3_b99_001": false, "minimax_h3_b99_003_12s": false,
 		"minimax_h3_image_audio_to_video_v2_15s": false, "minimax_h3_lightx2v_v5_15s": false,
 		"minimax_h3_image_audio_to_video_v2": false, "minimax_h3_image_audio_to_video": false,
 		"minimax_h3_lightx2v_v5": false, "minimax_h3_lightx2v_no_pic": false, "minimax_h3_lightx2v": false,
-		"minimax_h3_zm_u24": false, "minimax_h3_zm_u08": false,
+		"minimax_h3_zm_u24": false, "minimax_h3_zm_u08": false, "minimax_h3_zm_u30": false,
 		"minimax_h3_z0901": false, "minimax_h3_z0902": false, "minimax_h3_z0903": false,
 	}
 	for _, workflow := range pkg.Manifest.Contributes.Workflows {
 		seen, exists := workflows[workflow.ID]
 		if !exists || seen || workflow.ProviderID != "autodl-comfyui" || workflow.Capability != CapabilityVideo {
-			t.Fatalf("2.4.0 workflow contract = %#v", workflow)
+			t.Fatalf("2.5.0 workflow contract = %#v", workflow)
 		}
 		workflows[workflow.ID] = true
 	}
 	for workflow, seen := range workflows {
 		if !seen {
-			t.Fatalf("2.4.0 video workflow missing: %s", workflow)
+			t.Fatalf("2.5.0 video workflow missing: %s", workflow)
 		}
 	}
 	adapters, err := LoadInstalledProviders(pkg.ManifestRaw, nil)

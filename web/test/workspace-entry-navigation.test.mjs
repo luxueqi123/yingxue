@@ -17,7 +17,7 @@ test("opening or refreshing workspace routes preserves their URL and return stat
             installChunkRecovery() {},
             runLocalRuntimeBootstrap(_context, start) { start(); },
             handleEntryLoadError(error) { throw error; },
-            isIsolatedPrevisRepro() { return false; },
+            isIsolatedDevRepro() { return false; },
             bootstrapAppearance() {},
             loadModule() { return Promise.resolve({ mountApplication() { mounts.push(true); } }); },
         });

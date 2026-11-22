@@ -21,7 +21,7 @@ func TestDesktopLocalChannelModeRejectsPublicAcrossProductionDispatch(t *testing
 	if _, err := ValidateCustomRelayChannelURL(publicBaseURL+"/v1/models", publicBaseURL, true, true); err == nil {
 		t.Fatal("custom relay allowLocalChannel=true must not fall back to the public relay policy")
 	}
-	if _, err := open.resolveProviderConfig(providerConfig{BaseURL: publicBaseURL, AllowLocalChannel: true}); err == nil {
+	if _, err := open.resolveProviderConfig(providerConfig{BaseURL: publicBaseURL, AllowLocalChannel: true}, nil); err == nil {
 		t.Fatal("generation provider allowLocalChannel=true must reject a public Base URL before dispatch")
 	}
 }
