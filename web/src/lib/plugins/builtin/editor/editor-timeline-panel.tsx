@@ -1,8 +1,7 @@
-// 时间线面板（editor-shell 预设插件贡献，M2.4 手势 echo 最小件）。
 // 渲染链路：store.project（当前命令状态）→ 轨道/片段绝对定位 → 拖拽手势
 // （moveClip / trimClip）经 previewGesture 逐帧预览、commitGesture 一次性入历史。
 // 手势数学与渲染同源（同一 pxPerMs），保证拖拽所见即所得。
-// 撤销/重做与保存状态移入宿主顶栏（Concat 主菜单区），本面板保留缩放与片段统计。
+// 撤销、重做和保存由编辑器宿主统一处理，本面板只负责时间线交互和可视状态。
 
 import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, Film, Magnet, Maximize, MousePointer2, Music2, Plus, Scissors, Slice, Subtitles, Trash2, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -20,6 +19,8 @@ import {
 import { getAudioTracks, getSubtitleTracks, getVisualTracks } from "@/lib/timeline/timeline-tracks";
 import { TRACK_KIND_BASE_LABELS } from "@/lib/timeline/editor-commands";
 import { computeSnap } from "@/lib/timeline/timeline-snap";
+import { getClipSeekTime, getTimelineClipTitle } from "@/lib/timeline/timeline-clip-view";
+import { EditorClipFilmstrip } from "./editor-clip-filmstrip";
 import type { TimelineClip, TimelineProject, TimelineTrack, TimelineTrackKind } from "@/types/timeline";
 
 const MIN_VISUAL_END_MS = 1_000;
@@ -37,12 +38,12 @@ const trackRemoveBlockedReason = (kind: TimelineTrack["kind"]) => `${TRACK_KIND_
 
 // 工具条按钮颜色角色（唯一来源，各按钮内不得重复字面量颜色）：
 // 常态 = 次级前景 + hover 弱背景；选中/按下 = 反白块 + 强前景（中性，无 accent 蓝图标）。
-const TOOL_FG_IDLE = "text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]";
-const TOOL_FG_ACTIVE = "bg-[var(--director-dock-active-surface)] text-[var(--director-dock-fg-strong)]";
+const TOOL_FG_IDLE = "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]";
+const TOOL_FG_ACTIVE = "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]";
 
 type GestureMode = "move" | "trim-start" | "trim-end" | null;
 
-// 与时间线相关的场景：playheadMs 是标尺交互的临时坐标，随缩放同步换算。
+// 工具模式只影响指针手势解释；时间线数据修改仍必须通过命令分发。
 type TimelineTool = "select" | "razor";
 
 type GestureState = {
@@ -52,15 +53,17 @@ type GestureState = {
     originStartMs: number;
     originDurationMs: number;
     originSourceStartMs: number;
+    moved: boolean;
 };
 
 
 export function EditorTimelinePanel() {
-    const { project, dispatch, previewGesture, commitGesture, cancelGesture, selectedClipId, selectClip, transportMs, setTransportMs } =
+    const { project, dispatch, previewGesture, commitGesture, cancelGesture, selectedClipId, selectClip, transportMs, seekTransportMs } =
         useEditorStoreContext();
 
     const containerRef = useRef<HTMLDivElement>(null);
     const [viewportWidth, setViewportWidth] = useState(0);
+    const [viewportStart, setViewportStart] = useState(0);
     const [zoomLevel, setZoomLevel] = useState(1);
     const [activeTool, setActiveTool] = useState<TimelineTool>("select");
     // 播放头与监视器共享同一 transport（store）：拖动标尺即时驱动监视器 seek，播放时监视器回写推进。
@@ -69,6 +72,7 @@ export function EditorTimelinePanel() {
     const [addMenuOpen, setAddMenuOpen] = useState(false);
     // 点击不可移除轨道 X 时的原因提示（2.2s 后自动消失）。
     const [removeBlockedHint, setRemoveBlockedHint] = useState<{ id: number; text: string } | null>(null);
+    const projectLoaded = project !== null;
 
     useEffect(() => {
         const el = containerRef.current;
@@ -80,7 +84,7 @@ export function EditorTimelinePanel() {
         });
         observer.observe(el);
         return () => observer.disconnect();
-    }, []);
+    }, [projectLoaded]);
 
     useEffect(() => {
         if (!removeBlockedHint) return;
@@ -88,7 +92,17 @@ export function EditorTimelinePanel() {
         return () => window.clearTimeout(timer);
     }, [removeBlockedHint]);
 
-    if (!project) return <div className="flex h-full items-center justify-center text-sm text-[var(--director-dock-fg)]">时间线未加载</div>;
+    useEffect(() => {
+        const element = containerRef.current;
+        if (!element) return;
+        const x = LABEL_COLUMN_PX + transportMs * getTimelinePxPerMs(zoomLevel);
+        if (x < element.scrollLeft + LABEL_COLUMN_PX || x > element.scrollLeft + element.clientWidth - 32) {
+            element.scrollLeft = Math.max(0, x - LABEL_COLUMN_PX - 64);
+            setViewportStart(element.scrollLeft);
+        }
+    }, [transportMs, zoomLevel]);
+
+    if (!project) return <div className="flex h-full items-center justify-center text-sm text-[var(--previs-dock-fg)]">时间线未加载</div>;
 
     const visualEndMs = Math.max(MIN_VISUAL_END_MS, getTimelineVisualEndMs(project.clips));
     // 像素/毫秒由缩放级别独立决定（不随时长漂移）：拖动片段时轨道随内容等比扩展，
@@ -121,7 +135,7 @@ export function EditorTimelinePanel() {
         selectClip(null);
     };
     const handleScrub = (ms: number) => {
-        setTransportMs(Math.max(0, Math.min(visualEndMs, Math.round(ms))));
+        seekTransportMs(Math.max(0, Math.min(visualEndMs, Math.round(ms))));
     };
     const handleFitWidth = () => {
         const availViewport = Math.max(320, viewportWidth - LABEL_COLUMN_PX);
@@ -148,18 +162,18 @@ export function EditorTimelinePanel() {
     };
 
     return (
-        <div className="relative flex h-full min-h-0 flex-col bg-[var(--director-sequencer-surface)]">
+        <div className="relative flex h-full min-h-0 flex-col bg-[var(--previs-sequencer-surface)]">
             {/* 工具条：左侧编辑工具，右侧缩放/时码（撤销/重做在宿主顶栏） */}
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3">
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-3">
                 {/* 工具模式：选择 / 剃刀 */}
-                <div className="flex items-center gap-0.5 rounded-md bg-[var(--director-control-hover)] p-0.5">
+                <div className="flex items-center gap-0.5 rounded-md bg-[var(--previs-control-hover)] p-0.5">
                     <button
                         type="button"
                         aria-label="选择工具"
                         aria-pressed={activeTool === "select"}
                         title="选择工具"
                         onClick={() => setActiveTool("select")}
-                        className={`grid size-6 place-items-center rounded-[6px] transition-colors ${
+                        className={`grid size-6 place-items-center rounded-[8px] transition-colors ${
                             activeTool === "select" ? TOOL_FG_ACTIVE : TOOL_FG_IDLE
                         }`}
                     >
@@ -171,14 +185,14 @@ export function EditorTimelinePanel() {
                         aria-pressed={activeTool === "razor"}
                         title="剃刀工具：点击片段在光标处分割"
                         onClick={() => setActiveTool((tool) => (tool === "razor" ? "select" : "razor"))}
-                        className={`grid size-6 place-items-center rounded-[6px] transition-colors ${
+                        className={`grid size-6 place-items-center rounded-[8px] transition-colors ${
                             activeTool === "razor" ? TOOL_FG_ACTIVE : TOOL_FG_IDLE
                         }`}
                     >
                         <Slice className="size-4" />
                     </button>
                 </div>
-                <div className="mx-1 h-5 w-px bg-[var(--director-sequencer-border)]" />
+                <div className="mx-1 h-5 w-px bg-[var(--previs-sequencer-border)]" />
                 {/* 在播放头分割当前片段 */}
                 <button
                     type="button"
@@ -201,7 +215,7 @@ export function EditorTimelinePanel() {
                 >
                     <Trash2 className="size-4" />
                 </button>
-                <div className="mx-1 h-5 w-px bg-[var(--director-sequencer-border)]" />
+                <div className="mx-1 h-5 w-px bg-[var(--previs-sequencer-border)]" />
                 {/* 吸附开关 */}
                 <button
                     type="button"
@@ -229,12 +243,12 @@ export function EditorTimelinePanel() {
                     </button>
                     {addMenuOpen && (
                         <>
-                            <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
-                            <div className="absolute left-0 top-8 z-50 min-w-32 overflow-hidden rounded-lg border border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] py-1 shadow-xl">
+                            <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setAddMenuOpen(false)} />
+                            <div className="absolute left-0 top-8 z-[calc(var(--z-dropdown)+1)] min-w-32 overflow-hidden rounded-lg border border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] py-1 shadow-xl">
                                 <button
                                     type="button"
                                     onClick={() => handleAddTrack("video")}
-                                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${TOOL_FG_IDLE}`}
+                                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${TOOL_FG_IDLE}`}
                                 >
                                     <Film className="size-3.5" />
                                     视频轨道
@@ -242,7 +256,7 @@ export function EditorTimelinePanel() {
                                 <button
                                     type="button"
                                     onClick={() => handleAddTrack("audio")}
-                                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${TOOL_FG_IDLE}`}
+                                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${TOOL_FG_IDLE}`}
                                 >
                                     <Music2 className="size-3.5" />
                                     音频轨道
@@ -250,7 +264,7 @@ export function EditorTimelinePanel() {
                                 <button
                                     type="button"
                                     onClick={() => handleAddTrack("subtitle")}
-                                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${TOOL_FG_IDLE}`}
+                                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${TOOL_FG_IDLE}`}
                                 >
                                     <Subtitles className="size-3.5" />
                                     字幕轨道
@@ -261,9 +275,9 @@ export function EditorTimelinePanel() {
                 </div>
                 <div className="flex-1" />
                 {/* 播放头时码 */}
-                <span className="w-16 text-right text-xs tabular-nums text-[var(--director-dock-fg)]">{formatTimelineTime(playheadMs)}</span>
-                <span className="text-xs tabular-nums text-[var(--director-dock-fg)]">片段 {project.clips.length}</span>
-                <div className="mx-1 h-5 w-px bg-[var(--director-sequencer-border)]" />
+                <span className="w-16 text-right text-xs tabular-nums text-[var(--previs-dock-fg)]">{formatTimelineTime(playheadMs)}</span>
+                <span className="text-xs tabular-nums text-[var(--previs-dock-fg)]">片段 {project.clips.length}</span>
+                <div className="mx-1 h-5 w-px bg-[var(--previs-sequencer-border)]" />
                 {/* 适应宽度 */}
                 <button
                     type="button"
@@ -283,7 +297,7 @@ export function EditorTimelinePanel() {
                 >
                     <ZoomOut className="size-4" />
                 </button>
-                <span className="w-10 text-center text-xs tabular-nums text-[var(--director-dock-fg)]">{Math.round(zoomLevel * 100)}%</span>
+                <span className="w-10 text-center text-xs tabular-nums text-[var(--previs-dock-fg)]">{Math.round(zoomLevel * 100)}%</span>
                 <button
                     type="button"
                     aria-label="放大时间线"
@@ -296,11 +310,11 @@ export function EditorTimelinePanel() {
             </div>
 
             {/* 时间线主体 */}
-            <div ref={containerRef} className="director-scroll min-h-0 flex-1 overflow-auto bg-[var(--director-sequencer-surface)]" data-canvas-no-zoom>
+            <div ref={containerRef} className="director-scroll min-h-0 flex-1 overflow-auto bg-[var(--previs-sequencer-surface)]" data-canvas-no-zoom onScroll={(event) => setViewportStart(event.currentTarget.scrollLeft)}>
                 {project.clips.length === 0 ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--director-dock-fg)]">
+                    <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--previs-dock-fg)]">
                         <Scissors className="size-8" />
-                        <p className="text-sm">时间线暂无片段，从素材库拖入或后续接入画布节点</p>
+                        <p className="text-sm">从素材库加入素材后即可开始剪辑</p>
                     </div>
                 ) : (
                     <div className="relative min-w-full" style={{ width: contentWidth }}>
@@ -333,6 +347,9 @@ export function EditorTimelinePanel() {
                                             snapEnabled={snapEnabled}
                                             playheadMs={playheadMs}
                                             onSelectClip={selectClip}
+                                            onSeek={handleScrub}
+                                            viewportStart={viewportStart}
+                                            viewportEnd={viewportStart + viewportWidth - LABEL_COLUMN_PX}
 
                                             removable={project.tracks.filter((t) => t.kind === track.kind).length > 1}
                                              onRemoveTrack={handleRemoveTrack}
@@ -349,10 +366,11 @@ export function EditorTimelinePanel() {
                         {/* 播放头：贯穿标尺与全部轨道，与标尺拖动同源（视觉/音频/字幕均覆盖） */}
                         <div
                             aria-hidden
-                            className="pointer-events-none absolute inset-y-0 z-[14] w-px bg-[var(--director-danger)]"
+                            data-editor-playhead
+                            className="pointer-events-none absolute inset-y-0 z-[14] w-px bg-[var(--previs-danger)]"
                             style={{ left: LABEL_COLUMN_PX + playheadMs * pxPerMs }}
                         >
-                            <div className="absolute -left-[5px] top-0 size-2.5 rotate-45 rounded-[2px] bg-[var(--director-danger)]" />
+                            <div className="absolute -left-[5px] top-0 size-2.5 rotate-45 rounded-[4px] bg-[var(--previs-danger)]" />
                         </div>
                     </div>
                 )}
@@ -363,7 +381,7 @@ export function EditorTimelinePanel() {
                     key={removeBlockedHint.id}
                     role="status"
                     aria-live="polite"
-                    className="pointer-events-none absolute left-1/2 top-12 z-50 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3 py-1.5 text-xs text-[var(--director-dock-fg-strong)] shadow-lg"
+                    className="pointer-events-none absolute left-1/2 top-12 z-50 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-3 py-2 text-xs text-[var(--previs-dock-fg-strong)] shadow-lg"
                 >
                     {removeBlockedHint.text}
                 </div>
@@ -398,11 +416,11 @@ function TimelineRuler({
         onScrub(ms);
     };
     return (
-        <div className="sticky top-0 z-10 flex h-6 shrink-0 w-full items-end border-b border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)]">
-            {/* 左列占位与 TrackRow 轨道标签列（w-48）同宽，sticky 跟随横向滚动，保证 0ms 刻度与片段区起点对齐 */}
-            <div className="sticky left-0 z-10 w-48 shrink-0 self-stretch border-r border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)]">
+        <div className="sticky top-0 z-10 flex h-6 shrink-0 w-full items-end border-b border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)]">
+            {/* 左侧空白列与轨道标签列同宽，保证 0ms 刻度和片段绘制区域使用同一坐标原点。 */}
+            <div className="sticky left-0 z-10 w-48 shrink-0 self-stretch border-r border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)]">
                 {/* 当前播放头时码，跟随拖动实时刷新 */}
-                <span className="absolute bottom-1 right-2 text-[10px] tabular-nums text-[var(--director-danger)]">{formatTimelineTime(playheadMs)}</span>
+                <span className="absolute bottom-1 right-2 text-[var(--fs-label)] tabular-nums text-[var(--previs-danger)]">{formatTimelineTime(playheadMs)}</span>
             </div>
             <div
                 ref={areaRef}
@@ -431,8 +449,8 @@ function TimelineRuler({
             >
                 {ticks.map((t) => (
                     <div key={t} className="absolute bottom-0" style={{ left: t * pxPerMs - 1 }}>
-                        <div className="h-2 w-px bg-[var(--director-sequencer-muted)]" />
-                        <span className="absolute bottom-2.5 left-1 whitespace-nowrap text-[10px] tabular-nums text-[var(--director-dock-fg)]">{formatTimelineTime(t)}</span>
+                        <div className="h-2 w-px bg-[var(--previs-sequencer-muted)]" />
+                        <span className="absolute bottom-2.5 left-1 whitespace-nowrap text-[var(--fs-label)] tabular-nums text-[var(--previs-dock-fg)]">{formatTimelineTime(t)}</span>
                     </div>
                 ))}
             </div>
@@ -449,6 +467,9 @@ function TrackRow({
     onCancel,
     selectedClipId,
     onSelectClip,
+    onSeek,
+    viewportStart,
+    viewportEnd,
     razorActive,
     snapEnabled,
     playheadMs,
@@ -466,6 +487,9 @@ function TrackRow({
     onCancel: () => void;
     selectedClipId: string | null;
     onSelectClip: (id: string | null) => void;
+    onSeek: (ms: number) => void;
+    viewportStart: number;
+    viewportEnd: number;
     razorActive: boolean;
     snapEnabled: boolean;
     playheadMs: number;
@@ -477,20 +501,20 @@ function TrackRow({
 }) {
     const clips = project.clips.filter((c) => c.trackId === track.id);
     return (
-        <div className="group flex h-16 border-b border-[var(--director-sequencer-border)]">
-            <div className="sticky left-0 z-10 flex w-48 shrink-0 items-center gap-1 border-r border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-2">
+        <div className={`group flex border-b border-[var(--previs-sequencer-border)] ${track.kind === "video" || track.kind === "image" ? "h-20" : "h-16"}`}>
+            <div className="sticky left-0 z-10 flex w-48 shrink-0 items-center gap-1 border-r border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-2">
                 <TrackBadge kind={track.kind} />
                 <div className="min-w-0 flex-1">
                     <div
                         className={`truncate text-xs font-medium ${
                             track.visible === false
-                                ? "text-[var(--director-dock-fg)]"
-                                : "text-[var(--director-dock-fg-strong)]"
+                                ? "text-[var(--previs-dock-fg)]"
+                                : "text-[var(--previs-dock-fg-strong)]"
                         }`}
                     >
                         {track.label}
                     </div>
-                    <div className="text-[10px] text-[var(--director-dock-fg)]">{clips.length} 个片段</div>
+                    <div className="text-[var(--fs-label)] text-[var(--previs-dock-fg)]">{clips.length} 个片段</div>
                 </div>
                 <button
                     type="button"
@@ -500,8 +524,8 @@ function TrackRow({
                     onClick={() => onToggleTrackFlag(track.id, "visible", track.visible === false)}
                     className={`grid size-6 shrink-0 place-items-center rounded-md transition-colors ${
                         track.visible === false
-                            ? "bg-[var(--director-control-hover)] text-[var(--director-dock-fg-strong)]"
-                            : "text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
+                            ? "bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg-strong)]"
+                            : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                     }`}
                 >
                     {track.visible === false ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -514,8 +538,8 @@ function TrackRow({
                     onClick={() => onToggleTrackFlag(track.id, "muted", !track.muted)}
                     className={`grid size-6 shrink-0 place-items-center rounded-md transition-colors ${
                         track.muted === true
-                            ? "bg-[var(--director-control-hover)] text-[var(--director-dock-fg-strong)]"
-                            : "text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
+                            ? "bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg-strong)]"
+                            : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                     }`}
                 >
                     {track.muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
@@ -527,20 +551,23 @@ function TrackRow({
                     onClick={() => (removable ? onRemoveTrack(track.id) : onRemoveBlocked(track.kind))}
                     className={`grid size-6 shrink-0 place-items-center rounded-md transition-opacity ${
                         removable
-                            ? "text-[var(--director-dock-fg)] opacity-0 hover:bg-[var(--director-control-hover)] hover:text-[var(--director-danger)] focus-visible:opacity-100 group-hover:opacity-100"
-                            : "cursor-not-allowed text-[var(--director-dock-fg)] opacity-40 hover:bg-[var(--director-control-hover)] hover:opacity-100 focus-visible:opacity-100"
+                            ? "text-[var(--previs-dock-fg)] opacity-0 hover:bg-[var(--previs-control-hover)] hover:text-[var(--previs-danger)] focus-visible:opacity-100 group-hover:opacity-100"
+                            : "cursor-not-allowed text-[var(--previs-dock-fg)] opacity-40 hover:bg-[var(--previs-control-hover)] hover:opacity-100 focus-visible:opacity-100"
                     }`}
                 >
                     <X className="size-3.5" />
                 </button>
             </div>
             <div
-                className={`relative flex-1 overflow-hidden bg-[var(--director-sequencer-grid)] transition-opacity ${
+                className={`relative flex-1 overflow-hidden bg-[var(--previs-sequencer-grid)] transition-opacity ${
                     razorActive ? "cursor-crosshair" : ""
                 } ${track.visible === false ? "opacity-40" : ""}`}
                 onPointerDown={(e) => {
                     if (razorActive) return;
-                    if (e.target === e.currentTarget) onSelectClip(null);
+                    if (e.target === e.currentTarget) {
+                        onSelectClip(null);
+                        onSeek((e.clientX - e.currentTarget.getBoundingClientRect().left) / pxPerMs);
+                    }
                 }}
             >
                 {clips.map((clip) => (
@@ -553,6 +580,9 @@ function TrackRow({
                         onCancel={onCancel}
                         selected={selectedClipId === clip.id}
                         onSelectClip={onSelectClip}
+                        onSeek={onSeek}
+                        viewportStart={viewportStart}
+                        viewportEnd={viewportEnd}
                         razorActive={razorActive}
                         snapEnabled={snapEnabled}
                         playheadMs={playheadMs}
@@ -568,12 +598,12 @@ function TrackRow({
 function TrackBadge({ kind }: { kind: TimelineTrack["kind"] }) {
     const cls =
         kind === "video" || kind === "image"
-            ? "text-[var(--director-dock-fg)]"
+            ? "text-[var(--previs-dock-fg)]"
             : kind === "audio"
-              ? "text-[var(--director-success)]"
-              : "text-[var(--director-warning)]";
+              ? "text-[var(--previs-success)]"
+              : "text-[var(--previs-warning)]";
     return (
-        <div className={`grid size-6 shrink-0 place-items-center rounded-md bg-[var(--director-dock-active-surface)] ${cls}`} title={kind}>
+        <div className={`grid size-6 shrink-0 place-items-center rounded-md bg-[var(--previs-dock-active-surface)] ${cls}`} title={kind}>
             {kind === "subtitle" ? <Subtitles className="size-3.5" /> : kind === "audio" ? <Music2 className="size-3.5" /> : <Film className="size-3.5" />}
         </div>
     );
@@ -587,6 +617,9 @@ function ClipItem({
     onCancel,
     selected,
     onSelectClip,
+    onSeek,
+    viewportStart,
+    viewportEnd,
     razorActive,
     snapEnabled,
     playheadMs,
@@ -600,6 +633,9 @@ function ClipItem({
     onCancel: () => void;
     selected: boolean;
     onSelectClip: (id: string | null) => void;
+    onSeek: (ms: number) => void;
+    viewportStart: number;
+    viewportEnd: number;
     razorActive: boolean;
     snapEnabled: boolean;
     playheadMs: number;
@@ -609,7 +645,7 @@ function ClipItem({
     const gestureRef = useRef<GestureState | null>(null);
 
     const beginGesture = (e: React.PointerEvent, mode: Exclude<GestureMode, null>) => {
-        if (gestureRef.current) return;
+        if (gestureRef.current || e.button !== 0) return;
         onSelectClip(clip.id);
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -620,12 +656,15 @@ function ClipItem({
             originStartMs: clip.startMs,
             originDurationMs: clip.durationMs,
             originSourceStartMs: clip.sourceStartMs ?? 0,
+            moved: false,
         };
     };
 
     const onPointerMove = (e: React.PointerEvent) => {
         const g = gestureRef.current;
         if (!g || e.pointerId !== g.pointerId) return;
+        if (!g.moved && Math.abs(e.clientX - g.startClientX) < 3) return;
+        g.moved = true;
         const deltaMs = (e.clientX - g.startClientX) / pxPerMs;
 
         if (g.mode === "move") {
@@ -715,14 +754,16 @@ function ClipItem({
         } catch {
             // pointer capture 可能已被隐式释放
         }
-        onCommit();
+        if (g.moved) onCommit();
+        else if (g.mode === "move") onSeek(getClipSeekTime(clip, e.clientX - e.currentTarget.getBoundingClientRect().left, pxPerMs));
     };
 
     const isSubtitle = clip.kind === "subtitle";
     const isAudio = clip.kind === "audio";
     const left = clip.startMs * pxPerMs;
     const width = clip.durationMs * pxPerMs;
-    const label = clip.text || clip.nodeId || clip.id;
+    const label = getTimelineClipTitle(clip);
+    const hasFilmstrip = clip.kind === "video" || clip.kind === "image";
     const playheadInside = playheadMs >= clip.startMs && playheadMs <= clip.startMs + clip.durationMs;
 
     const razorSplitAt = (e: React.PointerEvent) => {
@@ -735,17 +776,29 @@ function ClipItem({
 
     return (
         <div
-            className={`group absolute top-1.5 bottom-1.5 select-none rounded-md border text-xs shadow-sm ${
+            role="button"
+            tabIndex={0}
+            aria-label={`${label} · ${formatTimelineTime(clip.durationMs)}`}
+            aria-pressed={selected}
+            data-editor-clip-id={clip.id}
+            className={`group absolute top-1.5 bottom-1.5 overflow-hidden select-none rounded-md border text-xs shadow-sm ${
                 selected
-                    ? "border-[var(--director-accent)] ring-1 ring-[var(--director-accent)]/60 bg-[var(--director-accent)]/25 text-[var(--director-dock-fg-strong)]"
+                    ? "border-[var(--previs-accent)] ring-1 ring-[var(--previs-accent)]/60 bg-[var(--previs-accent)]/25 text-[var(--previs-dock-fg-strong)]"
                     : isSubtitle
-                      ? "border-[var(--director-warning)]/40 bg-[var(--director-warning)]/15 text-[var(--director-warning)]"
+                      ? "border-[var(--previs-warning)]/40 bg-[var(--previs-warning)]/15 text-[var(--previs-warning)]"
                       : isAudio
-                        ? "border-[var(--director-success)]/40 bg-[var(--director-success)]/15 text-[var(--director-success)]"
-                        : "border-[var(--director-sequencer-border)] bg-[var(--director-dock-active-surface)] text-[var(--director-dock-fg-strong)]"
+                        ? "border-[var(--previs-success)]/40 bg-[var(--previs-success)]/15 text-[var(--previs-success)]"
+                        : "border-[var(--previs-sequencer-border)] bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]"
             }`}
             style={{ left, width, touchAction: "none" }}
             title={`${label} · ${formatTimelineTime(clip.startMs)} +${formatTimelineTime(clip.durationMs)}`}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectClip(clip.id);
+                    onSeek(clip.startMs);
+                }
+            }}
             onPointerDown={(e) => {
                 // 剃刀模式（字幕除外）：单击即在光标处分割；否则开始移动手势
                 if (razorActive && !isSubtitle) {
@@ -756,29 +809,34 @@ function ClipItem({
             }}
             onPointerMove={onPointerMove}
             onPointerUp={endGesture}
-            onPointerCancel={endGesture}
+            onPointerCancel={() => {
+                gestureRef.current = null;
+                onCancel();
+            }}
         >
             <div
-                className="absolute inset-y-0 left-0 cursor-ew-resize rounded-l-md"
+                className="absolute inset-y-0 left-0 z-20 cursor-ew-resize rounded-l-md"
                 style={{ width: TRIM_HANDLE_PX }}
                 onPointerDown={(e) => {
                     e.stopPropagation();
                     beginGesture(e, "trim-start");
                 }}
             />
-            <div className="pointer-events-none flex h-full items-center gap-1 px-2">
+            <div className={hasFilmstrip ? "editor-clip-label" : "pointer-events-none flex h-full items-center gap-1 px-2"}>
                 <span className="truncate">{label}</span>
+                {hasFilmstrip ? <span className="shrink-0 tabular-nums">{formatTimelineTime(clip.durationMs)}</span> : null}
             </div>
+            {hasFilmstrip ? <EditorClipFilmstrip clip={clip} pxPerMs={pxPerMs} visibleStartPx={viewportStart - left} visibleEndPx={viewportEnd - left} /> : null}
             {/* 播放头经过片段时的对齐标线（razor/对齐视觉辅助） */}
             {playheadInside && (
                 <div
                     aria-hidden
-                    className="pointer-events-none absolute inset-y-0 w-px bg-[var(--director-danger)]/60"
+                    className="pointer-events-none absolute inset-y-0 w-px bg-[var(--previs-danger)]/60"
                     style={{ left: (playheadMs - clip.startMs) * pxPerMs }}
                 />
             )}
             <div
-                className="absolute inset-y-0 right-0 cursor-ew-resize rounded-r-md"
+                className="absolute inset-y-0 right-0 z-20 cursor-ew-resize rounded-r-md"
                 style={{ width: TRIM_HANDLE_PX }}
                 onPointerDown={(e) => {
                     e.stopPropagation();

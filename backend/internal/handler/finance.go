@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,14 +12,21 @@ import (
 )
 
 func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
+	registerMembershipRoutes(r, svc)
+	registerGoogleSettingRoutes(r, svc)
+	registerGitHubSettingRoutes(r, svc)
+	registerChannelModelBatchRoutes(r, svc)
 	r.GET("/wallet", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
+		page, limit, err := parsePaginationQuery(c, 30)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
 		wallet, err := svc.Wallet(user, c.Query("type"), page, limit)
 		if err != nil {
 			failService(c, err)
@@ -65,6 +73,124 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, gin.H{"account": account, "granted": true})
+	})
+	r.GET("/payments/config", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		config, err := svc.PaymentConfig(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"config": config})
+	})
+	r.GET("/payments/orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		orders, err := svc.EPayPaymentOrders(user, limit)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"orders": orders})
+	})
+	r.GET("/payments/orders/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		order, err := svc.EPayPaymentOrder(user, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"order": order})
+	})
+	r.POST("/payments/orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "payment-order:"+user.ID, 20, time.Hour) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		var req service.CreateEPayPaymentOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		req.IdempotencyKey = c.GetHeader("Idempotency-Key")
+		result, err := svc.CreateEPayPaymentOrder(c.Request.Context(), user, req, c.ClientIP())
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	paymentNotify := func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		if err := c.Request.ParseForm(); err != nil {
+			c.String(http.StatusBadRequest, "fail")
+			return
+		}
+		if _, err := svc.CompleteEPayPayment(c.Request.Form); err != nil {
+			c.String(http.StatusBadRequest, "fail")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.String(http.StatusOK, "success")
+	}
+	r.GET("/payments/epay/notify", paymentNotify)
+	r.POST("/payments/epay/notify", paymentNotify)
+
+	// Legacy unsigned callbacks cannot provide verifiable payment evidence.
+	directNotify := func(c *gin.Context) {
+		c.String(http.StatusGone, "fail")
+	}
+	r.GET("/payments/direct/notify", directNotify)
+	r.POST("/payments/direct/notify", directNotify)
+
+	r.GET("/admin/settings/turnstile", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		setting, err := svc.AdminTurnstileSetting(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.PATCH("/admin/settings/turnstile", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
+		var req service.TurnstileSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		setting, err := svc.UpdateTurnstileSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
 	})
 
 	r.GET("/admin/settings/linuxdo", func(c *gin.Context) {
@@ -191,6 +317,38 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"setting": setting})
 	})
+	r.GET("/admin/settings/payment", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		setting, err := svc.AdminPaymentSetting(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.PATCH("/admin/settings/payment", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		var req service.PaymentSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		setting, err := svc.UpdatePaymentSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
 
 	r.GET("/admin/channels/:id/models", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -203,7 +361,62 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"models": items})
+		models := make([]adminChannelModelResponse, 0, len(items))
+		for _, item := range items {
+			models = append(models, adminChannelModel(item))
+		}
+		ok(c, gin.H{"models": models})
+	})
+	// 跨渠道模型列表：用于按模型名称在全部系统渠道中筛选。
+	r.GET("/admin/channel-models", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		items, err := svc.AdminAllChannelModels(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		models := make([]adminChannelModelListResponse, 0, len(items))
+		for _, item := range items {
+			models = append(models, adminChannelModelListResponse{adminChannelModelResponse: adminChannelModel(item.ChannelModel), ChannelName: item.ChannelName, ChannelEnabled: item.ChannelEnabled})
+		}
+		ok(c, gin.H{"models": models})
+	})
+	r.GET("/admin/channel-models/health", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		report, err := svc.AdminChannelModelHealth(user, c.Query("channelId"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, report)
+	})
+	r.PATCH("/admin/channels/:id/models/:modelId/enabled", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+			fail(c, http.StatusBadRequest, errors.New("请提供 enabled"))
+			return
+		}
+		item, err := svc.SetAdminChannelModelEnabled(user, c.Param("id"), c.Param("modelId"), *req.Enabled)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"model": adminChannelModel(*item)})
 	})
 	r.POST("/admin/channels/:id/models/fetch", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -215,12 +428,12 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		// 上游密钥只在 service 内使用；点击拉取时仅返回目录，确认后才写入渠道模型。
-		models, err := svc.PreviewAdminChannelModels(c.Request.Context(), user, c.Param("id"))
+		models, err := svc.ReadAdminChannelCatalog(c.Request.Context(), user, c.Param("id"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"models": models})
+		ok(c, models)
 	})
 	r.POST("/admin/channels/:id/models/import", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -290,8 +503,75 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"deleted": deleted})
 	})
+	r.POST("/admin/channels/:id/models/batch-reprice", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+		var req struct {
+			Models []service.ChannelModelRepriceRequest `json:"models" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		updated, err := svc.RepriceAdminChannelModels(user, c.Param("id"), req.Models)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"updated": updated})
+	})
+	r.POST("/admin/channels/:id/models/batch-protocol", func(c *gin.Context) {
+		handleChannelModelBatchProtocol(c, svc)
+	})
+	// 跨渠道批量修改协议：所选模型可来自不同系统渠道，整批提交。
+	r.POST("/admin/channel-models/batch-protocol", func(c *gin.Context) {
+		handleChannelModelBatchProtocol(c, svc)
+	})
+	// 跨渠道统一调价：所选模型可来自不同系统渠道，整批提交。
+	r.POST("/admin/channel-models/batch-reprice", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+		var req struct {
+			Models []service.ChannelModelRepriceRequest `json:"models" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		updated, err := svc.RepriceAdminAllChannelModels(user, req.Models)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"updated": updated})
+	})
 	r.PATCH("/admin/channels/:id/models/:modelId", func(c *gin.Context) {
 		saveChannelModel(c, svc, c.Param("modelId"))
+	})
+	r.PATCH("/admin/channels/:id/models/:modelId/sort", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req service.ChannelModelSortRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := svc.UpdateAdminChannelModelSort(user, c.Param("id"), c.Param("modelId"), req); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"updated": true})
 	})
 	r.DELETE("/admin/channels/:id/models/:modelId", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -312,8 +592,11 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		page, limit, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
 		items, err := svc.AdminRedeemBatchPage(user, service.AdminListQuery{Keyword: c.Query("keyword"), Status: c.Query("validity"), Page: page, Limit: limit})
 		if err != nil {
 			failService(c, err)
@@ -350,8 +633,11 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+		page, limit, err := parsePaginationQuery(c, 50)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
 		result, err := svc.AdminRedeemCodePage(user, c.Param("id"), c.Query("status"), page, limit)
 		if err != nil {
 			failService(c, err)
@@ -409,8 +695,11 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		page, limit, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
 		items, err := svc.AdminBillingOrderPage(user, service.AdminListQuery{Keyword: c.Query("keyword"), Status: c.DefaultQuery("status", "review"), Page: page, Limit: limit})
 		if err != nil {
 			failService(c, err)
@@ -473,5 +762,5 @@ func saveChannelModel(c *gin.Context, svc *service.Service, id string) {
 		failService(c, err)
 		return
 	}
-	ok(c, gin.H{"model": item})
+	ok(c, gin.H{"model": adminChannelModel(*item)})
 }

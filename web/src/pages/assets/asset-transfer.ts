@@ -1,77 +1,93 @@
 import { saveAs } from "file-saver";
-
-import { createZip, readZip } from "@/lib/zip";
-import { getMediaBlob, setMediaBlob } from "@/services/file-storage";
-import { getImageBlob, setImageBlob } from "@/services/image-storage";
+import { translate } from "@/i18n";
+import { readZip } from "@/lib/zip";
+import { MediaPackage } from "@/lib/media-package";
+import { createClientUUID } from "@/lib/client-id";
+import { isResourceUrl } from "@/services/api/resources";
+import { setMediaBlob } from "@/services/file-storage";
+import { setImageBlob } from "@/services/image-storage";
 import type { Asset } from "@/stores/use-asset-store";
+import type { CanvasExportAsset } from "@/types/canvas-export";
 
-type AssetExportFile = {
-    app: "infinite-canvas";
-    version: 1;
-    exportedAt: string;
-    assets: Asset[];
-    files: AssetExportItem[];
-};
+type AssetExportFile = { app: "yingce"; version: 1; exportedAt: string; assets: Asset[]; files: CanvasExportAsset[] };
 
-type AssetExportItem = {
-    storageKey: string;
-    path: string;
-    mimeType: string;
-    bytes: number;
-};
-
-export async function exportAssets(assets: Asset[]) {
-    const files: AssetExportItem[] = [];
-    const zipFiles: { name: string; data: BlobPart }[] = [];
-
-    await Promise.all(
-        assets.map(async (asset) => {
-            if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio" && asset.kind !== "model") return;
-            const storageKey = asset.data.storageKey;
-            if (!storageKey) return;
-            const blob = asset.kind === "image" ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
-            if (!blob) return;
-            const path = `files/${safeFileName(storageKey)}.${fileExtension(blob.type, asset.kind)}`;
-            files.push({ storageKey, path, mimeType: blob.type || asset.data.mimeType, bytes: blob.size });
-            zipFiles.push({ name: path, data: blob });
-        }),
-    );
-
-    const data: AssetExportFile = { app: "infinite-canvas", version: 1, exportedAt: new Date().toISOString(), assets, files };
-    const zip = await createZip([{ name: "assets.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
-    saveAs(zip, "我的素材.zip");
+export async function exportAssets(assets: Asset[], fileName = translate("library.assets.transfer.fileName")): Promise<void> {
+    const media = assets.filter((asset) => ["image", "video", "audio", "model"].includes(asset.kind));
+    const images = new Set<string>();
+    const keys: string[] = [];
+    for (const asset of media) {
+        if (!("storageKey" in asset.data) || typeof asset.data.storageKey !== "string" || !asset.data.storageKey) continue;
+        keys.push(asset.data.storageKey);
+        if (asset.kind === "image") images.add(asset.data.storageKey);
+    }
+    const archive = new MediaPackage();
+    const manifest: AssetExportFile = { app: "yingce", version: 1, assets, exportedAt: new Date().toISOString(), files: await archive.collect(keys, "files", images) };
+    saveAs(await archive.finish("assets.json", manifest), fileName);
 }
 
-export async function readAssetPackage(file: File) {
-    const zip = await readZip(file);
-    const assetFile = zip.get("assets.json");
-    if (!assetFile) throw new Error("missing assets.json");
-    const data = JSON.parse(await assetFile.text()) as AssetExportFile;
-    await Promise.all(
-        data.files.map(async (item) => {
-            const blob = zip.get(item.path);
-            if (!blob) return;
-            const typedBlob = blob.type ? blob : blob.slice(0, blob.size, item.mimeType);
-            await (item.storageKey.startsWith("image:") ? setImageBlob(item.storageKey, typedBlob) : setMediaBlob(item.storageKey, typedBlob));
-        }),
-    );
-    return data.assets;
-}
-
-function safeFileName(value: string) {
-    return value.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-function fileExtension(mimeType: string, kind: Asset["kind"]) {
-    if (mimeType.includes("png")) return "png";
-    if (mimeType.includes("jpeg")) return "jpg";
-    if (mimeType.includes("webp")) return "webp";
-    if (mimeType.includes("gif")) return "gif";
-    if (mimeType.includes("mp4")) return "mp4";
-    if (mimeType.includes("webm")) return "webm";
-    if (mimeType.includes("mpeg")) return "mp3";
-    if (mimeType.includes("wav")) return "wav";
-    if (mimeType.includes("gltf-binary")) return "glb";
-    if (mimeType.includes("gltf+json") || mimeType.includes("json")) return "gltf";
-    return kind === "image" ? "png" : "bin";
+export async function readAssetPackage(file: File): Promise<Asset[]> {
+    const archive = await readZip(file);
+    const manifestBlob = archive.get("assets.json");
+    if (!manifestBlob) throw new Error(translate("library.assets.transfer.missingManifest"));
+    const manifest: unknown = JSON.parse(await manifestBlob.text());
+    if (
+        !manifest ||
+        typeof manifest !== "object" ||
+        !("app" in manifest) ||
+        manifest.app !== "yingce" ||
+        !("version" in manifest) ||
+        manifest.version !== 1 ||
+        !("assets" in manifest) ||
+        !Array.isArray(manifest.assets) ||
+        !("files" in manifest) ||
+        !Array.isArray(manifest.files)
+    )
+        throw new Error(translate("library.assets.transfer.unsupported"));
+    const images = new Set<string>();
+    for (const asset of manifest.assets) {
+        if (!asset || typeof asset !== "object" || typeof asset.id !== "string" || !asset.data || typeof asset.data !== "object" || typeof asset.kind !== "string") throw new Error(translate("library.assets.transfer.invalidAsset"));
+        if (asset.kind === "image" && typeof asset.data.storageKey === "string") images.add(asset.data.storageKey);
+    }
+    // Validate the whole manifest before making the first persistent write.
+    const writes = manifest.files.map((entry: unknown) => {
+        if (
+            !entry ||
+            typeof entry !== "object" ||
+            !("storageKey" in entry) ||
+            typeof entry.storageKey !== "string" ||
+            !entry.storageKey ||
+            !("path" in entry) ||
+            typeof entry.path !== "string" ||
+            !("mimeType" in entry) ||
+            typeof entry.mimeType !== "string"
+        )
+            throw new Error(translate("library.assets.transfer.invalidIndex"));
+        const blob = archive.get(entry.path);
+        if (!blob) throw new Error(translate("library.assets.transfer.missingFile", { path: entry.path }));
+        if ("bytes" in entry && entry.bytes !== blob.size) throw new Error(translate("library.assets.transfer.sizeMismatch", { path: entry.path }));
+        return { key: entry.storageKey, blob: blob.slice(0, blob.size, entry.mimeType) };
+    });
+    const importedMedia = new Map<string, { storageKey: string; url: string }>();
+    for (const { key, blob } of writes) {
+        const kind = images.has(key) || key.startsWith("image:") ? "image" : blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
+        // 导出包里的 resource ID 属于来源账号；新本地键由现有同步流程上传到目标账号。
+        const storageKey = `${kind}:${createClientUUID()}`;
+        const url = await (kind === "image" ? setImageBlob(storageKey, blob) : setMediaBlob(storageKey, blob));
+        importedMedia.set(key, { storageKey, url });
+    }
+    const assets = structuredClone(manifest.assets) as Asset[];
+    for (const asset of assets) {
+        // 包里没有目标账号的文件夹与素材版本，导入记录从未分类的新素材开始。
+        delete asset.folderId;
+        delete asset.primaryVersionId;
+        if (asset.kind === "text" || asset.kind === "entity") continue;
+        const media = asset.data.storageKey ? importedMedia.get(asset.data.storageKey) : undefined;
+        if (!media) continue;
+        const previousURL = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        asset.data.storageKey = media.storageKey;
+        if (asset.kind === "image") asset.data.dataUrl = media.url;
+        else asset.data.url = media.url;
+        if (asset.coverUrl === previousURL || isResourceUrl(asset.coverUrl)) asset.coverUrl = asset.kind === "image" ? media.url : "";
+    }
+    return assets;
 }

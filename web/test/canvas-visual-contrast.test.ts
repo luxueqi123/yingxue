@@ -3,15 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { canvasThemes } from "../src/lib/canvas-theme";
 
 describe("canvas visual contrast", () => {
-    test("keeps the canvas substrate distinct from node surfaces in both themes", () => {
-        for (const theme of Object.values(canvasThemes)) {
-            expect(theme.canvas.background).not.toBe(theme.node.fill);
-            expect(theme.node.panel).not.toBe(theme.canvas.background);
-        }
+    test("uses white light surfaces and contrasting dark canvas surfaces", () => {
+        expect(canvasThemes.light.canvas.background.toLowerCase()).toBe(canvasThemes.light.node.fill.toLowerCase());
+        expect(canvasThemes.dark.canvas.background.toLowerCase()).not.toBe(canvasThemes.dark.node.fill.toLowerCase());
+        expect(canvasThemes.light.node.panel.toLowerCase()).toBe(canvasThemes.light.canvas.background.toLowerCase());
+        expect(canvasThemes.dark.node.panel.toLowerCase()).not.toBe(canvasThemes.dark.canvas.background.toLowerCase());
     });
 
     test("changes only the canvas substrate while retaining original surfaces", () => {
-        expect(canvasThemes.light.canvas.background).toBe("#f0f0f0");
+        expect(canvasThemes.light.canvas.background).toBe("#FFFFFF");
         expect(canvasThemes.light.node.fill).toBe("#ffffff");
         expect(canvasThemes.light.node.edge).toBe("rgba(15,23,42,.16)");
         expect(canvasThemes.light.node.shadow).toBe("0 6px 18px rgba(15,23,42,.08)");
@@ -19,8 +19,9 @@ describe("canvas visual contrast", () => {
         expect(canvasThemes.light.toolbar.panel).toBe("rgba(255,255,255,.94)");
         expect(canvasThemes.light.spatial.elevated).toBe("rgba(255,255,255,.94)");
 
-        expect(canvasThemes.dark.canvas.background).toBe("#000000");
-        expect(canvasThemes.dark.node.fill).toBe("#181818");
+        // 映雪已确认深色画布采用 LTV 灰黑底色（#171717）与提亮节点面（#242424），自定义颜色独立解析。
+        expect(canvasThemes.dark.canvas.background).toBe("#171717");
+        expect(canvasThemes.dark.node.fill).toBe("#242424");
         expect(canvasThemes.dark.node.edge).toBe("rgba(255,255,255,.18)");
         expect(canvasThemes.dark.node.shadow).toBe("0 8px 24px rgba(0,0,0,.34)");
         expect(canvasThemes.dark.node.hoverShadow).toBe("0 12px 30px rgba(0,0,0,.46)");
@@ -35,8 +36,8 @@ describe("canvas visual contrast", () => {
         expect(canvasThemes.dark.canvas.dot).toBe("rgba(175,175,175,.80)");
         expect(canvasThemes.dark.canvas.line).toBe("rgba(175,175,175,.80)");
 
-        const source = await Bun.file(new URL("../src/components/canvas/infinite-canvas.tsx", import.meta.url)).text();
-        expect(source).toContain('opacity: mode === "dots" ? 0.34 : 0.46');
+        const source = await Bun.file(new URL("../src/components/canvas/canvas-viewport.tsx", import.meta.url)).text();
+        expect(source).toContain('opacity: mode === "dots" ? 0.62 : 0.4');
     });
 
     test("keeps the original transparent edge for standard canvas nodes", async () => {

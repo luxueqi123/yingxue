@@ -1,0 +1,903 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "volcengine-mediakit-subtitle-erase",
+  "name": "Volcengine MediaKit Subtitle Erase",
+  "version": "1.0.1",
+  "author": "影策",
+  "description": "火山字幕／文本擦除声明式协议，保留原视频及明确模式。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "volcengine-mediakit-subtitle-erase",
+        "label": "Volcengine MediaKit Subtitle Erase",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://mediakit.cn-beijing.volces.com",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "mapping": "endpoint identity",
+            "description": "erase-video-subtitle-pro；不能替换标准版或生成模型。"
+          },
+          {
+            "name": "videos",
+            "type": "media[]",
+            "mapping": "video_url",
+            "description": "一段原视频，使用宿主公开可访问地址。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "providerOptions.volcengine-mediakit-subtitle-erase",
+            "description": "mode必须明确为Subtitle或Text；可选erase_ratio_location保留原1到20个矩形坐标。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "erase-video-subtitle-pro"
+              ]
+            },
+            "message": "必须选择精细化字幕擦除端点，标准版不接收mode"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "仅处理一段原视频"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.prompt"
+                        },
+                        ""
+                      ]
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "字幕擦除不接收创作文本"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.count"
+                    },
+                    1
+                  ]
+                },
+                1
+              ]
+            },
+            "message": "每次只处理一个视频"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.mode"
+                },
+                [
+                  "Subtitle",
+                  "Text"
+                ]
+              ]
+            },
+            "message": "必须保留原Subtitle或Text模式，禁止默认替代"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$first": {
+                    "$split": [
+                      {
+                        "$ref": "request.videos.0.value"
+                      },
+                      "://"
+                    ]
+                  }
+                },
+                [
+                  "http",
+                  "https"
+                ]
+              ]
+            },
+            "message": "需要上游可访问的HTTP视频地址，不能发送本地路径或Base64"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.model_version"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.output_encode_mode"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.time_segment_filter"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.subtitle_filter"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.media_output_destination"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.callback_url"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.callback_args"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.resolution"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.fps"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.duration"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.ratio"
+                    },
+                    null
+                  ]
+                }
+              ]
+            },
+            "message": "原源未保存版本、时间段或编码覆盖，不能添加或忽略"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gte": [
+                        {
+                          "$len": {
+                            "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+                          }
+                        },
+                        1
+                      ]
+                    },
+                    {
+                      "$lte": [
+                        {
+                          "$len": {
+                            "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+                          }
+                        },
+                        20
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+                          }
+                        },
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+                              },
+                              "as": "box",
+                              "where": {
+                                "$and": [
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "box"
+                                      },
+                                      {
+                                        "top_left_x": {
+                                          "$ref": "box.top_left_x"
+                                        },
+                                        "top_left_y": {
+                                          "$ref": "box.top_left_y"
+                                        },
+                                        "bottom_right_x": {
+                                          "$ref": "box.bottom_right_x"
+                                        },
+                                        "bottom_right_y": {
+                                          "$ref": "box.bottom_right_y"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "box.top_left_x"
+                                      },
+                                      {
+                                        "$multiply": [
+                                          {
+                                            "$ref": "box.top_left_x"
+                                          },
+                                          1
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$gte": [
+                                      {
+                                        "$ref": "box.top_left_x"
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  {
+                                    "$lte": [
+                                      {
+                                        "$ref": "box.top_left_x"
+                                      },
+                                      1
+                                    ]
+                                  },
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "box.top_left_y"
+                                      },
+                                      {
+                                        "$multiply": [
+                                          {
+                                            "$ref": "box.top_left_y"
+                                          },
+                                          1
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$gte": [
+                                      {
+                                        "$ref": "box.top_left_y"
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  {
+                                    "$lte": [
+                                      {
+                                        "$ref": "box.top_left_y"
+                                      },
+                                      1
+                                    ]
+                                  },
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "box.bottom_right_x"
+                                      },
+                                      {
+                                        "$multiply": [
+                                          {
+                                            "$ref": "box.bottom_right_x"
+                                          },
+                                          1
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$gte": [
+                                      {
+                                        "$ref": "box.bottom_right_x"
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  {
+                                    "$lte": [
+                                      {
+                                        "$ref": "box.bottom_right_x"
+                                      },
+                                      1
+                                    ]
+                                  },
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "box.bottom_right_y"
+                                      },
+                                      {
+                                        "$multiply": [
+                                          {
+                                            "$ref": "box.bottom_right_y"
+                                          },
+                                          1
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$gte": [
+                                      {
+                                        "$ref": "box.bottom_right_y"
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  {
+                                    "$lte": [
+                                      {
+                                        "$ref": "box.bottom_right_y"
+                                      },
+                                      1
+                                    ]
+                                  },
+                                  {
+                                    "$lt": [
+                                      {
+                                        "$ref": "box.top_left_x"
+                                      },
+                                      {
+                                        "$ref": "box.bottom_right_x"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "$lt": [
+                                      {
+                                        "$ref": "box.top_left_y"
+                                      },
+                                      {
+                                        "$ref": "box.bottom_right_y"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "原框选必须为1到20个有效矩形，数值坐标0到1且左上严格小于右下；不能丢字段或扩大区域"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/api/v1/tools/erase-video-subtitle-pro",
+          "originPath": true,
+          "contentType": "application/json",
+          "body": {
+            "video_url": {
+              "$ref": "request.videos.0.value"
+            },
+            "mode": {
+              "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.mode"
+            },
+            "erase_ratio_location": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location"
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/api/v1/tasks/{{taskId}}",
+          "originPath": true
+        },
+        "response": {
+          "taskId": {
+            "$ref": "response.task_id"
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$not": {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "response.success"
+                        },
+                        true
+                      ]
+                    },
+                    {
+                      "$ref": "response.task_id"
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$ref": "taskId"
+                        },
+                        "then": {
+                          "$and": [
+                            {
+                              "$eq": [
+                                {
+                                  "$ref": "response.task_id"
+                                },
+                                {
+                                  "$ref": "taskId"
+                                }
+                              ]
+                            },
+                            {
+                              "$in": [
+                                {
+                                  "$ref": "response.status"
+                                },
+                                [
+                                  "running",
+                                  "completed",
+                                  "failed"
+                                ]
+                              ]
+                            }
+                          ]
+                        },
+                        "else": {
+                          "$or": [
+                            {
+                              "$not": {
+                                "$ref": "response.status"
+                              }
+                            },
+                            {
+                              "$in": [
+                                {
+                                  "$ref": "response.status"
+                                },
+                                [
+                                  "running",
+                                  "completed",
+                                  "failed"
+                                ]
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$eq": [
+                            {
+                              "$ref": "response.status"
+                            },
+                            "completed"
+                          ]
+                        },
+                        "then": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$ref": "response.result.video_url"
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        "else": true
+                      }
+                    }
+                  ]
+                }
+              },
+              "then": "failed",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      "completed"
+                    ]
+                  },
+                  "then": "succeeded",
+                  "else": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$ref": "response.status"
+                          },
+                          "failed"
+                        ]
+                      },
+                      "then": "failed",
+                      "else": {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$ref": "response.status"
+                              },
+                              "running"
+                            ]
+                          },
+                          "then": "processing",
+                          "else": "pending"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "message": {
+            "$if": {
+              "condition": {
+                "$not": {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "response.success"
+                        },
+                        true
+                      ]
+                    },
+                    {
+                      "$ref": "response.task_id"
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$ref": "taskId"
+                        },
+                        "then": {
+                          "$and": [
+                            {
+                              "$eq": [
+                                {
+                                  "$ref": "response.task_id"
+                                },
+                                {
+                                  "$ref": "taskId"
+                                }
+                              ]
+                            },
+                            {
+                              "$in": [
+                                {
+                                  "$ref": "response.status"
+                                },
+                                [
+                                  "running",
+                                  "completed",
+                                  "failed"
+                                ]
+                              ]
+                            }
+                          ]
+                        },
+                        "else": {
+                          "$or": [
+                            {
+                              "$not": {
+                                "$ref": "response.status"
+                              }
+                            },
+                            {
+                              "$in": [
+                                {
+                                  "$ref": "response.status"
+                                },
+                                [
+                                  "running",
+                                  "completed",
+                                  "failed"
+                                ]
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$eq": [
+                            {
+                              "$ref": "response.status"
+                            },
+                            "completed"
+                          ]
+                        },
+                        "then": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$ref": "response.result.video_url"
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        "else": true
+                      }
+                    }
+                  ]
+                }
+              },
+              "then": "火山字幕擦除响应缺少有效任务、状态或结果",
+              "else": {
+                "$coalesce": [
+                  {
+                    "$ref": "response.error.message"
+                  },
+                  {
+                    "$ref": "response.message"
+                  },
+                  ""
+                ]
+              }
+            }
+          },
+          "videos": {
+            "$if": {
+              "condition": {
+                "$and": [
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$ref": "response.success"
+                          },
+                          true
+                        ]
+                      },
+                      {
+                        "$ref": "response.task_id"
+                      },
+                      {
+                        "$if": {
+                          "condition": {
+                            "$ref": "taskId"
+                          },
+                          "then": {
+                            "$and": [
+                              {
+                                "$eq": [
+                                  {
+                                    "$ref": "response.task_id"
+                                  },
+                                  {
+                                    "$ref": "taskId"
+                                  }
+                                ]
+                              },
+                              {
+                                "$in": [
+                                  {
+                                    "$ref": "response.status"
+                                  },
+                                  [
+                                    "running",
+                                    "completed",
+                                    "failed"
+                                  ]
+                                ]
+                              }
+                            ]
+                          },
+                          "else": {
+                            "$or": [
+                              {
+                                "$not": {
+                                  "$ref": "response.status"
+                                }
+                              },
+                              {
+                                "$in": [
+                                  {
+                                    "$ref": "response.status"
+                                  },
+                                  [
+                                    "running",
+                                    "completed",
+                                    "failed"
+                                  ]
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$ref": "response.status"
+                              },
+                              "completed"
+                            ]
+                          },
+                          "then": {
+                            "$gt": [
+                              {
+                                "$len": {
+                                  "$ref": "response.result.video_url"
+                                }
+                              },
+                              0
+                            ]
+                          },
+                          "else": true
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      "completed"
+                    ]
+                  }
+                ]
+              },
+              "then": [
+                {
+                  "$ref": "response.result.video_url"
+                }
+              ],
+              "else": []
+            }
+          },
+          "resultEphemeral": true
+        }
+      }
+    ]
+  },
+  "documentation": "# 火山字幕与文本擦除\n\n本包按影策yingce.plugin/v2声明式Provider接入火山MediaKit精细化擦除。原视频与明确的Subtitle/Text模式原样提交，不增加Worker、页面、路由或数据库。\n\n架构唯一依据：[《影策插件架构与接入说明》](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)，revision20第6、7、8、12、13、14章。\n线协议：[精细化擦除API](https://docs.volcengine.com/docs/6448/2372084)。标准版不支持mode，不能替代Text模式。\n\nAPI Key仅从既有渠道读取；安装或本地测试不是实际生成、版权、全片或部署验收。\n\n1.0.1保留原显式框选坐标；未框选时保持原模式默认，不擅自新增区域。\n\n---\n\n# 接口合同\n\n- Provider `volcengine-mediakit-subtitle-erase`；model必须为`erase-video-subtitle-pro`。Bearer apiKey从渠道secret读取，包内没有凭据。\n- 创建`POST /api/v1/tools/erase-video-subtitle-pro`；发送一段videos的video_url、本providerOptions下明确的mode，以及原来明确保存的可选erase_ratio_location。\n- `Subtitle`处理OCR识别为字幕的文本，默认仅画面下方50%；`Text`处理全画面字幕及其他类型文本，不包含场景文字。保留原模式，不扩大擦除区域。原有erase_ratio_location逐坐标保留，最多20框；矩形采用0到1归一化左上/右下坐标，拒绝空、反向、越界、非数值或额外字段。Text仅擦指定框，Subtitle仅擦原框与下半画面的交集。\n- 支持官方主流视频容器；输入最高2K，输出最高1080P。原源要求最长边不超过2048、至少3秒，运行提交前拒绝未知或超出这些规格的元数据。元数据校验不是完整解码，实际上游媒体可读性和处理结果仍须验收。\n- 官方model_version默认v4，output_encode_mode默认Quality；原源未保存这些字段，包省略而不伪造v5或私有默认。原私有后端是否同一算法未证明。拒绝显式版本、时间段、编码、输出分辨率或回调覆盖，不能悄悄忽略。\n- 不传生成时长、画幅、帧率或提示词；处理整段原视频。统一生成面板默认值不是原擦除请求，不能把它们变成视频截短或缩放要求。\n- 查询`GET /api/v1/tasks/{taskId}`；success必须为true，任务ID一致，running等待、completed需result.video_url、failed失败。处理中即使有URL也不下载，成功缺结果和未知状态均失败。\n- result视频地址24小时有效，由现有宿主下载归属于当前用户的资源；requiresPublicMediaUrls=true要求上游可读HTTP(S)输入，不把本地地址、Base64或未授权的TOS地址直接发送。\n- 原文档含完整状态和错误合同；本机HTTP夹具、包安装和实际画面效果分别验收。真实模型调用、权利、完整视听和生产仍待验。\n\n## 响应映射\n\n读取success、task_id、status、result.video_url、error.message与message；短期结果resultEphemeral=true。失败不包装为成功，也不自动重复收费提交。\n\n## Manifest 完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"volcengine-mediakit-subtitle-erase\",\n  \"name\": \"Volcengine MediaKit Subtitle Erase\",\n  \"version\": \"1.0.1\",\n  \"author\": \"影策\",\n  \"description\": \"火山字幕／文本擦除声明式协议，保留原视频及明确模式。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"volcengine-mediakit-subtitle-erase\",\n        \"label\": \"Volcengine MediaKit Subtitle Erase\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://mediakit.cn-beijing.volces.com\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"mapping\": \"endpoint identity\",\n            \"description\": \"erase-video-subtitle-pro；不能替换标准版或生成模型。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"mapping\": \"video_url\",\n            \"description\": \"一段原视频，使用宿主公开可访问地址。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"mapping\": \"providerOptions.volcengine-mediakit-subtitle-erase\",\n            \"description\": \"mode必须明确为Subtitle或Text；可选erase_ratio_location保留原1到20个矩形坐标。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"erase-video-subtitle-pro\"\n              ]\n            },\n            \"message\": \"必须选择精细化字幕擦除端点，标准版不接收mode\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"仅处理一段原视频\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.prompt\"\n                        },\n                        \"\"\n                      ]\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"字幕擦除不接收创作文本\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.count\"\n                    },\n                    1\n                  ]\n                },\n                1\n              ]\n            },\n            \"message\": \"每次只处理一个视频\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.mode\"\n                },\n                [\n                  \"Subtitle\",\n                  \"Text\"\n                ]\n              ]\n            },\n            \"message\": \"必须保留原Subtitle或Text模式，禁止默认替代\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$first\": {\n                    \"$split\": [\n                      {\n                        \"$ref\": \"request.videos.0.value\"\n                      },\n                      \"://\"\n                    ]\n                  }\n                },\n                [\n                  \"http\",\n                  \"https\"\n                ]\n              ]\n            },\n            \"message\": \"需要上游可访问的HTTP视频地址，不能发送本地路径或Base64\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.model_version\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.output_encode_mode\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.time_segment_filter\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.subtitle_filter\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.media_output_destination\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.callback_url\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.callback_args\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.resolution\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.fps\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.duration\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.ratio\"\n                    },\n                    null\n                  ]\n                }\n              ]\n            },\n            \"message\": \"原源未保存版本、时间段或编码覆盖，不能添加或忽略\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$gte\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n                          }\n                        },\n                        1\n                      ]\n                    },\n                    {\n                      \"$lte\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n                          }\n                        },\n                        20\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n                          }\n                        },\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n                              },\n                              \"as\": \"box\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"box\"\n                                      },\n                                      {\n                                        \"top_left_x\": {\n                                          \"$ref\": \"box.top_left_x\"\n                                        },\n                                        \"top_left_y\": {\n                                          \"$ref\": \"box.top_left_y\"\n                                        },\n                                        \"bottom_right_x\": {\n                                          \"$ref\": \"box.bottom_right_x\"\n                                        },\n                                        \"bottom_right_y\": {\n                                          \"$ref\": \"box.bottom_right_y\"\n                                        }\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"box.top_left_x\"\n                                      },\n                                      {\n                                        \"$multiply\": [\n                                          {\n                                            \"$ref\": \"box.top_left_x\"\n                                          },\n                                          1\n                                        ]\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$gte\": [\n                                      {\n                                        \"$ref\": \"box.top_left_x\"\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  {\n                                    \"$lte\": [\n                                      {\n                                        \"$ref\": \"box.top_left_x\"\n                                      },\n                                      1\n                                    ]\n                                  },\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"box.top_left_y\"\n                                      },\n                                      {\n                                        \"$multiply\": [\n                                          {\n                                            \"$ref\": \"box.top_left_y\"\n                                          },\n                                          1\n                                        ]\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$gte\": [\n                                      {\n                                        \"$ref\": \"box.top_left_y\"\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  {\n                                    \"$lte\": [\n                                      {\n                                        \"$ref\": \"box.top_left_y\"\n                                      },\n                                      1\n                                    ]\n                                  },\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_x\"\n                                      },\n                                      {\n                                        \"$multiply\": [\n                                          {\n                                            \"$ref\": \"box.bottom_right_x\"\n                                          },\n                                          1\n                                        ]\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$gte\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_x\"\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  {\n                                    \"$lte\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_x\"\n                                      },\n                                      1\n                                    ]\n                                  },\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_y\"\n                                      },\n                                      {\n                                        \"$multiply\": [\n                                          {\n                                            \"$ref\": \"box.bottom_right_y\"\n                                          },\n                                          1\n                                        ]\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$gte\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_y\"\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  {\n                                    \"$lte\": [\n                                      {\n                                        \"$ref\": \"box.bottom_right_y\"\n                                      },\n                                      1\n                                    ]\n                                  },\n                                  {\n                                    \"$lt\": [\n                                      {\n                                        \"$ref\": \"box.top_left_x\"\n                                      },\n                                      {\n                                        \"$ref\": \"box.bottom_right_x\"\n                                      }\n                                    ]\n                                  },\n                                  {\n                                    \"$lt\": [\n                                      {\n                                        \"$ref\": \"box.top_left_y\"\n                                      },\n                                      {\n                                        \"$ref\": \"box.bottom_right_y\"\n                                      }\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          }\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"原框选必须为1到20个有效矩形，数值坐标0到1且左上严格小于右下；不能丢字段或扩大区域\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/api/v1/tools/erase-video-subtitle-pro\",\n          \"originPath\": true,\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"video_url\": {\n              \"$ref\": \"request.videos.0.value\"\n            },\n            \"mode\": {\n              \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.mode\"\n            },\n            \"erase_ratio_location\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.volcengine-mediakit-subtitle-erase.erase_ratio_location\"\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/api/v1/tasks/{{taskId}}\",\n          \"originPath\": true\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$ref\": \"response.task_id\"\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$not\": {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"response.success\"\n                        },\n                        true\n                      ]\n                    },\n                    {\n                      \"$ref\": \"response.task_id\"\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$ref\": \"taskId\"\n                        },\n                        \"then\": {\n                          \"$and\": [\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"response.task_id\"\n                                },\n                                {\n                                  \"$ref\": \"taskId\"\n                                }\n                              ]\n                            },\n                            {\n                              \"$in\": [\n                                {\n                                  \"$ref\": \"response.status\"\n                                },\n                                [\n                                  \"running\",\n                                  \"completed\",\n                                  \"failed\"\n                                ]\n                              ]\n                            }\n                          ]\n                        },\n                        \"else\": {\n                          \"$or\": [\n                            {\n                              \"$not\": {\n                                \"$ref\": \"response.status\"\n                              }\n                            },\n                            {\n                              \"$in\": [\n                                {\n                                  \"$ref\": \"response.status\"\n                                },\n                                [\n                                  \"running\",\n                                  \"completed\",\n                                  \"failed\"\n                                ]\n                              ]\n                            }\n                          ]\n                        }\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"response.status\"\n                            },\n                            \"completed\"\n                          ]\n                        },\n                        \"then\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"response.result.video_url\"\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        \"else\": true\n                      }\n                    }\n                  ]\n                }\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      \"completed\"\n                    ]\n                  },\n                  \"then\": \"succeeded\",\n                  \"else\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"response.status\"\n                          },\n                          \"failed\"\n                        ]\n                      },\n                      \"then\": \"failed\",\n                      \"else\": {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"response.status\"\n                              },\n                              \"running\"\n                            ]\n                          },\n                          \"then\": \"processing\",\n                          \"else\": \"pending\"\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            }\n          },\n          \"message\": {\n            \"$if\": {\n              \"condition\": {\n                \"$not\": {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"response.success\"\n                        },\n                        true\n                      ]\n                    },\n                    {\n                      \"$ref\": \"response.task_id\"\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$ref\": \"taskId\"\n                        },\n                        \"then\": {\n                          \"$and\": [\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"response.task_id\"\n                                },\n                                {\n                                  \"$ref\": \"taskId\"\n                                }\n                              ]\n                            },\n                            {\n                              \"$in\": [\n                                {\n                                  \"$ref\": \"response.status\"\n                                },\n                                [\n                                  \"running\",\n                                  \"completed\",\n                                  \"failed\"\n                                ]\n                              ]\n                            }\n                          ]\n                        },\n                        \"else\": {\n                          \"$or\": [\n                            {\n                              \"$not\": {\n                                \"$ref\": \"response.status\"\n                              }\n                            },\n                            {\n                              \"$in\": [\n                                {\n                                  \"$ref\": \"response.status\"\n                                },\n                                [\n                                  \"running\",\n                                  \"completed\",\n                                  \"failed\"\n                                ]\n                              ]\n                            }\n                          ]\n                        }\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"response.status\"\n                            },\n                            \"completed\"\n                          ]\n                        },\n                        \"then\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"response.result.video_url\"\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        \"else\": true\n                      }\n                    }\n                  ]\n                }\n              },\n              \"then\": \"火山字幕擦除响应缺少有效任务、状态或结果\",\n              \"else\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"response.error.message\"\n                  },\n                  {\n                    \"$ref\": \"response.message\"\n                  },\n                  \"\"\n                ]\n              }\n            }\n          },\n          \"videos\": {\n            \"$if\": {\n              \"condition\": {\n                \"$and\": [\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"response.success\"\n                          },\n                          true\n                        ]\n                      },\n                      {\n                        \"$ref\": \"response.task_id\"\n                      },\n                      {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$ref\": \"taskId\"\n                          },\n                          \"then\": {\n                            \"$and\": [\n                              {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"response.task_id\"\n                                  },\n                                  {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                ]\n                              },\n                              {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"response.status\"\n                                  },\n                                  [\n                                    \"running\",\n                                    \"completed\",\n                                    \"failed\"\n                                  ]\n                                ]\n                              }\n                            ]\n                          },\n                          \"else\": {\n                            \"$or\": [\n                              {\n                                \"$not\": {\n                                  \"$ref\": \"response.status\"\n                                }\n                              },\n                              {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"response.status\"\n                                  },\n                                  [\n                                    \"running\",\n                                    \"completed\",\n                                    \"failed\"\n                                  ]\n                                ]\n                              }\n                            ]\n                          }\n                        }\n                      },\n                      {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"response.status\"\n                              },\n                              \"completed\"\n                            ]\n                          },\n                          \"then\": {\n                            \"$gt\": [\n                              {\n                                \"$len\": {\n                                  \"$ref\": \"response.result.video_url\"\n                                }\n                              },\n                              0\n                            ]\n                          },\n                          \"else\": true\n                        }\n                      }\n                    ]\n                  },\n                  {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      \"completed\"\n                    ]\n                  }\n                ]\n              },\n              \"then\": [\n                {\n                  \"$ref\": \"response.result.video_url\"\n                }\n              ],\n              \"else\": []\n            }\n          },\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->"
+}

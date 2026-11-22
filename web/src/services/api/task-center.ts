@@ -1,7 +1,4 @@
-import { DREAMINA_SUBMIT_ERROR_MESSAGES, generationErrorMessage } from "@/lib/generation-error";
-import { apiBaseURL, apiClient, request, type BackendEnvelope } from "@/services/api/request";
-import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
-import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { DREAMINA_SUBMIT_ERROR_MESSAGES } from "@/lib/generation-error";
 import {
     deleteLocalDreaminaGenerationTask,
     listLocalDreaminaGenerationTaskPage,
@@ -11,13 +8,21 @@ import {
     type LocalDreaminaGenerationTask,
 } from "@/services/local-dreamina-generation";
 import { isLocalDreaminaTaskId, projectLocalDreaminaDiagnosticLog, projectLocalDreaminaTask, stripLocalDreaminaTaskPrefix } from "@/services/local-dreamina-task-projection";
+import { generationErrorMessage } from "@/lib/generation-error";
+import { workspaceApiPath, workspaceTeamId } from "@/lib/workspace-routes";
+import { createClientUUID } from "@/lib/client-id";
+import { http, apiBaseURL, type BackendEnvelope } from "@/services/api/request";
+import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
+import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { observeGenerationTaskStatus, observeGenerationTaskStatuses } from "@/services/generation-completion-tracker";
+import { useConfigStore } from "@/stores/use-config-store";
+import { useLocalRuntimeStore } from "@/stores/use-local-runtime-store";
+import { assertCurrentUserSession, captureUserSession, getActiveUserScope } from "@/lib/user-scope";
 
 export type { BackendEnvelope } from "@/services/api/request";
-
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type TaskBillingStatus = "reserved" | "running" | "settled" | "refunded" | "uncertain";
 export type ProviderCancelStatus = "requested" | "confirmed" | "uncertain";
-export type AgentSessionStatus = "active" | "completed" | "failed";
 export type GenerationTaskResultState = "NOT_AVAILABLE" | "PENDING_MATERIALIZATION" | "MATERIALIZING" | "READY" | "FAILED_RETRYABLE" | "FAILED_PERMANENT";
 export type GenerationTaskOutput = {
     outputIndex: number;
@@ -26,18 +31,18 @@ export type GenerationTaskOutput = {
     materializedAssetId?: string;
     materializationErrorCode?: string;
 };
-
 export type GenerationTask = {
     id: string;
     clientOperationId?: string;
     retryOf?: string;
     attemptGroupId?: string;
-    sessionId?: string;
     projectId?: string;
     type: string;
     status: TaskStatus;
     progress?: number;
     stage?: string;
+    mediaStage?: "download" | "upload" | "local_save" | "register" | "completed" | "checkpoint";
+    canRecoverMedia?: boolean;
     prompt: string;
     operation?: string;
     provider?: string;
@@ -65,34 +70,42 @@ export type GenerationTask = {
     completedAt?: string;
     createdAt: string;
     updatedAt: string;
+    /** 计费摘要：冻结额与实收分列，只有已结算订单才有 chargedMicrocredits。 */
     billing?: {
+        /** 下单时的冻结额（预授权），不是实际扣费；与 reservedMicrocredits 相同。 */
         amountMicrocredits: number;
+        reservedMicrocredits: number;
+        /** 已结算（settled）时的实收，已扣除差额退回；其余状态不返回。 */
+        chargedMicrocredits?: number;
+        /** 已退回金额：结算时的差额退回，或失败后整笔退回。 */
+        refundedMicrocredits: number;
         status: TaskBillingStatus;
     };
     clientContext?: {
+        assetTitle?: string;
         conversationId?: string;
         messageId?: string;
         nodeId?: string;
+        /** 工作台一次提交拆出的多个任务共用的批次 ID；batchIndex 为 0 时后端省略该字段。 */
+        batchId?: string;
         batchIndex?: number;
         batchCount?: number;
         domainProjectId?: string;
         chapterId?: string;
-		chapterOperation?: "characters" | "storyboard";
-		shotId?: string;
-		workflowStepId?: string;
-		artifactType?: string;
-	};
+        chapterOperation?: "characters" | "storyboard";
+        shotId?: string;
+        workflowStepId?: string;
+        artifactType?: string;
+    };
     created_at?: string;
     updated_at?: string;
 };
-
 export type ProviderTaskQueryResult = {
     task: GenerationTask;
     providerStatus: string;
     recovered: boolean;
     billingSettled: boolean;
 };
-
 export type TaskTextDelta = {
     id: string;
     taskId: string;
@@ -102,7 +115,6 @@ export type TaskTextDelta = {
     createdAt: string;
     expiresAt: string;
 };
-
 export type TaskTextReplay = {
     deltas: TaskTextDelta[];
     textDraft?: string;
@@ -113,161 +125,96 @@ export type TaskTextReplay = {
     progress: number;
     error?: string;
 };
-
-export type AgentSession = {
-    id: string;
-    projectId?: string;
-    status: AgentSessionStatus;
-    prompt: string;
-    canvasSnapshotJson?: string;
-    canvasOpsJson?: string;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type AgentMessage = {
-    id: string;
-    sessionId: string;
-    role: "user" | "assistant" | "system" | "tool" | string;
-    content: string;
-    payload?: string;
-    createdAt: string;
-};
-
-export type TaskResult = {
-    id: string;
-    taskId: string;
-    sessionId?: string;
-    kind: string;
-    url?: string;
-    payload?: string;
-    createdAt: string;
-};
-
-export type SessionFile = {
-    id: string;
-    sessionId: string;
-    fileName: string;
-    mimeType: string;
-    size: number;
-    createdAt: string;
-};
-
 export type TaskLog = {
     id: string;
     taskId: string;
     level: "info" | "warn" | "error";
     stage: string;
     errorCode?: string;
+    /** 后端日志里的人读文本（已剥离 stage=/error= 等结构化字段），失败原因排查靠它。 */
+    message?: string;
     provenance: "task_state" | "provider_observation" | "background_reconcile" | "manual_refresh" | "backend";
     observedAt?: string;
     createdAt: string;
 };
-
-export type AgentSessionDetail = {
-    session: AgentSession;
-    messages: AgentMessage[];
-    tasks: GenerationTask[];
-    results: TaskResult[];
-};
-
-export type CreateSessionInput = {
-    projectId?: string;
-    prompt: string;
-    canvasSnapshot?: Record<string, unknown>;
-    references?: string[];
-    projectStyle?: { presetId: string; title: string; prompt: string };
-    characters?: Array<{ assetId: string; versionId: string; name: string; definition: Record<string, unknown> }>;
-    config?: Record<string, unknown>;
-	logicalModelId?: string;
-};
-
 export type CreateTaskInput = {
-    sessionId?: string;
+    idempotencyKey?: string;
+    maxChargeMicrocredits?: number;
     projectId?: string;
     type?: string;
     operation?: string;
     prompt: string;
     provider?: string;
     model?: string;
-	logicalModelId?: string;
+    logicalModelId?: string;
     input?: Record<string, unknown>;
 };
-
-const api = apiClient;
-
-export function createAgentSession(input: CreateSessionInput) {
-    return request<AgentSessionDetail>(api.post("/sessions", input)).then((detail) => {
-        detail.tasks.forEach((task) => notifyCanvasTaskCreated(task));
-        return detail;
-    });
-}
-
-export function queryAgentSession(id: string) {
-    return request<AgentSessionDetail>(api.get(`/sessions/${encodeURIComponent(id)}`));
-}
-
-export function agentSessionFailureMessage(detail: AgentSessionDetail, fallback = "后端影视 Agent 会话失败") {
-    for (let index = detail.tasks.length - 1; index >= 0; index -= 1) {
-        const task = detail.tasks[index];
-        if ((task.status === "failed" || task.status === "cancelled") && task.error?.trim()) return generationErrorMessage(task.error.trim());
+export async function createGenerationTask(input: CreateTaskInput) {
+    if (workspaceTeamId) {
+        if (input.type !== "canvas_text" || input.operation !== "text") throw new Error("当前空间仅开放系统模型的文本生成");
+        const session = captureUserSession();
+        const quote = await http.post<{ maxChargeMicrocredits: number }>("/tasks/quote", input);
+        assertCurrentUserSession(session);
+        if (!Number.isSafeInteger(quote.maxChargeMicrocredits) || quote.maxChargeMicrocredits < 0) throw new Error("未取得有效的积分报价");
+        if (!window.confirm(`本次生成将从你的团队额度中扣除最多 ${quote.maxChargeMicrocredits / 1_000_000} 积分，继续生成？`)) throw new DOMException("已取消生成", "AbortError");
+        const metadata = input.input?.metadata as { clientOperationId?: string; messageId?: string } | undefined;
+        input = { ...input, maxChargeMicrocredits: quote.maxChargeMicrocredits, idempotencyKey: input.idempotencyKey || metadata?.clientOperationId || metadata?.messageId || createClientUUID() };
     }
-    for (let index = detail.messages.length - 1; index >= 0; index -= 1) {
-        const message = detail.messages[index];
-        if (message.role === "assistant" && message.content.trim()) return generationErrorMessage(message.content.trim());
-    }
-    return fallback;
-}
-
-export function downloadSessionResults(id: string) {
-    return request<TaskResult[]>(api.get(`/sessions/${encodeURIComponent(id)}/results`));
-}
-
-export function uploadAgentFile(sessionId: string, file: File) {
-    const formData = new FormData();
-    formData.append("sessionId", sessionId);
-    formData.append("file", file);
-    return request<SessionFile>(api.post("/files", formData));
-}
-
-export function createGenerationTask(input: CreateTaskInput) {
-    return request<GenerationTask>(api.post("/tasks", input)).then((task) => {
-        recordDiagnosticEvent({ level: "info", category: "task", message: "任务已创建", taskId: task.id, projectId: task.projectId });
+    return http.post<GenerationTask>("/tasks", input).then((task) => {
+        recordDiagnosticEvent({
+            level: "info",
+            category: "task",
+            message: "任务已创建",
+            taskId: task.id,
+            projectId: task.projectId,
+        });
+        observeGenerationTaskStatus(task);
         notifyCanvasTaskCreated(task);
         // 创建任务时积分已被预占，不能等任务结束后才刷新可用余额。
         window.dispatchEvent(new CustomEvent("wallet:updated"));
         return task;
     });
 }
-
 export type GenerationTaskPageRequest = {
     limit: number;
     projectId?: string;
     activeOnly: boolean;
     cursor?: string;
 };
-
-type GenerationTaskPage<T> = { tasks: T[]; nextCursor?: string };
-type GenerationTaskListOptions = { projectId?: string; activeOnly?: boolean };
+type GenerationTaskPage<T> = {
+    tasks: T[];
+    nextCursor?: string;
+};
+type GenerationTaskListOptions = {
+    projectId?: string;
+    activeOnly?: boolean;
+};
 type GenerationTaskListDependencies = {
     listBackend?(limit: number, options?: GenerationTaskListOptions, signal?: AbortSignal): Promise<GenerationTask[]>;
     listLocal?(options?: GenerationTaskListOptions, signal?: AbortSignal): Promise<LocalDreaminaGenerationTask[]>;
     listBackendPage?(request: GenerationTaskPageRequest, signal?: AbortSignal): Promise<GenerationTaskPage<GenerationTask>>;
     listLocalPage?(request: GenerationTaskPageRequest, signal?: AbortSignal): Promise<GenerationTaskPage<LocalDreaminaGenerationTask>>;
 };
-
 const defaultGenerationTaskListDependencies: GenerationTaskListDependencies = {
     listBackendPage: async (page, signal) => ({
-        tasks: await request<GenerationTask[]>(
-            api.get("/tasks", {
-                params: { limit: Math.min(page.limit, 100), projectId: page.projectId, activeOnly: page.activeOnly || undefined },
-                signal,
-            }),
-        ),
+        tasks: await http.get<GenerationTask[]>("/tasks", {
+            params: {
+                pageSize: Math.min(page.limit, 100),
+                projectId: page.projectId,
+                activeOnly: page.activeOnly || undefined,
+            },
+            signal,
+        }),
     }),
-    listLocalPage: (page, signal) => listLocalDreaminaGenerationTaskPage(page, {}, signal),
+    listLocalPage: (page, signal) => {
+        // 未配置本机渠道时，云端历史不应等待本机服务的连接超时。
+        // 已停用渠道仍可读取既有任务，生成权限继续由提交路径校验。
+        const configured = useConfigStore.getState().config.channels.some((channel) => channel.transport === "local-runtime");
+        // Background polling must not repeatedly connect to a missing desktop runtime.
+        // The desktop connection controls and explicit task refresh still establish a session.
+        return configured && useLocalRuntimeStore.getState().connection === "connected" ? listLocalDreaminaGenerationTaskPage(page, {}, signal) : Promise.resolve({ tasks: [] });
+    },
 };
-
 export async function listGenerationTasks(limit = 30, options?: { projectId?: string; activeOnly?: boolean }, dependencies: GenerationTaskListDependencies = defaultGenerationTaskListDependencies, signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const boundedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(10_000, Math.trunc(limit))) : 30;
@@ -301,23 +248,45 @@ export async function listGenerationTasks(limit = 30, options?: { projectId?: st
                     pageSignal,
                 )) ?? [],
         }));
-    const [backendTasks, localTasks] = await Promise.all([collectGenerationTaskPages(backendPageReader, baseRequest, boundedLimit, signal), collectGenerationTaskPages(localPageReader, baseRequest, boundedLimit, signal).catch(() => [])]);
+    const [backendTasks, localTasks] = await Promise.all([
+        collectGenerationTaskPages(backendPageReader, baseRequest, boundedLimit, signal),
+        collectGenerationTaskPages(localPageReader, baseRequest, boundedLimit, signal).catch((error) => {
+            if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+            console.warn("本地任务历史暂不可用");
+            return [];
+        }),
+    ]);
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    return [...backendTasks, ...localTasks.map((task) => projectLocalDreaminaTask(task))]
+    const tasks = [...backendTasks, ...localTasks.map((task) => projectLocalDreaminaTask(task))];
+    observeGenerationTaskStatuses(tasks);
+    return tasks
         .filter((task) => !options?.projectId || task.projectId === options.projectId)
         .filter((task) => !options?.activeOnly || task.status === "queued" || task.status === "running")
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
         .slice(0, boundedLimit);
 }
-
 async function collectGenerationTaskPages<T>(readPage: (request: GenerationTaskPageRequest, signal?: AbortSignal) => Promise<GenerationTaskPage<T>>, baseRequest: GenerationTaskPageRequest, limit: number, signal?: AbortSignal) {
     const items: T[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     do {
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const response = await readPage({ ...baseRequest, ...(cursor ? { cursor } : {}) }, signal);
-        const page = Array.isArray(response) ? { tasks: response as T[] } : response;
+        const response = await readPage(
+            {
+                ...baseRequest,
+                ...(cursor
+                    ? {
+                          cursor,
+                      }
+                    : {}),
+            },
+            signal,
+        );
+        const page = Array.isArray(response)
+            ? {
+                  tasks: response as T[],
+              }
+            : response;
         items.push(...page.tasks);
         if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
         seenCursors.add(page.nextCursor);
@@ -325,175 +294,298 @@ async function collectGenerationTaskPages<T>(readPage: (request: GenerationTaskP
     } while (items.length < limit);
     return items.slice(0, limit);
 }
-
-export function queryGenerationTask(id: string, options?: { signal?: AbortSignal }) {
+export function queryGenerationTask(
+    id: string,
+    options?: {
+        signal?: AbortSignal;
+    },
+) {
     if (isLocalDreaminaTaskId(id)) {
-        return queryLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), undefined, {}, options?.signal).then((task) => projectLocalDreaminaTask(task));
+        return queryLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), undefined, {}, options?.signal).then((task) => observedTask(projectLocalDreaminaTask(task)));
     }
-    return request<GenerationTask>(api.get(`/tasks/${encodeURIComponent(id)}`, { signal: options?.signal }));
+    return http
+        .get<GenerationTask>(`/tasks/${encodeURIComponent(id)}`, {
+            signal: options?.signal,
+        })
+        .then(observedTask);
 }
-
-export function waitForLocalGenerationTask(id: string, options?: { signal?: AbortSignal }) {
-    if (!isLocalDreaminaTaskId(id)) return Promise.reject(new Error("当前任务不是本机即梦任务"));
-    return waitForLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), undefined, {}, options?.signal).then((task) => projectLocalDreaminaTask(task));
+/** 所有任务读取都汇入完成跟踪，生成完成提醒不依赖某个页面是否还在轮询。 */
+function observedTask(task: GenerationTask) {
+    observeGenerationTaskStatus(task);
+    return task;
 }
-
-export function splitGenerationTaskObservationIds(ids: readonly string[]) {
-    return {
-        localWaitIds: ids.filter(isLocalDreaminaTaskId),
-        remotePollIds: ids.filter((id) => !isLocalDreaminaTaskId(id)),
-    };
-}
-
 type GenerationTaskSubscriptionDependencies = {
-    queryTask(id: string): Promise<GenerationTask>;
-    waitTask(id: string, options?: { initialTask?: GenerationTask; onTaskUpdate?: (task: GenerationTask) => void }): Promise<GenerationTask>;
+    queryTask(
+        id: string,
+        options?: {
+            signal?: AbortSignal;
+        },
+    ): Promise<GenerationTask>;
+    waitTask(
+        id: string,
+        options?: {
+            signal?: AbortSignal;
+            initialTask?: GenerationTask;
+            onTaskUpdate?: (task: GenerationTask) => void;
+        },
+    ): Promise<GenerationTask>;
 };
-
 export function createGenerationTaskSubscriptionService(dependencies: GenerationTaskSubscriptionDependencies) {
     type Entry = {
         listeners: Set<(task: GenerationTask) => void>;
         latest?: GenerationTask;
         observation?: Promise<void>;
+        controller?: AbortController;
+        retry?: ReturnType<typeof setTimeout>;
+        failures: number;
+        scope: string;
+        cleanup?: ReturnType<typeof setTimeout>;
     };
     const entries = new Map<string, Entry>();
     const publish = (entry: Entry, task: GenerationTask) => {
+        if (entry.scope !== getActiveUserScope() || !entry.listeners.size) return;
         entry.latest = task;
         for (const listener of entry.listeners) listener(task);
     };
     const observe = (id: string, entry: Entry) => {
-        if (entry.observation) return;
+        if (entry.observation || !entry.listeners.size || entry.scope !== getActiveUserScope()) return;
+        if (entry.latest && ["succeeded", "failed", "cancelled"].includes(entry.latest.status)) return;
+        if (entry.retry) clearTimeout(entry.retry);
+        entry.retry = undefined;
+        const controller = new AbortController();
+        entry.controller = controller;
         entry.observation = (async () => {
-            const initial = await dependencies.queryTask(id);
+            const initial = await dependencies.queryTask(id, {
+                signal: controller.signal,
+            });
+            if (controller.signal.aborted) return;
             publish(entry, initial);
             if (initial.status === "succeeded" || initial.status === "failed" || initial.status === "cancelled") return;
             const terminal = await dependencies.waitTask(id, {
                 initialTask: initial,
-                onTaskUpdate: (task) => publish(entry, task),
+                signal: controller.signal,
+                onTaskUpdate: (task) => {
+                    entry.failures = 0;
+                    publish(entry, task);
+                },
             });
             publish(entry, terminal);
-        })().catch(() => undefined);
+        })()
+            .catch((error) => {
+                if (controller.signal.aborted) return;
+                console.warn("生成任务观察中断，将重连原任务", {
+                    taskId: id,
+                    error,
+                });
+            })
+            .finally(() => {
+                entry.observation = undefined;
+                if (controller.signal.aborted || !entry.listeners.size || entry.scope !== getActiveUserScope()) return;
+                if (entry.latest && ["succeeded", "failed", "cancelled"].includes(entry.latest.status)) return;
+                const delayMs = Math.min(30_000, 2_000 * 2 ** Math.min(entry.failures++, 4));
+                entry.retry = setTimeout(() => observe(id, entry), delayMs);
+            });
     };
+    const reconnect = () => {
+        for (const [id, entry] of entries) observe(id, entry);
+    };
+    let listening = false;
     return {
         subscribe(ids: readonly string[], listener: (task: GenerationTask) => void) {
+            if (!listening && typeof window !== "undefined") {
+                window.addEventListener("online", reconnect);
+                listening = true;
+            }
             const uniqueIds = [...new Set(ids)];
+            const ownedEntries = new Map<string, Entry>();
             for (const id of uniqueIds) {
-                const entry = entries.get(id) ?? { listeners: new Set<(task: GenerationTask) => void>() };
+                const old = entries.get(id);
+                if (old && old.scope !== getActiveUserScope()) {
+                    old.controller?.abort();
+                    if (old.cleanup) clearTimeout(old.cleanup);
+                    if (old.retry) clearTimeout(old.retry);
+                    old.listeners.clear();
+                    entries.delete(id);
+                }
+                const entry = entries.get(id) ?? {
+                    listeners: new Set<(task: GenerationTask) => void>(),
+                    failures: 0,
+                    scope: getActiveUserScope(),
+                };
                 entries.set(id, entry);
+                ownedEntries.set(id, entry);
+                if (entry.cleanup) clearTimeout(entry.cleanup);
+                entry.cleanup = undefined;
                 entry.listeners.add(listener);
                 if (entry.latest) listener(entry.latest);
                 observe(id, entry);
             }
             return () => {
-                for (const id of uniqueIds) entries.get(id)?.listeners.delete(listener);
+                for (const [id, entry] of ownedEntries) {
+                    entry.listeners.delete(listener);
+                    if (entry.listeners.size) continue;
+                    entry.cleanup = setTimeout(() => {
+                        if (entry.listeners.size) return;
+                        entry.controller?.abort();
+                        if (entry.retry) clearTimeout(entry.retry);
+                        if (entries.get(id) === entry) entries.delete(id);
+                        if (!entries.size && listening) {
+                            window.removeEventListener("online", reconnect);
+                            listening = false;
+                        }
+                    }, 250);
+                }
+                if (!entries.size && listening) {
+                    window.removeEventListener("online", reconnect);
+                    listening = false;
+                }
             };
         },
     };
 }
-
 const generationTaskSubscriptionService = createGenerationTaskSubscriptionService({
-    queryTask: (id) => queryGenerationTask(id),
+    queryTask: (id, options) => queryGenerationTask(id, options),
     waitTask: (id, options) => waitForGenerationTask(id, options),
 });
-
 export function subscribeGenerationTasks(ids: readonly string[], listener: (task: GenerationTask) => void) {
     return generationTaskSubscriptionService.subscribe(ids, listener);
 }
-
 export function appendTaskTextDelta(id: string, content: string) {
-    return request<TaskTextDelta>(api.post(`/tasks/${encodeURIComponent(id)}/text-deltas`, { content }));
+    return http.post<TaskTextDelta>(`/tasks/${encodeURIComponent(id)}/text-deltas`, {
+        content,
+    });
 }
-
 export function completeTextReplayTask(id: string, text: string) {
-    return request<GenerationTask>(api.post(`/tasks/${encodeURIComponent(id)}/text-replay-complete`, { text }));
+    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/text-replay-complete`, {
+        text,
+    });
 }
-
 export function queryTaskTextReplay(id: string, after = 0) {
-    return request<TaskTextReplay>(api.get(`/tasks/${encodeURIComponent(id)}/text-deltas`, { params: { after } }));
+    return http.get<TaskTextReplay>(`/tasks/${encodeURIComponent(id)}/text-deltas`, {
+        params: {
+            after,
+        },
+    });
 }
-
 export function retryGenerationTask(id: string) {
-    return request<GenerationTask>(api.post(`/tasks/${encodeURIComponent(id)}/retry`));
+    // 重试会在服务端预占/结算积分，与 cancel 对齐派发钱包事件，顶栏余额才不会停留在旧值。
+    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/retry`).then((task) => {
+        const observed = observedTask(task);
+        window.dispatchEvent(new CustomEvent("wallet:updated"));
+        return observed;
+    });
 }
-
-export function cancelGenerationTask(id: string) {
-    if (isLocalDreaminaTaskId(id)) {
-        return Promise.reject(new Error("官方即梦 CLI 当前不支持可靠取消"));
-    }
-    return request<GenerationTask>(api.post(`/tasks/${encodeURIComponent(id)}/cancel`)).then((task) => {
-        window.dispatchEvent(new CustomEvent("canvas:task-cancelled", { detail: { task } }));
+export function recoverGenerationTaskMedia(id: string) {
+    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/recover-media`).then((task) => {
         window.dispatchEvent(new CustomEvent("wallet:updated"));
         return task;
     });
 }
-
+export function cancelGenerationTask(id: string) {
+    if (isLocalDreaminaTaskId(id)) {
+        return Promise.reject(new Error("官方即梦 CLI 当前不支持可靠取消"));
+    }
+    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/cancel`).then((task) => {
+        observeGenerationTaskStatus(task);
+        window.dispatchEvent(
+            new CustomEvent("canvas:task-cancelled", {
+                detail: {
+                    task,
+                },
+            }),
+        );
+        window.dispatchEvent(new CustomEvent("wallet:updated"));
+        return task;
+    });
+}
 export function queryFailedVideoProviderTask(id: string) {
-    return request<ProviderTaskQueryResult>(api.post(`/tasks/${encodeURIComponent(id)}/query-provider`));
+    return http.post<ProviderTaskQueryResult>(`/tasks/${encodeURIComponent(id)}/query-provider`);
 }
-
-export function refreshGenerationTaskStatus(id: string, options?: { signal?: AbortSignal }) {
-    if (!isLocalDreaminaTaskId(id)) return Promise.reject(new Error("当前任务不支持手动更新官方状态"));
-    return refreshLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), {}, options?.signal).then((task) => projectLocalDreaminaTask(task));
+export function refreshGenerationTaskStatus(
+    id: string,
+    options?: {
+        signal?: AbortSignal;
+    },
+) {
+    if (isLocalDreaminaTaskId(id)) return refreshLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), {}, options?.signal).then((task) => observedTask(projectLocalDreaminaTask(task)));
+    return http
+        .get<GenerationTask>(`/tasks/${encodeURIComponent(id)}`, {
+            signal: options?.signal,
+        })
+        .then(observedTask);
 }
-
 export function deleteGenerationTask(id: string) {
-    if (!isLocalDreaminaTaskId(id)) return Promise.reject(new Error("当前任务不支持删除"));
-    return deleteLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id));
+    if (isLocalDreaminaTaskId(id)) return deleteLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id));
+    return http.delete<void>(`/tasks/${encodeURIComponent(id)}`);
 }
-
 export async function listTaskLogs(id: string) {
     if (isLocalDreaminaTaskId(id)) {
         const task = await queryGenerationTask(id);
         return [projectGenerationTaskSafeLog(task)];
     }
-    const raw = await request<Array<{ level?: unknown; message?: unknown; payload?: unknown; createdAt?: unknown }>>(api.get(`/tasks/${encodeURIComponent(id)}/logs`));
+    const raw = await http.get<Array<{ level?: unknown; message?: unknown; payload?: unknown; createdAt?: unknown }>>(`/tasks/${encodeURIComponent(id)}/logs`);
     return raw.map((log, index) => projectBackendSafeTaskLog(id, log, index));
 }
-
 export function formatTaskLog(log: TaskLog) {
-    return [`stage=${log.stage}`, ...(log.errorCode ? [`error=${log.errorCode}`] : []), `provenance=${log.provenance}`, ...(log.observedAt ? [`observedAt=${log.observedAt}`] : [])].join(" ");
+    return [`stage=${log.stage}`, ...(log.errorCode ? [`error=${log.errorCode}`] : []), `provenance=${log.provenance}`, ...(log.message ? [log.message] : []), ...(log.observedAt ? [`observedAt=${log.observedAt}`] : [])].join(" ");
 }
-
-function projectGenerationTaskSafeLog(task: GenerationTask): TaskLog {
-    const diagnostic = projectLocalDreaminaDiagnosticLog({
-        level: task.errorCode || task.status === "failed" || task.status === "cancelled" ? "error" : "info",
-        stage: task.stage || task.status,
-        errorCode: task.errorCode,
-        provenance: task.officialStatus ? "provider_observation" : "task_state",
-        observedAt: task.updatedAt,
-    });
-    return {
-        id: `safe:${task.id}:${task.updatedAt}`,
-        taskId: task.id,
-        ...diagnostic,
-        createdAt: diagnostic.observedAt,
-    };
+/** 剥离 key=value 结构化字段，保留人读文本；过长截断，避免日志行被 JSON 噪声淹没。 */
+function taskLogHumanMessage(raw: { message?: unknown }) {
+    if (typeof raw.message !== "string") return undefined;
+    // Raw provider diagnostics stay behind the structured projection, including
+    // values that would survive removing key=value fields.
+    if (/(?:\b(?:token|cookie|secret|password|authorization|api[-_]?key|prompt|stderr)\b\s*[:=]|(?:^|\s)[a-z]:[\\/]|(?:https?|file):\/\/|\b(?:dreamina|local_generation|model|provider)_[a-z0-9_]+\b)/i.test(raw.message)) return undefined;
+    const cleaned = raw.message
+        .replace(/(?:^|\s)[a-zA-Z_]+=(?:\S+)/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!cleaned) return undefined;
+    return cleaned.length > 300 ? `${cleaned.slice(0, 300)}…` : cleaned;
 }
-
-export function projectBackendSafeTaskLog(taskId: string, raw: { level?: unknown; message?: unknown; payload?: unknown; createdAt?: unknown }, index: number): TaskLog {
+export function projectBackendSafeTaskLog(
+    taskId: string,
+    raw: {
+        level?: unknown;
+        message?: unknown;
+        payload?: unknown;
+        createdAt?: unknown;
+    },
+    index: number,
+): TaskLog {
     const text = [raw.message, raw.payload].filter((value): value is string => typeof value === "string").join(" ");
     const stage = safeTaskLogStage(text) || "backend_event";
     const errorCode = safeTaskLogErrorCode(text);
+    const message = taskLogHumanMessage(raw);
     const createdAt = typeof raw.createdAt === "string" && Number.isFinite(Date.parse(raw.createdAt)) ? raw.createdAt : "1970-01-01T00:00:00.000Z";
     return {
         id: `safe:${taskId}:${index}`,
         taskId,
         level: raw.level === "error" ? "error" : raw.level === "warn" ? "warn" : "info",
         stage,
-        ...(errorCode ? { errorCode } : {}),
+        ...(errorCode
+            ? {
+                  errorCode,
+              }
+            : {}),
+        ...(message ? { message } : {}),
         provenance: "backend",
         createdAt,
     };
 }
-
 function safeTaskLogStage(value: unknown) {
     if (typeof value !== "string") return undefined;
     const match = value.match(/(?:^|[^a-z0-9_])(queued|submitting|submitted|generating|submission_unknown|processing|completed|succeeded|failed|cancelled)(?:$|[^a-z0-9_])/i);
     return match?.[1]?.toLowerCase();
 }
-
-const SAFE_TASK_LOG_ERROR_CODES = new Set([...Object.keys(DREAMINA_SUBMIT_ERROR_MESSAGES), "dreamina_query_failed", "dreamina_submission_unknown", "dreamina_reference_invalid"]);
-
+const SAFE_TASK_LOG_ERROR_CODES = new Set([
+    ...Object.keys(DREAMINA_SUBMIT_ERROR_MESSAGES),
+    "dreamina_query_failed",
+    "dreamina_submission_unknown",
+    "dreamina_reference_invalid",
+    "provider_query_failed",
+    "provider_submission_unknown",
+    "provider_reference_invalid",
+]);
 function safeTaskLogErrorCode(value: unknown) {
     if (typeof value !== "string") return undefined;
     for (const match of value.matchAll(/(?:dreamina|local_generation|model|provider)_[a-z0-9_]{2,80}/gi)) {
@@ -502,8 +594,26 @@ function safeTaskLogErrorCode(value: unknown) {
     }
     return undefined;
 }
-
+/**
+ * 后端任务已进入失败/取消终态。只有这类错误代表“生成失败”；轮询连续失败、等待超时、
+ * 结果读取失败都只是页面没跟上原任务，调用方应继续跟进而不是让用户重新付费生成。
+ */
+export class GenerationTaskTerminalError extends Error {
+    readonly task: GenerationTask;
+    constructor(message: string, task: GenerationTask) {
+        super(message);
+        this.name = "GenerationTaskTerminalError";
+        this.task = task;
+    }
+}
+export function isGenerationTaskTerminalError(error: unknown): error is GenerationTaskTerminalError {
+    return error instanceof GenerationTaskTerminalError;
+}
+function terminalTaskError(task: GenerationTask) {
+    return new GenerationTaskTerminalError(task.error ? generationErrorMessage(task.error) : `任务${task.status === "cancelled" ? "已取消" : "失败"}`, task);
+}
 export type WaitForGenerationTaskOptions = {
+    textEventsSource?: "task" | "agent";
     signal?: AbortSignal;
     intervalMs?: number;
     timeoutMs?: number;
@@ -512,7 +622,6 @@ export type WaitForGenerationTaskOptions = {
     onTextDelta?: (text: string) => void;
     useTextEvents?: boolean;
 };
-
 export async function waitForGenerationTask(id: string, options?: WaitForGenerationTaskOptions) {
     if (isLocalDreaminaTaskId(id)) {
         try {
@@ -529,6 +638,7 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
         }
     }
     if (options?.onTextDelta || options?.useTextEvents) return waitForGenerationTaskTextEvents(id, options);
+    if (options?.onTextDelta || options?.useTextEvents) return waitForGenerationTaskTextEvents(id, options);
     const startedAt = Date.now();
     const intervalMs = options?.intervalMs || 2000;
     let lastTask = options?.initialTask;
@@ -539,7 +649,9 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
             if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
             let task: GenerationTask;
             try {
-                task = await queryGenerationTask(id, { signal: options?.signal });
+                task = await queryGenerationTask(id, {
+                    signal: options?.signal,
+                });
                 lastTask = task;
                 lastQueryError = undefined;
                 consecutiveFailures = 0;
@@ -561,7 +673,7 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
             }
             if (task.status === "failed" || task.status === "cancelled") {
                 window.dispatchEvent(new CustomEvent("wallet:updated"));
-                throw new Error(task.error ? generationErrorMessage(task.error) : `任务${task.status === "cancelled" ? "已取消" : "失败"}`);
+                throw terminalTaskError(task);
             }
             await delay(intervalMs, options?.signal);
         }
@@ -574,30 +686,38 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
     }
     throw new Error(lastQueryError instanceof Error ? `任务状态同步失败：${lastQueryError.message}` : "任务执行超时，请稍后重试");
 }
-
 async function waitForGenerationTaskTextEvents(id: string, options: WaitForGenerationTaskOptions) {
+    const session = captureUserSession();
+    options = { ...options, signal: options.signal ? AbortSignal.any([session.signal, options.signal]) : session.signal };
     const startedAt = Date.now();
     const intervalMs = options.intervalMs || 1000;
     let lastTask = options.initialTask;
     let lastEventId = 0;
-    let fullText = lastTask?.textDraft || "";
+    // Agent subscriptions replay from cursor 0; an existing draft must not be
+    // prepended to the same persisted deltas when reopening a conversation.
+    let fullText = options.textEventsSource === "agent" ? "" : lastTask?.textDraft || "";
     let lastStreamError: unknown;
     if (!lastTask) {
-        lastTask = await queryGenerationTask(id, { signal: options.signal });
+        lastTask = await queryGenerationTask(id, {
+            signal: options.signal,
+        });
         options.onTaskUpdate?.(lastTask);
     }
     const timeoutMs = options.timeoutMs || taskWaitTimeoutMs(lastTask);
     while (Date.now() - startedAt < timeoutMs) {
+        assertCurrentUserSession(session);
         if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         let terminalReceived = false;
         try {
             const base = String(apiBaseURL).replace(/\/+$/, "");
             const cursor = lastEventId > 0 ? `?after=${encodeURIComponent(String(lastEventId))}` : "";
-            const response = await fetch(`${base}/tasks/${encodeURIComponent(id)}/text-events${cursor}`, {
-                headers: { Accept: "text/event-stream" },
+            const path = options.textEventsSource === "agent" ? `/agent/runs/${encodeURIComponent(id)}/events` : `/tasks/${encodeURIComponent(id)}/text-events`;
+            const response = await fetch(`${base}${workspaceApiPath(path)}${cursor}`, {
+                headers: { Accept: "text/event-stream", "X-Canvas-Expected-User": session.userId },
                 credentials: "include",
                 signal: options.signal,
             });
+            assertCurrentUserSession(session);
             if (!response.ok) throw new TaskTextStreamFatalError(await taskTextStreamHTTPError(response));
             if (!(response.headers.get("content-type") || "").toLowerCase().includes("text/event-stream")) {
                 throw new TaskTextStreamFatalError("任务文本流接口未返回事件流，请检查后端地址和反向代理配置");
@@ -607,6 +727,7 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
             const decoder = new TextDecoder();
             const parser = createTaskTextStreamParser();
             const onEvent = (event: TaskTextStreamEvent) => {
+                assertCurrentUserSession(session);
                 const payload = asTaskTextStreamRecord(event.data);
                 if (event.event === "delta") {
                     const sequence = numberValue(payload.sequence) || event.id || 0;
@@ -617,7 +738,10 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
                     fullText += content;
                     options.onTextDelta?.(fullText);
                     if (lastTask) {
-                        lastTask = { ...lastTask, textDraft: fullText };
+                        lastTask = {
+                            ...lastTask,
+                            textDraft: fullText,
+                        };
                         options.onTaskUpdate?.(lastTask);
                     }
                     return;
@@ -626,9 +750,21 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
                     if (!lastTask) return;
                     lastTask = {
                         ...lastTask,
-                        ...(isTaskStatus(payload.status) ? { status: payload.status } : {}),
-                        ...(typeof payload.stage === "string" ? { stage: payload.stage } : {}),
-                        ...(numberValue(payload.progress) !== undefined ? { progress: numberValue(payload.progress) } : {}),
+                        ...(isTaskStatus(payload.status)
+                            ? {
+                                  status: payload.status,
+                              }
+                            : {}),
+                        ...(typeof payload.stage === "string"
+                            ? {
+                                  stage: payload.stage,
+                              }
+                            : {}),
+                        ...(numberValue(payload.progress) !== undefined
+                            ? {
+                                  progress: numberValue(payload.progress),
+                              }
+                            : {}),
                     };
                     options.onTaskUpdate?.(lastTask);
                     return;
@@ -643,85 +779,223 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
                 }
                 if (event.event === "error") throw new Error(typeof payload.message === "string" ? payload.message : "任务文本流不可用");
             };
-            for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                consumeTaskTextStream(parser, decoder.decode(value, { stream: true }), onEvent);
+            const cancelReader = () => void reader.cancel().catch(() => undefined);
+            options.signal?.addEventListener("abort", cancelReader, { once: true });
+            try {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    assertCurrentUserSession(session);
+                    if (done) break;
+                    consumeTaskTextStream(parser, decoder.decode(value, { stream: true }), onEvent);
+                }
+                consumeTaskTextStream(parser, decoder.decode(), onEvent, true);
+            } finally {
+                options.signal?.removeEventListener("abort", cancelReader);
+                await reader.cancel().catch(() => undefined);
+                reader.releaseLock();
             }
-            consumeTaskTextStream(parser, decoder.decode(), onEvent, true);
             if (terminalReceived) {
-                const completed = await queryGenerationTask(id, { signal: options.signal });
+                const completed = await queryGenerationTask(id, {
+                    signal: options.signal,
+                });
                 options.onTaskUpdate?.(completed);
                 window.dispatchEvent(new CustomEvent("wallet:updated"));
                 if (completed.status === "succeeded") return completed;
-                if (completed.status === "failed" || completed.status === "cancelled") {
-                    throw new TaskTextStreamFatalError(completed.error ? generationErrorMessage(completed.error) : `任务${completed.status === "cancelled" ? "已取消" : "失败"}`);
-                }
+                if (completed.status === "failed" || completed.status === "cancelled") throw terminalTaskError(completed);
             }
             lastStreamError = new Error("任务文本流连接提前结束");
         } catch (error) {
+            assertCurrentUserSession(session);
             if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-            if (error instanceof TaskTextStreamFatalError) throw error;
+            if (error instanceof TaskTextStreamFatalError || error instanceof GenerationTaskTerminalError) throw error;
             lastStreamError = error;
         }
         await delay(intervalMs, options.signal);
     }
     throw new Error(lastStreamError instanceof Error ? `任务文本流同步失败：${lastStreamError.message}` : "任务执行超时，请稍后重试");
 }
-
 function asTaskTextStreamRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
-
 function numberValue(value: unknown) {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
-
 function isTaskStatus(value: unknown): value is TaskStatus {
     return value === "queued" || value === "running" || value === "succeeded" || value === "failed" || value === "cancelled";
 }
-
 class TaskTextStreamFatalError extends Error {
     constructor(message: string) {
         super(message);
         this.name = "TaskTextStreamFatalError";
     }
 }
-
 async function taskTextStreamHTTPError(response: Response) {
     try {
-        const payload = await response.json() as { msg?: unknown };
+        const payload = (await response.json()) as {
+            msg?: unknown;
+        };
         if (typeof payload.msg === "string" && payload.msg.trim()) return payload.msg;
     } catch {
         // SSE 错误响应可能是空正文或网关 HTML，只返回状态码，避免泄露正文。
     }
     return `任务文本流请求失败（HTTP ${response.status}）`;
 }
-
 function taskWaitTimeoutMs(task?: GenerationTask) {
     const type = task?.type || "";
-    if (type.includes("storyboard")) return 13 * 60 * 1000;
-    if (type.includes("video")) return 32 * 60 * 1000;
+    // 等待上限必须不小于后端同类任务的执行超时（分镜 20 分钟、视频 120 分钟，见后台
+    // 资源与策略），否则长任务会在前端被判超时、消息显示失败，而后端其实还在跑并最终成功。
+    if (type.includes("storyboard")) return 25 * 60 * 1000;
+    if (type.includes("video")) return 125 * 60 * 1000;
     if (type.includes("image")) return 10 * 60 * 1000;
     if (type.includes("text") || type.includes("audio")) return 12 * 60 * 1000;
     return 10 * 60 * 1000;
 }
-
 function delay(ms: number, signal?: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
-        const timer = window.setTimeout(resolve, ms);
-        signal?.addEventListener(
-            "abort",
-            () => {
-                window.clearTimeout(timer);
-                reject(new DOMException("Aborted", "AbortError"));
-            },
-            { once: true },
-        );
+        if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+        }
+        const abort = () => {
+            window.clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        const timer = window.setTimeout(() => {
+            signal?.removeEventListener("abort", abort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", abort, {
+            once: true,
+        });
     });
 }
-
 function notifyCanvasTaskCreated(task: GenerationTask) {
     if (typeof window === "undefined" || !task.projectId) return;
-    window.dispatchEvent(new CustomEvent("canvas:task-created", { detail: { task } }));
+    window.dispatchEvent(
+        new CustomEvent("canvas:task-created", {
+            detail: {
+                task,
+            },
+        }),
+    );
+}
+export type AgentSessionStatus = "active" | "completed" | "failed";
+export type AgentSession = {
+    id: string;
+    projectId?: string;
+    status: AgentSessionStatus;
+    prompt: string;
+    canvasSnapshotJson?: string;
+    canvasOpsJson?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+export type AgentMessage = {
+    id: string;
+    sessionId: string;
+    role: "user" | "assistant" | "system" | "tool" | string;
+    content: string;
+    payload?: string;
+    createdAt: string;
+};
+export type TaskResult = {
+    id: string;
+    taskId: string;
+    sessionId?: string;
+    kind: string;
+    url?: string;
+    payload?: string;
+    createdAt: string;
+};
+export type SessionFile = {
+    id: string;
+    sessionId: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    createdAt: string;
+};
+export type AgentSessionDetail = {
+    session: AgentSession;
+    messages: AgentMessage[];
+    tasks: GenerationTask[];
+    results: TaskResult[];
+};
+export type CreateSessionInput = {
+    projectId?: string;
+    prompt: string;
+    canvasSnapshot?: Record<string, unknown>;
+    references?: string[];
+    projectStyle?: {
+        presetId: string;
+        title: string;
+        prompt: string;
+    };
+    characters?: Array<{
+        assetId: string;
+        versionId: string;
+        name: string;
+        definition: Record<string, unknown>;
+    }>;
+    config?: Record<string, unknown>;
+    logicalModelId?: string;
+};
+export function createAgentSession(input: CreateSessionInput) {
+    return http.post<AgentSessionDetail>("/sessions", input).then((detail) => {
+        detail.tasks.forEach((task) => notifyCanvasTaskCreated(task));
+        return detail;
+    });
+}
+export function queryAgentSession(id: string) {
+    return http.get<AgentSessionDetail>(`/sessions/${encodeURIComponent(id)}`);
+}
+export function agentSessionFailureMessage(detail: AgentSessionDetail, fallback = "后端影视 Agent 会话失败") {
+    for (let index = detail.tasks.length - 1; index >= 0; index -= 1) {
+        const task = detail.tasks[index];
+        if ((task.status === "failed" || task.status === "cancelled") && task.error?.trim()) return generationErrorMessage(task.error.trim());
+    }
+    for (let index = detail.messages.length - 1; index >= 0; index -= 1) {
+        const message = detail.messages[index];
+        if (message.role === "assistant" && message.content.trim()) return generationErrorMessage(message.content.trim());
+    }
+    return fallback;
+}
+export function downloadSessionResults(id: string) {
+    return http.get<TaskResult[]>(`/sessions/${encodeURIComponent(id)}/results`);
+}
+export function uploadAgentFile(sessionId: string, file: File) {
+    const formData = new FormData();
+    formData.append("sessionId", sessionId);
+    formData.append("file", file);
+    return http.post<SessionFile>("/files", formData);
+}
+export function waitForLocalGenerationTask(
+    id: string,
+    options?: {
+        signal?: AbortSignal;
+    },
+) {
+    if (!isLocalDreaminaTaskId(id)) return Promise.reject(new Error("当前任务不是本机即梦任务"));
+    return waitForLocalDreaminaGenerationTask(stripLocalDreaminaTaskPrefix(id), undefined, {}, options?.signal).then((task) => projectLocalDreaminaTask(task));
+}
+export function splitGenerationTaskObservationIds(ids: readonly string[]) {
+    return {
+        localWaitIds: ids.filter(isLocalDreaminaTaskId),
+        remotePollIds: ids.filter((id) => !isLocalDreaminaTaskId(id)),
+    };
+}
+function projectGenerationTaskSafeLog(task: GenerationTask): TaskLog {
+    const diagnostic = projectLocalDreaminaDiagnosticLog({
+        level: task.errorCode || task.status === "failed" || task.status === "cancelled" ? "error" : "info",
+        stage: task.stage || task.status,
+        errorCode: task.errorCode,
+        provenance: task.officialStatus ? "provider_observation" : "task_state",
+        observedAt: task.updatedAt,
+    });
+    return {
+        id: `safe:${task.id}:${task.updatedAt}`,
+        taskId: task.id,
+        ...diagnostic,
+        createdAt: diagnostic.observedAt,
+    };
 }

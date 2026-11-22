@@ -6,12 +6,21 @@ import { deleteGenerationTask, formatTaskLog, listGenerationTasks, projectBacken
 import { isLocalDreaminaBackgroundTask, localDreaminaCancellationCopy, localDreaminaDetachOutcome, projectLocalDreaminaTask } from "../src/services/local-dreamina-task-projection";
 import { LocalDreaminaGenerationClientError, runLocalDreaminaGenerationTask, type LocalDreaminaGenerationInput } from "../src/services/local-dreamina-generation";
 import { createGenerationBatchRetryContexts, createGenerationRetryContext, generationTaskMetadata, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "../src/lib/canvas/canvas-project-generation";
-import { runCanvasAgentGenerationOps } from "../src/pages/canvas/use-canvas-agent-operations";
+import { runCanvasGenerationOps } from "../src/pages/canvas/use-canvas-operation-history";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
-import { onlineToolToOps } from "../src/components/canvas/canvas-assistant-panel";
+import { buildToolAgentMessages, onlineToolToOps } from "../src/components/canvas/canvas-assistant-online-tools";
 import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "../src/lib/generation-task-display";
 import { generationErrorMessage } from "../src/lib/generation-error";
-import { generationTaskNodeId } from "../src/lib/canvas/canvas-generation-task-sync";
+import { generationTaskNodeId, syncGenerationTaskToCanvasStore } from "../src/lib/canvas/canvas-generation-task-sync";
+import { moduleGroupSource } from "./helpers/module-group-source";
+import { apiClient } from "../src/services/api/request";
+
+test("业务项目任务和无节点任务不会读取画布项目", async () => {
+    const task = { id: "chapter-task", type: "canvas_text", status: "succeeded", projectId: "domain-project", clientContext: { domainProjectId: "domain-project", nodeId: "chapter_character_breakdown:chapter" } } as GenerationTask;
+    expect(await syncGenerationTaskToCanvasStore(task)).toBe(false);
+    expect(await syncGenerationTaskToCanvasStore({ ...task, clientContext: undefined, inputJson: JSON.stringify({ metadata: { domainProjectId: "domain-project", nodeId: "chapter-node" } }) })).toBe(false);
+    expect(await syncGenerationTaskToCanvasStore({ ...task, clientContext: undefined })).toBe(false);
+});
 
 test("canvas recovery reads node identity from task summaries without full task input", () => {
     const task: GenerationTask = { id: "task-summary", type: "canvas_image", status: "running", prompt: "", attempts: 1, createdAt: "", updatedAt: "", clientContext: { nodeId: "node-summary" } };
@@ -158,12 +167,14 @@ test("task display does not claim a submitted Dreamina receipt is actively gener
     expect(generationTaskStatusLabel(officialCompleted)).toBe("官方已完成");
     expect(generationTaskStageLabel(officialCompleted)).toBe("官方返回状态：completed");
     expect(generationTaskStatusLabel(generating)).toBe("生成中");
-    expect(generationTaskShowsProgress(generating)).toBe(true);
+    expect(generationTaskShowsProgress(generating)).toBe(false);
+    expect(generationTaskShowsProgress({ ...generating, progress: 35 })).toBe(true);
 
     for (const stage of ["等待队列调度", "后端接管任务", "正在连接上游", "调用生成模型"]) {
         expect(generationTaskShowsProgress({ ...generating, provider: "managed", stage })).toBe(false);
     }
-    expect(generationTaskShowsProgress({ ...generating, provider: "managed", stage: "上游生成中" })).toBe(true);
+    expect(generationTaskShowsProgress({ ...generating, provider: "managed", stage: "上游生成中" })).toBe(false);
+    expect(generationTaskShowsProgress({ ...generating, provider: "managed", stage: "上游生成中", progress: 35 })).toBe(true);
     expect(generationTaskStatusLabel(remoteRunning)).toBe("生成中");
 });
 
@@ -194,13 +205,14 @@ test("Dreamina submission uncertainty is not an accepted background task", () =>
 
 test("Canvas task surfaces route Dreamina uncertainty through shared display semantics without cancellation", async () => {
     const [nodeSource, detailSource, scriptSource, taskCenterSource, createSource] = await Promise.all([
-        Bun.file(new URL("../src/components/canvas/canvas-node-content.tsx", import.meta.url)).text(),
+        moduleGroupSource("components/canvas/canvas-node-content.tsx"),
         Bun.file(new URL("../src/pages/canvas/canvas-project-status-dialogs.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/components/canvas/canvas-script-node.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/tasks/index.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/create/index.tsx", import.meta.url)).text(),
     ]);
-    expect(nodeSource).toContain("generationTaskStageLabel(displayTask)");
+    expect(nodeSource).toContain("generationTaskPhase(displayTask)");
+    expect(nodeSource).toContain("generationPhaseLabel(phase, kind, metadata?.taskStage)");
     expect(nodeSource).toContain("generationTaskShowsProgress(displayTask)");
     expect(nodeSource).not.toContain("onCancelTask");
     expect(nodeSource).not.toContain("取消生成");
@@ -211,9 +223,11 @@ test("Canvas task surfaces route Dreamina uncertainty through shared display sem
     expect(scriptSource).toContain("generationTaskStageLabel(displayTask)");
     expect(scriptSource).toContain("generationTaskShowsProgress(displayTask)");
     expect(scriptSource).not.toContain('node.metadata.taskStage || "正在创建任务"');
-    expect(nodeSource).toContain("isGenerationTaskSubmissionUncertain(errorDisplayTask)");
-    expect(taskCenterSource).toContain("if (currentTask && isGenerationTaskSubmissionUncertain(currentTask))");
-    expect(taskCenterSource).toContain("不能自动重试；请先核对官方状态，避免重复生成");
+    expect(nodeSource).toContain("isGenerationTaskSubmissionUncertain(");
+    const uncertainActionSource = sourceSection(taskCenterSource, "if (isGenerationTaskSubmissionUncertain(currentTask))", "const savingMedia =");
+    expect(uncertainActionSource).toContain("message.warning(generationTaskStageLabel(currentTask, taskT));");
+    expect(uncertainActionSource).toContain("return;");
+    expect(uncertainActionSource).not.toContain("retryGenerationTask");
     expect(taskCenterSource).toContain("onRetry={() => void runAction(task.id)}");
     expect(taskCenterSource).toContain("<TaskListRow");
     expect(taskCenterSource).toContain("<TaskGridCard");
@@ -229,25 +243,37 @@ test("Canvas fullscreen video restores large controls instead of keeping the com
     expect(playerCSS).toContain("min-height: 64px");
 });
 
-test("task center deletion accepts only local Dreamina records", async () => {
-    await expect(deleteGenerationTask("backend-task-0001")).rejects.toThrow("当前任务不支持删除");
+test("task center deletion uses the backend endpoint and scopes local-record controls to Dreamina", async () => {
+    const previousAdapter = apiClient.defaults.adapter;
+    const requests: string[] = [];
+    apiClient.defaults.adapter = async (config) => {
+        requests.push(`${config.method} ${config.url}`);
+        return { data: { code: 0, data: null, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+    };
+    try {
+        await deleteGenerationTask("backend-task-0001");
+        expect(requests).toEqual(["delete /tasks/backend-task-0001"]);
+    } finally {
+        apiClient.defaults.adapter = previousAdapter;
+    }
     const source = await Bun.file(new URL("../src/pages/tasks/index.tsx", import.meta.url)).text();
-    const compactedSource = compactSource(source);
+    const detailSource = compactSource(await Bun.file(new URL("../src/pages/tasks/task-detail-modal.tsx", import.meta.url)).text());
     const deleteActionSource = sourceSection(source, "const deleteLocalTask =", "const refreshLocalTaskStatus =");
 
-    expect(compactedSource).toMatch(/\{detailTask\.provider === "dreamina-cli" \? \( <Button .*?aria-label="删除本机记录".*?onClick=\{\(\) => deleteLocalTask\(detailTask\)\}> 删除本机记录 <\/Button> \) : null\}/);
-    expect(compactedSource).toContain("官方状态采用最终一致轮询；转入后台后仍会继续等待并同步官方状态。");
+    expect(detailSource).toMatch(/\{task\.provider === "dreamina-cli" \? \( <Button .*?aria-label=\{t\("tasksUi.deleteLocalRecord"\)\}.*?onClick=\{\(\) => onDeleteLocalRecord\(task\)\}/);
+    expect(source).toContain("onDeleteLocalRecord={deleteLocalTask}");
     expect(deleteActionSource).toContain("await deleteGenerationTask(task.id);");
 });
 
 test("submitted Dreamina records expose a manual one-shot status refresh action", async () => {
     const source = await Bun.file(new URL("../src/pages/tasks/index.tsx", import.meta.url)).text();
-    const compactedSource = compactSource(source);
+    const compactedSource = compactSource(await Bun.file(new URL("../src/pages/tasks/task-detail-modal.tsx", import.meta.url)).text());
     const refreshActionSource = sourceSection(source, "const refreshLocalTaskStatus =", "const queryProviderTask =");
 
     expect(compactedSource).toMatch(
-        /\{detailTask\.provider === "dreamina-cli" && detailTask\.receiptRecorded && detailTask\.status === "running" \? \( <Button .*?aria-label="更新官方状态".*?onClick=\{\(\) => void refreshLocalTaskStatus\(detailTask\)\}> 更新官方状态 <\/Button> \) : null\}/,
+        /\{task\.provider === "dreamina-cli" && task\.receiptRecorded && task\.status === "running" \? \( <Button .*?aria-label=\{t\("tasksUi.refreshOfficialStatus"\)\}.*?onClick=\{\(\) => onRefreshLocalStatus\(task\)\}/,
     );
+    expect(source).toContain("onRefreshLocalStatus={(task) => void refreshLocalTaskStatus(task)}");
     expect(refreshActionSource).toContain("const next = await refreshGenerationTaskStatus(task.id);");
     expect(refreshActionSource.match(/refreshGenerationTaskStatus\(task\.id\)/g)).toHaveLength(1);
     expect(compactedSource).not.toMatch(/setInterval\(\(\) => (?:void |await )?refreshGenerationTaskStatus\(/);
@@ -305,7 +331,7 @@ test("backend text generation forwards streaming callbacks and thinking options"
             prompt: running.prompt,
             config: backendModelConfig("reasoning-text-model"),
             streamText: true,
-            enableThinking: true,
+            thinkingLevel: "high",
             onTextDelta: (value) => {
                 streamedText = value;
             },
@@ -327,9 +353,61 @@ test("backend text generation forwards streaming callbacks and thinking options"
         },
     );
 
-    expect(createdInput?.input?.textOptions).toEqual({ stream: true, thinking: true });
+    expect(createdInput?.input?.textOptions).toEqual({ stream: true, thinkingLevel: "high" });
     expect(streamedText).toBe("实时正文");
     expect(result).toEqual({ mode: "text", text: "完整正文", reasoning: "思考摘要" });
+});
+
+test("online node retry creates a backend task and preserves retry identity in task metadata", async () => {
+    let createdInput: Parameters<NonNullable<Parameters<typeof runBackendGenerationTask>[1]>["createTask"]>[0] | undefined;
+    const running: GenerationTask = { id: "retry-task-new", type: "canvas_image", status: "running", prompt: "retry", attempts: 1, createdAt: "", updatedAt: "" };
+    await runBackendGenerationTask(
+        {
+            projectId: "canvas-retry",
+            mode: "image",
+            prompt: "retry",
+            config: backendModelConfig("retry-image-model"),
+            clientOperationId: "retry:operation-0000000000000001",
+            retryOf: "retry-task-old",
+            attemptGroupId: "retry-group",
+        },
+        {
+            createTask: async (input) => {
+                createdInput = input;
+                return running;
+            },
+            waitTask: async () => ({ ...running, status: "succeeded", resultJson: JSON.stringify({ mode: "image", images: [] }) }),
+            runLocal: async () => { throw new Error("must not use local Runtime"); },
+            createId: () => "unused-retry-id",
+            now: () => "2026-09-10T00:00:00.000Z",
+        },
+    );
+    expect(createdInput?.input?.metadata).toMatchObject({
+        clientOperationId: "retry:operation-0000000000000001",
+        retryOf: "retry-task-old",
+        attemptGroupId: "retry-group",
+    });
+});
+
+test("online canvas Agent sends resource references instead of inline image bodies", async () => {
+    const snapshot = { projectId: "canvas-agent", title: "Agent", nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, zoom: 1 } };
+    const messages = await buildToolAgentMessages(snapshot, [], {
+        id: "message",
+        role: "user",
+        text: "分析图片",
+        references: [{ id: "image", type: CanvasNodeType.Image, title: "参考图", dataUrl: `data:image/png;base64,${"A".repeat(1024)}`, storageKey: "resource:image-remote" }],
+    });
+    const serialized = JSON.stringify(messages);
+    expect(serialized).toContain("resource:image-remote");
+    expect(serialized).not.toContain("data:image/png");
+    expect(serialized.length).toBeLessThan(20_000);
+
+    await expect(buildToolAgentMessages(snapshot, [], {
+        id: "local-message",
+        role: "user",
+        text: "分析本地图片",
+        references: [{ id: "local-image", type: CanvasNodeType.Image, title: "未上传图片", dataUrl: "data:image/png;base64,AAAA" }],
+    })).rejects.toThrow("引用图片尚未同步到服务器");
 });
 
 test("the shared local generation entry projects pre-receipt work as submitting without fake progress", async () => {
@@ -1380,7 +1458,8 @@ test("remote provider keeps Create resolution semantics and still creates one Ba
         },
     );
 
-    expect(backendInput?.input.config).toMatchObject({ vquality: "720", quality: "auto" });
+    expect(backendInput?.input.config).toMatchObject({ vquality: "720p" });
+    expect(backendInput?.input.config.quality).toBeUndefined();
     expect(localCalls).toBe(0);
 });
 
@@ -1564,7 +1643,7 @@ test("online and local agent run_generation persists conversation and message co
     };
 
     for (const source of ["online", "local"] as const) {
-        await runCanvasAgentGenerationOps({
+        await runCanvasGenerationOps({
             generationOps: [{ type: "run_generation", nodeId: node.id }],
             nodes: [node],
             generate,
@@ -1918,7 +1997,7 @@ test("real node generation binding persists the first task before an Agent retry
 
     const run = async (retry: boolean) => {
         sequence += 1;
-        await runCanvasAgentGenerationOps({
+        await runCanvasGenerationOps({
             generationOps: [
                 {
                     type: "run_generation",
@@ -2017,10 +2096,10 @@ test("real node generation binding persists the first task before an Agent retry
 });
 
 test("real canvas agent generation entry persists continuation, observes terminal state, and resumes refresh idempotently", async () => {
-    const module = await import("../src/pages/canvas/use-canvas-agent-operations");
+    const module = await import("../src/pages/canvas/use-canvas-operation-history");
     const runAgentGenerationOps = (
         module as {
-            runCanvasAgentGenerationOps?: (input: {
+            runCanvasGenerationOps?: (input: {
                 generationOps: Array<{ type: "run_generation"; nodeId: string; mode?: "video"; prompt?: string; retry?: boolean }>;
                 nodes: CanvasNodeData[];
                 context?: { conversationId?: string; messageId?: string; source?: "online" | "local" };
@@ -2040,7 +2119,7 @@ test("real canvas agent generation entry persists continuation, observes termina
                 onContinuation?: (nodeId: string, continuation: NonNullable<NonNullable<CanvasNodeData["metadata"]>["agentGenerationContinuation"]>) => void;
             }) => Promise<void>;
         }
-    ).runCanvasAgentGenerationOps;
+    ).runCanvasGenerationOps;
     expect(typeof runAgentGenerationOps).toBe("function");
     if (!runAgentGenerationOps) return;
 
@@ -2425,7 +2504,7 @@ test("agent run_generation waits for the shared task, persists one continuation,
         releaseContinuationCompletion = resolve;
     });
     let taskListener: ((task: GenerationTask) => void) | undefined;
-    const pending = runCanvasAgentGenerationOps({
+    const pending = runCanvasGenerationOps({
         generationOps: [{ type: "run_generation", nodeId: node.id, mode: "video", retry: true }],
         nodes: [node],
         context: { source: "online", conversationId: "online-agent-conversation-0001", messageId: "online-agent-message-0001" },
@@ -2520,7 +2599,7 @@ test("Create image batch retry keeps one attempt group while each new task point
 test("Canvas refresh recovery delegates task observation to the shared subscription and resumes pending agent continuations", async () => {
     const source = await Bun.file(new URL("../src/pages/canvas/use-canvas-generation.ts", import.meta.url)).text();
     expect(source).toContain("subscribeGenerationTasks");
-    expect(source).toContain("consumeCanvasAgentGenerationContinuation");
+    expect(source).toContain("consumeCanvasGenerationContinuation");
     expect(source).not.toContain("taskIds.map((id) => queryGenerationTask(id");
     expect(source).not.toContain("await waitForGenerationTask(task.id");
 });
@@ -2562,10 +2641,9 @@ test("local Dreamina diagnostics project only safe structured stage/error/proven
     }
 });
 
-test("local Dreamina product copy states eventual polling, background waiting, unsupported official cancel, and unknown entitlement honestly", async () => {
+test("local Dreamina cancellation keeps the background wait warning and unknown entitlement", async () => {
     const projection = await import("../src/services/local-dreamina-task-projection");
     const settings = await import("../src/pages/settings/local-cli-settings");
-    const taskSource = await Bun.file(new URL("../src/pages/tasks/index.tsx", import.meta.url)).text();
 
     const accepted = projection.localDreaminaCancellationCopy({
         id: "dreamina:truth-copy-task-0001",
@@ -2576,8 +2654,7 @@ test("local Dreamina product copy states eventual polling, background waiting, u
     });
     expect(accepted).toMatchObject({ action: "转入后台" });
     expect(accepted?.confirmation).toContain("仍会继续同步官方状态");
-    expect(taskSource).toContain("官方状态采用最终一致轮询");
-    expect(taskSource).toContain("官方即梦 CLI 当前不支持可靠的官方取消");
+    expect(accepted?.confirmation).not.toContain("已取消");
     expect(settings.LOCAL_CLI_SETTINGS_COPY.dreaminaMembership).toContain("账号生成权限：未知");
     expect(settings.LOCAL_CLI_SETTINGS_COPY.dreaminaMembership).not.toContain("仅高级会员可用于生成");
 });

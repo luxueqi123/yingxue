@@ -11,13 +11,17 @@ import { mergeFetchedChannelModelCosts, type ChannelModelCatalogItem } from "../
 import { defaultModelCapabilityConfig, pluginWorkflowCapabilityConfig } from "../src/lib/model-capabilities";
 import { ChannelModelSettings } from "../src/pages/settings/channel-video-pricing";
 import { fetchChannelModels } from "../src/services/api/image";
+import { apiClient } from "../src/services/api/request";
+import { fetchPluginProviderCatalog } from "../src/services/api/plugin-catalog";
 import { createVideoGenerationTask } from "../src/services/api/video";
 import { createModelChannel, defaultConfig, modelDisplayName, normalizeConfigSnapshot, resolveModelRequestConfig, selectableModelsByCapability, type AiConfig } from "../src/stores/use-config-store";
 
-const originalAxiosPost = axios.post;
+const originalAxiosRequest = axios.request;
+const originalApiRequest = apiClient.request;
 
 afterEach(() => {
-    axios.post = originalAxiosPost;
+    axios.request = originalAxiosRequest;
+    apiClient.request = originalApiRequest;
 });
 
 const omniCatalog: ChannelModelCatalogItem = {
@@ -83,8 +87,36 @@ describe("public channel model catalog", () => {
         expect(profile.duration).toEqual({ selection: "enum", values: [5], default: 5 });
     });
 
+    test("preserves declared provider parameters in the protocol catalog", async () => {
+        apiClient.request = (async () => ({
+            data: {
+                code: 0,
+                data: {
+                    providers: [
+                        {
+                            id: "cangyuan-midjourney-v82",
+                            version: "1.0.0",
+                            name: "沧元 Midjourney 1K/2K · V8.2",
+                            vendor: "沧元算力 / 影绘",
+                            categories: ["image"],
+                            scopes: ["admin.system-channel", "user.custom-channel", "canvas"],
+                            enabled: true,
+                            parameters: [{ name: "providerOptions", type: "object", mapping: "cangyuan-midjourney-v82.speed/reference" }],
+                            workflows: [],
+                        },
+                    ],
+                },
+            },
+        })) as typeof apiClient.request;
+
+        const result = await fetchPluginProviderCatalog("admin.system-channel", "image");
+        expect(result).toHaveLength(1);
+        expect(result[0]?.parameters).toEqual([{ name: "providerOptions", type: "object", mapping: "cangyuan-midjourney-v82.speed/reference" }]);
+        expect(result[0]?.workflows).toEqual([]);
+    });
+
     test("preserves six public capabilities without expanding compatibility IDs", async () => {
-        axios.post = (async () => ({
+        apiClient.request = (async () => ({
             data: {
                 code: 0,
                 data: {
@@ -98,7 +130,7 @@ describe("public channel model catalog", () => {
                     ],
                 },
             },
-        })) as typeof axios.post;
+        })) as typeof apiClient.request;
         const channel = createModelChannel({ baseUrl: "https://flow.example", apiKey: "synthetic-test-key", models: [] });
 
         const result = await fetchChannelModels(channel, true);
@@ -336,10 +368,10 @@ describe("public channel model catalog", () => {
 
     test("omits resolution_name for Omni and for auto instead of inventing 720p", async () => {
         const bodies: Record<string, string>[] = [];
-        axios.post = (async (_url: string, body: unknown) => {
-            bodies.push(formEntries(body));
+        axios.request = (async (request) => {
+            bodies.push(formEntries(request.data));
             return { data: { id: `synthetic-${bodies.length}` } };
-        }) as typeof axios.post;
+        }) as typeof axios.request;
 
         const omniConfig = configForCatalog([omniCatalog], { videoSeconds: "10", size: "16:9", vquality: "720" });
         await createVideoGenerationTask(omniConfig, "synthetic prompt");
@@ -360,10 +392,10 @@ describe("public channel model catalog", () => {
 
     test("sends a declared compatible HD resolution for a video capability", async () => {
         let body: Record<string, string> = {};
-        axios.post = (async (_url: string, requestBody: unknown) => {
-            body = formEntries(requestBody);
+        axios.request = (async (request) => {
+            body = formEntries(request.data);
             return { data: { id: "synthetic-hd" } };
-        }) as typeof axios.post;
+        }) as typeof axios.request;
         const catalog: ChannelModelCatalogItem = {
             ...omniCatalog,
             id: "veo-public",
@@ -383,10 +415,10 @@ describe("public channel model catalog", () => {
 
     test("preserves provider resolution enums with direction suffixes across Canvas display and requests", async () => {
         let body: Record<string, string> = {};
-        axios.post = (async (_url: string, requestBody: unknown) => {
-            body = formEntries(requestBody);
+        axios.request = (async (request) => {
+            body = formEntries(request.data);
             return { data: { id: "synthetic-directional" } };
-        }) as typeof axios.post;
+        }) as typeof axios.request;
         const catalog: ChannelModelCatalogItem = {
             ...omniCatalog,
             id: "directional-video",

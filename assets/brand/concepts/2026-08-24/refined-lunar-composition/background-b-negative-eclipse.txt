@@ -1,0 +1,9 @@
+Asset type: abstract structural background for a premium horizontal Chinese logo
+Primary request: Build a clean negative-space lunar composition with no text: a virtual upper eclipse and one lower returning arc, designed to frame an empty wide central wordmark zone.
+Subject: the upper moon is suggested by two broad dark translucent shadow planes whose curved outer edges align into a partial lunar silhouette; the shape dissolves softly before becoming a literal crescent. The lower response is a single asymmetric brushed-platinum curve rising slightly to the right, sharp and compact, never flat like a shelf.
+Style/medium: architectural luxury brand identity, vector-friendly silhouette, restrained 2.5D gunmetal and platinum, quiet depth, no illustration scene.
+Composition/framing: centered square field on pure near-black; wide horizontal logo proportion; reserve the middle 44 percent as completely empty black negative space; upper structure stays behind the future wordmark area and lower structure stays below it; only two shapes.
+Lighting/mood: one cold upper-left rim and one narrow lower highlight, high clarity, no fog.
+Color palette: charcoal, obsidian, gunmetal, platinum, minimal ice-blue edge.
+Constraints: no text, no letters, no Chinese characters, no symbols, no complete ring, no literal moon texture, no floor, no reflections, no base platform.
+Avoid: calligraphy, watermark, realistic celestial body, craters, landscape, stage, debris, point clouds, foam dots, particles, shards, smoke, motion trails, glow halo, bloom, blur, excessive bevel, plastic, game badge, ornate fantasy, mirrored crescents, symmetrical side moons, tray.

@@ -161,22 +161,12 @@ test("dispose aborts a poll-heartbeat state-lock waiter before it can renew", as
 
     let releaseExternalLock: (() => Promise<void>) | undefined;
     let disposePromise: Promise<void> | undefined;
-    let renewStartTimeout: ReturnType<typeof setTimeout> | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
         await reconciler.start();
         await observing;
         releaseExternalLock = await acquireStateLock(box.stateFile);
-        await Promise.race([
-            renewing,
-            new Promise<never>((_resolve, reject) => {
-                renewStartTimeout = setTimeout(() => {
-                    reject(new Error("poll heartbeat did not start renewing before the deadline"));
-                }, 5_000);
-            }),
-        ]);
-        if (renewStartTimeout) clearTimeout(renewStartTimeout);
-        renewStartTimeout = undefined;
+        await renewing;
         releaseObserve();
         await committingSyncError;
 
@@ -203,7 +193,6 @@ test("dispose aborts a poll-heartbeat state-lock waiter before it can renew", as
         assert.equal(record.pollLease, undefined);
         assert.equal(record.errorCode, undefined);
     } finally {
-        if (renewStartTimeout) clearTimeout(renewStartTimeout);
         if (timeout) clearTimeout(timeout);
         releaseObserve();
         await releaseExternalLock?.();

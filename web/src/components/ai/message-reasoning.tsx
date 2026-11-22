@@ -1,5 +1,7 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { ChevronDown, Lightbulb } from "lucide-react";
 
 import { AIMessageMarkdown } from "@/components/ai/ai-message-markdown";
 
@@ -10,9 +12,10 @@ function LiveReasoningCount() {
         const timer = window.setInterval(() => setElapsedSeconds((Date.now() - startedAt) / 1000), 250);
         return () => window.clearInterval(timer);
     }, []);
-    return <span className="ml-0.5 font-mono text-[11px] tabular-nums opacity-80">{elapsedSeconds.toFixed(1)}s</span>;
+    return <span className="ml-0.5 font-mono text-[var(--fs-label)] tabular-nums opacity-80">{elapsedSeconds.toFixed(1)}s</span>;
 }
 export function MessageReasoning({ reasoning, isStreaming }: { reasoning: string; isStreaming: boolean }) {
+    const { t } = useInterfaceTranslation();
     const [open, setOpen] = useState(isStreaming);
     const [durationSeconds, setDurationSeconds] = useState<number>();
     const startedAtRef = useRef<number | undefined>(undefined);
@@ -39,12 +42,31 @@ export function MessageReasoning({ reasoning, isStreaming }: { reasoning: string
         return () => window.clearTimeout(timer);
     }, [durationSeconds, isStreaming, open]);
 
-    return <div className="mb-2 text-xs text-foreground/55">
-        <button type="button" className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-hover hover:text-foreground" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-            <Sparkles className="size-3.5" />
-            <span>{isStreaming ? <>正在思考<LiveReasoningCount /></> : durationSeconds ? <>已思考 <span className="font-mono tabular-nums">{durationSeconds}</span> 秒</> : "思考过程"}</span>
-            <ChevronDown className={`size-3.5 transition-transform${open ? " rotate-180" : ""}`} />
-        </button>
-        {open ? <div className="mt-2 rounded-md bg-surface-active p-3 text-foreground/70"><AIMessageMarkdown isStreaming={isStreaming}>{reasoning}</AIMessageMarkdown></div> : null}
-    </div>;
+    return (
+        <div className="mb-2 text-xs text-foreground/55">
+            <button type="button" className="inline-flex min-h-8 items-center gap-2 rounded-md px-2 transition-colors hover:bg-surface-hover hover:text-foreground" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+                <Lightbulb className="size-3.5" />
+                <span>
+                    {isStreaming ? (
+                        <>
+                            {t("agentUiAgentThinking")}
+                            <LiveReasoningCount />
+                        </>
+                    ) : durationSeconds ? (
+                        <>
+                            {t("sharedDialogsUi.thought")} <span className="font-mono tabular-nums">{durationSeconds}</span> {t("createUiSecondUnit")}
+                        </>
+                    ) : (
+                        t("aiUi.reasoningProcess" as InterfaceMessageKey)
+                    )}
+                </span>
+                <ChevronDown className={`size-3.5 transition-transform${open ? " rotate-180" : ""}`} />
+            </button>
+            {open ? (
+                <div className="mt-2 rounded-md bg-surface-active p-3 text-foreground/70">
+                    <AIMessageMarkdown isStreaming={isStreaming}>{reasoning}</AIMessageMarkdown>
+                </div>
+            ) : null}
+        </div>
+    );
 }

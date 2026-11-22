@@ -1,19 +1,24 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 type tableMigration struct {
@@ -42,6 +47,9 @@ func main() {
 	if err := verifySQLite(source); err != nil {
 		log.Fatalf("SQLite 完整性检查失败：%v", err)
 	}
+	if err := verifyPaymentExportCoverage(source); err != nil {
+		log.Fatalf("支付历史导出检查失败：%v", err)
+	}
 	if err := verifyMigrationCoverage(source); err != nil {
 		log.Fatalf("迁移表清单检查失败：%v", err)
 	}
@@ -50,17 +58,17 @@ func main() {
 
 	// PostgreSQL 的 DDL 参与事务；任一表复制或核对失败都会回滚整个新库结构。
 	if err := target.Transaction(func(tx *gorm.DB) error {
-		tableCount, err := publicTableCount(tx)
+		tableNames, err := publicTableNames(tx)
 		if err != nil {
 			return err
 		}
-		copyRows := tableCount == 0
+		copyRows := len(tableNames) == 0
 		if copyRows {
 			if err := database.MigrateSchema(tx); err != nil {
 				return fmt.Errorf("创建目标表结构：%w", err)
 			}
-		} else if tableCount != int64(len(migrations())) {
-			return fmt.Errorf("PostgreSQL public schema 已有 %d 张表，拒绝覆盖或补写", tableCount)
+		} else if err := validateTargetTableNames(tableNames); err != nil {
+			return err
 		}
 
 		total := 0
@@ -76,6 +84,9 @@ func main() {
 			log.Printf("全量迁移核对完成：%d 张表，%d 行", len(migrations()), total)
 		} else {
 			log.Printf("目标库已有完整迁移结果，未重复写入：%d 张表，%d 行", len(migrations()), total)
+		}
+		if err := database.ReconcilePrefixedIDSequences(tx); err != nil {
+			return fmt.Errorf("校准可读 ID 序列：%w", err)
 		}
 		return nil
 	}); err != nil {
@@ -94,10 +105,52 @@ func verifySQLite(db *gorm.DB) error {
 	return nil
 }
 
-func publicTableCount(db *gorm.DB) (int64, error) {
-	var count int64
-	err := db.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'").Scan(&count).Error
-	return count, err
+func publicTableNames(db *gorm.DB) ([]string, error) {
+	var names []string
+	err := db.Raw(`
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`).Scan(&names).Error
+	return names, err
+}
+
+// validateTargetTableNames compares the existing PostgreSQL schema against the
+// same business-table list used by Models() and migrations().
+// schema_migrations is created by database.MigrateSchema and is intentionally
+// not part of the row-copy list, so it is allowed as the only system table.
+func validateTargetTableNames(actual []string) error {
+	expected := make(map[string]struct{}, len(migrations()))
+	for _, migration := range migrations() {
+		expected[migration.name] = struct{}{}
+	}
+
+	actualSet := make(map[string]struct{}, len(actual))
+	for _, name := range actual {
+		actualSet[name] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for name := range expected {
+		if _, ok := actualSet[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	extra := make([]string, 0)
+	for name := range actualSet {
+		if name == "schema_migrations" {
+			continue
+		}
+		if _, ok := expected[name]; !ok {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) > 0 || len(extra) > 0 {
+		return fmt.Errorf("PostgreSQL public schema 与当前模型清单不一致，缺少表：%s，额外表：%s；拒绝覆盖或补写", strings.Join(missing, ", "), strings.Join(extra, ", "))
+	}
+	return nil
 }
 
 func migrateTable[T any](name string) tableMigration {
@@ -110,6 +163,9 @@ func migrateTable[T any](name string) tableMigration {
 			}
 			var sourceRows []T
 			if err := source.Order(primaryKey).Find(&sourceRows).Error; err != nil {
+				return 0, err
+			}
+			if err := validateExplicitStringLengths(source, name, sourceRows); err != nil {
 				return 0, err
 			}
 			if copyRows && len(sourceRows) > 0 {
@@ -130,15 +186,115 @@ func migrateTable[T any](name string) tableMigration {
 	}
 }
 
+// validateExplicitStringLengths catches values that SQLite accepts but
+// PostgreSQL would reject for a GORM size:N column. SQLite does not enforce
+// VARCHAR(N), so this check must happen before the first target insert.
+func validateExplicitStringLengths[T any](db *gorm.DB, tableName string, rows []T) error {
+	statement := &gorm.Statement{DB: db}
+	if err := statement.Parse(new(T)); err != nil {
+		return err
+	}
+	if statement.Schema == nil {
+		return fmt.Errorf("表 %s 缺少 GORM schema", tableName)
+	}
+
+	for rowIndex := range rows {
+		rowValue := reflect.ValueOf(rows[rowIndex])
+		key := primaryKeyValue(statement.Schema.PrimaryFields, rowValue)
+		for _, field := range statement.Schema.Fields {
+			limit, ok := explicitStringSize(field)
+			if !ok || field.Serializer != nil || !field.Creatable || !field.Readable {
+				continue
+			}
+			value, zero := field.ValueOf(context.Background(), rowValue)
+			if zero {
+				continue
+			}
+			text, ok := stringValue(value)
+			if !ok {
+				continue
+			}
+			actual := utf8.RuneCountInString(text)
+			if actual <= limit {
+				continue
+			}
+			return fmt.Errorf("表 %s 第 %d 行（主键 %s）列 %s 长度 %d，超过 size:%d", tableName, rowIndex+1, key, field.DBName, actual, limit)
+		}
+	}
+	return nil
+}
+
+func explicitStringSize(field *schema.Field) (int, bool) {
+	// This adapter keeps the validation logic independent from GORM's inferred
+	// default size (often 255). Only an explicit size:N tag is a PostgreSQL
+	// contract we can prove from the model.
+	sizeText, ok := field.TagSettings["SIZE"]
+	if !ok || strings.TrimSpace(sizeText) == "" {
+		return 0, false
+	}
+	if strings.EqualFold(strings.TrimSpace(field.TagSettings["TYPE"]), "text") {
+		return 0, false
+	}
+	if field.IndirectFieldType.Kind() != reflect.String {
+		return 0, false
+	}
+	limit, err := strconv.Atoi(sizeText)
+	if err != nil || limit < 0 {
+		return 0, false
+	}
+	return limit, true
+}
+
+func stringValue(value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	rv := reflect.ValueOf(value)
+	for rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return "", false
+		}
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.String {
+		return "", false
+	}
+	return rv.String(), true
+}
+
+func primaryKeyValue(fields []*schema.Field, rowValue reflect.Value) string {
+	if len(fields) == 0 {
+		return "<无主键>"
+	}
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		value, zero := field.ValueOf(context.Background(), rowValue)
+		if zero || value == nil {
+			parts = append(parts, field.DBName+"=<空>")
+			continue
+		}
+		if text, ok := stringValue(value); ok {
+			parts = append(parts, field.DBName+"="+text)
+			continue
+		}
+		parts = append(parts, field.DBName+"="+fmt.Sprint(value))
+	}
+	return strings.Join(parts, ",")
+}
+
 func primaryKeyColumn[T any](db *gorm.DB) (string, error) {
 	statement := &gorm.Statement{DB: db}
 	if err := statement.Parse(new(T)); err != nil {
 		return "", err
 	}
-	if len(statement.Schema.PrimaryFields) != 1 {
-		return "", fmt.Errorf("表 %s 必须有且只有一个主键", statement.Schema.Table)
+	if len(statement.Schema.PrimaryFields) == 0 {
+		return "", fmt.Errorf("表 %s 必须有主键", statement.Schema.Table)
 	}
-	return statement.Schema.PrimaryFields[0].DBName, nil
+	columns := make([]string, 0, len(statement.Schema.PrimaryFields))
+	for _, field := range statement.Schema.PrimaryFields {
+		columns = append(columns, field.DBName)
+	}
+	return strings.Join(columns, ", "), nil
 }
 
 var timeType = reflect.TypeOf(time.Time{})
@@ -187,6 +343,20 @@ func equivalent(left reflect.Value, right reflect.Value) bool {
 	}
 }
 
+func verifyPaymentExportCoverage(db *gorm.DB) error {
+	if !db.Migrator().HasTable("payment_orders") || !db.Migrator().HasColumn("payment_orders", "product_id") {
+		return nil
+	}
+	var count int64
+	if err := db.Table("payment_orders").Where("COALESCE(TRIM(product_id), '') <> ''").Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("SQLite 有 %d 笔混合格式支付历史；当前按模型导出不能保留旧 payment_orders 的全部字段，拒绝迁移。需要保留全部列的专用迁移方案", count)
+	}
+	return nil
+}
+
 func verifyMigrationCoverage(db *gorm.DB) error {
 	expected := make(map[string]struct{}, len(database.Models()))
 	for _, value := range database.Models() {
@@ -214,30 +384,69 @@ func verifyMigrationCoverage(db *gorm.DB) error {
 
 func migrations() []tableMigration {
 	return []tableMigration{
+		migrateTable[model.Tool]("tools"),
+		migrateTable[model.ToolFavorite]("tool_favorites"),
+		migrateTable[model.WorkbenchTool]("workbench_tools"),
+		migrateTable[model.WorkbenchPreset]("workbench_presets"),
+		migrateTable[model.Team]("teams"),
+		migrateTable[model.TeamMembership]("team_memberships"),
+		migrateTable[model.TeamInvitation]("team_invitations"),
+		migrateTable[model.CreditTransfer]("credit_transfers"),
+		migrateTable[model.UserGroup]("user_groups"),
+		migrateTable[model.UserGroupChannel]("user_group_channels"),
 		migrateTable[model.User]("users"),
+		migrateTable[model.UserAvatar]("user_avatars"),
+		migrateTable[model.LoginLog]("login_logs"),
+		migrateTable[model.UserFeedback]("user_feedbacks"),
+		migrateTable[model.CaseLike]("case_likes"),
 		migrateTable[model.AuthSession]("auth_sessions"),
 		migrateTable[model.UserIdentity]("user_identities"),
 		migrateTable[model.OAuthState]("o_auth_states"),
 		migrateTable[model.EmailVerificationCode]("email_verification_codes"),
+		migrateTable[model.EmailLog]("email_logs"),
+		migrateTable[model.UserNotificationSetting]("user_notification_settings"),
+		migrateTable[model.AuthVerification]("auth_verifications"),
+		migrateTable[model.NotificationQuota]("notification_quota"),
+		migrateTable[model.SMSChannel]("sms_channels"),
+		migrateTable[model.SMSRecord]("sms_records"),
+		migrateTable[model.ChannelWebsite]("channel_websites"),
 		migrateTable[model.ModelChannel]("model_channels"),
 		migrateTable[model.ChannelModel]("channel_models"),
 		migrateTable[model.ChannelModelPriceTier]("channel_model_price_tiers"),
+		migrateTable[model.ChannelCatalogSnapshot]("channel_catalog_snapshots"),
+		migrateTable[model.ChannelProtocolSelection]("channel_protocol_selections"),
 		migrateTable[model.IDSequence]("id_sequences"),
 		migrateTable[model.LogicalModel]("logical_models"),
 		migrateTable[model.LogicalModelRevision]("logical_model_revisions"),
 		migrateTable[model.LogicalModelRoute]("logical_model_routes"),
 		migrateTable[model.RouteAttempt]("route_attempts"),
 		migrateTable[model.ApiCallLog]("api_call_logs"),
+		migrateTable[model.SiteTrafficEvent]("site_traffic_events"),
+		migrateTable[model.MCPServerTemplate]("mcp_server_templates"),
+		migrateTable[model.MCPConnection]("mcp_connections"),
+		migrateTable[model.MCPConnectionGrant]("mcp_connection_grants"),
+		migrateTable[model.MCPToolExecution]("mcp_tool_executions"),
+		migrateTable[model.MCPStorageUsage]("mcp_storage_usages"),
 		migrateTable[model.ModelPricing]("model_pricings"),
 		migrateTable[model.CreditAccount]("credit_accounts"),
 		migrateTable[model.CreditLedgerEntry]("credit_ledger_entries"),
+		migrateTable[model.ReferralProfile]("referral_profiles"),
+		migrateTable[model.ReferralBinding]("referral_bindings"),
+		migrateTable[model.ReferralCommission]("referral_commissions"),
+		migrateTable[model.UserStorageGrant]("user_storage_grants"),
+		migrateTable[model.UserStorageState]("user_storage_states"),
 		migrateTable[model.BillingOrder]("billing_orders"),
 		migrateTable[model.TopupProduct]("topup_products"),
 		migrateTable[model.PaymentProviderConfig]("payment_provider_configs"),
-		migrateTable[model.PaymentOrder]("payment_orders"),
+		migrateTable[model.PaymentOrder]("payment_topup_orders"),
+		migrateTable[model.MembershipPlan]("membership_plans"),
+		migrateTable[model.MembershipSubscription]("membership_subscriptions"),
+		migrateTable[model.MembershipCreditLot]("membership_credit_lots"),
+		migrateTable[model.MembershipCreditAllocation]("membership_credit_allocations"),
 		migrateTable[model.PaymentNotification]("payment_notifications"),
 		migrateTable[model.PaymentReconciliationRun]("payment_reconciliation_runs"),
 		migrateTable[model.PaymentReconciliationItem]("payment_reconciliation_items"),
+		migrateTable[model.EPayPaymentOrder]("payment_orders"),
 		migrateTable[model.RedeemBatch]("redeem_batches"),
 		migrateTable[model.RedeemCode]("redeem_codes"),
 		migrateTable[model.AdminAuditEvent]("admin_audit_events"),
@@ -246,14 +455,25 @@ func migrations() []tableMigration {
 		migrateTable[model.PluginPlatformState]("plugin_platform_states"),
 		migrateTable[model.UserPluginState]("user_plugin_states"),
 		migrateTable[model.ArkPrivateAssetBinding]("ark_private_asset_bindings"),
+		migrateTable[model.ArkPortraitSession]("ark_portrait_sessions"),
+		migrateTable[model.ArkPortraitGroup]("ark_portrait_groups"),
+		migrateTable[model.ArkPortraitAsset]("ark_portrait_assets"),
+		migrateTable[model.ArkPortraitGroupGrant]("ark_portrait_group_grants"),
 		migrateTable[model.UserOSSSetting]("user_oss_settings"),
 		migrateTable[model.StorageLocation]("storage_locations"),
 		migrateTable[model.UserDailyUploadUsage]("user_daily_upload_usages"),
+		migrateTable[model.UploadReservation]("upload_reservations"),
 		migrateTable[model.Skill]("skills"),
+		migrateTable[model.Prompt]("prompts"),
+		migrateTable[model.UserPromptState]("user_prompt_states"),
+		migrateTable[model.SkillLibraryCategory]("skill_library_categories"),
 		migrateTable[model.SkillVersion]("skill_versions"),
 		migrateTable[model.SkillFile]("skill_files"),
 		migrateTable[model.UserSkillState]("user_skill_states"),
+		migrateTable[model.BuiltinSkillTombstone]("builtin_skill_tombstones"),
 		migrateTable[model.Resource]("resources"),
+		migrateTable[model.TeamAssetPublication]("team_asset_publications"),
+		migrateTable[model.ResourceOffloadJob]("resource_offload_jobs"),
 		migrateTable[model.ResourceDeletionJob]("resource_deletion_jobs"),
 		migrateTable[model.AnnouncementImageDraft]("announcement_image_drafts"),
 		migrateTable[model.Asset]("assets"),
@@ -266,7 +486,23 @@ func migrations() []tableMigration {
 		migrateTable[model.VoiceProfile]("voice_profiles"),
 		migrateTable[model.CharacterVoiceBinding]("character_voice_bindings"),
 		migrateTable[model.Project]("projects"),
+		migrateTable[model.DramaProduction]("drama_productions"),
+		migrateTable[model.DramaCast]("drama_casts"),
+		migrateTable[model.DramaEpisode]("drama_episodes"),
+		migrateTable[model.DramaShot]("drama_shots"),
+		migrateTable[model.DramaSegment]("drama_segments"),
+		migrateTable[model.DramaTake]("drama_takes"),
+		migrateTable[model.DramaJob]("drama_jobs"),
 		migrateTable[model.StyleProfile]("style_profiles"),
+		migrateTable[model.EcommerceProject]("ecommerce_projects"),
+		migrateTable[model.EcommerceRound]("ecommerce_rounds"),
+		migrateTable[model.EcommerceKnowledgeSource]("ecommerce_knowledge_sources"),
+		migrateTable[model.EcommerceKnowledgeEntry]("ecommerce_knowledge_entries"),
+		migrateTable[model.EcommerceCreativeRecommendation]("ecommerce_creative_recommendations"),
+		migrateTable[model.EcommerceAgentAnalysis]("ecommerce_agent_analyses"),
+		migrateTable[model.EcommerceAgentRun]("ecommerce_agent_runs"),
+		migrateTable[model.EcommerceAgentPage]("ecommerce_agent_pages"),
+		migrateTable[model.EcommerceAgentCanvasVersion]("ecommerce_agent_canvas_versions"),
 		migrateTable[model.ProjectUnit]("project_units"),
 		migrateTable[model.CanvasUnitLink]("canvas_unit_links"),
 		migrateTable[model.Shot]("shots"),
@@ -279,19 +515,45 @@ func migrations() []tableMigration {
 		migrateTable[model.WorkflowStepTask]("workflow_step_tasks"),
 		migrateTable[model.ProductionTaskLink]("production_task_links"),
 		migrateTable[model.CanvasProject]("canvas_projects"),
+		migrateTable[model.CanvasMutationReceipt]("canvas_mutation_receipts"),
+		migrateTable[model.CanvasEditLease]("canvas_edit_leases"),
+		migrateTable[model.CanvasSnapshot]("canvas_snapshots"),
+		migrateTable[model.CanvasSnapshotResource]("canvas_snapshot_resources"),
 		migrateTable[model.CanvasShare]("canvas_shares"),
+		migrateTable[model.CommunityWork]("community_works"),
+		migrateTable[model.CommunityWorkResource]("community_work_resources"),
+		migrateTable[model.CommunityWorkReview]("community_work_reviews"),
 		migrateTable[model.PromptTemplate]("prompt_templates"),
 		migrateTable[model.UserPromptCustomization]("user_prompt_customizations"),
 		migrateTable[model.Announcement]("announcements"),
 		migrateTable[model.UserAnnouncementRead]("user_announcement_reads"),
+		migrateTable[model.BannerAnnouncement]("banner_announcements"),
+		migrateTable[model.CreationRun]("creation_runs"),
+		migrateTable[model.CreationSubmission]("creation_submissions"),
+		migrateTable[model.CreationConversation]("creation_conversations"),
+		migrateTable[model.CreationConversationMessage]("creation_conversation_messages"),
+		migrateTable[model.CreationConversationResource]("creation_conversation_resources"),
 		migrateTable[model.Task]("tasks"),
+		migrateTable[model.InspirationFeedEntry]("inspiration_feed_entries"),
+		migrateTable[model.PoseLibrarySource]("pose_library_sources"),
+		migrateTable[model.PoseLibraryItem]("pose_library_items"),
+		migrateTable[model.CloudAgentExecution]("cloud_agent_executions"),
+		migrateTable[model.CloudAgentEventRecord]("cloud_agent_event_records"),
+		migrateTable[model.CloudAgentMessageRecord]("cloud_agent_message_records"),
+		migrateTable[model.CloudAgentCanvasMutation]("cloud_agent_canvas_mutations"),
+		migrateTable[model.CloudAgentResourceLease]("cloud_agent_resource_leases"),
+		migrateTable[model.CloudAgentPiSession]("cloud_agent_pi_sessions"),
+		migrateTable[model.CloudAgentGeminiCache]("cloud_agent_gemini_caches"),
+		migrateTable[model.AgentProfile]("agent_profiles"),
+		migrateTable[model.AgentLesson]("agent_lessons"),
+		migrateTable[model.AgentMemorySetting]("agent_memory_settings"),
+		migrateTable[model.AgentMemoryDocument]("agent_memory_documents"),
+		migrateTable[model.AgentMemoryDocumentRevision]("agent_memory_document_revisions"),
+		migrateTable[model.AgentMemoryProposal]("agent_memory_proposals"),
+		migrateTable[model.AgentMemoryRevision]("agent_memory_revisions"),
+		migrateTable[model.AgentStorageUsage]("agent_storage_usages"),
 		migrateTable[model.TaskTextDelta]("task_text_delta"),
-		migrateTable[model.Session]("sessions"),
-		migrateTable[model.Message]("messages"),
 		migrateTable[model.TaskLog]("task_logs"),
-		migrateTable[model.SessionFile]("session_files"),
 		migrateTable[model.Result]("results"),
-		migrateTable[model.ComfyBridge]("comfy_bridges"),
-		migrateTable[model.ComfyBridgeRequest]("comfy_bridge_requests"),
 	}
 }

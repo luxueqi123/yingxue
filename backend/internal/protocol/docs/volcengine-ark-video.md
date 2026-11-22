@@ -27,7 +27,15 @@ Content-Type: application/json
 - 视频：`{"type":"video_url","video_url":{"url":"..."},"role":"reference_video"}`
 - 音频：`{"type":"audio_url","audio_url":{"url":"..."},"role":"reference_audio"}`
 
-单次最多发送 9 张图片、3 个视频和 3 个音频。参考素材可以组合使用，但上游不支持纯音频或“文本 + 音频”；使用音频时必须同时提供至少一张参考图或一个参考视频。`generate_audio` 和 `watermark` 只在 true 时发送。
+当前适配器对 `doubao-seedance-2-5-` 模型允许最多 30 张图片、10 个视频和 10 个音频，其它模型上限为 9／3／3。非 2.5 模型使用音频时必须同时提供图片或视频；2.5 不应用这条组合限制。最终可用能力仍由具体上游模型决定。
+
+Seedance 2.0／2.5 的 `generate_audio` 显式发送布尔值，保留关闭声音的要求；其它模型仅在 true 时发送。`watermark` 当前仅在 true 时发送。图片的 `first_frame`／`last_frame` 角色保留，普通参考图使用 `reference_image`；输入 `2160p` 规范为上游 `4k`。
+
+## 可选联网搜索
+
+宿主参数 `providerOptions["volcengine-ark-video"].webSearch` 必须为布尔值。true 在 Seedance 2.0／2.5 上映射为 `tools: [{"type":"web_search"}]`；false 或未设置时不发送 tools。其它模型请求开启搜索、或传入字符串 `"true"` 都会在创建请求前报错，不静默忽略。
+
+查询结果中的 `usage.tool_usage.web_search` 保留真实次数，包括 0；请求开启搜索不等于模型实际进行了搜索。这是 Ark 协议合同，不能直接套到 NewAPI 的 `/v1/video/generations`。本地合同测试只证明请求构造和结果解析，不证明某个已配置渠道有权限或服务可用。
 
 ## 创建任务示例
 

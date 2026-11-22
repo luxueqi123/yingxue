@@ -1,6 +1,6 @@
 # OpenAI Responses API
 
-Responses API 是 OpenAI 当前统一的文本与工具调用接口，输入使用 `input`，可同时承载简单字符串、结构化消息和工具回合。宿主默认发送字符串提示词，并从同步响应的 `output_text` 或 `output[]` 中提取文本。
+Responses API 是 OpenAI 当前统一的文本与工具调用接口，输入使用 `input`，可同时承载简单字符串、结构化消息和工具回合。映雪默认发送字符串提示词，并从同步响应的 `output_text` 或 `output[]` 中提取文本。
 
 ## 接口、鉴权与请求模式
 
@@ -59,7 +59,7 @@ curl "{channel_base_url}/v1/responses" \
 
 ## 响应解析与限制
 
-解析器优先读取顶层 `output_text`；缺失时遍历 `output`，尝试读取 item 的 `text` 或 `content`，并保留 `usage`。当前实现没有完整执行 function call、computer use、file search 等输出 item，也不通过 `previous_response_id` 自动续接状态。需要这些能力时必须在 Agent 调用链中显式实现，不能只靠文档声称支持。
+解析器优先读取顶层 `output_text`；缺失时按顺序拼接 `output[]` 中 message 的 `content[]` 内 `output_text` 正文，保留文本片段间空格与 `usage`。宿主对已识别的 Responses 线格式共用这项归一，普通文本任务和声明式 Agent 均可读取原始 HTTP 响应，不依赖 SDK 补充顶层字段；状态、错误与工具调用仍由插件映射。推理摘要、拒绝信息和工具参数不会混入正文。工具的实际执行仍由 Agent 调用链处理，普通文本任务不会执行 function call、computer use 或 file search，也不会通过 `previous_response_id` 自动续接状态。
 
 流式响应由文本事件链路处理。上游拒绝、模型不支持、输入结构错误、输出 token 超限和工具参数校验失败均应作为失败返回。
 

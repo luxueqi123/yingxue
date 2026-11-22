@@ -28,6 +28,7 @@ type UserAssetFacetRow struct {
 func (r *Repository) UserAssetsPage(userID string, page int, pageSize int, filter UserAssetPageFilter) ([]model.Asset, int64, error) {
 	var assets []model.Asset
 	var total int64
+	// 角色卡是用户素材的一种，和图片、音频一起出现在素材库；列表与 facets 使用同一查询口径。
 	query := userAssetFilteredQuery(r.db.Model(&model.Asset{}).Where("user_id = ?", userID), filter, true)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -56,6 +57,7 @@ func (r *Repository) UserAssetFacets(userID string, status string) ([]UserAssetF
 }
 
 func userAssetFilteredQuery(query *gorm.DB, filter UserAssetPageFilter, includeSearch bool) *gorm.DB {
+	query = personalAssetLibraryQuery(query)
 	if value := strings.TrimSpace(filter.Kind); value != "" {
 		query = query.Where("kind = ?", value)
 	}
@@ -83,6 +85,31 @@ func userAssetFilteredQuery(query *gorm.DB, filter UserAssetPageFilter, includeS
 		}
 	}
 	return query
+}
+
+// Imported case references still resolve by ID for canvas/history, but are not
+// personal uploads. Apply the same boundary before pagination and facet counts.
+func personalAssetLibraryQuery(query *gorm.DB) *gorm.DB {
+	field := func(parts ...string) string {
+		var expression string
+		if query.Dialector.Name() == "postgres" {
+			expression = "jsonb_extract_path_text(CASE WHEN pg_input_is_valid(payload_json, 'jsonb') THEN payload_json::jsonb ELSE '{}'::jsonb END, '" + strings.Join(parts, "', '") + "')"
+		} else {
+			expression = "json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END, '$." + strings.Join(parts, ".") + "')"
+		}
+		return "COALESCE(" + expression + ", '')"
+	}
+	var references []string
+	var values []any
+	values = append(values, "case-import", "canvas-upload")
+	for _, content := range []string{field("data", "url"), field("data", "dataUrl"), field("coverUrl")} {
+		for _, prefix := range []string{"https://libtv-res.liblib.art/%", "http://libtv-res.liblib.art/%", "/production-library/case-media/%"} {
+			references = append(references, content+" LIKE ?")
+			values = append(values, prefix)
+		}
+	}
+	source := field("metadata", "source")
+	return query.Where("NOT ("+field("metadata", "taskId")+" = '' AND ("+source+" = ? OR ("+source+" = ? AND ("+strings.Join(references, " OR ")+"))))", values...)
 }
 
 func (r *Repository) AssetFolders(userID string) ([]model.AssetFolder, error) {

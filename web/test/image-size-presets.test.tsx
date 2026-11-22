@@ -1,15 +1,126 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ImageSizePicker } from "../src/components/image-size-picker";
+import { applyImageSizeSelection } from "../src/components/image-settings-panel";
 import { ImageSizePresetsEditor } from "../src/components/image-size-presets-editor";
 import { ModelCapabilityEditor } from "../src/components/model-capability-editor";
-import { defaultImageCapabilityConfig, normalizeModelCapabilityConfig } from "../src/lib/model-capabilities";
-import { IMAGE_RATIOS, IMAGE_RESOLUTIONS, imagePresetForRatio, imagePresetValue, imageQualityForTier, imageSizeConfigWithPresets, imageSizePresets, imageTierAvailable } from "../src/lib/image-size-presets";
+import { defaultImageCapabilityConfig, normalizeImageValue, normalizeModelCapabilityConfig } from "../src/lib/model-capabilities";
+import { IMAGE_RATIOS, IMAGE_RESOLUTIONS, imagePresetForRatio, imagePresetValue, imageQualityForSelection, imageQualityForTier, imageSizeConfigWithPresets, imageSizePresets, imageTierAvailable } from "../src/lib/image-size-presets";
+import { imageQualityLabel } from "../src/lib/image-quality";
 import { buildImageResolutionOptions } from "../src/lib/image-resolution-tiers";
 import { resolveImageRequestSize, validateImageSize } from "../src/services/api/image-validation";
 import { buildGeminiImageGenerationConfig } from "../src/lib/gemini-image";
 
 describe("统一图片分辨率与宽高比", () => {
+    test("画质公共映射覆盖创作与画布使用的 xhigh、max", () => {
+        expect(imageQualityLabel("xhigh")).toBe("超高");
+        expect(imageQualityLabel("MAX")).toBe("最高");
+    });
+
+    test("Seedream 5.0 shows 1.5K and retains the exact official 2K wide size", () => {
+        const profile = defaultImageCapabilityConfig("km-kemei-seedream", "doubao-seedream-5-0-pro-260628");
+        const intermediate = renderToStaticMarkup(<ImageSizePicker profile={profile} size="1536x1536" onChange={() => {}} />);
+        expect(intermediate).toMatch(/aria-pressed="true"[^>]*>1\.5K/);
+        expect(intermediate).toContain("1536 × 1536 px");
+        expect(intermediate).not.toMatch(/<button[^>]*>4K/);
+        const wide = renderToStaticMarkup(<ImageSizePicker profile={profile} size="2816x1584" onChange={() => {}} />);
+        expect(wide).toMatch(/aria-pressed="true"[^>]*>2K/);
+        expect(wide).toContain("2816 × 1584 px");
+        const reopened = normalizeModelCapabilityConfig({ version: 1, image: profile });
+        expect(reopened.image?.size.presets?.filter((p) => p.tier === "1.5k")).toHaveLength(8);
+        expect(resolveImageRequestSize(profile, "auto", "1536x1536")?.value).toBe("1536x1536");
+    });
+    test("管理员档位开关按已有比例启用，部分比例不显示为关闭", () => {
+        for (const model of ["midjourney-1k", "midjourney-2k"]) {
+            const profile = defaultImageCapabilityConfig("cangyuan-midjourney-v82", model);
+            const editor = renderToStaticMarkup(<ImageSizePresetsEditor profile={profile} onChange={() => {}} />);
+            const active = model === "midjourney-2k" ? "2k" : "1k";
+            for (const tier of IMAGE_RESOLUTIONS) {
+                const button = [...editor.matchAll(/<button\b[^>]*>/g)].map((match) => match[0]).find((tag) => tag.includes(`aria-label="启用 ${tier.toUpperCase()} 规格"`));
+                expect(button).toBeDefined();
+                expect(button).toContain(`aria-checked="${tier === active}"`);
+            }
+        }
+        const profile = defaultImageCapabilityConfig();
+        profile.size = imageSizeConfigWithPresets(profile, [imagePresetForRatio("2k", "16:9")]);
+        const editor = renderToStaticMarkup(<ImageSizePresetsEditor profile={profile} onChange={() => {}} />);
+        const button = [...editor.matchAll(/<button\b[^>]*>/g)].map((match) => match[0]).find((tag) => tag.includes('aria-label="启用 2K 规格"'));
+        expect(button).toContain('aria-checked="true"');
+    });
+
+    test("默认 Gemini 质量枚举不能把未启用的 1K 显示出来", () => {
+        const profile = defaultImageCapabilityConfig("gemini-image", "nano-banana-pro-4k");
+        profile.size = imageSizeConfigWithPresets(profile, IMAGE_RATIOS.map((ratio) => imagePresetForRatio("4k", ratio)));
+        expect(profile.quality.supported).toBe(true);
+        expect(imageTierAvailable(profile, "4k")).toBe(true);
+        expect(imageTierAvailable(profile, "1k")).toBe(false);
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="16:9" quality="high" onChange={() => {}} />);
+        expect(picker).toMatch(/aria-pressed="true"[^>]*>4K/);
+        expect(picker).not.toMatch(/<button[^>]*>1K/);
+    });
+
+    test("无质量参数的固定 4K 模型保留管理员档位，重开及自定义比例不回退 1K", () => {
+        const profile = defaultImageCapabilityConfig("gemini-image", "nano-banana-pro-4k");
+        profile.quality = { supported: false, values: [], default: "auto" };
+        profile.size = imageSizeConfigWithPresets(profile, IMAGE_RATIOS.map((ratio) => imagePresetForRatio("4k", ratio)));
+        expect(imageTierAvailable(profile, "4k")).toBe(true);
+        expect(imageTierAvailable(profile, "1k")).toBe(false);
+        expect(imageQualityForTier(profile, "4k")).toBeUndefined();
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="16:9" onChange={() => {}} />);
+        expect(picker).toMatch(/aria-pressed="true"[^>]*>4K/);
+        expect(picker).not.toMatch(/<button[^>]*>[12]K/);
+        expect(picker).toContain("3840 × 2160 px");
+        expect(normalizeImageValue(profile, { size: "16:9", quality: "auto" }).quality).toBe("4k");
+        expect(resolveImageRequestSize(profile, undefined, "16:9")).toEqual({ parameter: "aspect_ratio", value: "16:9" });
+        profile.size.allowCustom = true;
+        const custom = renderToStaticMarkup(<ImageSizePicker profile={profile} size="17:11" onChange={() => {}} />);
+        expect(custom).toMatch(/aria-pressed="true"[^>]*>4K/);
+        expect(custom).toContain("17:11 ·");
+    });
+
+    test("无质量参数时管理员启用的 1K 和 4K 都对用户开放，未启用的 2K 仍隐藏", () => {
+        const profile = defaultImageCapabilityConfig("gemini-image", "test");
+        profile.quality = { supported: false, values: [], default: "auto" };
+        profile.size = imageSizeConfigWithPresets(profile, [...IMAGE_RATIOS.flatMap((ratio) => [imagePresetForRatio("1k", ratio), imagePresetForRatio("4k", ratio)])]);
+        expect(imageTierAvailable(profile, "1k")).toBe(true);
+        expect(imageTierAvailable(profile, "4k")).toBe(true);
+        expect(imageTierAvailable(profile, "2k")).toBe(false);
+        expect(imageQualityForSelection(profile, "4k")).toBe("4k");
+        expect(normalizeImageValue(profile, { size: "16:9", quality: "4k" }).quality).toBe("4k");
+        expect(buildGeminiImageGenerationConfig("16:9", "4k").imageConfig).toEqual({ aspectRatio: "16:9", imageSize: "4K" });
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="16:9" onChange={() => {}} />);
+        expect(picker).toMatch(/<button[^>]*>1K/);
+        expect(picker).toMatch(/<button[^>]*>4K/);
+        expect(picker).not.toMatch(/<button[^>]*>2K/);
+        expect(picker).not.toContain("当前协议未配置独立分辨率");
+        const selected = renderToStaticMarkup(<ImageSizePicker profile={profile} size="16:9" quality="4k" onChange={() => {}} />);
+        expect(selected).toMatch(/aria-pressed="true"[^>]*>4K/);
+        expect(selected).not.toMatch(/aria-pressed="true"[^>]*>1K/);
+        expect(selected).toContain("3840 × 2160 px");
+        const editor = renderToStaticMarkup(<ImageSizePresetsEditor profile={profile} onChange={() => {}} />);
+        expect(editor).not.toContain("需先配置此档位对应的质量值，用户端才会开放。");
+    });
+
+    test("真实图片质量字段不被分辨率预设推断覆盖", () => {
+        const profile = defaultImageCapabilityConfig("gemini-image", "test");
+        profile.quality = { supported: true, values: ["auto", "low", "medium", "high"], default: "auto" };
+        profile.size = imageSizeConfigWithPresets(profile, [imagePresetForRatio("2k", "16:9"), imagePresetForRatio("4k", "16:9")]);
+        expect(normalizeImageValue(profile, { size: "16:9", quality: "auto" }).quality).toBe("auto");
+        expect(normalizeImageValue(profile, { size: "16:9", quality: "high" }).quality).toBe("high");
+    });
+
+    test("比例协议切换 4K 时同时提交尺寸和真实质量档位", () => {
+        const changes: Array<[string, string]> = [];
+        applyImageSizeSelection((key, value) => changes.push([key, value]), "16:9", "high");
+        expect(changes).toEqual([["size", "16:9"], ["quality", "high"]]);
+    });
+
+    test("独立分辨率模型换档时同时提交像素和分辨率", () => {
+        const changes: Array<[string, string]> = [];
+        applyImageSizeSelection((key, value) => changes.push([key, value]), "2048x1152", undefined, "1.5k");
+        expect(changes).toEqual([["size", "2048x1152"], ["imageResolution", "1.5k"]]);
+    });
+
     test("像素协议从旧比例配置切换 4K 后发送真实像素，不回退到 1K", () => {
         const profile = defaultImageCapabilityConfig();
         profile.size = { parameter: "size", values: ["16:9"], default: "16:9", allowCustom: true };
@@ -40,6 +151,17 @@ describe("统一图片分辨率与宽高比", () => {
         for (const ratio of ["0:9", "4:1", "1:4", "NaN:1", "1.5:1", "999999999:1"]) {
             expect(() => imagePresetForRatio("1k", ratio)).toThrow();
         }
+    });
+
+    test("固定比例编辑器包含 4:5 和 5:4 三档尺寸", () => {
+        expect(IMAGE_RATIOS).toContain("4:5");
+        expect(IMAGE_RATIOS).toContain("5:4");
+        expect(imagePresetForRatio("1k", "4:5").size).toBe("1024x1280");
+        expect(imagePresetForRatio("2k", "4:5").size).toBe("1792x2240");
+        expect(imagePresetForRatio("4k", "4:5").size).toBe("2560x3200");
+        expect(imagePresetForRatio("1k", "5:4").size).toBe("1280x1024");
+        expect(imagePresetForRatio("2k", "5:4").size).toBe("2240x1792");
+        expect(imagePresetForRatio("4k", "5:4").size).toBe("3200x2560");
     });
 
     test("管理员设置同步支持值、默认值，并保持精确尺寸", () => {
@@ -92,6 +214,8 @@ describe("统一图片分辨率与宽高比", () => {
         expect(picker).not.toMatch(/<button[^>]*>4K/);
         expect(picker).toContain("换算参考");
         profile.size.parameter = "none";
+        expect(renderToStaticMarkup(<ImageSizePicker profile={profile} size="auto" onChange={() => {}} />)).toContain("分辨率");
+        profile.resolution.supported = false;
         expect(renderToStaticMarkup(<ImageSizePicker profile={profile} size="auto" onChange={() => {}} />)).toBe("");
     });
 
@@ -139,6 +263,11 @@ describe("统一图片分辨率与宽高比", () => {
             expect(editor).toContain(`aria-label="${tier} 16:9"`);
         }
         expect(editor).toContain('aria-label="默认输出"');
+        expect(editor).not.toContain("全不选");
+        expect(editor).not.toContain("全选");
+        expect(editor).toContain('aria-label="启用 1K 规格"');
+        expect(editor).toContain('aria-label="启用 2K 规格"');
+        expect(editor).toContain('aria-label="启用 4K 规格"');
         const readOnly = renderToStaticMarkup(<ImageSizePresetsEditor profile={profile} disabled onChange={() => {}} />);
         const buttons = [...readOnly.matchAll(/<button\b[^>]*>/g)];
         expect(buttons.length).toBeGreaterThan(24);

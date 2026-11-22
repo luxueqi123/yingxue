@@ -1,0 +1,2595 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "item": {
+        "id": "native-storyboard-14370a2a04e2d31c070d8833",
+        "kind": "template",
+        "name": "悬疑-推理破案",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-14370a2a04e2d31c070d8833.webp"
+      },
+      "project": {
+        "id": "native-storyboard-14370a2a04e2d31c070d8833",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-14370a2a04e2d31c070d8833.json",
+        "sha256": "cbe4e9d65d4356462579d79356a487d636409230094e56acb1dcd96835c3da7b",
+        "nodeCount": 39,
+        "connectionCount": 216,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "14370a2a04e2d31c070d88337a12000a9ba181d87f485d5fb2e9b442742ed8ea",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-2d8d9acd2cab2f89d1db2a3e",
+        "kind": "template",
+        "name": "儿童-会飞的小企鹅",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-2d8d9acd2cab2f89d1db2a3e.webp"
+      },
+      "project": {
+        "id": "native-storyboard-2d8d9acd2cab2f89d1db2a3e",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-2d8d9acd2cab2f89d1db2a3e.json",
+        "sha256": "699f3b684efee7d7ef1a7f0d7f6bbd25e020ad31f962ba52641282e67e79b257",
+        "nodeCount": 29,
+        "connectionCount": 146,
+        "generationNodeCount": 20,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "2d8d9acd2cab2f89d1db2a3e475a2a909039fd3f9ce8ab7c144bb9cacb1582e5",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-2f45a5535f368861529772f6",
+        "kind": "template",
+        "name": "惊悚-精神病院",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-2f45a5535f368861529772f6.webp"
+      },
+      "project": {
+        "id": "native-storyboard-2f45a5535f368861529772f6",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-2f45a5535f368861529772f6.json",
+        "sha256": "368ca0371b091ea1662693936d64177dc2ad7b23bb59ce88640e1325a07513cd",
+        "nodeCount": 34,
+        "connectionCount": 181,
+        "generationNodeCount": 25,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "2f45a5535f368861529772f6d5651785dbc322a7a424083a490c7f6f6a329402",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-3a8b5448ed17433227e962ea",
+        "kind": "template",
+        "name": "古风武侠-雨夜女剑客",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-3a8b5448ed17433227e962ea.webp"
+      },
+      "project": {
+        "id": "native-storyboard-3a8b5448ed17433227e962ea",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-3a8b5448ed17433227e962ea.json",
+        "sha256": "d3238797e783e7438d72f05a93ba5faf302b6cb93df7703da255b7cf7adddc92",
+        "nodeCount": 36,
+        "connectionCount": 195,
+        "generationNodeCount": 27,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "3a8b5448ed17433227e962eae900f61c106115217cdebcbd272c81d0f758cc67",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-4cae4e012d59e1c3a37e7981",
+        "kind": "template",
+        "name": "商业-汽车广告",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-4cae4e012d59e1c3a37e7981.webp"
+      },
+      "project": {
+        "id": "native-storyboard-4cae4e012d59e1c3a37e7981",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-4cae4e012d59e1c3a37e7981.json",
+        "sha256": "26b45a9011fb91e24b4d6c3229788b3c76e3eceb4cc9dde16094c4b6d45d1cd5",
+        "nodeCount": 33,
+        "connectionCount": 174,
+        "generationNodeCount": 24,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "4cae4e012d59e1c3a37e798190544c9f545f342f14b2604079266704a695b574",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-52f1ea9c87ca6df623b77811",
+        "kind": "template",
+        "name": "都市-职场逆袭",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-52f1ea9c87ca6df623b77811.webp"
+      },
+      "project": {
+        "id": "native-storyboard-52f1ea9c87ca6df623b77811",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-52f1ea9c87ca6df623b77811.json",
+        "sha256": "05f3a321112e95c212a6e514c7dc111ed708411d5db73e87642b2dcc5f66e669",
+        "nodeCount": 33,
+        "connectionCount": 174,
+        "generationNodeCount": 24,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "52f1ea9c87ca6df623b7781119507c1138272a96b4bfec1e035d8fc9791994ea",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-5645092ff51c39f7e3afa7b8",
+        "kind": "template",
+        "name": "续写-武侠第二季",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-5645092ff51c39f7e3afa7b8.webp"
+      },
+      "project": {
+        "id": "native-storyboard-5645092ff51c39f7e3afa7b8",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-5645092ff51c39f7e3afa7b8.json",
+        "sha256": "1c9224b86f30f2551272c1fe55b24824a2fa4333901b02e124a17d9cfe49da5c",
+        "nodeCount": 38,
+        "connectionCount": 185,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "5645092ff51c39f7e3afa7b80db2faffe12d8e2a57ae096f2d20165d5b176316",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-61207ac134b55a9206129bf8",
+        "kind": "template",
+        "name": "历史-长城烽火",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-61207ac134b55a9206129bf8.webp"
+      },
+      "project": {
+        "id": "native-storyboard-61207ac134b55a9206129bf8",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-61207ac134b55a9206129bf8.json",
+        "sha256": "c6bdcab920a9581648bf46de991579da4f031d9e0a5b948c9a32119783b601a8",
+        "nodeCount": 35,
+        "connectionCount": 188,
+        "generationNodeCount": 26,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "61207ac134b55a9206129bf8b6bf44b92fdb04cc43ea9245b9eeab91c249e29c",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-61bead02cd6ec183b1b92cbc",
+        "kind": "template",
+        "name": "古装-宫廷权谋",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-61bead02cd6ec183b1b92cbc.webp"
+      },
+      "project": {
+        "id": "native-storyboard-61bead02cd6ec183b1b92cbc",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-61bead02cd6ec183b1b92cbc.json",
+        "sha256": "979828fdc49c9a24ef698e2d17752c25be92c682a5060c01a420865d57156510",
+        "nodeCount": 29,
+        "connectionCount": 146,
+        "generationNodeCount": 20,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "61bead02cd6ec183b1b92cbcb4864e3c81192b42709c3a72ea2cefdf4137c0ed",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-6e2ad765f2ca6e6e3817285f",
+        "kind": "template",
+        "name": "风光-川西高原",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-6e2ad765f2ca6e6e3817285f.webp"
+      },
+      "project": {
+        "id": "native-storyboard-6e2ad765f2ca6e6e3817285f",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-6e2ad765f2ca6e6e3817285f.json",
+        "sha256": "2ea6bf6e62641c3e9e6c7b5211dee054a97de80068742acb91a160481c9846b0",
+        "nodeCount": 33,
+        "connectionCount": 174,
+        "generationNodeCount": 24,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "6e2ad765f2ca6e6e3817285fabfe4872f54354aa3a15869924d88e82ecc0f75e",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-9f183578f2a1fe7cb96314c9",
+        "kind": "template",
+        "name": "治愈-金毛寻主",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-9f183578f2a1fe7cb96314c9.webp"
+      },
+      "project": {
+        "id": "native-storyboard-9f183578f2a1fe7cb96314c9",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-9f183578f2a1fe7cb96314c9.json",
+        "sha256": "fe769d64aa52f5eabe436e526bd5a1db872261c8aff939946bd9bbbfdec2623f",
+        "nodeCount": 34,
+        "connectionCount": 181,
+        "generationNodeCount": 25,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "9f183578f2a1fe7cb96314c9aea026eb07418df947413b06f9b91be255061ec4",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-a0d109208db4b85ec5eb7dcb",
+        "kind": "template",
+        "name": "MV-星海列车",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-a0d109208db4b85ec5eb7dcb.webp"
+      },
+      "project": {
+        "id": "native-storyboard-a0d109208db4b85ec5eb7dcb",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-a0d109208db4b85ec5eb7dcb.json",
+        "sha256": "c33874790356e9982cd6dc906c8b27b1344597ed2f61d1a0a6315da58d732df6",
+        "nodeCount": 39,
+        "connectionCount": 216,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "a0d109208db4b85ec5eb7dcb5f4e65182a3e66ce8ceb5a438d61f3a00c165fe5",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-a12d1dee73340112249465cf",
+        "kind": "template",
+        "name": "家庭-除夕团圆",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-a12d1dee73340112249465cf.webp"
+      },
+      "project": {
+        "id": "native-storyboard-a12d1dee73340112249465cf",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-a12d1dee73340112249465cf.json",
+        "sha256": "d0a5f50d1fe0f54a504e599478ab448af8eed9adfc71d482ec480dc755af523b",
+        "nodeCount": 35,
+        "connectionCount": 188,
+        "generationNodeCount": 26,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "a12d1dee73340112249465cf01bf226953400d73db554f5f8db1bb917de04ef3",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-cd94ecff48f7e131f19b274e",
+        "kind": "template",
+        "name": "末日废土-水源",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-cd94ecff48f7e131f19b274e.webp"
+      },
+      "project": {
+        "id": "native-storyboard-cd94ecff48f7e131f19b274e",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-cd94ecff48f7e131f19b274e.json",
+        "sha256": "98189ed69b735293c16b996cbb0105f60a18e92f5be1765b5f51e481c9707815",
+        "nodeCount": 34,
+        "connectionCount": 181,
+        "generationNodeCount": 25,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "cd94ecff48f7e131f19b274e3402d8a2b5c0e6d5b1e9082d6ec7311ecb9b5237",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-e02f3ae04a27069c1035fb0f",
+        "kind": "template",
+        "name": "都市-雨中共伞",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-e02f3ae04a27069c1035fb0f.webp"
+      },
+      "project": {
+        "id": "native-storyboard-e02f3ae04a27069c1035fb0f",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-e02f3ae04a27069c1035fb0f.json",
+        "sha256": "991418d2149c6ff4e2ba80afbb9f047ada913c8aa7d9cf72f9bbcd02697cbc0d",
+        "nodeCount": 39,
+        "connectionCount": 216,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "e02f3ae04a27069c1035fb0fab38fb773e831a32838536f6cd3458d7c2603c29",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-eb7823b4b2087fea9e5f3724",
+        "kind": "template",
+        "name": "仙侠-御剑青云",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-eb7823b4b2087fea9e5f3724.webp"
+      },
+      "project": {
+        "id": "native-storyboard-eb7823b4b2087fea9e5f3724",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-eb7823b4b2087fea9e5f3724.json",
+        "sha256": "6e0241767a21dbca1694b48001e070c93228790bc890c87d536aad388e8f315d",
+        "nodeCount": 34,
+        "connectionCount": 181,
+        "generationNodeCount": 25,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "eb7823b4b2087fea9e5f3724472c14700f0fa7a656ca82f747e8a36d55abe932",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-f17c28d67c12117b1578ddb2",
+        "kind": "template",
+        "name": "奇幻-狐妖茶馆",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-f17c28d67c12117b1578ddb2.webp"
+      },
+      "project": {
+        "id": "native-storyboard-f17c28d67c12117b1578ddb2",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-f17c28d67c12117b1578ddb2.json",
+        "sha256": "d2c61ce38d2f586e29f966289d5425b7a6a48cf31b8a4ae194a319278e7c9a83",
+        "nodeCount": 39,
+        "connectionCount": 216,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "f17c28d67c12117b1578ddb25911013307c2604e2ce59575afdbb80c78a32435",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-storyboard-f6f6eb72126a9d3233e6dafd",
+        "kind": "template",
+        "name": "治愈-深夜食堂",
+        "description": "保留剧本、角色、场景与逐镜头提示词的原生分镜模板。复制后可编辑分镜并制作新镜头，不包含已生成成片。",
+        "category": "drama",
+        "author": "映雪制作",
+        "source": "storyboard-samples",
+        "available": true,
+        "presentation": "storyboard-template",
+        "tags": [
+          "原生模板",
+          "分镜"
+        ],
+        "cover": "/production-library/editorial-covers/native-storyboard-f6f6eb72126a9d3233e6dafd.webp"
+      },
+      "project": {
+        "id": "native-storyboard-f6f6eb72126a9d3233e6dafd",
+        "snapshotPath": "/production-library/native-projects/native-storyboard-f6f6eb72126a9d3233e6dafd.json",
+        "sha256": "ae57d48f4f96b2ecc9d0aef4edb0b7bc161785ed24cde4ed9fa2fe9478af0f22",
+        "nodeCount": 39,
+        "connectionCount": 216,
+        "generationNodeCount": 30,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "storyboard-samples",
+        "sourceSha256": "f6f6eb72126a9d3233e6dafdf0cecb41f5b0cc96ca123d8da2a8f6f7bab89e85",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4i4j",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 2 · Outfit Shown",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4i4j/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4i4j/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4i4j",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4i4j.json",
+        "sha256": "efbe1dfc30738d6e26cf09c36fa874e399ea86335590bf888e162ef3959a5e98",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4i4j/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4i4j/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2400170,
+          "sha256": "7c8c83ae3d5dceccfdf3da2ea1fed43cb38480f5011eef6ef9841225046a5c11"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4i4j/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4i4j/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 170844,
+          "sha256": "9417a8ae3ae1eac811616838fe14bb6eafe58a1ed6ad6bc27d66e867951f3e13"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4lgk",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 1 · Body Contouring",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4lgk/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4lgk/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4lgk",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4lgk.json",
+        "sha256": "b5028acbe9a973cc27c4da7004ae60286b5b491ffc1b0cc277b33455e9b460c4",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4lgk/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4lgk/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2431973,
+          "sha256": "211d4e7ac62445851022729e9e10153af547e2a1682d8064f3d5c4e5c678dfc5"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4lgk/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4lgk/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 164622,
+          "sha256": "fa5f4ebb24503fc9636547efa4fe923256975a5b34015b9f5ca47e05ac49653e"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4osl",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 4 · Emotional Connection Close-up",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4osl/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4osl/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4osl",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4osl.json",
+        "sha256": "a416b093c66c4a6285932b8f0f9b9aa0e062567f06ed31ba02bfb48b7964b015",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4osl/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4osl/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 1616371,
+          "sha256": "be668346eccfa016fac89e445107bc9ca97e95907c28a443525a2cb70717b420"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4osl/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4osl/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 151884,
+          "sha256": "b0221c2316b603210b52d9ff8adbb12411c0a32ef23867cf859bff7c39bcd296"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4s5m",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 3 · Editorial glance",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4s5m/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4s5m/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4s5m",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4s5m.json",
+        "sha256": "e495c9da8c0658033d8d8bb0736cccba46a521eeacaeddffa9319fcc532cc71e",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4s5m/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4s5m/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 3371362,
+          "sha256": "dcfceb7ea33b4c49cd1ff13460060cb4a68f2def1713b278157737d5ef75735f"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4s5m/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4s5m/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 166686,
+          "sha256": "d5c297b482029b988143f4ab5ac8853c1093183fd0a6046e2db8fe3ba2a5dda0"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4vhn",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 6 · Model reaction",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4vhn/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4vhn/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4vhn",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4vhn.json",
+        "sha256": "25450e2aa7a37ff08803d8d6ad240a4b39aacddd9da37871d6d1bc4b86b3ea5e",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4vhn/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4vhn/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 1707233,
+          "sha256": "d22e4df0b654664a1202ed8c6c205fcac9434eda1eef4bfbe26b5c46706a23bd"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4vhn/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4vhn/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 158256,
+          "sha256": "907e4a528bd9b4df57e1fa1a95dbc1a6acf273c7f6bdeb5222e5c0be041f5e38"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy4yto",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 5 · Pain Point",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy4yto/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy4yto/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy4yto",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy4yto.json",
+        "sha256": "9616aa59ce53137491adb25d6856bc32164de81c42f69c0aa4866702dca2a0bd",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4yto/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4yto/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 3182278,
+          "sha256": "a5c7f8e3b31fac5a00b5b95f5c135e66e44bd84d2e2d1f5a333ec1197339e0f9"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy4yto/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy4yto/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 200104,
+          "sha256": "f1159e80095219159b0ace100a556f0bc3d400560f361f9dfd3b7e99915250d9"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy536p",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 8 · Commercial Beauty Portrait",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy536p/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy536p/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy536p",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy536p.json",
+        "sha256": "3732f546e10dab8dcc75dd6af56722a5a28dfac470cf9af3ee39a7e226821ba1",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy536p/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy536p/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2222917,
+          "sha256": "589aa435cd89d78e53e3a289352fbf3b183359a442fb699a21f0609bc88388f3"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy536p/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy536p/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 146462,
+          "sha256": "e2a60166c070ffe0cc1fc97bc5c714aae013cf7426a891fa1b691f28613e81fa"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy56iq",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 7 · Skin Efficacy Portrait",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy56iq/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy56iq/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy56iq",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy56iq.json",
+        "sha256": "1e4a13de6ab051fde973443794bcb3266ff86c3a2762b27b946311ae58085579",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy56iq/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy56iq/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 1772690,
+          "sha256": "7d3e8ccc2adddb7c7dc738abf7c3ee34cb34c519278b18640148180e33077d03"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy56iq/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy56iq/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 150324,
+          "sha256": "9e7760fec92894a7dd7548bcc5e688bd31e5227c6c1c3808f029330eda0c8a47"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy61m0",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 18 · Room Context Wide Shot",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy61m0/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy61m0/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy61m0",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy61m0.json",
+        "sha256": "ddc8e24c450b96cebec40ebe1c1ef35b58ca303db8681a3516d669cba27dc6e4",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy61m0/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy61m0/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4294523,
+          "sha256": "bb53cea798345b462995cb9ffe14e0a4a482e14e97d81d5ff9caa8232e114d58"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy61m0/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy61m0/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 375498,
+          "sha256": "243fd39a15f0943a2646493c6efd2d48cecc1a911f97b7d1e48998fc5cd7827b"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy64y1",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 17 · Special Effects Appear",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy64y1/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy64y1/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy64y1",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy64y1.json",
+        "sha256": "364d7d8d5e99ac5c367336b854032dff27b3499b6539ed4a6994b8d3a97bf790",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy64y1/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy64y1/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2629972,
+          "sha256": "d507b25542c734fadd6b6d97e4a878da3bc7d92bd25a3848b9cc48b9f44ae916"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy64y1/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy64y1/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 199912,
+          "sha256": "72530a69ada214ddbb512a3a6a4784d320a4ea40cd165026afefc8c469474010"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy68b2",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 20 · Creative Toy Narrative",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy68b2/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy68b2/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy68b2",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy68b2.json",
+        "sha256": "f35d1a68e3cfa59cdd4b88cd82c962a7b3ba83323119465f8d0188be3d8c1683",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy68b2/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy68b2/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4440285,
+          "sha256": "d1bb2c00cda43e2b253657a75a442cc2371c5e499fafc1f2cd85ad2f5fe44aed"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy68b2/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy68b2/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 375926,
+          "sha256": "d2dc5fdab89482e98e39c1e6fe47bd2f222c5f3a65fcd4276aec77378f2a3248"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6bn3",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 19 · Dynamic Appetite Shot",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6bn3/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6bn3/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6bn3",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6bn3.json",
+        "sha256": "e0f487d8fe0fcc5535baf9e068d06b9d5511036c12e7a385edf7980259d99a13",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6bn3/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6bn3/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4408239,
+          "sha256": "d4c4f8ee3827abf400301e2e3bbad8b1fb54c540c1c1ee77c266a0fc5c32aefe"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6bn3/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6bn3/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 419680,
+          "sha256": "c6f62d854bbb754598bb20bf74a512d05f2d6a5436192fcf95e2e83e31ce25d8"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6f04",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 22 · Relaxed Furniture Experience",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6f04/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6f04/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6f04",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6f04.json",
+        "sha256": "4f5ae4421492b7d787acd24f54381ecfd7d2e57f08aadfe2d793209b7e197f2a",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6f04/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6f04/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4392390,
+          "sha256": "e2fdc6380562c1634d877e7310248e38d26126e4cee8bb67f7ba986d39cd5aa7"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6f04/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6f04/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 396040,
+          "sha256": "7c01b01b9a0f2a28e9aa92f3bff7bbbaf11c0f8e85358ba8a0ec5d0c3d0bf249"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6ic5",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 21 · Immersive Home Scenario",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6ic5/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6ic5/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6ic5",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6ic5.json",
+        "sha256": "c6dea1a061b4e0d50c2cfdf45083b3c9fe305b0f38bd351fd01efc3998d386ea",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6ic5/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6ic5/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4393937,
+          "sha256": "696fdd5c0acb91c357df5376343ac4b1e42a68751a4210507c099c622e2aee92"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6ic5/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6ic5/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 286780,
+          "sha256": "9cf22c42e76eeba0f1c47c788daf86c5ae0e39ba26bc4d4958e40e0450b7ea0e"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6lo6",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 24 · Fashion Model Presentation",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6lo6/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6lo6/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6lo6",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6lo6.json",
+        "sha256": "2744867e5f2bfc7512ded361bead61599b447f84b9e7dfeef12980fb5f336cd7",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6lo6/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6lo6/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4548672,
+          "sha256": "03068e290ea4cf4224ce2432c7f572f272724e43eaa0c87b0ed515f17225200c"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6lo6/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6lo6/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 348566,
+          "sha256": "21d6d365e195d16b125412ff0443d60d446fe98d9b3b71bde327583f235cabd5"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6p17",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 23 · Lifestyle Use Interaction",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6p17/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6p17/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6p17",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6p17.json",
+        "sha256": "1a6a472456af0915b52309373ccd57df6a06882f5cbc1abd8b3630eaba4994af",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6p17/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6p17/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4220424,
+          "sha256": "8bfd583cfbc86b33c7e97585f98dd4baf36403d2a1d97774e41b978eca7fd015"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6p17/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6p17/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 310782,
+          "sha256": "78eb94f858aa05788925569dfe3cdabeb9927d890fedd73b2e190886f1c27e27"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6sd8",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 10 · Portability",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6sd8/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6sd8/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6sd8",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6sd8.json",
+        "sha256": "8a6290fd9ecbd2e9c2e7846516a5bd6faed9be6dce6a3faefbde062d4f1995d4",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6sd8/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6sd8/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2085796,
+          "sha256": "285623bd131d07612cb0c2baad4e627e197a8f7d52b78cf268febf0dd29730d1"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6sd8/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6sd8/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 178476,
+          "sha256": "2621aadbe3a8ae8a33b130f647cb477c9401163ad43e4e5ab561c7deb7b802a3"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy6vp9",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 9 · Styled Hand Interaction",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy6vp9/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy6vp9/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy6vp9",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy6vp9.json",
+        "sha256": "fac0785f60b5ad1ca607daf9cf002af31d68179f836105665be78e1e22452961",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6vp9/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6vp9/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 1884674,
+          "sha256": "a5d353910122d249f6ae4a21ddfbaebb41ca68d6eef35c65ccf9515c60cc3323"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy6vp9/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy6vp9/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 149932,
+          "sha256": "e8b506d49435eb9d89ee17a26521c43f46556a742aa5edf546797a74d9c3a8c2"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy702a",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 12 · Product Spot Light",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy702a/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy702a/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy702a",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy702a.json",
+        "sha256": "8ee3123b43d2ae8da7ca2c1d9942c80f23615e95f286143d64c23fb5ef7fed94",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy702a/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy702a/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 1733379,
+          "sha256": "72043dc9c93241aec7873665b7efe5ddf65c9d757c7483344a74b64bf561ad32"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy702a/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy702a/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 114256,
+          "sha256": "b9d4bad539fa93d80852621254e60f1e33062f8f5fe35840223450c8050aaaf5"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy73eb",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 11 · Travel Lifestyle",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy73eb/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy73eb/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy73eb",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy73eb.json",
+        "sha256": "a30ae964a4b9f78407c63c45f504db71c653ebb03319cd3b0ae750f48b820d2d",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy73eb/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy73eb/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2341090,
+          "sha256": "82cdddf0dfaaee216e30d683c78fccbd8ccc8e6e62738f6edc094c9c2f3e3fab"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy73eb/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy73eb/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 189346,
+          "sha256": "5c35d058ea4e4019a0c844fd41251b59bd70a0dc2cb851834dc514a6268f5d85"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy76qc",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 14 · Top-Down Flat Lay",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy76qc/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy76qc/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy76qc",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy76qc.json",
+        "sha256": "074c70a4fe3944f4aacc0813b96b29e09affdcb7e20f2164c83da2a3015bb8cf",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy76qc/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy76qc/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2395061,
+          "sha256": "6068a5c0bd727429bafd86920644230304240debc837b6f307789b179f501afa"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy76qc/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy76qc/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 175966,
+          "sha256": "41d199e780859fdf12017d534527763eba7f14146fbcf0d82188b5397278fbd9"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy7a3d",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 13 · Vertical Split Screen",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy7a3d/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy7a3d/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy7a3d",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy7a3d.json",
+        "sha256": "c3b192625ec34b28dc4bc1ab138d3d36f999510465ef1b02fb91f501871a557d",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7a3d/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7a3d/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2028234,
+          "sha256": "2c5fae5e543ba26cdf88dfc7cabcf2132952d152717bbf7980173a264a68577f"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7a3d/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7a3d/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 169632,
+          "sha256": "55e66b37566a5966cf8c759a295873cc16a3e5e839759431d39cb2b05f528bdd"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy7dfe",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 16 · Special Effects Exit",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy7dfe/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy7dfe/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy7dfe",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy7dfe.json",
+        "sha256": "35e7daeaa7a3ec851e937cbf764c71e32b076bdfff86ff7393c1e5a71f0ffa46",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7dfe/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7dfe/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2702343,
+          "sha256": "db27cb49564fca7931f629c708c919a61287069de821656a806bd58d740d3fa6"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7dfe/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7dfe/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 202362,
+          "sha256": "ef3c5aa5fadf39f429c3ad9a8ab8774baa456fe4e29c651a4df810d95ea9ed03"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy7grf",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 15 · Static Geometric Composition",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy7grf/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy7grf/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy7grf",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy7grf.json",
+        "sha256": "30ec5cd26afd8a2c26512189cbbb76f49980519a82f42feca63a8d2ba7756e12",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7grf/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7grf/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 2538621,
+          "sha256": "51549aa4e1b88879a8d11d877194add735676afe4e65113c8a5e53130cd9aeac"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy7grf/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy7grf/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 185048,
+          "sha256": "908ff17e1902e24c4d13365e7c429103964c5dce268b41c3873902a24d9111cb"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy8buo",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 26 · Quality Detail Focus",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy8buo/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy8buo/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy8buo",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy8buo.json",
+        "sha256": "d80f640ea7e23a7a308cb6b20abc88c2aca63d9180c9e2763bc63d74a7483815",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8buo/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8buo/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4280726,
+          "sha256": "260ac7cec65d999086d076abe2165fe81f46156b7ea10a9504f911ee3c6f7c24"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8buo/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8buo/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 591314,
+          "sha256": "d44c9d1c596a2f38f5bf7f44687361580d9734e50788c1a2749be8e76372f133"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy8f7p",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 25 · Detail Character Feature",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy8f7p/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy8f7p/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy8f7p",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy8f7p.json",
+        "sha256": "db601f79bdc4def78d25f71adefbb42d5138741ddd669064213fc3dccad2f29a",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8f7p/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8f7p/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4295260,
+          "sha256": "16ef2d8bb712c3ea024132d734191bb8858b005327bad113f45b69a63db5ad6c"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8f7p/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8f7p/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 374010,
+          "sha256": "996710eea103e341fd35035e29b0f84d7ed3b6500e575c7a991e5a33b5ec06dd"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy8ijq",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 28 · Bio-Ingredient Art",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy8ijq/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy8ijq/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy8ijq",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy8ijq.json",
+        "sha256": "69c426cfc8c5b25a394c1332abac6a6afed2cfa6dcf1b7d49b2343ca5b778b5b",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8ijq/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8ijq/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4411540,
+          "sha256": "0e249b29ba262015fc09abe89fbf3389522abbf67bfe8dad0442f04249188241"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8ijq/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8ijq/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 311040,
+          "sha256": "5afb86cdf419f6df3718fa29fcfb4c8725ebd7d5d4e17ed69568a3101d123805"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-lux-3fo4k4vy8lvr",
+        "kind": "case",
+        "name": "LuxReal 原生重建镜头 27 · Natural Ingredient Story",
+        "description": "以对应演示和首帧为参考，在映雪原生画布中编排提示词、生成新镜头；这是重建流程，不是原站执行记录。",
+        "category": "ecommerce",
+        "author": "映雪制作",
+        "source": "luxreal",
+        "available": true,
+        "presentation": "reconstruction",
+        "tags": [
+          "原生重建",
+          "运镜",
+          "参考演示"
+        ],
+        "localMedia": "/production-library/native-media/native-lux-3fo4k4vy8lvr/reference.mp4",
+        "localCover": "/production-library/native-media/native-lux-3fo4k4vy8lvr/first-frame.webp",
+        "mediaStatus": "local"
+      },
+      "project": {
+        "id": "native-lux-3fo4k4vy8lvr",
+        "snapshotPath": "/production-library/native-projects/native-lux-3fo4k4vy8lvr.json",
+        "sha256": "cbe39dcdb77a6229b780ee1e4b11edca0e15f1d1b3ee782bb93042f331040a14",
+        "nodeCount": 5,
+        "connectionCount": 6,
+        "generationNodeCount": 2,
+        "requiredInputs": []
+      },
+      "provenance": {
+        "sourcePack": "luxreal",
+        "sourceSha256": "97e2ddd1e7ecdc7eb0d0c16fc0f861c154560a4e7849b0bb1128863392a3e89e",
+        "reconstruction": true
+      },
+      "mediaAssets": [
+        {
+          "role": "reference-video",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8lvr/reference.mp4",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8lvr/reference.mp4",
+          "mimeType": "video/mp4",
+          "bytes": 4294864,
+          "sha256": "de3a10a13aa72162ba1f5c7fb709facf9f20be9c00bc0cfa00f6c8aa5da76507"
+        },
+        {
+          "role": "first-frame",
+          "path": "/production-library/native-media/native-lux-3fo4k4vy8lvr/first-frame.webp",
+          "sourcePack": "luxreal",
+          "sourcePath": "native-lux-3fo4k4vy8lvr/first-frame.webp",
+          "mimeType": "image/webp",
+          "bytes": 431696,
+          "sha256": "ec2469354a40cb004020c236383c9f9fdf60634b49a257a859ee142aa4fa5027"
+        }
+      ]
+    },
+    {
+      "item": {
+        "id": "native-matrix-character-face-turnaround-3view",
+        "kind": "template",
+        "name": "角色面部特写三视图",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-character-face-turnaround-3view.webp"
+      },
+      "project": {
+        "id": "native-matrix-character-face-turnaround-3view",
+        "snapshotPath": "/production-library/native-projects/native-matrix-character-face-turnaround-3view.json",
+        "sha256": "2002c2366261be83edc9aab31b11da106ea16067310921e3078ae5d9358d9726",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-character-setting-sheet",
+        "kind": "template",
+        "name": "角色概念设定集",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-character-setting-sheet.webp"
+      },
+      "project": {
+        "id": "native-matrix-character-setting-sheet",
+        "snapshotPath": "/production-library/native-projects/native-matrix-character-setting-sheet.json",
+        "sha256": "fb22b74e3271dd82daafe195e462f3dfc5eabf3ef9c216cf2ad82b60509e6309",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-character-turnaround-3view",
+        "kind": "template",
+        "name": "角色全身正侧背三视图",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-character-turnaround-3view.webp"
+      },
+      "project": {
+        "id": "native-matrix-character-turnaround-3view",
+        "snapshotPath": "/production-library/native-projects/native-matrix-character-turnaround-3view.json",
+        "sha256": "186edb8d047ed1eec517ac480db70c391db608d36d6794cf648c0832f75e3ab5",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-cinematic-lighting-correction",
+        "kind": "template",
+        "name": "电影级光影重打与质感校正",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-cinematic-lighting-correction.webp"
+      },
+      "project": {
+        "id": "native-matrix-cinematic-lighting-correction",
+        "snapshotPath": "/production-library/native-projects/native-matrix-cinematic-lighting-correction.json",
+        "sha256": "7db0eb633cf7bce5ea8edd35cc83b753acef354b24ba7ebb525ac2c0dec16478",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-frame-prediction-minus-5s",
+        "kind": "template",
+        "name": "反向物理时间溯源 (-5秒)",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-frame-prediction-minus-5s.webp"
+      },
+      "project": {
+        "id": "native-matrix-frame-prediction-minus-5s",
+        "snapshotPath": "/production-library/native-projects/native-matrix-frame-prediction-minus-5s.json",
+        "sha256": "528fe7dd3349dd3eeef2368c1f139a8dfc2546ef4c5a4e9a17f3d6d9338a0197",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-frame-prediction-plus-3s",
+        "kind": "template",
+        "name": "正向物理时间外推 (+3秒)",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-frame-prediction-plus-3s.webp"
+      },
+      "project": {
+        "id": "native-matrix-frame-prediction-plus-3s",
+        "snapshotPath": "/production-library/native-projects/native-matrix-frame-prediction-plus-3s.json",
+        "sha256": "4925eb8cb52d4536e8726181d48a5b13d9dd4c4144d7f7189cedb32fa47d25f7",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-multi-camera-grid-9",
+        "kind": "template",
+        "name": "3×3 九机位矩阵",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-multi-camera-grid-9.webp"
+      },
+      "project": {
+        "id": "native-matrix-multi-camera-grid-9",
+        "snapshotPath": "/production-library/native-projects/native-matrix-multi-camera-grid-9.json",
+        "sha256": "df280e2214870deb99bb03eca9ae80d9c9dce293b638430771947963a53786dc",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-product-setting-sheet",
+        "kind": "template",
+        "name": "产品设计稿与爆炸结构图",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-product-setting-sheet.webp"
+      },
+      "project": {
+        "id": "native-matrix-product-setting-sheet",
+        "snapshotPath": "/production-library/native-projects/native-matrix-product-setting-sheet.json",
+        "sha256": "8c0ba96ac57ee715802909b3ce55536c8e720940c5cd223e3f4ecbbfb67304e4",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-product-turnaround-3view",
+        "kind": "template",
+        "name": "产品/道具多角度三视图",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-product-turnaround-3view.webp"
+      },
+      "project": {
+        "id": "native-matrix-product-turnaround-3view",
+        "snapshotPath": "/production-library/native-projects/native-matrix-product-turnaround-3view.json",
+        "sha256": "adc25b8e6f88d383d49bceb3fd19827ceb6a2e4a60e1368589c7b916d56e6127",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-scene-setting-sheet",
+        "kind": "template",
+        "name": "场景/环境概念设定集",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-scene-setting-sheet.webp"
+      },
+      "project": {
+        "id": "native-matrix-scene-setting-sheet",
+        "snapshotPath": "/production-library/native-projects/native-matrix-scene-setting-sheet.json",
+        "sha256": "1de0c5fd2aa787b3b330acf98948071ea3a7f2919b53e8b81f7a0c5f377039a0",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-story-beat-grid-4",
+        "kind": "template",
+        "name": "2×2 四格连续动作/故事推进",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-story-beat-grid-4.webp"
+      },
+      "project": {
+        "id": "native-matrix-story-beat-grid-4",
+        "snapshotPath": "/production-library/native-projects/native-matrix-story-beat-grid-4.json",
+        "sha256": "ac14c2547786be0af2285d85db6dfbc7743a3b8fc75ca88c057175a5af306092",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    },
+    {
+      "item": {
+        "id": "native-matrix-storyboard-grid-25",
+        "kind": "template",
+        "name": "5×5 25格全景电影分镜表",
+        "description": "上传自己的原图，使用原生图片节点制作；保留模板的一致性与画幅要求，不借用其它作品素材。",
+        "category": "creative",
+        "author": "映雪制作",
+        "source": "matrix-prompts",
+        "available": true,
+        "presentation": "image-template",
+        "tags": [
+          "原生模板",
+          "图像编辑"
+        ],
+        "cover": "/production-library/editorial-covers/native-matrix-storyboard-grid-25.webp"
+      },
+      "project": {
+        "id": "native-matrix-storyboard-grid-25",
+        "snapshotPath": "/production-library/native-projects/native-matrix-storyboard-grid-25.json",
+        "sha256": "5bb1f143dcd84f1f9668f6387f74a288aaedc2e8184e289979658f2877002c4b",
+        "nodeCount": 3,
+        "connectionCount": 1,
+        "generationNodeCount": 1,
+        "requiredInputs": [
+          {
+            "kind": "image",
+            "count": 1
+          }
+        ]
+      },
+      "provenance": {
+        "sourcePack": "matrix-prompts",
+        "sourceSha256": "f68de06d35341ee3c4460e29e14ac41e43318653fa6b33c8b371d21c3e2edba2",
+        "reconstruction": true
+      },
+      "mediaAssets": []
+    }
+  ]
+}

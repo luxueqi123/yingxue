@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyCanvasSelectionStrategy, canvasSelectionHitsBounds, createCanvasSelectionBounds, createCanvasSelectionSpatialIndexCache, resolveCanvasPointerIntent, resolveCanvasSelectionHitMode, resolveCanvasSelectionPreviewDelta, resolveCanvasSelectionStrategy } from "@/lib/canvas/canvas-selection";
+import {
+    applyCanvasSelectionStrategy,
+    canvasSelectionHitsBounds,
+    createCanvasSelectionBounds,
+    createCanvasSelectionSpatialIndexCache,
+    offsetSelectedNodeBounds,
+    resolveCanvasPointerIntent,
+    resolveCanvasSelectionHitMode,
+    resolveCanvasSelectionPreviewDelta,
+    resolveCanvasSelectionStrategy,
+    selectedNodesWorldBounds,
+} from "@/lib/canvas/canvas-selection";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { moduleGroupSource } from "./helpers/module-group-source";
 
 describe("canvas selection semantics", () => {
     test("maps modifiers to replace, add, toggle, and subtract strategies", () => {
@@ -53,8 +65,10 @@ describe("canvas selection semantics", () => {
         expect(resolveCanvasPointerIntent(pointer)).toBe("select");
         expect(resolveCanvasPointerIntent({ ...pointer, spacePressed: true })).toBe("pan");
         expect(resolveCanvasPointerIntent({ ...pointer, button: 1 })).toBe("pan");
+        expect(resolveCanvasPointerIntent({ ...pointer, button: 2 })).toBe("pan");
         expect(resolveCanvasPointerIntent({ ...pointer, pointerType: "touch" })).toBe("pan");
         expect(resolveCanvasPointerIntent({ ...pointer, background: false })).toBe("ignore");
+        expect(resolveCanvasPointerIntent({ ...pointer, background: false, button: 2 })).toBe("ignore");
         expect(resolveCanvasPointerIntent({ ...pointer, background: false, spacePressed: true })).toBe("pan");
         expect(resolveCanvasPointerIntent({ ...pointer, background: false, button: 1 })).toBe("pan");
         expect(resolveCanvasPointerIntent({ ...pointer, boxSelectEnabled: false })).toBe("pan");
@@ -78,9 +92,9 @@ describe("canvas selection semantics", () => {
     });
 
     test("uses region selection as the page default and commits selection outside pointer-move", async () => {
-        const projectSource = await Bun.file(new URL("../src/pages/canvas/project.tsx", import.meta.url)).text();
+        const projectSource = await Promise.resolve(moduleGroupSource("pages/canvas/project.tsx"));
         const controllerSource = await Bun.file(new URL("../src/pages/canvas/use-canvas-selection-controller.ts", import.meta.url)).text();
-        const canvasSource = await Bun.file(new URL("../src/components/canvas/infinite-canvas.tsx", import.meta.url)).text();
+        const canvasSource = await Bun.file(new URL("../src/components/canvas/canvas-viewport.tsx", import.meta.url)).text();
         const graphicsSource = await Bun.file(new URL("../src/components/canvas/canvas-leafer-graphics-layer.tsx", import.meta.url)).text();
         const globalStyles = await Bun.file(new URL("../src/styles/globals.css", import.meta.url)).text();
 
@@ -91,9 +105,16 @@ describe("canvas selection semantics", () => {
         expect(canvasSource).toContain('"canvas-cursor-select"');
         expect(canvasSource).not.toContain('"cursor-crosshair"');
         expect(graphicsSource).toContain('fill: "transparent"');
-        expect(graphicsSource).toContain('dashPattern: [4 / scale, 4 / scale]');
+        expect(graphicsSource).toContain("dashPattern: [4 / scale, 4 / scale]");
         expect(globalStyles).toContain(".canvas-cursor-select");
         expect(globalStyles).not.toContain("filter='drop-shadow");
+    });
+
+    test("offsets multi-select bounds with the live drag preview", () => {
+        const bounds = selectedNodesWorldBounds([node("a", 100, 40), node("b", 300, 80)]);
+        expect(bounds).toEqual({ left: 100, top: 40, width: 360, height: 130, count: 2 });
+        expect(offsetSelectedNodeBounds(bounds!, { x: 40, y: -20 })).toEqual({ left: 140, top: 20, width: 360, height: 130, count: 2 });
+        expect(selectedNodesWorldBounds([node("a", 100, 40), node("b", 300, 80)], { x: 40, y: -20, nodeIds: new Set(["a", "b"]) })).toEqual({ left: 140, top: 20, width: 360, height: 130, count: 2 });
     });
 });
 

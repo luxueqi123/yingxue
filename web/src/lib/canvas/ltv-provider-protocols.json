@@ -1,0 +1,11 @@
+{
+  "ark-video-search": "volcengine-ark-video",
+  "ark-image-sequential": "volcengine-ark-image",
+  "gemini-image-search": "gemini-image",
+  "ltv-mask-edit": "openai-image",
+  "artdance25": "newapi-channel-2",
+  "wanx-prompt-extend": "dashscope-wan-video",
+  "happyhorse-reference-video": "dashscope-happyhorse-reference-video",
+  "happyhorse-text-video": "dashscope-happyhorse-text-video",
+  "happyhorse-first-frame-video": "dashscope-happyhorse-first-frame-video"
+}

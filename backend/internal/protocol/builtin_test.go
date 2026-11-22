@@ -12,12 +12,16 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 	registry := Builtins()
 	expected := []string{
 		"chat-completion", "openai-response", "claude-api",
-		"openai-image", "grok-image", "volcengine-ark-image", "volcengine-jimeng-image", "gemini-image",
 		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "agnes-video",
 	}
 	for _, id := range expected {
 		if _, ok := registry.Get(id); !ok {
 			t.Fatalf("missing builtin protocol %q", id)
+		}
+	}
+	for _, id := range []string{"openai-image", "grok-image", "volcengine-ark-image", "volcengine-jimeng-image", "openai-audio", "async-audio"} {
+		if _, ok := registry.Get(id); ok {
+			t.Fatalf("host builtin must not keep migrated protocol %q", id)
 		}
 	}
 	if _, ok := registry.Resolve("openai-video"); !ok {
@@ -120,11 +124,6 @@ func TestImageAndVideoAdaptersMapProviderShapes(t *testing.T) {
 		id, path, poll string
 		request        GenerationRequest
 	}{
-		{"openai-image", "/v1/images/generations", "", GenerationRequest{Model: "dall-e-test", Prompt: "a still", ImageCount: 2, AspectRatio: "1024x1024"}},
-		{"grok-image", "/v1/images/generations", "", GenerationRequest{Model: "grok-imagine-image", Prompt: "a still", AspectRatio: "16:9"}},
-		{"volcengine-ark-image", "/api/v3/images/generations", "", GenerationRequest{Model: "doubao-image", Prompt: "a still"}},
-		{"volcengine-jimeng-image", "/CVSync2AsyncSubmitTask", "/CVSync2AsyncGetResult", GenerationRequest{Model: "jimeng_t2i_v40", Prompt: "a still"}},
-		{"gemini-image", "/v1beta/models/gemini-image:generateContent", "", GenerationRequest{Model: "gemini-image", Prompt: "a still"}},
 		{"newapi", "/v1/videos", "/v1/videos/video-1", GenerationRequest{Model: "video-model", Prompt: "a clip", Duration: 6}},
 		{"newapi-channel-2", "/v1/video/generations", "/v1/video/generations/video-1", GenerationRequest{Model: "video-model", Prompt: "a clip", Duration: 6, AspectRatio: "16:9"}},
 		{"xai-video", "/v1/videos/generations", "/v1/videos/video-1", GenerationRequest{Model: "grok-video", Prompt: "a clip"}},
@@ -267,6 +266,19 @@ func TestAsyncVideoResponseNormalizesStatusAndResult(t *testing.T) {
 	}
 	if polled.Status != StatusSucceeded || polled.Result == nil || len(polled.Result.Videos) != 1 || polled.Result.Videos[0].URL != "https://cdn.example/video.mp4" {
 		t.Fatalf("polled = %#v", polled)
+	}
+}
+
+func TestNormalizeStatusCoversNovitaTerminalValues(t *testing.T) {
+	// Novita 统一任务查询返回 TASK_STATUS_* 枚举；漏掉 FAILED 会让失败任务一直轮询到超时。
+	for raw, want := range map[string]Status{
+		"TASK_STATUS_QUEUED": StatusPending, "TASK_STATUS_PROCESSING": StatusProcessing,
+		"TASK_STATUS_SUCCEED": StatusSucceeded, "TASK_STATUS_FAILED": StatusFailed,
+		" FAILURE ": StatusFailed, "Canceled": StatusCancelled,
+	} {
+		if got := NormalizeStatus(raw); got != want {
+			t.Errorf("NormalizeStatus(%q) = %q, want %q", raw, got, want)
+		}
 	}
 }
 
@@ -505,7 +517,7 @@ func TestEveryBuiltinHasDetailedDocumentation(t *testing.T) {
 }
 
 func TestImageResponseKeepsBase64AsDataURL(t *testing.T) {
-	adapter, _ := Builtins().Get("openai-image")
+	adapter := officialPackageAdapter(t, "openai-images.yingce-plugin", "openai-image")
 	result, err := adapter.ParseCreate(context.Background(), []byte(`{"data":[{"b64_json":"aW1hZ2U="}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -515,17 +527,85 @@ func TestImageResponseKeepsBase64AsDataURL(t *testing.T) {
 	}
 }
 
+func TestOpenAIImagesEditUsesMultipartFiles(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-images.yingce-plugin", "openai-image")
+	if adapter.Metadata().RequiresPublicMediaURLs {
+		t.Fatal("OpenAI Images must accept inline image data without a public storage URL")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:  "gpt-image-2.5",
+		Prompt: "combine both references",
+		Images: []MediaReference{
+			{DataURL: "data:image/png;base64,aW1hZ2U=", Role: "edit_source", Order: 0},
+			{URL: "https://cdn.example/reference-2.png", Role: "edit_source", Order: 1},
+			{URL: "https://cdn.example/mask.png", Role: "mask", Order: 2},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Path != "/v1/images/edits" || spec.ContentType != "multipart/form-data" {
+		t.Fatalf("edit request = path:%q contentType:%q", spec.Path, spec.ContentType)
+	}
+	var images, masks int
+	for _, file := range spec.Files {
+		switch file.Name {
+		case "image[]":
+			images++
+		case "mask":
+			masks++
+		default:
+			t.Fatalf("unexpected multipart file %q", file.Name)
+		}
+	}
+	if images != 2 || masks != 1 {
+		t.Fatalf("files = %#v, want 2 image[] and 1 mask", spec.Files)
+	}
+	body, ok := spec.Body.(map[string]any)
+	if !ok {
+		t.Fatalf("body = %#v", spec.Body)
+	}
+	for _, key := range []string{"images", "mask", "image", "response_format"} {
+		if _, exists := body[key]; exists {
+			t.Fatalf("multipart body must not carry %q: %#v", key, body[key])
+		}
+	}
+	if body["model"] != "gpt-image-2.5" || body["prompt"] != "combine both references" {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestOpenAIImagesGenerationStaysJSONWithoutReferences(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-images.yingce-plugin", "openai-image")
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "gpt-image-2.5", Prompt: "a red apple"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Path != "/v1/images/generations" || spec.ContentType != "application/json" || len(spec.Files) != 0 {
+		t.Fatalf("generation request = path:%q contentType:%q files:%#v", spec.Path, spec.ContentType, spec.Files)
+	}
+}
+
 func TestAsyncMediaPollKeepsResultKind(t *testing.T) {
 	cases := []struct {
-		id, payload, want string
+		packageName, id, payload, want string
 	}{
-		{"volcengine-jimeng-image", `{"data":{"status":"completed","images":["https://cdn.example/image.png"]}}`, "image"},
-		{"async-audio", `{"task":{"id":"audio-1","status":"completed","audio_url":"https://cdn.example/audio.mp3"}}`, "audio"},
-		{"minimax-video", `{"task":{"id":"video-1","status":"succeeded","content":{"url":"https://cdn.example/video.mp4"}}}`, "video"},
+		{"volcengine-jimeng-image.yingce-plugin", "volcengine-jimeng-image", `{"data":{"status":"completed","image_urls":["https://cdn.example/image.png"]}}`, "image"},
+		{"async-audio.yingce-plugin", "async-audio", `{"id":"audio-1","status":"completed","audio_url":"https://cdn.example/audio.mp3"}`, "audio"},
+		{"", "minimax-video", `{"task":{"id":"video-1","status":"succeeded","content":{"url":"https://cdn.example/video.mp4"}}}`, "video"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
-			adapter, _ := Builtins().Get(tc.id)
+			var adapter Adapter
+			var ok bool
+			if tc.packageName != "" {
+				adapter = officialPackageAdapter(t, tc.packageName, tc.id)
+			} else {
+				adapter, ok = Builtins().Get(tc.id)
+				if !ok {
+					t.Fatal("adapter missing")
+				}
+			}
 			result, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: "fallback"}, []byte(tc.payload))
 			if err != nil {
 				t.Fatal(err)
@@ -577,5 +657,48 @@ func TestGeminiVeoParsesLongRunningOperation(t *testing.T) {
 func TestAsyncMediaPollRejectsUnsupportedCapability(t *testing.T) {
 	if _, err := parseAsyncMediaPoll(PollContext{TaskID: "task-1"}, map[string]any{"status": "completed"}, CapabilityText); err == nil {
 		t.Fatal("text capability was accepted by async media parser")
+	}
+}
+
+func TestOpenAIImagesEditUsesMultipartImageReferences(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-images.yingce-plugin", "openai-image")
+	if adapter.Metadata().RequiresPublicMediaURLs {
+		t.Fatal("multipart edits must permit authorized local media bytes")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:  "gpt-image-2.5",
+		Prompt: "combine both references",
+		Images: []MediaReference{
+			{URL: "https://cdn.example/reference-2.png", Role: "edit_source", Order: 1},
+			{URL: "https://cdn.example/mask.png", Role: "mask", Order: 2},
+			{URL: "https://cdn.example/reference-1.png", Role: "edit_source", Order: 0},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Path != "/v1/images/edits" || spec.ContentType != "multipart/form-data" || len(spec.Files) != 3 {
+		t.Fatalf("edit request = path:%q contentType:%q files:%#v", spec.Path, spec.ContentType, spec.Files)
+	}
+	body, ok := spec.Body.(map[string]any)
+	if !ok {
+		t.Fatalf("body = %#v", spec.Body)
+	}
+	for index, want := range []string{"https://cdn.example/reference-1.png", "https://cdn.example/reference-2.png"} {
+		part := spec.Files[index]
+		if part.Name != "image[]" || part.Reference.URL != want {
+			t.Fatalf("files[%d] = %#v, want image[] %q", index, part, want)
+		}
+	}
+	if mask := spec.Files[2]; mask.Name != "mask" || mask.Reference.URL != "https://cdn.example/mask.png" {
+		t.Fatalf("mask = %#v", mask)
+	}
+	for _, key := range []string{"image", "images", "mask"} {
+		if _, exists := body[key]; exists {
+			t.Fatalf("media must be file parts, not body %s", key)
+		}
+	}
+	if _, exists := body["response_format"]; exists {
+		t.Fatalf("response_format should not be sent by default: %#v", body["response_format"])
 	}
 }

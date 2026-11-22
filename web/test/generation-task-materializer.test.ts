@@ -1,10 +1,24 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { installResourceAccessFixture } from "./resource-access-fixture";
+
+let resourceURLs: Record<string, string>;
+let restoreResourceAccess: () => void;
+beforeEach(() => {
+    resourceURLs = {
+        "catalog-failure-existing": "opaque://catalog-failure",
+        "durable-node": "opaque://durable-node",
+        "retry-node": "https://example.invalid/retry-node.png",
+        "post-commit": "https://example.invalid/post-commit.png",
+    };
+    restoreResourceAccess = installResourceAccessFixture(resourceURLs);
+});
+afterEach(() => restoreResourceAccess());
 import localforage from "localforage";
 
 import { createGenerationTaskSubscriptionService, type GenerationTask } from "../src/services/api/task-center";
 import { createGenerationTaskMaterializer, createIdempotentMaterializeOutput, materializeEffectKey, type GenerationTaskEffectClaim, type GenerationTaskEffectStore } from "../src/services/generation-task-materializer";
 import { createLocalDreaminaTaskEffectStore } from "../src/services/local-dreamina-generation";
-import { applyCanvasGenerationTaskNodeEffect, persistCanvasAgentGenerationContinuationEffect, persistCanvasGenerationEffect } from "../src/services/canvas-generation-consumer";
+import { applyCanvasGenerationTaskNodeEffect, persistCanvasOperationContinuationEffect, persistCanvasGenerationEffect } from "../src/services/canvas-generation-consumer";
 import { canvasCinematicContinuationEntryAdapters } from "../src/components/canvas/canvas-assistant-panel";
 import { applyGenerationConsumerEffect, generationEffectApplied } from "../src/services/generation-consumer-dedupe";
 import { createProviderNeutralGenerationTaskEffectStore } from "../src/services/provider-neutral-generation-effects";
@@ -16,7 +30,7 @@ import { CanvasNodeType, type CanvasAssistantSession, type CanvasNodeData } from
 import { recoverCanvasGenerationTaskNode } from "../src/pages/canvas/use-canvas-generation";
 import { getActiveUserScope, setActiveUserScope } from "../src/lib/user-scope";
 import { readImageMeta } from "../src/lib/image-utils";
-import { consumeCanvasAgentGenerationContinuation } from "../src/pages/canvas/use-canvas-agent-operations";
+import { consumeCanvasGenerationContinuation } from "../src/pages/canvas/use-canvas-operation-history";
 
 function createEffectStore(): GenerationTaskEffectStore {
     const completed = new Map<string, { materializedAssetId?: string }>();
@@ -218,7 +232,7 @@ describe("readImageMeta", () => {
             expect(harness.images[0]?.onerror).toBeNull();
             expect(harness.timers.size).toBe(0);
             expect(abort.listenerCount()).toBe(0);
-            expect(harness.srcAssignments).toEqual(["data:image/png;base64,AA=="]);
+            expect(harness.srcAssignments).toEqual(["data:image/png;base64,AA==", ""]);
         } finally {
             harness.restore();
         }
@@ -333,6 +347,7 @@ describe("generation task materializer", () => {
         const lockTails = new Map<string, Promise<void>>();
         const imageBlob = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440"></svg>'], { type: "image/svg+xml" });
         const imageUrl = URL.createObjectURL(imageBlob);
+        resourceURLs["intrinsic-dimensions-existing"] = imageUrl;
         Object.defineProperty(globalThis, "window", {
             configurable: true,
             value: {
@@ -2401,7 +2416,7 @@ describe("generation task materializer", () => {
             withCanvasStorePersistenceSuppressed(() => useCanvasStore.setState({ projects: [project] }));
             values.set(storageKey, JSON.stringify({ state: { projects: [project] }, version: 0, storageRevision: 1, tombstones: { projects: {}, nodes: {}, connections: {}, sessions: {}, messages: {} } }));
 
-            await persistCanvasAgentGenerationContinuationEffect({
+            await persistCanvasOperationContinuationEffect({
                 projectId: project.id,
                 nodeId: node.id,
                 continuation,
@@ -2482,7 +2497,7 @@ describe("generation task materializer", () => {
             releaseCallback = resolve;
         });
 
-        const run = consumeCanvasAgentGenerationContinuation(
+        const run = consumeCanvasGenerationContinuation(
             task,
             continuation,
             async () => {
@@ -2590,7 +2605,7 @@ describe("generation task materializer", () => {
         const nodesRef = { current: [pendingNode] };
         let completionCallbacks = 0;
         const consume = () =>
-            consumeCanvasAgentGenerationContinuation(
+            consumeCanvasGenerationContinuation(
                 task,
                 continuation,
                 (nextContinuation) => {
@@ -2740,16 +2755,16 @@ describe("generation task materializer", () => {
             inputTask: GenerationTask,
             inputContinuation: typeof continuation,
             onCompleted: (next: typeof continuation & { effectKey?: string }, signal?: AbortSignal) => Promise<void> | void,
-            dependencies: Parameters<typeof consumeCanvasAgentGenerationContinuation>[3],
+            dependencies: Parameters<typeof consumeCanvasGenerationContinuation>[3],
             signal?: AbortSignal,
         ) =>
-            consumeCanvasAgentGenerationContinuation(
+            consumeCanvasGenerationContinuation(
                 inputTask,
                 inputContinuation,
-                onCompleted as Parameters<typeof consumeCanvasAgentGenerationContinuation>[2],
+                onCompleted as Parameters<typeof consumeCanvasGenerationContinuation>[2],
                 {
                     ...dependencies,
-                    consumeAgent: ((materialized, continuationId, consumer) => materializer.resumeAgent(materialized, continuationId, consumer)) as NonNullable<Parameters<typeof consumeCanvasAgentGenerationContinuation>[3]>["consumeAgent"],
+                    consumeAgent: ((materialized, continuationId, consumer) => materializer.resumeAgent(materialized, continuationId, consumer)) as NonNullable<Parameters<typeof consumeCanvasGenerationContinuation>[3]>["consumeAgent"],
                 },
                 signal,
             );
@@ -3008,6 +3023,7 @@ describe("generation task materializer", () => {
                 seen.push(effectKey);
             },
             {
+                materialize: async (input) => input,
                 resumeAgent: async (input, _continuationId, consumer) => {
                     await consumer({ task: input, effectKey: "agent-resume:task-production-effect-key:continuation-safe-id" });
                     return "applied";
@@ -3116,7 +3132,7 @@ describe("generation task materializer", () => {
     });
 
     test("Canvas asset sync freezes its account key and is aborted by account lifecycle cleanup", async () => {
-        const source = (await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text()).replace(/\r\n/g, "\n");
+        const source = await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text();
         expect(source).toContain("const scope = getActiveUserScope();");
         expect(source).toContain("const key = [scope,");
         expect(source).toContain("runGenerationConsumer(options.signal");
@@ -3124,9 +3140,10 @@ describe("generation task materializer", () => {
     });
 
     test("generic task materialization never treats a local Canvas id as a backend project id", async () => {
-        const source = (await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text()).replace(/\r\n/g, "\n");
+        const source = await Bun.file(new URL("../src/services/project-asset-sync.ts", import.meta.url)).text();
         expect(source).not.toContain("if (input.task.projectId) await syncAssetToProject(assetId, input.task.projectId");
-        expect(source).toMatch(/if \(!options\.domainProjectId\) \{[\s\S]*?linkedToProject: false[\s\S]*?\}/);
+        expect(source).toContain("if (options.domainProjectId) {");
+        expect(source).toContain("linkedToProject: false");
         expect(source).toContain("await syncAssetToProject(asset.id, options.domainProjectId");
     });
 

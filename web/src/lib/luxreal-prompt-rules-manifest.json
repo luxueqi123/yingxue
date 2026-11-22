@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "source": {
+    "sourcePack": "LuxReal完整原版资产金矿",
+    "sourceFile": "16_登录态深度数据/01_提示词模板库_原始JSON.json",
+    "sha256": "03b5f47877b67f67f7644c3c2b0bd9946aa1fff13e9f128a72dcfe2da4f11be0",
+    "total": 29
+  },
+  "includedCount": 23,
+  "excludedCount": 6,
+  "groups": [
+    {
+      "id": "pl-409bb495ca7f5265088e4ef7015f07b2",
+      "slug": "storyboard-decomposition",
+      "name": "LuxReal 分镜细化规则",
+      "description": "将剧本叙事、动作和对话拆成可审核的分镜细节；保留原始规则，映射到映雪文本/分镜节点。",
+      "chain": "text-authoring",
+      "tag": "drama",
+      "templateCount": 5,
+      "templateIds": [
+        "3FO4K4VV2BIH",
+        "3FO4K4VYBAIK",
+        "3FO4K4VYASSF",
+        "3FO4K4VYB3TI",
+        "3FO4K4VYB0HH"
+      ],
+      "file": "luxreal-prompt-rules/storyboard-decomposition.json",
+      "sha256": "399a438adc28d92cd49f9f0678b229994da479790b2f73883ea9ee2353eb53d8"
+    },
+    {
+      "id": "pl-d90c7bc80c917f6a6eb8465204f7a288",
+      "slug": "shot-orchestration",
+      "name": "LuxReal 镜头编排规则",
+      "description": "按镜头时长、连续性与独立性编排可编辑分镜，不绑定具体视频模型。",
+      "chain": "text-authoring",
+      "tag": "drama",
+      "templateCount": 3,
+      "templateIds": [
+        "3FO4K4VYAPGE",
+        "3FO4K4VYAM4D",
+        "3FO4K4VYAW5G"
+      ],
+      "file": "luxreal-prompt-rules/shot-orchestration.json",
+      "sha256": "85640f533c5d6aca7a47abee14bccfb29a29c2dbfc11561ff4c0c9e325680835"
+    },
+    {
+      "id": "pl-36b514e002a8b8e9ab6789e1663642a8",
+      "slug": "video-polish",
+      "name": "LuxReal 视频提示词规则",
+      "description": "按慢节奏、高能或通用叙事目标润色视频镜头提示词；执行时使用映雪当前视频节点合同。",
+      "chain": "vision-authoring",
+      "tag": "drama",
+      "templateCount": 3,
+      "templateIds": [
+        "3FO4K4VYBR8P",
+        "3FO4K4VYC29S",
+        "3FO4K4VYBXWR"
+      ],
+      "file": "luxreal-prompt-rules/video-polish.json",
+      "sha256": "1d66fc9951fe6db1b730ab46fe00dadce53e77d42d5dba66cecba70d98fd99de"
+    },
+    {
+      "id": "pl-ffd7e6b719d2bef9d21a49473e31d6ea",
+      "slug": "image-composition",
+      "name": "LuxReal 图像构图规则",
+      "description": "保留角色、场景与道具设定图的构图和一致性规则，映射到当前图片节点。",
+      "chain": "vision-authoring",
+      "tag": "creative",
+      "templateCount": 7,
+      "templateIds": [
+        "3FO4K4VWOCOJ",
+        "3FO4K4VWO9CI",
+        "3FO4K4VWOJDL",
+        "3FO4K4VPF56I",
+        "3FO4K4VPB83C",
+        "3FO4K4VPEXHG",
+        "3FO4K4VWO2NG"
+      ],
+      "file": "luxreal-prompt-rules/image-composition.json",
+      "sha256": "06a1d4d51b7aa1040fb67068e986813b7bfda29de86a6b0859a2959386882784"
+    },
+    {
+      "id": "pl-885fe8a95116a9c0dae0518a39704673",
+      "slug": "image-prompt-polish",
+      "name": "LuxReal 图像提示词润色规则",
+      "description": "将通用、电影分镜、摄影写实、艺术创作和设计表达需求整理为可执行图片提示词。",
+      "chain": "vision-authoring",
+      "tag": "creative",
+      "templateCount": 5,
+      "templateIds": [
+        "3FO4K4VNB0HC",
+        "3FO4K4VNB3TD",
+        "3FO4K4VNASSA",
+        "3FO4K4VNAW5B",
+        "3FO4K4VNAM48"
+      ],
+      "file": "luxreal-prompt-rules/image-prompt-polish.json",
+      "sha256": "588ab8f7361f47986e1c1b605759a7fb1903777f5e49bbc89cf675465f4beaf2"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "3FO4K4VN8BUJ",
+      "name": "Seedance2.5通用skill（beta）",
+      "templateType": "BEAT_DETAIL_EXPAND",
+      "reason": "模型专用：Seedance 2.5 beta"
+    },
+    {
+      "id": "3FO4K4VNPFDN",
+      "name": "剧情连贯编排（Seedance 2.5）",
+      "templateType": "BEAT_CLIP_GROUP_TO_SHOT",
+      "reason": "模型专用：Seedance 2.5"
+    },
+    {
+      "id": "3FO4K4VO9MGE",
+      "name": "MiniMax H3提示词润色",
+      "templateType": "SHOT_VIDEO_POLISH",
+      "reason": "模型专用：MiniMax H3"
+    },
+    {
+      "id": "3FO4K4VOROES",
+      "name": "剧情连贯编排（MiniMax H3）",
+      "templateType": "BEAT_CLIP_GROUP_TO_SHOT",
+      "reason": "模型专用：MiniMax H3"
+    },
+    {
+      "id": "3FO4K4VNMXFW",
+      "name": "声音克隆",
+      "templateType": "CANVAS_AUDIO_GENERATION_POLISH",
+      "reason": "音频专用：声音克隆"
+    },
+    {
+      "id": "3FO4K4VNMU3V",
+      "name": "文生音色",
+      "templateType": "CANVAS_AUDIO_GENERATION_POLISH",
+      "reason": "音频专用：文生音色"
+    }
+  ]
+}

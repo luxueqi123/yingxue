@@ -1,0 +1,781 @@
+package app
+
+import (
+	"encoding/json"
+	"fmt"
+	"infinite-canvas/backend/internal/assets"
+	"strings"
+	"time"
+
+	"infinite-canvas/backend/internal/canvas/capability"
+	"infinite-canvas/backend/internal/canvas/document"
+	"infinite-canvas/backend/internal/repository"
+)
+
+type cloudAgentStructuredProjector func(value any, offset int, precise bool) (any, error)
+
+var cloudAgentStructuredProjectors = map[string]cloudAgentStructuredProjector{
+	"storyboard": func(value any, offset int, precise bool) (any, error) {
+		storyboard, ok := value.(map[string]any)
+		if !ok {
+			return nil, nil
+		}
+		return cloudAgentStoryboardState(storyboard, offset, precise), nil
+	},
+	"batch_table": func(value any, offset int, precise bool) (any, error) {
+		table, ok := value.(map[string]any)
+		if !ok {
+			return nil, nil
+		}
+		return cloudAgentBatchTableState(table, offset, precise), nil
+	},
+}
+
+// cloudAgentNodeHash 是单个节点内容的版本号。分镜/批量表的读写只作用在一个节点上，
+// 用它做并发校验：用户删改其它节点不会让 Agent 对这个节点的修改失效；
+// 这个节点本身被改过（或被删掉）时才拒绝写入。
+func cloudAgentNodeHash(doc map[string]any, nodeID string) string {
+	for _, node := range creationMaps(doc["nodes"]) {
+		if stringValue(node["id"]) == nodeID {
+			return creationHash(node)
+		}
+	}
+	return ""
+}
+
+// cloudAgentNodeSnapshotMatches 接受两种版本号：旧的整画布哈希（画布完全未变）或
+// 目标节点哈希（只有目标节点未变）。前者兼容已经发出、带整画布哈希的调用。
+func cloudAgentNodeSnapshotMatches(doc map[string]any, nodeID, snapshotHash string) bool {
+	if snapshotHash == "" {
+		return false
+	}
+	if snapshotHash == cloudAgentCanvasHash(doc) {
+		return true
+	}
+	node := cloudAgentNodeHash(doc, nodeID)
+	return node != "" && node == snapshotHash
+}
+
+// Viewport autosaves must not invalidate approved content; node edits still do.
+func cloudAgentCanvasHash(doc map[string]any) string {
+	return document.SnapshotHash(doc)
+}
+
+// Generation uses the graph, not canvas presentation or autosave bookkeeping.
+// Keep all node business fields (including unknown metadata) fail-closed, and
+// keep the full canvas hash for mutations/undo and the database CAS.
+func cloudAgentMediaContentHash(doc map[string]any) string {
+	content := map[string]any{"connections": doc["connections"]}
+	nodes := creationMaps(doc["nodes"])
+	projected := make([]map[string]any, 0, len(nodes))
+	for _, node := range nodes {
+		item := make(map[string]any, len(node))
+		for key, value := range node {
+			switch key {
+			case "position", "width", "height", "createdAt", "updatedAt":
+			default:
+				item[key] = value
+			}
+		}
+		projected = append(projected, item)
+	}
+	content["nodes"] = projected
+	return cloudAgentCanvasHash(content)
+}
+
+const cloudAgentReadPageBytes = 64 << 10
+
+// A full related-component read is useful for answering questions such as
+// "what feeds this shot and what does it feed?", but it must remain bounded so
+// a densely connected canvas cannot turn one tool call into an unbounded
+// context dump.
+const cloudAgentRelatedNodeLimit = 256
+
+func cloudAgentCanvasState(repo *repository.Repository, userID, canvasID string, doc map[string]any, offset int, ids []string, storyboardOffset int, connectionOffsets ...int) (any, error) {
+	return cloudAgentCanvasStateSelected(repo, userID, canvasID, doc, offset, ids, nil, 0, false, storyboardOffset, connectionOffsets...)
+}
+
+// cloudAgentCanvasStateWithFocus returns a bounded graph neighborhood around
+// the requested nodes. It is deliberately separate from the legacy paginated
+// reader so existing callers keep their exact pagination semantics.
+func cloudAgentCanvasStateWithFocus(repo *repository.Repository, userID, canvasID string, doc map[string]any, offset int, focusNodeIDs []string, depth, storyboardOffset int, connectionOffsets ...int) (any, error) {
+	return cloudAgentCanvasStateSelected(repo, userID, canvasID, doc, offset, nil, focusNodeIDs, depth, false, storyboardOffset, connectionOffsets...)
+}
+
+func cloudAgentCanvasStateWithRelated(repo *repository.Repository, userID, canvasID string, doc map[string]any, offset int, focusNodeIDs []string, storyboardOffset int, connectionOffsets ...int) (any, error) {
+	return cloudAgentCanvasStateSelected(repo, userID, canvasID, doc, offset, nil, focusNodeIDs, 0, true, storyboardOffset, connectionOffsets...)
+}
+
+func cloudAgentCanvasStateSelected(repo *repository.Repository, userID, canvasID string, doc map[string]any, offset int, ids, focusNodeIDs []string, depth int, includeRelated bool, storyboardOffset int, connectionOffsets ...int) (any, error) {
+	if offset < 0 || storyboardOffset < 0 || len(ids) > 8 || len(focusNodeIDs) > 8 || (len(ids) > 0 && len(focusNodeIDs) > 0) {
+		return nil, BadAuthRequest("画布读取分页参数无效")
+	}
+	if len(focusNodeIDs) > 0 && !includeRelated && (depth < 0 || depth > 3) {
+		return nil, BadAuthRequest("关联子图 depth 必须在 0 到 3 之间")
+	}
+	if includeRelated && len(focusNodeIDs) == 0 {
+		return nil, BadAuthRequest("includeRelated 只能与 focusNodeIds 一起使用")
+	}
+	readAt := time.Now()
+	all := creationMaps(doc["nodes"])
+	connectionOffset := 0
+	if len(connectionOffsets) > 0 {
+		connectionOffset = connectionOffsets[0]
+	}
+	if connectionOffset < 0 {
+		return nil, BadAuthRequest("连线分页参数无效")
+	}
+	wanted := map[string]bool{}
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	focus := map[string]bool{}
+	for _, id := range focusNodeIDs {
+		if id == "" || focus[id] {
+			return nil, BadAuthRequest("关联子图 focusNodeIds 不能包含空值或重复节点")
+		}
+		focus[id] = true
+	}
+	nodeByID := make(map[string]map[string]any, len(all))
+	for _, node := range all {
+		if id := stringValue(node["id"]); id != "" {
+			nodeByID[id] = node
+		}
+	}
+	for id := range wanted {
+		if nodeByID[id] == nil {
+			return nil, BadAuthRequest("指定节点不在当前画布")
+		}
+	}
+	for id := range focus {
+		if nodeByID[id] == nil {
+			return nil, BadAuthRequest("关联子图 focusNodeIds 中存在不在当前画布的节点")
+		}
+	}
+	selected := map[string]bool{}
+	selectionTruncated := false
+	if len(focus) > 0 {
+		adjacency := make(map[string][]string, len(all))
+		for _, edge := range creationMaps(doc["connections"]) {
+			from, to := stringValue(edge["fromNodeId"]), stringValue(edge["toNodeId"])
+			if nodeByID[from] == nil || nodeByID[to] == nil {
+				continue
+			}
+			adjacency[from] = append(adjacency[from], to)
+			adjacency[to] = append(adjacency[to], from)
+		}
+		frontier := make([]string, 0, len(focus))
+		// Preserve the caller's focus order. This makes bounded results stable
+		// and keeps the selected node itself ahead of its neighbours.
+		for _, id := range focusNodeIDs {
+			selected[id] = true
+			frontier = append(frontier, id)
+		}
+		levels := depth
+		if includeRelated {
+			levels = len(all) + 1
+		}
+		for level := 0; level < levels && len(frontier) > 0; level++ {
+			next := make([]string, 0)
+			for _, id := range frontier {
+				for _, neighbor := range adjacency[id] {
+					if selected[neighbor] {
+						continue
+					}
+					if includeRelated && len(selected) >= cloudAgentRelatedNodeLimit {
+						selectionTruncated = true
+						continue
+					}
+					selected[neighbor] = true
+					next = append(next, neighbor)
+				}
+			}
+			frontier = next
+		}
+	}
+	selectedMode := len(focus) > 0
+	candidateNodes := make([]map[string]any, 0, len(all))
+	for _, node := range all {
+		id := stringValue(node["id"])
+		switch {
+		case selectedMode && selected[id]:
+			candidateNodes = append(candidateNodes, node)
+		case !selectedMode && len(ids) > 0 && wanted[id]:
+			candidateNodes = append(candidateNodes, node)
+		case !selectedMode && len(ids) == 0:
+			candidateNodes = append(candidateNodes, node)
+		}
+	}
+	limit := 320
+	if len(ids) > 0 || len(focus) > 0 {
+		limit = 16000
+	}
+	nodes := []any{}
+	included := map[string]bool{}
+	next := 0
+	pageBytes := 1024
+	for candidateIndex, node := range candidateNodes {
+		if candidateIndex < offset {
+			continue
+		}
+		id := stringValue(node["id"])
+		if len(ids) == 0 && len(focus) == 0 && len(nodes) == 40 {
+			next = candidateIndex
+			break
+		}
+		precise := len(ids) > 0 || focus[id]
+		meta, _ := node["metadata"].(map[string]any)
+		item := map[string]any{"id": id, "type": stringValue(node["type"])}
+		if title, ok := node["title"].(string); ok {
+			item["title"] = truncateRunes(title, 300)
+		}
+		if _, bound := meta["dramaRef"].(map[string]any); bound {
+			// 短剧投影节点只是投送时的快照，生成状态以短剧数据为准。
+			item["dramaStatusSource"] = "drama_get_context"
+		}
+		if position, ok := node["position"].(map[string]any); ok {
+			safePosition := map[string]any{}
+			for _, axis := range []string{"x", "y"} {
+				if value, ok := cloudAgentSafeNumber(position[axis]); ok {
+					safePosition[axis] = value
+				}
+			}
+			item["position"] = safePosition
+		}
+		for _, dimension := range []string{"width", "height"} {
+			if value, ok := cloudAgentSafeNumber(node[dimension]); ok {
+				item[dimension] = value
+			}
+		}
+		if status, ok := meta["status"].(string); ok {
+			item["status"] = truncateRunes(status, 40)
+		}
+		capability, known := cloudAgentNodeCapabilityForNode(node)
+		if !known {
+			// Read visibility is not permission to mutate or use a node as a media reference.
+			item["agentSupported"] = false
+			item["agentUnsupportedReason"] = "仅展示基础信息；当前 Agent 不支持操作此类型节点"
+			body, _ := json.Marshal(item)
+			if pageBytes+len(body) > cloudAgentReadPageBytes-(8<<10) {
+				next = candidateIndex
+				break
+			}
+			pageBytes += len(body)
+			nodes = append(nodes, item)
+			included[id] = true
+			continue
+		}
+		if capability.Variant != nil {
+			// 变体节点（如角色卡）底层 type 仍是 text，用 kind 标明真实能力，避免当普通文本处理。
+			item["kind"] = capability.Type
+		}
+		fields := capability.SummaryFields
+		if precise {
+			fields = capability.DetailFields
+		}
+		projected, err := cloudAgentProjectNodeFields(node, meta, capability, fields, limit, precise, storyboardOffset)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range projected {
+			item[key] = value
+		}
+		if cloudAgentCharacterNode(node) {
+			if repo == nil {
+				item["character"] = map[string]any{"available": false, "issue": "角色资产读取服务不可用"}
+			} else {
+				canvas, canvasErr := repo.CanvasProjectForUser(userID, canvasID)
+				if canvasErr != nil {
+					return nil, canvasErr
+				}
+				character, characterErr := cloudAgentResolveCharacter(repo, userID, canvas.ProjectID, node)
+				if characterErr != nil {
+					item["character"] = map[string]any{"available": false, "issue": cloudAgentSafeToolError(characterErr)}
+				} else {
+					characterView := character.read(precise)
+					if precise {
+						_, referenceErr := cloudAgentCharacterImageReference(repo, userID, id, character)
+						characterView["imageReference"] = map[string]any{"ready": referenceErr == nil}
+						if referenceErr != nil {
+							characterView["imageReference"].(map[string]any)["issue"] = cloudAgentSafeToolError(referenceErr)
+						}
+						_, audioErr := cloudAgentCharacterAudioReference(repo, userID, id, character)
+						characterView["audioReference"] = map[string]any{"ready": audioErr == nil}
+						if audioErr != nil {
+							characterView["audioReference"].(map[string]any)["issue"] = cloudAgentSafeToolError(audioErr)
+						}
+					}
+					item["character"] = characterView
+				}
+			}
+		}
+		if capability.GenerationMode != "" {
+			generation := map[string]any{"taskStatus": "not_submitted"}
+			if capability.GenerationMode == "audio" {
+				generation["audio"] = cloudAgentAudioReferenceState(meta, doc)
+			}
+			if reason, issue := cloudAgentMediaTargetIssue(node, capability.Type); reason != "" {
+				generation["submitBlockedReason"], generation["submitBlockedIssue"] = reason, issue
+			}
+			taskID := stringValue(meta["taskId"])
+			if taskID == "" {
+				taskID = stringValue(meta["generationTaskId"])
+			}
+			if taskID != "" {
+				// Do not infer success/failure from stale canvas metadata.
+				generation["taskStatus"] = "unavailable"
+				task, err := repo.TaskForUser(userID, taskID)
+				if err == nil && task.ProjectID == canvasID {
+					for key, value := range cloudAgentTaskDiagnostic(repo, task) {
+						generation[key] = value
+					}
+				}
+			}
+			item["generation"] = generation
+		}
+		if draftRunID := stringValue(meta["agentDraftRunId"]); draftRunID != "" && stringValue(meta["taskId"]) == "" && stringValue(meta["generationTaskId"]) == "" {
+			draft := map[string]any{"submitted": false, "requiresApproval": true, "ownerStatus": "unknown"}
+			owner, err := repo.CloudAgent(userID, draftRunID)
+			if err == nil && owner.CanvasID == canvasID {
+				draft["ownerStatus"] = owner.Status
+				draft["cleanupPending"] = owner.CleanupPending
+			}
+			item["generationDraft"] = draft
+		}
+		// 角色卡的引用可用性在 character.imageReference/audioReference 中给出。
+		if capability.Connection.CanReference && !cloudAgentCharacterNode(node) {
+			ref, _, err := cloudAgentReference(repo, userID, node)
+			outputReference := map[string]any{"ready": err == nil}
+			item["outputReference"] = outputReference
+			if err != nil {
+				outputReference["issue"] = cloudAgentSafeToolError(err)
+			} else {
+				// Provider references contain a storage key for task submission.
+				// The model only needs the verified public characteristics; never
+				// forward the provider payload or storage locator into the read tool.
+				item["asset"] = map[string]any{
+					"mimeType": ref["mimeType"], "bytes": ref["bytes"],
+					"width": ref["width"], "height": ref["height"],
+					"durationMs": ref["durationMs"], "inputKind": ref["inputKind"],
+				}
+			}
+		}
+		body, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		if pageBytes+len(body) > cloudAgentReadPageBytes-(8<<10) {
+			if len(nodes) == 0 {
+				return nil, BadAuthRequest("节点详情超过单页读取预算，请使用节点对应的结构化分页工具")
+			}
+			next = candidateIndex
+			break
+		}
+		pageBytes += len(body)
+		nodes = append(nodes, item)
+		included[id] = true
+	}
+	edges := []any{}
+	nextConnection := 0
+	for index, edge := range creationMaps(doc["connections"]) {
+		if index < connectionOffset {
+			continue
+		}
+		fromIncluded := included[stringValue(edge["fromNodeId"])]
+		toIncluded := included[stringValue(edge["toNodeId"])]
+		if (selectedMode && fromIncluded && toIncluded) || (!selectedMode && (fromIncluded || toIncluded)) {
+			item := map[string]any{"id": edge["id"], "fromNodeId": edge["fromNodeId"], "toNodeId": edge["toNodeId"]}
+			body, _ := json.Marshal(item)
+			if pageBytes+len(body) > cloudAgentReadPageBytes {
+				nextConnection = index
+				break
+			}
+			pageBytes += len(body)
+			edges = append(edges, item)
+		}
+	}
+	result := map[string]any{"snapshotHash": cloudAgentCanvasHash(doc), "mediaSnapshotHash": cloudAgentMediaContentHash(doc), "nodes": nodes, "connections": edges, "totalNodes": len(all), "nextOffset": next, "hasMore": next > 0, "nextConnectionOffset": nextConnection, "hasMoreConnections": nextConnection > 0, "pageByteBudget": cloudAgentReadPageBytes}
+	// 读取来源与时间：画布是保存时的快照，短剧节点不随调度完成更新，状态要以 drama_get_context 为准。
+	result["source"], result["readAt"] = "canvas_snapshot", readAt.Format(time.RFC3339)
+	if repo != nil {
+		if canvas, err := repo.CanvasProjectMetadataForUser(userID, canvasID); err == nil && canvas != nil {
+			result["canvasRevision"] = canvas.Revision
+		}
+	}
+	if selectedMode {
+		result["totalSelectedNodes"] = len(candidateNodes)
+		selection := map[string]any{"mode": "subgraph", "focusNodeIds": focusNodeIDs, "selectedNodes": len(candidateNodes)}
+		if includeRelated {
+			selection["relationMode"] = "all"
+			selection["truncated"] = selectionTruncated
+			selection["nodeLimit"] = cloudAgentRelatedNodeLimit
+		} else {
+			selection["depth"] = depth
+		}
+		result["selection"] = selection
+	}
+	return result, nil
+}
+
+func cloudAgentSafeNumber(value any) (any, bool) {
+	switch number := value.(type) {
+	case float64, float32, int, int64:
+		return number, true
+	default:
+		return nil, false
+	}
+}
+
+// cloudAgentProjectNodeFields is the single projection path for both the
+// initial run summary and canvas_get_state. Capability descriptors decide which
+// fields exist; this function decides how those fields are safely represented.
+// It deliberately never returns arbitrary metadata, URLs, storage keys or
+// media payloads.
+func cloudAgentProjectNodeFields(node, meta map[string]any, descriptor capability.Descriptor, fields []string, textLimit int, precise bool, structuredOffset int) (map[string]any, error) {
+	projected := map[string]any{}
+	for _, key := range fields {
+		if descriptor.ProjectionKind != "" && key == descriptor.ProjectionField {
+			projector, registered := cloudAgentStructuredProjectors[descriptor.ProjectionKind]
+			if !registered {
+				return nil, BadAuthRequest(fmt.Sprintf("节点 %s 的结构化读取能力未注册", descriptor.Label))
+			}
+			value, ok := cloudAgentProjectionValue(node, meta, descriptor.ProjectionField)
+			if !ok {
+				continue
+			}
+			structured, err := projector(value, structuredOffset, precise)
+			if err != nil {
+				return nil, BadAuthRequest(fmt.Sprintf("节点 %s 的结构化数据无法读取", descriptor.Label))
+			}
+			if structured != nil {
+				projected[key] = structured
+			}
+			continue
+		}
+		var value any
+		var ok bool
+		if key == "prompt" && descriptor.GenerationMode != "" {
+			value, ok = cloudAgentMediaPrompt(meta)
+		} else {
+			value, ok = node[key]
+			if !ok {
+				value, ok = meta[key]
+			}
+		}
+		if !ok || (key == "content" && descriptor.GenerationMode != "") {
+			continue
+		}
+		// Some older uploads persist only a resource URL in the text node. Do not
+		// expose that locator as if it were the novel/script正文; the model must
+		// call canvas_read_text, which authorizes and reads the owned resource.
+		if key == "content" {
+			if text, isString := value.(string); isString && assets.ResourceID(text) != "" {
+				projected["contentAvailable"] = true
+				projected["contentSource"] = "resource"
+				continue
+			}
+		}
+		if safe, truncated := cloudAgentSafeProjection(value, textLimit); safe != nil {
+			projected[key] = safe
+			if truncated {
+				projected[key+"Truncated"] = true
+			}
+		}
+	}
+	return projected, nil
+}
+
+func cloudAgentMediaPrompt(meta map[string]any) (string, bool) {
+	if generationSpec, ok := meta["generationSpec"].(map[string]any); ok {
+		if prompt, ok := generationSpec["prompt"].(string); ok {
+			return prompt, true
+		}
+	}
+	if prompt, ok := meta["composerContent"].(string); ok {
+		return prompt, true
+	}
+	if prompt, ok := meta["prompt"].(string); ok {
+		return prompt, true
+	}
+	return "", false
+}
+
+func cloudAgentProjectionValue(node, meta map[string]any, path string) (any, bool) {
+	parts := strings.Split(path, ".")
+	for _, root := range []map[string]any{node, meta} {
+		var current any = root
+		found := true
+		for _, part := range parts {
+			object, ok := current.(map[string]any)
+			if !ok {
+				found = false
+				break
+			}
+			current, ok = object[part]
+			if !ok {
+				found = false
+				break
+			}
+		}
+		if found {
+			return current, true
+		}
+	}
+	return nil, false
+}
+
+func cloudAgentSafeProjection(value any, textLimit int) (any, bool) {
+	switch typed := value.(type) {
+	case string:
+		text := truncateRunes(typed, textLimit)
+		return text, len([]rune(typed)) > textLimit
+	case float64, float32, int, int64, bool:
+		return typed, false
+	case []string:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, truncateRunes(item, min(textLimit, 200)))
+		}
+		return items, false
+	case []any:
+		items := make([]any, 0, min(len(typed), 32))
+		for _, item := range typed[:min(len(typed), 32)] {
+			safe, _ := cloudAgentSafeProjection(item, min(textLimit, 200))
+			if safe != nil {
+				items = append(items, safe)
+			}
+		}
+		return items, len(typed) > len(items)
+	default:
+		return nil, false
+	}
+}
+
+// Summaries locate a shot; a precise node read returns one full row at a time.
+// Only narrative fields and canvas IDs are exposed, never arbitrary metadata.
+func cloudAgentStoryboardState(storyboard map[string]any, offset int, precise bool) map[string]any {
+	all := creationMaps(storyboard["rows"])
+	count, textLimit := 20, 200
+	if precise {
+		count, textLimit = 1, 16000
+	}
+	rows := []any{}
+	next := 0
+	for i, row := range all {
+		if i < offset {
+			continue
+		}
+		if len(rows) == count {
+			next = i
+			break
+		}
+		item := map[string]any{}
+		fields := []string{"id", "shotNumber", "durationSeconds", "plotDescription", "imageNodeId", "videoNodeId"}
+		if precise {
+			fields = append(fields, "videoMotionPrompt", "imageGenerationPrompt", "dialogue", "narrativeIntent", "viewerPOV", "performanceBlocking", "shotSize", "emotion", "lightingAndAtmosphere", "audioEffects", "camera", "motion", "timeBeats", "mustHave", "optionalDetails", "continuityOut", "negativePrompt")
+		}
+		budget := 24000
+		for _, key := range fields {
+			switch value := row[key].(type) {
+			case string:
+				text := truncateRunes(value, min(textLimit, budget))
+				budget -= len([]rune(text))
+				item[key] = text
+				if text != value {
+					item[key+"Truncated"] = true
+				}
+			case float64:
+				item[key] = value
+			}
+		}
+		for collection, keys := range map[string][]string{
+			"assetBindings": {"nodeId", "role", "priority"},
+			"characters":    {"characterName", "characterAssetId", "characterVersionId", "characterImageNodeId"},
+		} {
+			values := []any{}
+			entries := creationMaps(row[collection])
+			for _, entry := range entries[:min(len(entries), 16)] {
+				value := map[string]any{}
+				for _, key := range keys {
+					if text, ok := entry[key].(string); ok {
+						value[key] = truncateRunes(text, 200)
+					} else if number, ok := entry[key].(float64); ok {
+						value[key] = number
+					}
+				}
+				values = append(values, value)
+			}
+			item[collection] = values
+			item[collection+"Truncated"] = len(entries) > 16
+		}
+		rows = append(rows, item)
+	}
+	return map[string]any{"rows": rows, "totalRows": len(all), "nextOffset": next, "hasMore": next > 0}
+}
+
+// Batch-table projection exposes only the fields rendered by the component.
+// Result URLs, task IDs, storage keys and arbitrary metadata remain private.
+func cloudAgentBatchTableState(table map[string]any, offset int, precise bool) map[string]any {
+	operation := stringValue(table["operation"])
+	if operation != "creative" {
+		operation = "try_on"
+	}
+	concurrency := 10
+	if value, ok := cloudAgentInteger(table["concurrency"]); ok && (value == 1 || value == 5 || value == 10) {
+		concurrency = value
+	}
+	columns := []any{}
+	for index, column := range creationMaps(table["referenceColumns"])[:min(len(creationMaps(table["referenceColumns"])), 6)] {
+		id, label := truncateRunes(stringValue(column["id"]), 120), truncateRunes(stringValue(column["label"]), 120)
+		if id != "" && label != "" {
+			columns = append(columns, map[string]any{"id": id, "label": label, "mentionToken": fmt.Sprintf("@参考图%d", index+1)})
+		}
+	}
+	if len(columns) == 0 {
+		columns = defaultCloudAgentBatchReferenceColumns()
+	}
+
+	globalPrompt := strings.TrimSpace(stringValue(table["globalPrompt"]))
+	all := creationMaps(table["rows"])
+	count, textLimit := 20, 240
+	if precise {
+		count, textLimit = 20, 16000
+	}
+	rows := []any{}
+	next := 0
+	ready, enabled, missingPrompt, missingReferences, outputLinked := 0, 0, 0, 0, 0
+	for _, row := range all {
+		rowEnabled, _ := row["enabled"].(bool)
+		prompt := strings.TrimSpace(stringValue(row["prompt"]))
+		effectivePrompt := globalPrompt
+		if effectivePrompt == "" {
+			effectivePrompt = prompt
+		}
+		inputs := cloudAgentBatchInputIDs(row["inputNodeIds"], len(columns))
+		if rowEnabled {
+			enabled++
+			if effectivePrompt == "" {
+				missingPrompt++
+			}
+			minimumInputs := 1
+			if operation == "try_on" {
+				minimumInputs = 2
+			}
+			if len(inputs) < minimumInputs {
+				missingReferences++
+			}
+			if effectivePrompt != "" && len(inputs) >= minimumInputs {
+				ready++
+			}
+		}
+		if stringValue(row["outputNodeId"]) != "" {
+			outputLinked++
+		}
+	}
+	for index, row := range all {
+		if index < offset {
+			continue
+		}
+		if len(rows) == count {
+			next = index
+			break
+		}
+		item := map[string]any{
+			"id":           truncateRunes(stringValue(row["id"]), 120),
+			"enabled":      row["enabled"] == true,
+			"inputNodeIds": cloudAgentBatchInputIDs(row["inputNodeIds"], len(columns)),
+		}
+		prompt := stringValue(row["prompt"])
+		item["prompt"] = truncateRunes(prompt, textLimit)
+		if len([]rune(prompt)) > textLimit {
+			item["promptTruncated"] = true
+		}
+		if outputNodeID := truncateRunes(stringValue(row["outputNodeId"]), 120); outputNodeID != "" {
+			item["outputNodeId"] = outputNodeID
+		}
+		rows = append(rows, item)
+	}
+	projected := map[string]any{
+		"operation": operation, "concurrency": concurrency, "referenceColumns": columns,
+		"rows": rows, "totalRows": len(all), "nextOffset": next, "hasMore": next > 0,
+		"generationPreview": map[string]any{
+			"enabledRows": enabled, "readyRows": ready, "missingPromptRows": missingPrompt,
+			"missingReferenceRows": missingReferences, "outputLinkedRows": outputLinked,
+		},
+	}
+	if globalPrompt != "" {
+		projected["globalPrompt"] = truncateRunes(globalPrompt, textLimit)
+		if len([]rune(globalPrompt)) > textLimit {
+			projected["globalPromptTruncated"] = true
+		}
+	}
+	return projected
+}
+
+func cloudAgentBatchInputIDs(value any, limit int) []any {
+	if limit <= 0 || limit > 6 {
+		limit = 6
+	}
+	items, _ := value.([]any)
+	out := make([]any, 0, min(len(items), limit))
+	seen := map[string]bool{}
+	for _, item := range items {
+		id := truncateRunes(stringValue(item), 120)
+		if id == "" || seen[id] || len(out) == limit {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+func cloudAgentInteger(value any) (int, bool) {
+	switch number := value.(type) {
+	case int:
+		return number, true
+	case int64:
+		return int(number), int64(int(number)) == number
+	case float64:
+		integer := int(number)
+		return integer, float64(integer) == number
+	default:
+		return 0, false
+	}
+}
+
+func cloudAgentNodesWithoutTimestamps(value any) any {
+	items, ok := value.([]any)
+	if !ok {
+		if typed, isMaps := value.([]map[string]any); isMaps {
+			items = make([]any, len(typed))
+			for index, node := range typed {
+				items[index] = node
+			}
+		} else {
+			return value
+		}
+	}
+	projected := make([]any, len(items))
+	for index, item := range items {
+		node, isMap := item.(map[string]any)
+		if !isMap {
+			projected[index] = item
+			continue
+		}
+		_, hasCreated := node["createdAt"]
+		_, hasUpdated := node["updatedAt"]
+		if !hasCreated && !hasUpdated {
+			projected[index] = node
+			continue
+		}
+		copied := make(map[string]any, len(node))
+		for key, field := range node {
+			if key != "createdAt" && key != "updatedAt" {
+				copied[key] = field
+			}
+		}
+		projected[index] = copied
+	}
+	return projected
+}

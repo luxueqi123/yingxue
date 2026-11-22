@@ -1,0 +1,915 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "vidu-q2-pro-video",
+  "name": "Vidu Q2 Pro Native",
+  "version": "1.0.0",
+  "author": "Yingxue",
+  "description": "Vidu Q2 Pro原生单图与首尾帧声明式协议，Token鉴权，保留原版本和帧角色。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "vidu-q2-pro-video",
+        "label": "Vidu Q2 Pro Native",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.vidu.com",
+        "auth": {
+          "type": "header",
+          "field": "apiKey",
+          "header": "Authorization",
+          "prefix": "Token "
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "mapping": "model",
+            "description": "仅viduq2-pro"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "mapping": "prompt",
+            "description": "完整原始正文"
+          },
+          {
+            "name": "images",
+            "type": "array",
+            "mapping": "images",
+            "description": "唯一first_frame及可选唯一last_frame"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "mapping": "duration",
+            "description": "单图1..10，首尾1..8秒"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "mapping": "resolution",
+            "description": "540p/720p/1080p"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "viduq2-pro"
+              ]
+            },
+            "message": "必须使用viduq2-pro，不能替换版本"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.operation"
+                },
+                "image_to_video"
+              ]
+            },
+            "message": "此入口只接单图和首尾帧"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$eq": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "first_frame"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$or": [
+                    {
+                      "$and": [
+                        {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            1
+                          ]
+                        },
+                        {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$filter": {
+                                  "from": {
+                                    "$ref": "request.images"
+                                  },
+                                  "as": "media",
+                                  "where": {
+                                    "$eq": [
+                                      {
+                                        "$ref": "media.role"
+                                      },
+                                      "last_frame"
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "$and": [
+                        {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            2
+                          ]
+                        },
+                        {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$filter": {
+                                  "from": {
+                                    "$ref": "request.images"
+                                  },
+                                  "as": "media",
+                                  "where": {
+                                    "$eq": [
+                                      {
+                                        "$ref": "media.role"
+                                      },
+                                      "last_frame"
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            1
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "必须保留唯一首帧，双图还须唯一末帧；不丢弃音视频"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gte": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        }
+                      ]
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        }
+                      ]
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            1
+                          ]
+                        },
+                        "then": 10,
+                        "else": 8
+                      }
+                    }
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        }
+                      ]
+                    },
+                    {
+                      "$toInt": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.output.duration"
+                          },
+                          {
+                            "$ref": "request.duration"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "单图1至10秒、首尾帧1至8秒整数"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$lower": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.resolution"
+                      },
+                      {
+                        "$ref": "request.resolution"
+                      }
+                    ]
+                  }
+                },
+                [
+                  "540p",
+                  "720p",
+                  "1080p"
+                ]
+              ]
+            },
+            "message": "不支持此分辨率"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.aspectRatio"
+                    },
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    "auto"
+                  ]
+                },
+                [
+                  "auto",
+                  "adaptive",
+                  ""
+                ]
+              ]
+            },
+            "message": "画幅由原图决定，不能忽略指定固定比例"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$not": {
+                    "$ref": "request.generateAudio"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.output.generateAudio"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.watermark"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.output.watermark"
+                  }
+                }
+              ]
+            },
+            "message": "此源接入仅保留无声、无额外水印要求"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.prompt"
+                  }
+                },
+                5000
+              ]
+            },
+            "message": "原文不能超过5000字符或自动截断"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.count"
+                    },
+                    1
+                  ]
+                },
+                1
+              ]
+            },
+            "message": "每次只能生成一个结果"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$ref": "request.providerOptions"
+                  }
+                },
+                0
+              ]
+            },
+            "message": "此源合同未开放供应商覆盖选项"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "pathTemplate": {
+            "$if": {
+              "condition": {
+                "$eq": [
+                  {
+                    "$len": {
+                      "$ref": "request.images"
+                    }
+                  },
+                  1
+                ]
+              },
+              "then": "/ent/v2/img2video",
+              "else": "/ent/v2/start-end2video"
+            }
+          },
+          "originPath": true,
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "images": {
+              "$if": {
+                "condition": {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    1
+                  ]
+                },
+                "then": [
+                  {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$ref": "request.images"
+                            },
+                            "as": "media",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "media.role"
+                                },
+                                "first_frame"
+                              ]
+                            }
+                          }
+                        },
+                        "as": "media",
+                        "in": {
+                          "$ref": "media.value"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "else": [
+                  {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$ref": "request.images"
+                            },
+                            "as": "media",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "media.role"
+                                },
+                                "first_frame"
+                              ]
+                            }
+                          }
+                        },
+                        "as": "media",
+                        "in": {
+                          "$ref": "media.value"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$ref": "request.images"
+                            },
+                            "as": "media",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "media.role"
+                                },
+                                "last_frame"
+                              ]
+                            }
+                          }
+                        },
+                        "as": "media",
+                        "in": {
+                          "$ref": "media.value"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "duration": {
+              "$coalesce": [
+                {
+                  "$ref": "request.output.duration"
+                },
+                {
+                  "$ref": "request.duration"
+                }
+              ]
+            },
+            "resolution": {
+              "$lower": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.resolution"
+                  },
+                  {
+                    "$ref": "request.resolution"
+                  }
+                ]
+              }
+            },
+            "is_rec": false,
+            "bgm": false,
+            "off_peak": false,
+            "audio": {
+              "$omitEmpty": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$ref": "request.images"
+                        }
+                      },
+                      1
+                    ]
+                  },
+                  "then": false,
+                  "else": null
+                }
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/ent/v2/tasks/{{taskId}}/creations",
+          "originPath": true
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$not": {
+                  "$and": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.task_id"
+                        },
+                        {
+                          "$ref": "taskId"
+                        }
+                      ]
+                    },
+                    {
+                      "$not": {
+                        "$ref": "response.err_code"
+                      }
+                    },
+                    {
+                      "$in": [
+                        {
+                          "$lower": {
+                            "$ref": "response.state"
+                          }
+                        },
+                        [
+                          "created",
+                          "queueing",
+                          "processing",
+                          "success",
+                          "failed"
+                        ]
+                      ]
+                    },
+                    {
+                      "$or": [
+                        {
+                          "$not": {
+                            "$ref": "taskId"
+                          }
+                        },
+                        {
+                          "$not": {
+                            "$ref": "response.task_id"
+                          }
+                        },
+                        {
+                          "$eq": [
+                            {
+                              "$ref": "taskId"
+                            },
+                            {
+                              "$ref": "response.task_id"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "then": "failed",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$lower": {
+                          "$ref": "response.state"
+                        }
+                      },
+                      "success"
+                    ]
+                  },
+                  "then": {
+                    "$if": {
+                      "condition": {
+                        "$and": [
+                          {
+                            "$and": [
+                              {
+                                "$coalesce": [
+                                  {
+                                    "$ref": "response.task_id"
+                                  },
+                                  {
+                                    "$ref": "taskId"
+                                  }
+                                ]
+                              },
+                              {
+                                "$not": {
+                                  "$ref": "response.err_code"
+                                }
+                              },
+                              {
+                                "$in": [
+                                  {
+                                    "$lower": {
+                                      "$ref": "response.state"
+                                    }
+                                  },
+                                  [
+                                    "created",
+                                    "queueing",
+                                    "processing",
+                                    "success",
+                                    "failed"
+                                  ]
+                                ]
+                              },
+                              {
+                                "$or": [
+                                  {
+                                    "$not": {
+                                      "$ref": "taskId"
+                                    }
+                                  },
+                                  {
+                                    "$not": {
+                                      "$ref": "response.task_id"
+                                    }
+                                  },
+                                  {
+                                    "$eq": [
+                                      {
+                                        "$ref": "taskId"
+                                      },
+                                      {
+                                        "$ref": "response.task_id"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "$eq": [
+                              {
+                                "$lower": {
+                                  "$ref": "response.state"
+                                }
+                              },
+                              "success"
+                            ]
+                          },
+                          {
+                            "$eq": [
+                              {
+                                "$len": {
+                                  "$ref": "response.creations"
+                                }
+                              },
+                              1
+                            ]
+                          },
+                          {
+                            "$ref": "response.creations.0.url"
+                          }
+                        ]
+                      },
+                      "then": "succeeded",
+                      "else": "failed"
+                    }
+                  },
+                  "else": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$lower": {
+                              "$ref": "response.state"
+                            }
+                          },
+                          "failed"
+                        ]
+                      },
+                      "then": "failed",
+                      "else": {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$lower": {
+                                  "$ref": "response.state"
+                                }
+                              },
+                              "processing"
+                            ]
+                          },
+                          "then": "processing",
+                          "else": "pending"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "videos": {
+            "$if": {
+              "condition": {
+                "$and": [
+                  {
+                    "$and": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.task_id"
+                          },
+                          {
+                            "$ref": "taskId"
+                          }
+                        ]
+                      },
+                      {
+                        "$not": {
+                          "$ref": "response.err_code"
+                        }
+                      },
+                      {
+                        "$in": [
+                          {
+                            "$lower": {
+                              "$ref": "response.state"
+                            }
+                          },
+                          [
+                            "created",
+                            "queueing",
+                            "processing",
+                            "success",
+                            "failed"
+                          ]
+                        ]
+                      },
+                      {
+                        "$or": [
+                          {
+                            "$not": {
+                              "$ref": "taskId"
+                            }
+                          },
+                          {
+                            "$not": {
+                              "$ref": "response.task_id"
+                            }
+                          },
+                          {
+                            "$eq": [
+                              {
+                                "$ref": "taskId"
+                              },
+                              {
+                                "$ref": "response.task_id"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      {
+                        "$lower": {
+                          "$ref": "response.state"
+                        }
+                      },
+                      "success"
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$ref": "response.creations"
+                        }
+                      },
+                      1
+                    ]
+                  },
+                  {
+                    "$ref": "response.creations.0.url"
+                  }
+                ]
+              },
+              "then": [
+                {
+                  "$ref": "response.creations.0.url"
+                }
+              ],
+              "else": []
+            }
+          },
+          "messagePaths": [
+            "err_code",
+            "message"
+          ],
+          "resultEphemeral": true
+        }
+      }
+    ]
+  },
+  "documentation": "# Vidu Q2 Pro 原生图生视频\n\n唯一架构依据：[影策插件架构与接入说明](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)第7、8、12、13、14章。\n只接原版本viduq2-pro，不使用通用/v1/videos或其他模型替代。\n\n---\n\n# Vidu Q2 Pro 接口合同\n\n## 请求\n\n官方：https://platform.vidu.com/docs/image-to-video 、https://platform.vidu.com/docs/start-end-to-video 、https://platform.vidu.com/docs/get-generation 。\n宿主从渠道apiKey读取密钥，Authorization: Token，非Bearer。POST /ent/v2/img2video为单图，/ent/v2/start-end2video为首尾帧；originPath=true，baseUrl=https://api.vidu.com。\nmodel必须viduq2-pro；images按明确first_frame/last_frame角色排列，首帧必须唯一。单图时长1至10秒、首尾1至8秒；resolution为540p/720p/1080p，prompt最多5000字符。源工具当前保存范围仅720p/1080p及1至8秒，导入不扩大原参数。\nis_rec=false保留原文，bgm=false保留源默认关闭背景音乐，off_peak=false。单图audio=false；首尾帧Q2不支持audio字段，省略该字段，不能把Q3音画合同用在Q2。此入口不承接声音、水印、种子或其他providerOptions覆盖。\n图片支持PNG/JPEG/JPG/WebP、公网URL或DataURL，单文件最多50MB、HTTP请求体不超过20MB。单图比例在1:4至4:1范围内；首尾帧的宽高比之比需0.8至1.25。上述实际字节、尺寸及可达性需在真实素材验收中另验；角色检查不代表素材已通过。\n\n## 响应\n\nGET /ent/v2/tasks/{taskId}/creations。created/queueing待处理、processing进行中、success仍须恰好一个creations结果和url、failed失败，err_code或未知状态失败。创建必须有task_id；官方查询不回显task_id，使用原查询ID，若返回了不同ID则拒绝。未完成状态带URL不得下载。结果URL有效24小时，resultEphemeral=true由宿主回收归档。\n本机HTTP夹具通过不代表真实模型、源私有默认效果、全片质量、版权或完整案例验收。原viduq2参考模型、Q3以及混合模式不由此包替代。\n\n## Manifest 完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"vidu-q2-pro-video\",\n  \"name\": \"Vidu Q2 Pro Native\",\n  \"version\": \"1.0.0\",\n  \"author\": \"Yingxue\",\n  \"description\": \"Vidu Q2 Pro原生单图与首尾帧声明式协议，Token鉴权，保留原版本和帧角色。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"vidu-q2-pro-video\",\n        \"label\": \"Vidu Q2 Pro Native\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.vidu.com\",\n        \"auth\": {\n          \"type\": \"header\",\n          \"field\": \"apiKey\",\n          \"header\": \"Authorization\",\n          \"prefix\": \"Token \"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"mapping\": \"model\",\n            \"description\": \"仅viduq2-pro\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"mapping\": \"prompt\",\n            \"description\": \"完整原始正文\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"array\",\n            \"mapping\": \"images\",\n            \"description\": \"唯一first_frame及可选唯一last_frame\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"mapping\": \"duration\",\n            \"description\": \"单图1..10，首尾1..8秒\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"mapping\": \"resolution\",\n            \"description\": \"540p/720p/1080p\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"viduq2-pro\"\n              ]\n            },\n            \"message\": \"必须使用viduq2-pro，不能替换版本\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.operation\"\n                },\n                \"image_to_video\"\n              ]\n            },\n            \"message\": \"此入口只接单图和首尾帧\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$ref\": \"request.images\"\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"first_frame\"\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$or\": [\n                    {\n                      \"$and\": [\n                        {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            1\n                          ]\n                        },\n                        {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$filter\": {\n                                  \"from\": {\n                                    \"$ref\": \"request.images\"\n                                  },\n                                  \"as\": \"media\",\n                                  \"where\": {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                }\n                              }\n                            },\n                            0\n                          ]\n                        }\n                      ]\n                    },\n                    {\n                      \"$and\": [\n                        {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            2\n                          ]\n                        },\n                        {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$filter\": {\n                                  \"from\": {\n                                    \"$ref\": \"request.images\"\n                                  },\n                                  \"as\": \"media\",\n                                  \"where\": {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                }\n                              }\n                            },\n                            1\n                          ]\n                        }\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"必须保留唯一首帧，双图还须唯一末帧；不丢弃音视频\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gte\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        }\n                      ]\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        }\n                      ]\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            1\n                          ]\n                        },\n                        \"then\": 10,\n                        \"else\": 8\n                      }\n                    }\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        }\n                      ]\n                    },\n                    {\n                      \"$toInt\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.output.duration\"\n                          },\n                          {\n                            \"$ref\": \"request.duration\"\n                          }\n                        ]\n                      }\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"单图1至10秒、首尾帧1至8秒整数\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$lower\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.resolution\"\n                      },\n                      {\n                        \"$ref\": \"request.resolution\"\n                      }\n                    ]\n                  }\n                },\n                [\n                  \"540p\",\n                  \"720p\",\n                  \"1080p\"\n                ]\n              ]\n            },\n            \"message\": \"不支持此分辨率\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.aspectRatio\"\n                    },\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    \"auto\"\n                  ]\n                },\n                [\n                  \"auto\",\n                  \"adaptive\",\n                  \"\"\n                ]\n              ]\n            },\n            \"message\": \"画幅由原图决定，不能忽略指定固定比例\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.generateAudio\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.output.generateAudio\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.watermark\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.output.watermark\"\n                  }\n                }\n              ]\n            },\n            \"message\": \"此源接入仅保留无声、无额外水印要求\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                5000\n              ]\n            },\n            \"message\": \"原文不能超过5000字符或自动截断\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.count\"\n                    },\n                    1\n                  ]\n                },\n                1\n              ]\n            },\n            \"message\": \"每次只能生成一个结果\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.providerOptions\"\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"此源合同未开放供应商覆盖选项\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"pathTemplate\": {\n            \"$if\": {\n              \"condition\": {\n                \"$eq\": [\n                  {\n                    \"$len\": {\n                      \"$ref\": \"request.images\"\n                    }\n                  },\n                  1\n                ]\n              },\n              \"then\": \"/ent/v2/img2video\",\n              \"else\": \"/ent/v2/start-end2video\"\n            }\n          },\n          \"originPath\": true,\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"images\": {\n              \"$if\": {\n                \"condition\": {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                \"then\": [\n                  {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$ref\": \"request.images\"\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"first_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                ],\n                \"else\": [\n                  {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$ref\": \"request.images\"\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"first_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  },\n                  {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$ref\": \"request.images\"\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"last_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                ]\n              }\n            },\n            \"duration\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.output.duration\"\n                },\n                {\n                  \"$ref\": \"request.duration\"\n                }\n              ]\n            },\n            \"resolution\": {\n              \"$lower\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.resolution\"\n                  },\n                  {\n                    \"$ref\": \"request.resolution\"\n                  }\n                ]\n              }\n            },\n            \"is_rec\": false,\n            \"bgm\": false,\n            \"off_peak\": false,\n            \"audio\": {\n              \"$omitEmpty\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"request.images\"\n                        }\n                      },\n                      1\n                    ]\n                  },\n                  \"then\": false,\n                  \"else\": null\n                }\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/ent/v2/tasks/{{taskId}}/creations\",\n          \"originPath\": true\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$not\": {\n                  \"$and\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"response.task_id\"\n                        },\n                        {\n                          \"$ref\": \"taskId\"\n                        }\n                      ]\n                    },\n                    {\n                      \"$not\": {\n                        \"$ref\": \"response.err_code\"\n                      }\n                    },\n                    {\n                      \"$in\": [\n                        {\n                          \"$lower\": {\n                            \"$ref\": \"response.state\"\n                          }\n                        },\n                        [\n                          \"created\",\n                          \"queueing\",\n                          \"processing\",\n                          \"success\",\n                          \"failed\"\n                        ]\n                      ]\n                    },\n                    {\n                      \"$or\": [\n                        {\n                          \"$not\": {\n                            \"$ref\": \"taskId\"\n                          }\n                        },\n                        {\n                          \"$not\": {\n                            \"$ref\": \"response.task_id\"\n                          }\n                        },\n                        {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"taskId\"\n                            },\n                            {\n                              \"$ref\": \"response.task_id\"\n                            }\n                          ]\n                        }\n                      ]\n                    }\n                  ]\n                }\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$lower\": {\n                          \"$ref\": \"response.state\"\n                        }\n                      },\n                      \"success\"\n                    ]\n                  },\n                  \"then\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$and\": [\n                          {\n                            \"$and\": [\n                              {\n                                \"$coalesce\": [\n                                  {\n                                    \"$ref\": \"response.task_id\"\n                                  },\n                                  {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                ]\n                              },\n                              {\n                                \"$not\": {\n                                  \"$ref\": \"response.err_code\"\n                                }\n                              },\n                              {\n                                \"$in\": [\n                                  {\n                                    \"$lower\": {\n                                      \"$ref\": \"response.state\"\n                                    }\n                                  },\n                                  [\n                                    \"created\",\n                                    \"queueing\",\n                                    \"processing\",\n                                    \"success\",\n                                    \"failed\"\n                                  ]\n                                ]\n                              },\n                              {\n                                \"$or\": [\n                                  {\n                                    \"$not\": {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  },\n                                  {\n                                    \"$not\": {\n                                      \"$ref\": \"response.task_id\"\n                                    }\n                                  },\n                                  {\n                                    \"$eq\": [\n                                      {\n                                        \"$ref\": \"taskId\"\n                                      },\n                                      {\n                                        \"$ref\": \"response.task_id\"\n                                      }\n                                    ]\n                                  }\n                                ]\n                              }\n                            ]\n                          },\n                          {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"response.state\"\n                                }\n                              },\n                              \"success\"\n                            ]\n                          },\n                          {\n                            \"$eq\": [\n                              {\n                                \"$len\": {\n                                  \"$ref\": \"response.creations\"\n                                }\n                              },\n                              1\n                            ]\n                          },\n                          {\n                            \"$ref\": \"response.creations.0.url\"\n                          }\n                        ]\n                      },\n                      \"then\": \"succeeded\",\n                      \"else\": \"failed\"\n                    }\n                  },\n                  \"else\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$lower\": {\n                              \"$ref\": \"response.state\"\n                            }\n                          },\n                          \"failed\"\n                        ]\n                      },\n                      \"then\": \"failed\",\n                      \"else\": {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"response.state\"\n                                }\n                              },\n                              \"processing\"\n                            ]\n                          },\n                          \"then\": \"processing\",\n                          \"else\": \"pending\"\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            }\n          },\n          \"videos\": {\n            \"$if\": {\n              \"condition\": {\n                \"$and\": [\n                  {\n                    \"$and\": [\n                      {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"response.task_id\"\n                          },\n                          {\n                            \"$ref\": \"taskId\"\n                          }\n                        ]\n                      },\n                      {\n                        \"$not\": {\n                          \"$ref\": \"response.err_code\"\n                        }\n                      },\n                      {\n                        \"$in\": [\n                          {\n                            \"$lower\": {\n                              \"$ref\": \"response.state\"\n                            }\n                          },\n                          [\n                            \"created\",\n                            \"queueing\",\n                            \"processing\",\n                            \"success\",\n                            \"failed\"\n                          ]\n                        ]\n                      },\n                      {\n                        \"$or\": [\n                          {\n                            \"$not\": {\n                              \"$ref\": \"taskId\"\n                            }\n                          },\n                          {\n                            \"$not\": {\n                              \"$ref\": \"response.task_id\"\n                            }\n                          },\n                          {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"taskId\"\n                              },\n                              {\n                                \"$ref\": \"response.task_id\"\n                              }\n                            ]\n                          }\n                        ]\n                      }\n                    ]\n                  },\n                  {\n                    \"$eq\": [\n                      {\n                        \"$lower\": {\n                          \"$ref\": \"response.state\"\n                        }\n                      },\n                      \"success\"\n                    ]\n                  },\n                  {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"response.creations\"\n                        }\n                      },\n                      1\n                    ]\n                  },\n                  {\n                    \"$ref\": \"response.creations.0.url\"\n                  }\n                ]\n              },\n              \"then\": [\n                {\n                  \"$ref\": \"response.creations.0.url\"\n                }\n              ],\n              \"else\": []\n            }\n          },\n          \"messagePaths\": [\n            \"err_code\",\n            \"message\"\n          ],\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->"
+}

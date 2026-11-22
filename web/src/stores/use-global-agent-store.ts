@@ -1,0 +1,159 @@
+import { create } from "zustand";
+import { AGENT_PANEL_DOCK_KEY, restoreAgentPanelDock, type AgentPanelDockPreference } from "@/lib/canvas/agent-panel-dock";
+import type { InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
+import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import type { CloudAgentMessagePresentation } from "@/services/cloud-agent-conversations";
+import type { CanvasNodeData } from "@/types/canvas";
+import { agentPageContextKey, type AgentPageContext, type AgentRequestTarget } from "@/lib/agent-page-context";
+
+export type AgentPrefillRequest = CloudAgentMessagePresentation & { id: number; text: string; autoSubmit?: boolean; requiresVision?: boolean; target?: AgentRequestTarget };
+/** 画布为 Agent 输入框新建的节点，输入框据此显示附件卡片。 */
+export type AgentInsertedNode = { nodeId: string; title: string; kind: "image" | "text" | "video" | "audio"; previewUrl?: string };
+
+/**
+ * 当前页面提供给平台级 Agent 的画布上下文。只有画布编辑器会发布它；
+ * 离开画布时清空，此后的对话轮次不再绑定该画布。
+ */
+export type AgentCanvasContext = {
+    canvasId: string;
+    domainProjectId?: string;
+    nodeCount: number;
+    selectedNodeIds: string[];
+    references: CanvasResourceReference[];
+    canvasNodes?: readonly CanvasNodeData[];
+    runningNodeId?: string | null;
+    prefillRequest?: AgentPrefillRequest | null;
+    onFocusNode?: (nodeId: string) => void;
+    /**
+     * Agent 输入框的附件先放到画布上，再以节点引用随消息发出：Agent 能看图，也能拿它当生成参考。
+     * 返回占位节点 ID；上传在后台继续，进度和失败原因写在节点上。占位节点建出来之前就失败时调用 onError。
+     */
+    insertAgentFiles?: (files: File[], onError?: (nodeId: string, details: string) => void) => string[];
+    /** 长文本放成画布文本节点，返回节点 ID。 */
+    insertAgentText?: (text: string, title: string) => string;
+    /** 问卷的「决策确认单」等需要排版的内容放成 Markdown 节点，返回节点 ID。 */
+    insertAgentMarkdown?: (markdown: string, title: string) => string;
+    /** 从素材库选中的内容放到画布，返回新节点（一个素材可能生成多个节点）。 */
+    insertAgentAssets?: (payloads: InsertAssetPayload[]) => Promise<AgentInsertedNode[]>;
+    /** 从素材托盘拖进 Agent 面板的图片放到画布，返回节点 ID。 */
+    insertAgentImageAsset?: (assetId: string) => Promise<string | null>;
+    /** 移除输入框刚放到画布上的节点：已连线的保留；删除进入撤销栈。 */
+    discardAgentNodes?: (nodeIds: string[]) => void;
+};
+
+type GlobalAgentStore = {
+    /** 平台唯一 Agent 面板的开合状态，跨路由保持。 */
+    open: boolean;
+    canvas: AgentCanvasContext | null;
+    page: { context: AgentPageContext; label: string } | null;
+    prefillRequest: AgentPrefillRequest | null;
+    /** 本机 UI 偏好：在画布里是否停靠到右侧，以及停靠宽度。账号切换不影响。 */
+    dock: AgentPanelDockPreference;
+    openAgent: () => void;
+    closeAgent: () => void;
+    setCanvas: (canvas: AgentCanvasContext | null) => void;
+    setPage: (page: { context: AgentPageContext; label: string } | null) => void;
+    requestPrefill: (request: Omit<AgentPrefillRequest, "id">) => void;
+    clearPrefill: (id: number) => void;
+    setDocked: (docked: boolean) => void;
+    setDockWidth: (width: number) => void;
+    reset: () => void;
+};
+
+function readDockPreference() {
+    try {
+        return restoreAgentPanelDock(typeof localStorage === "undefined" ? null : localStorage.getItem(AGENT_PANEL_DOCK_KEY));
+    } catch (error) {
+        console.warn("Agent 停靠偏好无法读取", error);
+        return restoreAgentPanelDock(null);
+    }
+}
+
+function sameRecord(left: object, right: object) {
+    if (left === right) return true;
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) return false;
+    return leftKeys.every((key) => Object.is((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
+}
+
+/** 内容没变就沿用旧数组；变了也尽量沿用没变的元素，订阅方可以按引用判断变化。 */
+function reuseEqualItems<T>(previous: readonly T[] | undefined, next: readonly T[] | undefined, equal: (left: T, right: T) => boolean): readonly T[] | undefined {
+    if (!previous || !next || previous === next) return next;
+    let changed = previous.length !== next.length;
+    const merged = next.map((item, index) => {
+        const old = previous[index];
+        if (index < previous.length && equal(old, item)) return old;
+        changed = true;
+        return item;
+    });
+    return changed ? merged : previous;
+}
+
+/**
+ * 画布每次选中、拖动结束或编辑都会重新发布上下文，其中大部分字段并没有变。
+ * 这里把内容相同的数组和整份上下文换回旧引用，面板只在真正用到的字段变化时才重渲染。
+ */
+function stabilizeCanvasContext(previous: AgentCanvasContext | null, next: AgentCanvasContext | null): AgentCanvasContext | null {
+    if (!previous || !next || previous.canvasId !== next.canvasId) return next;
+    const stable: AgentCanvasContext = {
+        ...next,
+        references: reuseEqualItems(previous.references, next.references, sameRecord) as CanvasResourceReference[],
+        selectedNodeIds: reuseEqualItems(previous.selectedNodeIds, next.selectedNodeIds, Object.is) as string[],
+    };
+    return sameRecord(previous, stable) ? previous : stable;
+}
+
+let persistDockTimer: ReturnType<typeof setTimeout> | undefined;
+let prefillSequence = 0;
+
+// 拖动调宽时每帧都会更新，合并后再写本地存储。
+function persistDockPreference(dock: AgentPanelDockPreference) {
+    if (typeof localStorage === "undefined") return;
+    clearTimeout(persistDockTimer);
+    persistDockTimer = setTimeout(() => {
+        try {
+            localStorage.setItem(AGENT_PANEL_DOCK_KEY, JSON.stringify(dock));
+        } catch (error) {
+            console.warn("Agent 停靠偏好无法保存", error);
+        }
+    }, 150);
+}
+
+export const useGlobalAgentStore = create<GlobalAgentStore>()((set, get) => ({
+    open: false,
+    canvas: null,
+    page: null,
+    prefillRequest: null,
+    dock: readDockPreference(),
+    openAgent: () => set({ open: true }),
+    closeAgent: () => set({ open: false }),
+    setPage: (page) => set((state) => (state.page?.label === page?.label && agentPageContextKey(state.page?.context) === agentPageContextKey(page?.context) ? state : { page })),
+    requestPrefill: (request) =>
+        set((state) => ({
+            open: true,
+            prefillRequest: {
+                ...request,
+                id: ++prefillSequence,
+                target: request.target || (state.canvas ? { canvasId: state.canvas.canvasId } : { canvasId: "", ...(state.page ? { pageContext: { ...state.page.context } } : {}) }),
+            },
+        })),
+    clearPrefill: (id) => set((state) => (state.prefillRequest?.id === id ? { prefillRequest: null } : state)),
+    setCanvas: (canvas) =>
+        set((state) => {
+            const next = stabilizeCanvasContext(state.canvas, canvas);
+            // 返回同一个 state 时 zustand 不通知订阅者。
+            return next === state.canvas ? state : { canvas: next };
+        }),
+    setDocked: (docked) => {
+        const dock = { ...get().dock, docked };
+        set({ dock });
+        persistDockPreference(dock);
+    },
+    setDockWidth: (width) => {
+        if (get().dock.width === width) return;
+        const dock = { ...get().dock, width };
+        set({ dock });
+        persistDockPreference(dock);
+    },
+    reset: () => set({ open: false, canvas: null, page: null, prefillRequest: null }),
+}));

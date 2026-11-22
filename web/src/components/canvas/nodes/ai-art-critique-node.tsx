@@ -1,9 +1,11 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { ArrowRight, CheckCircle2, CircleAlert, Image as ImageIcon, LoaderCircle, RefreshCw, ScanSearch } from "lucide-react";
 
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { ART_CRITIQUE_PLUGIN_ID, artCritiqueSourceFingerprint, artCritiqueStageLabel, createDefaultArtCritiqueState, isArtCritiqueImageInput, type ArtCritiqueNodeState } from "@/lib/art-critique/contracts";
+import { ART_CRITIQUE_PLUGIN_ID, artCritiqueSourceFingerprint, createDefaultArtCritiqueState, isArtCritiqueImageInput, type ArtCritiqueNodeState, type ArtCritiquePipelineStage } from "@/lib/art-critique/contracts";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 import { useCanvasNodeActions } from "../canvas-node-action-context";
@@ -13,8 +15,21 @@ type ArtCritiqueNodeProps = {
     node: CanvasNodeData;
 };
 
+const stageLabelKeys: Record<ArtCritiquePipelineStage, InterfaceMessageKey> = {
+    preparing: "canvasArtCritiqueUi014",
+    scene: "canvasArtCritiqueUi015",
+    reviewing: "canvasArtCritiqueUi016",
+    aggregating: "canvasArtCritiqueUi017",
+    grounding: "canvasArtCritiqueUi018",
+    verifying: "canvasArtCritiqueUi019",
+    annotating: "canvasArtCritiqueUi020",
+    completed: "canvasArtCritiqueUi021",
+    failed: "canvasArtCritiqueUi022",
+};
+
 export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useInterfaceTranslation();
+    const theme = canvasThemes[useActiveTheme()];
     const installations = usePluginStore((state) => state.installations);
     const { openArtCritique } = useCanvasNodeActions();
     const imageInputs = useUpstreamNodes(node.id).filter(isArtCritiqueImageInput);
@@ -29,6 +44,16 @@ export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
     const issueCount = state.report?.issues.length || 0;
     const optionCount = state.report?.options?.length || 0;
     const canOpen = Boolean(state.report) || (enabled && Boolean(input));
+    const reportStatus = state.report
+        ? issueCount
+            ? t("canvasArtCritiqueDyn001", { count: issueCount })
+            : optionCount
+              ? t("canvasArtCritiqueDyn002", { count: optionCount })
+              : t("canvasArtCritiqueUi007")
+        : t("canvasArtCritiqueUi008");
+    const inputSummary = imageInputs.length > 1
+        ? t("canvasArtCritiqueDyn003", { count: imageInputs.length, status: reportStatus })
+        : reportStatus;
 
     return (
         <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden rounded-[inherit] p-3" style={{ background: theme.node.panel, color: theme.node.text }} onPointerDown={(event) => event.stopPropagation()}>
@@ -37,9 +62,9 @@ export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
                     <ScanSearch className="size-4" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                    <div className="truncate text-[var(--fs-label)] font-semibold">AI 审美批改</div>
+                    <div className="truncate text-[var(--fs-label)] font-semibold">{t("canvasArtCritiqueUi001")}</div>
                     <div className="truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
-                        {enabled ? "视觉分析 · SVG 标注 · 不修改原图" : state.report ? "插件未启用 · 历史报告只读" : "插件未启用 · 请先到插件管理开启"}
+                        {enabled ? t("canvasArtCritiqueUi002") : state.report ? t("canvasArtCritiqueUi003") : t("canvasArtCritiqueUi004")}
                     </div>
                 </div>
                 <StatusBadge status={status} stage={state.analysisStage} />
@@ -55,38 +80,38 @@ export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
                 )}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-white">
                     <div className="min-w-0">
-                        <div className="truncate text-[var(--fs-micro)] font-semibold">{input ? input.title || "输入图片" : "等待图片输入"}</div>
+                        <div className="truncate text-[var(--fs-micro)] font-semibold">{input ? input.title || t("canvasArtCritiqueUi005") : t("canvasArtCritiqueUi006")}</div>
                         <div className="mt-0.5 text-[var(--fs-micro)] opacity-75">
                             {input
-                                ? `${state.report ? (issueCount ? `${issueCount} 个重点问题` : optionCount ? `${optionCount} 个可选方向，无确定问题` : "本轮未发现重点问题") : "尚未生成报告"}${imageInputs.length > 1 ? ` · 已连接 ${imageInputs.length} 张，使用第一张` : ""}`
-                                : "从图片节点拖入一条连线"}
+                                ? inputSummary
+                                : t("canvasArtCritiqueUi009")}
                         </div>
                     </div>
-                    {status === "completed" && issueCount ? <span className="shrink-0 rounded-full bg-black/45 px-2 py-1 text-[var(--fs-micro)] font-semibold">{issueCount} 项</span> : null}
+                    {status === "completed" && issueCount ? <span className="shrink-0 rounded-full bg-black/45 px-2 py-1 text-[var(--fs-micro)] font-semibold">{issueCount} {t("projectUi.itemUnit")}</span> : null}
                 </div>
             </div>
 
             {status === "stale" ? (
                 <div
-                    className="flex min-h-9 items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-2 text-[var(--fs-micro)]"
+                    className="flex min-h-9 items-center gap-2 rounded-[var(--r-md)] border px-2 py-2 text-[var(--fs-micro)]"
                     style={{ borderColor: "color-mix(in oklch, var(--status-warning) 50%, transparent)", background: "color-mix(in oklch, var(--status-warning) 9%, transparent)", color: "var(--status-warning)" }}
                 >
                     <RefreshCw className="size-3.5 shrink-0" aria-hidden="true" />
-                    <span className="truncate">输入图片已变化，需要重新批改</span>
+                    <span className="truncate">{t("canvasCompleteUi.critiqueImageChanged")}</span>
                 </div>
             ) : null}
             {status === "failed" && state.errorMessage ? (
                 <div
-                    className="line-clamp-2 rounded-[var(--r-md)] border px-2.5 py-2 text-[var(--fs-micro)]"
+                    className="line-clamp-2 rounded-[var(--r-md)] border px-2 py-2 text-[var(--fs-micro)]"
                     style={{ borderColor: "color-mix(in oklch, var(--status-error) 50%, transparent)", background: "color-mix(in oklch, var(--status-error) 9%, transparent)", color: "var(--status-error)" }}
                 >
                     {state.errorMessage}
                 </div>
             ) : null}
             {state.report && status === "completed" ? (
-                <div className="flex min-h-9 items-center gap-2 rounded-[var(--r-md)] border px-2.5 py-2 text-[var(--fs-micro)]" style={{ borderColor: theme.node.edge, background: theme.node.fill }}>
+                <div className="flex min-h-9 items-center gap-2 rounded-[var(--r-md)] border px-2 py-2 text-[var(--fs-micro)]" style={{ borderColor: theme.node.edge, background: theme.node.fill }}>
                     <CheckCircle2 className="size-3.5 shrink-0" style={{ color: "var(--status-success)" }} aria-hidden="true" />
-                    <span className="truncate">{state.report.summary || `已完成 ${issueCount} 项批改`}</span>
+                    <span className="truncate">{state.report.summary || t("canvasCompleteUi.critiquesDone", { value0: issueCount })}</span>
                 </div>
             ) : null}
 
@@ -102,7 +127,7 @@ export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
                 }}
             >
                 {status === "running" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
-                {status === "running" ? "正在批改" : state.report ? (status === "stale" ? "重新批改" : "查看批改报告") : "开始 AI 批改"}
+                {status === "running" ? t("canvasArtCritiqueUi010") : state.report ? (status === "stale" ? t("canvasArtCritiqueUi011") : t("canvasArtCritiqueUi012")) : t("canvasArtCritiqueUi013")}
                 {status !== "running" ? <ArrowRight className="size-4" aria-hidden="true" /> : null}
             </button>
         </div>
@@ -110,37 +135,38 @@ export function ArtCritiqueNodeContent({ node }: ArtCritiqueNodeProps) {
 }
 
 function StatusBadge({ status, stage }: { status: string; stage?: ArtCritiqueNodeState["analysisStage"] }) {
+    const { t } = useInterfaceTranslation();
     if (status === "running")
         return (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: "var(--status-info)", background: "color-mix(in oklch, var(--status-info) 15%, transparent)" }}>
                 <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
-                {artCritiqueStageLabel(stage)}
+                {stage ? t(stageLabelKeys[stage]) : t("canvasArtCritiqueUi023")}
             </span>
         );
     if (status === "completed")
         return (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: "var(--status-success)", background: "color-mix(in oklch, var(--status-success) 15%, transparent)" }}>
                 <CheckCircle2 className="size-3" aria-hidden="true" />
-                已完成
+                {t("agentChromeStatusCompleted")}
             </span>
         );
     if (status === "stale")
         return (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: "var(--status-warning)", background: "color-mix(in oklch, var(--status-warning) 15%, transparent)" }}>
                 <RefreshCw className="size-3" aria-hidden="true" />
-                待更新
+                {t("canvasCompleteUi.outdated")}
             </span>
         );
     if (status === "failed")
         return (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: "var(--status-error)", background: "color-mix(in oklch, var(--status-error) 15%, transparent)" }}>
                 <CircleAlert className="size-3" aria-hidden="true" />
-                失败
+                {t("creationPageShotStatusFailed")}
             </span>
         );
     return (
         <span className="inline-flex shrink-0 items-center rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: "var(--foreground-muted)", background: "color-mix(in oklch, var(--foreground-muted) 12%, transparent)" }}>
-            未开始
+            {t("canvasCompleteUi.notStarted")}
         </span>
     );
 }

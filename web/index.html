@@ -3,58 +3,52 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content="AI 影视与短剧创作工作台。" />
-        <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
-        <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png" />
-        <title>正在加载</title>
+        <meta name="description" content="AI 影视与短剧创作工作台" />
+        <link rel="icon" type="image/png" href="/brand/yingxue-leaf-20261107-icon.png" />
+        <link rel="preconnect" href="https://img.tianyayingxue.cn" />
+        <title>映雪 · AI 影视创作平台</title>
         <style>
+            /* Fix layer order before production chunks can register utilities ahead of base. */
+            @layer theme, base, components, utilities;
+
             html,
             body {
                 margin: 0;
-                background: #0b0c10;
+                background: #ffffff;
+            }
+            /* 与 globals.css 的 .dark --background 一致；暗色主题下切页或首屏不透出白底。 */
+            html.dark,
+            html.dark body {
+                background: #0f0f11;
+            }
+            #boot-recovery {
+                position: fixed;
+                inset-inline: 24px;
+                top: calc(50% + 32px);
+                text-align: center;
+                font: 16px/1.6 sans-serif;
+                color: #171717;
+            }
+            #boot-recovery button {
+                padding: 8px 16px;
+                border: 1px solid currentColor;
+                border-radius: 8px;
+                background: transparent;
+                color: inherit;
+                font: inherit;
+                cursor: pointer;
+            }
+            html.dark #boot-recovery {
+                color: #f5f5f5;
             }
             #root:empty {
                 min-height: 100vh;
-            }
-            #root:empty::before {
-                content: "";
-                position: fixed;
-                left: 50%;
-                top: 50%;
-                width: 12px;
-                height: 12px;
-                margin: -6px 0 0 -6px;
-                background: rgba(255, 255, 255, 0.84);
-                border-radius: 999px;
-                box-shadow: 0 0 0 7px rgba(255, 255, 255, 0.08);
-                animation: appearance-bootstrap-pulse 1.8s ease-in-out infinite;
-            }
-            #root:empty::after {
-                content: "";
-                position: fixed;
-                left: 50%;
-                top: 50%;
-                width: 82px;
-                height: 82px;
-                margin: -42px 0 0 -42px;
-                border: 1px solid rgba(255, 255, 255, 0.14);
-                border-right-color: transparent;
-                border-radius: 999px;
-                animation: appearance-bootstrap-orbit 2.8s linear infinite;
-            }
-            @keyframes appearance-bootstrap-pulse { 0%, 100% { opacity: .62; transform: scale(.82); } 50% { opacity: 1; transform: scale(1.08); } }
-            @keyframes appearance-bootstrap-orbit { to { transform: rotate(360deg); } }
-            @media (prefers-reduced-motion: reduce) {
-                #root:empty::before,
-                #root:empty::after {
-                    animation: none;
-                }
             }
         </style>
         <script>
             try {
                 var s = JSON.parse(localStorage.getItem("infinite-canvas:theme_store") || "{}");
-                var t = s.state && s.state.theme === "light" ? "light" : "dark";
+                var t = s.state && s.state.theme === "dark" ? "dark" : "light";
                 document.documentElement.classList.toggle("dark", t === "dark");
                 document.documentElement.style.colorScheme = t;
             } catch (e) {}
@@ -62,6 +56,95 @@
     </head>
     <body class="bg-background text-foreground antialiased">
         <div id="root"></div>
+        <section id="boot-recovery" role="status" aria-live="polite">
+            <p>正在打开创作空间</p>
+            <button type="button" hidden>重新加载</button>
+        </section>
+        <script>
+            // 放在 #root 之后：外链样式加载完、首帧绘制前才执行，启动信号从这一刻对齐 performance.now()。
+            (() => {
+                const bootRoot = document.getElementById("root");
+                bootRoot.style.setProperty("--boot-signal-clock", performance.now() + "ms");
+                const notice = document.getElementById("boot-recovery");
+                const message = notice.querySelector("p");
+                const retry = notice.querySelector("button");
+                const entrySelector = 'script[type="module"][src]';
+                let failed = false;
+                let slow = false;
+                let checkedVersion = false;
+
+                function reload() {
+                    var url = new URL(location.href);
+                    url.searchParams.set("__chunk_recovery", String(Date.now()));
+                    location.replace(url.toString());
+                }
+
+                function updateMessage() {
+                    const offline = navigator.onLine === false;
+                    message.textContent = offline ? "网络连接中断，请检查连接。" : failed ? "启动资源加载失败，请重试。" : slow ? "加载较慢，仍在继续…" : "正在打开创作空间";
+                    retry.hidden = !offline && !failed;
+                }
+
+                async function showFailure(status) {
+                    if (bootRoot.childNodes.length) return;
+                    failed = true;
+                    updateMessage();
+                    if (checkedVersion || (status !== 404 && status !== 410) || new URL(location.href).searchParams.has("__chunk_recovery")) return;
+                    checkedVersion = true;
+                    try {
+                        const current = document.querySelector(entrySelector);
+                        if (!current) return;
+                        const response = await fetch(location.href, { cache: "no-store", signal: AbortSignal.timeout(5000) });
+                        if (!response.ok) return;
+                        const latest = new DOMParser().parseFromString(await response.text(), "text/html").querySelector(entrySelector);
+                        if (!latest) return;
+                        const entry = new URL(latest.getAttribute("src"), response.url || location.href);
+                        if (!bootRoot.childNodes.length && entry.origin === new URL(location.href).origin && /^\/assets\/[^/]+\.js$/.test(entry.pathname) && entry.href !== current.src) reload();
+                    } catch {
+                        // 版本检查失败时保留手动恢复入口。
+                    }
+                }
+
+                function onStartupFailure(event) {
+                    void showFailure(event.detail.status);
+                }
+
+                async function onScriptFailure(event) {
+                    const entry = document.querySelector(entrySelector);
+                    if (!entry || event.target !== entry || bootRoot.childNodes.length) return;
+                    let status;
+                    try {
+                        const response = await fetch(entry.src, { method: "HEAD", cache: "no-store", signal: AbortSignal.timeout(5000) });
+                        status = response.status;
+                    } catch {
+                        // 原生模块报错可能来自下游依赖，只有确认缺失才检查版本。
+                    }
+                    await showFailure(status);
+                }
+
+                retry.onclick = reload;
+                addEventListener("online", updateMessage);
+                addEventListener("offline", updateMessage);
+                addEventListener("starai:startup-load-failure", onStartupFailure);
+                addEventListener("error", onScriptFailure, true);
+                updateMessage();
+                const bootTimer = setTimeout(() => {
+                    slow = true;
+                    updateMessage();
+                }, 20000);
+                const bootObserver = new MutationObserver(() => {
+                    if (!bootRoot.childNodes.length) return;
+                    clearTimeout(bootTimer);
+                    bootObserver.disconnect();
+                    removeEventListener("online", updateMessage);
+                    removeEventListener("offline", updateMessage);
+                    removeEventListener("starai:startup-load-failure", onStartupFailure);
+                    removeEventListener("error", onScriptFailure, true);
+                    notice.remove();
+                });
+                bootObserver.observe(bootRoot, { childList: true });
+            })();
+        </script>
         <script type="module" src="/src/main.tsx"></script>
     </body>
 </html>

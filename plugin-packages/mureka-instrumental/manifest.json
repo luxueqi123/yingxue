@@ -1,0 +1,430 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "mureka-instrumental",
+  "name": "Mureka 8 Instrumental",
+  "version": "1.0.0",
+  "author": "影策",
+  "description": "原mureka-8纯音乐独立协议，保留原模型和一次一份。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "mureka-instrumental",
+        "label": "Mureka 8 Instrumental",
+        "capabilities": [
+          "audio"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.mureka.ai",
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "严格mureka-8"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "完整纯音乐描述，最多1024字符"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "providerOptions.mureka-instrumental",
+            "description": "forceInstrumental必须true"
+          },
+          {
+            "name": "extra",
+            "type": "object",
+            "mapping": "count",
+            "description": "原count=1显式映射n=1"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/instrumental/generate",
+          "originPath": true,
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "n": 1,
+            "stream": false
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/instrumental/query/{{taskId}}",
+          "originPath": true
+        },
+        "response": {
+          "taskIdPaths": [
+            "id"
+          ],
+          "status": {
+            "$if": {
+              "condition": {
+                "$and": [
+                  {
+                    "$eq": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      "succeeded"
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.choices"
+                            },
+                            []
+                          ]
+                        }
+                      },
+                      1
+                    ]
+                  },
+                  {
+                    "$in": [
+                      {
+                        "$first": {
+                          "$split": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "response.choices.0.url"
+                                },
+                                ""
+                              ]
+                            },
+                            "://"
+                          ]
+                        }
+                      },
+                      [
+                        "https",
+                        "http"
+                      ]
+                    ]
+                  },
+                  {
+                    "$gt": [
+                      {
+                        "$len": {
+                          "$ref": "response.choices.0.url"
+                        }
+                      },
+                      8
+                    ]
+                  }
+                ]
+              },
+              "then": "succeeded",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$in": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      [
+                        "preparing",
+                        "queued"
+                      ]
+                    ]
+                  },
+                  "then": "pending",
+                  "else": {
+                    "$if": {
+                      "condition": {
+                        "$in": [
+                          {
+                            "$ref": "response.status"
+                          },
+                          [
+                            "running",
+                            "streaming"
+                          ]
+                        ]
+                      },
+                      "then": "running",
+                      "else": {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$ref": "response.status"
+                              },
+                              "cancelled"
+                            ]
+                          },
+                          "then": "cancelled",
+                          "else": "failed"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.failed_reason"
+              },
+              "原音乐任务状态或结果无效"
+            ]
+          },
+          "audios": {
+            "$if": {
+              "condition": {
+                "$and": [
+                  {
+                    "$eq": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      "succeeded"
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.choices"
+                            },
+                            []
+                          ]
+                        }
+                      },
+                      1
+                    ]
+                  },
+                  {
+                    "$in": [
+                      {
+                        "$first": {
+                          "$split": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "response.choices.0.url"
+                                },
+                                ""
+                              ]
+                            },
+                            "://"
+                          ]
+                        }
+                      },
+                      [
+                        "https",
+                        "http"
+                      ]
+                    ]
+                  },
+                  {
+                    "$gt": [
+                      {
+                        "$len": {
+                          "$ref": "response.choices.0.url"
+                        }
+                      },
+                      8
+                    ]
+                  }
+                ]
+              },
+              "then": [
+                {
+                  "$ref": "response.choices.0.url"
+                }
+              ],
+              "else": []
+            }
+          },
+          "resultEphemeral": true
+        },
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "mureka-8"
+              ]
+            },
+            "message": "必须选择原mureka-8模型，不自动升级"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$coalesce": [
+                            {
+                              "$ref": "request.prompt"
+                            },
+                            ""
+                          ]
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.prompt"
+                      }
+                    },
+                    1024
+                  ]
+                }
+              ]
+            },
+            "message": "纯音乐描述必须非空且不超过1024字符，不截断"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.extra.count"
+                    },
+                    1
+                  ]
+                },
+                [
+                  1,
+                  "1"
+                ]
+              ]
+            },
+            "message": "此入口一次生成一份原音乐"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.providerOptions.mureka-instrumental.forceInstrumental"
+                },
+                true
+              ]
+            },
+            "message": "必须明确选择纯音乐，不以配音或歌曲替代"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.providerOptions.mureka-instrumental.durationMs"
+                },
+                null
+              ]
+            },
+            "message": "此接口没有指定曲长字段，不丢弃曲长"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.images"
+                          },
+                          []
+                        ]
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.videos"
+                          },
+                          []
+                        ]
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.audios"
+                          },
+                          []
+                        ]
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "本入口只接收文本，不忽略参考媒体"
+          }
+        ]
+      }
+    ]
+  },
+  "documentation": "# Mureka 8 Instrumental\n\n唯一接入架构：[影策插件架构与接入说明](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)第7、12、13章。使用声明式Provider，不新增Worker、渠道或数据库。\n具体接口：[Mureka纯音乐生成](https://platform.mureka.ai/docs/api/operations/post-v1-instrumental-generate.html)。\n\n---\n\n# Mureka 8 Instrumental接口合同\n\nBearer鉴权，Base URL为https://api.mureka.ai。POST /v1/instrumental/generate创建；GET /v1/instrumental/query/{taskId}轮询，均originPath=true。\n只接受mureka-8、明确forceInstrumental=true的一份文本音乐；n=1显式覆盖上游默认2，stream=false。完整prompt最多1024字符，不截断或将歌词、参考媒体、指定曲长静默丢弃。不接入其他版本、auto、歌曲或音色克隆。\n## 响应与错误\n\npreparing/queued映射pending，running/streaming映射running；只有succeeded且恰好一份choices中的HTTP(S) url才成功。failed/timeouted/未知或缺失状态均失败，cancelled保持取消；处理中即使携带结果也不下载，不使用stream_url替代成品。\n结果URL有效期30天，resultEphemeral=true交宿主下载持久化。原私有服务是否覆写默认值及模型效果仍待真实验收，协议测试不能代替听审。\n\n## Manifest完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"mureka-instrumental\",\n  \"name\": \"Mureka 8 Instrumental\",\n  \"version\": \"1.0.0\",\n  \"author\": \"影策\",\n  \"description\": \"原mureka-8纯音乐独立协议，保留原模型和一次一份。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"mureka-instrumental\",\n        \"label\": \"Mureka 8 Instrumental\",\n        \"capabilities\": [\n          \"audio\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.mureka.ai\",\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"严格mureka-8\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"完整纯音乐描述，最多1024字符\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"mapping\": \"providerOptions.mureka-instrumental\",\n            \"description\": \"forceInstrumental必须true\"\n          },\n          {\n            \"name\": \"extra\",\n            \"type\": \"object\",\n            \"mapping\": \"count\",\n            \"description\": \"原count=1显式映射n=1\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/instrumental/generate\",\n          \"originPath\": true,\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"n\": 1,\n            \"stream\": false\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/instrumental/query/{{taskId}}\",\n          \"originPath\": true\n        },\n        \"response\": {\n          \"taskIdPaths\": [\n            \"id\"\n          ],\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$and\": [\n                  {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      \"succeeded\"\n                    ]\n                  },\n                  {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$coalesce\": [\n                            {\n                              \"$ref\": \"response.choices\"\n                            },\n                            []\n                          ]\n                        }\n                      },\n                      1\n                    ]\n                  },\n                  {\n                    \"$in\": [\n                      {\n                        \"$first\": {\n                          \"$split\": [\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"response.choices.0.url\"\n                                },\n                                \"\"\n                              ]\n                            },\n                            \"://\"\n                          ]\n                        }\n                      },\n                      [\n                        \"https\",\n                        \"http\"\n                      ]\n                    ]\n                  },\n                  {\n                    \"$gt\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"response.choices.0.url\"\n                        }\n                      },\n                      8\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"succeeded\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$in\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      [\n                        \"preparing\",\n                        \"queued\"\n                      ]\n                    ]\n                  },\n                  \"then\": \"pending\",\n                  \"else\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$in\": [\n                          {\n                            \"$ref\": \"response.status\"\n                          },\n                          [\n                            \"running\",\n                            \"streaming\"\n                          ]\n                        ]\n                      },\n                      \"then\": \"running\",\n                      \"else\": {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"response.status\"\n                              },\n                              \"cancelled\"\n                            ]\n                          },\n                          \"then\": \"cancelled\",\n                          \"else\": \"failed\"\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            }\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.failed_reason\"\n              },\n              \"原音乐任务状态或结果无效\"\n            ]\n          },\n          \"audios\": {\n            \"$if\": {\n              \"condition\": {\n                \"$and\": [\n                  {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      \"succeeded\"\n                    ]\n                  },\n                  {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$coalesce\": [\n                            {\n                              \"$ref\": \"response.choices\"\n                            },\n                            []\n                          ]\n                        }\n                      },\n                      1\n                    ]\n                  },\n                  {\n                    \"$in\": [\n                      {\n                        \"$first\": {\n                          \"$split\": [\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"response.choices.0.url\"\n                                },\n                                \"\"\n                              ]\n                            },\n                            \"://\"\n                          ]\n                        }\n                      },\n                      [\n                        \"https\",\n                        \"http\"\n                      ]\n                    ]\n                  },\n                  {\n                    \"$gt\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"response.choices.0.url\"\n                        }\n                      },\n                      8\n                    ]\n                  }\n                ]\n              },\n              \"then\": [\n                {\n                  \"$ref\": \"response.choices.0.url\"\n                }\n              ],\n              \"else\": []\n            }\n          },\n          \"resultEphemeral\": true\n        },\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"mureka-8\"\n              ]\n            },\n            \"message\": \"必须选择原mureka-8模型，不自动升级\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$trim\": {\n                          \"$coalesce\": [\n                            {\n                              \"$ref\": \"request.prompt\"\n                            },\n                            \"\"\n                          ]\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    },\n                    1024\n                  ]\n                }\n              ]\n            },\n            \"message\": \"纯音乐描述必须非空且不超过1024字符，不截断\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.extra.count\"\n                    },\n                    1\n                  ]\n                },\n                [\n                  1,\n                  \"1\"\n                ]\n              ]\n            },\n            \"message\": \"此入口一次生成一份原音乐\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.providerOptions.mureka-instrumental.forceInstrumental\"\n                },\n                true\n              ]\n            },\n            \"message\": \"必须明确选择纯音乐，不以配音或歌曲替代\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.providerOptions.mureka-instrumental.durationMs\"\n                },\n                null\n              ]\n            },\n            \"message\": \"此接口没有指定曲长字段，不丢弃曲长\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.images\"\n                          },\n                          []\n                        ]\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.videos\"\n                          },\n                          []\n                        ]\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.audios\"\n                          },\n                          []\n                        ]\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"本入口只接收文本，不忽略参考媒体\"\n          }\n        ]\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
+}

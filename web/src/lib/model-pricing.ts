@@ -1,15 +1,27 @@
 import { modelRequestOptions, resolveVideoOperation, type ModelRequirements } from "@/lib/model-selection";
+import { currentLocale } from "@/i18n";
+import { mediaSettingIssues, resolvedMediaConfig } from "@/lib/media-settings";
 import { videoResolutionComparisonKey } from "@/lib/video-generation-options";
-import { buildImageResolutionOptions, imageResolutionOption } from "@/lib/image-resolution-tiers";
-import type { ModelRequestIntent } from "@/services/api/logical-models";
+import { imagePriceSelector, normalizeImagePriceSelector } from "@/lib/image-pricing";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { interfaceTranslator, type InterfaceLocale, type InterfaceTranslate } from "@/lib/interface-locale";
+import type { LogicalModelQuote, ModelQuoteRequest, ModelRequestIntent } from "@/services/api/logical-models";
 import { modelOptionName, resolveModelChannel, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 export type ModelPriceTier = NonNullable<NonNullable<AiConfig["channels"][number]["modelCosts"]>[number]["logicalPriceTiers"]>[number];
 
+type ReferenceVideoBillingCost = { capability?: ModelCapability; referenceVideoBilling?: boolean; logicalPriceTiers?: ModelPriceTier[] };
+
+export function referenceVideoBillingLabel(cost: ReferenceVideoBillingCost | undefined) {
+    if (!cost || cost.capability !== "video") return "";
+    const billed = cost.referenceVideoBilling === true && (cost.logicalPriceTiers || []).some((tier) => (tier.referenceVideoUnitPriceMicrocredits || 0) > 0 || (tier.referenceVideoOutputTokenPriceMicrocredits || 0) > 0);
+    return billed ? "参考视频另计费" : "参考视频不计费";
+}
+
 type ModelCreditCost = {
     model: string;
     pricePolicy?: "channel" | "unified";
-    billingMode: "fixed_request" | "per_second" | "token";
+    billingMode: "fixed_request" | "per_second" | "token" | "image_usage";
     unitPriceMicrocredits: number;
     logicalPriceTiers?: ModelPriceTier[];
 };
@@ -23,13 +35,13 @@ export function requestCreditCost(options: { channelMode: string; modelCosts?: M
         const tiers = priceTiersForCurrentSelection(cost.logicalPriceTiers || [], options.capability, options.config, options.requirements);
         if (!tiers.length) return null;
         const first = tiers[0];
-        if (!first || first.billingMode === "token") return null;
+        if (!first || first.billingMode === "token" || first.billingMode === "image_usage") return null;
         // 同一精确规格可能来自多个逻辑路由；只有价格一致时才可在客户端安全展示。
         if (tiers.some((tier) => tier.billingMode !== first.billingMode || tier.unitPriceMicrocredits !== first.unitPriceMicrocredits)) return null;
         return creditAmount(first.billingMode, first.unitPriceMicrocredits, options.count, options.seconds);
     }
     // Token 订单由服务端按请求体预授权并在 usage 返回后结算，前端不展示无依据的固定价格。
-    if (cost.billingMode === "token") return null;
+    if (cost.billingMode === "token" || cost.billingMode === "image_usage") return null;
     return creditAmount(cost.billingMode, cost.unitPriceMicrocredits, options.count, options.seconds);
 }
 
@@ -38,7 +50,7 @@ export function priceTiersForCurrentSelection(tiers: ModelPriceTier[], capabilit
     let bestScore = -1;
     let matched: ModelPriceTier[] = [];
     for (const tier of tiers) {
-        const selector = priceSelectorForTier(tier);
+        const selector = priceSelectorForTier(tier, capability !== "image" || Boolean(modelCapabilityConfigFor(config, config.model || config.imageModel).image?.parameters));
         const conditions = Object.entries(selector).filter(([, value]) => value && value !== "*");
         if (conditions.some(([key, value]) => requested[key] !== value)) continue;
         const score = conditions.length;
@@ -52,7 +64,8 @@ export function priceTiersForCurrentSelection(tiers: ModelPriceTier[], capabilit
     return matched;
 }
 
-export function priceTierSummaryLabel(tiers: ModelPriceTier[]) {
+export function priceTierSummaryLabel(tiers: ModelPriceTier[], capability: ModelCapability | undefined, t: InterfaceTranslate, locale: InterfaceLocale, compactTokenUnit = false) {
+    if (tiers.some((tier) => tier.billingMode === "image_usage")) return "按图片输入张数及实际输出像素计费";
     const unitPrices = (billingMode: ModelPriceTier["billingMode"]) =>
         tiers
             .filter((tier) => tier.billingMode === billingMode)
@@ -60,23 +73,83 @@ export function priceTierSummaryLabel(tiers: ModelPriceTier[]) {
             .filter((value) => Number.isFinite(value) && value >= 0);
     const fixedRequestValues = unitPrices("fixed_request");
     const perSecondValues = unitPrices("per_second");
-    if (fixedRequestValues.length) return formatPriceRange(fixedRequestValues, "积分");
-    if (perSecondValues.length) return formatPriceRange(perSecondValues, "积分/秒");
-    return tiers.some((tier) => tier.billingMode === "token") ? "按量预估" : "未配置";
+    // 分时与上下文规则也计入输出价区间，用户看到的是可能被收取的全部输出单价。
+    const tokenTiers = tiers.filter((tier) => tier.billingMode === "token");
+    const tokenValues = tokenTiers
+        .flatMap((tier) => [tier.outputTokenPriceMicrocredits, ...(tier.tokenPriceRules || []).map((rule) => rule.outputTokenPriceMicrocredits)])
+        .map((value) => value / 1_000_000)
+        .filter((value) => Number.isFinite(value) && value >= 0);
+    const timeBased = tokenTiers.some((tier) => tier.tokenPriceRules?.length);
+    return (
+        [
+            fixedRequestValues.length ? formatPriceRange(fixedRequestValues, t("modelUi.credits"), locale) : "",
+            perSecondValues.length ? formatPriceRange(perSecondValues, t("modelUi.creditsSecond"), locale) : "",
+            tokenValues.length ? `${capability === "video" ? "" : `${t("modelUi.output")} `}${formatPriceRange(tokenValues, compactTokenUnit ? "/M Token" : t(capability === "video" ? "modelUi.creditsMillionVideo" : "modelUi.creditsMillion"), locale)}${timeBased ? " · 分时" : ""}` : "",
+        ]
+            .filter(Boolean)
+            .join(" · ") || t("modelUi.notConfigured")
+    );
 }
 
-export function formatPriceRange(values: number[], suffix: string) {
+const WEEKDAY_LABELS = ["", "一", "二", "三", "四", "五", "六", "日"];
+
+/** 一条分时与上下文规则的用户可读说明，例如「周一至周五 00:30–08:30 · 输入 ≥ 32,000 Token：输入 1 / 输出 2 积分/百万 Token」。 */
+export function tokenPriceRuleDescription(rule: NonNullable<ModelPriceTier["tokenPriceRules"]>[number]) {
+    const days = [...(rule.weekdays || [])].sort((a, b) => a - b);
+    const contiguous = days.length > 2 && days.every((day, index) => index === 0 || day === days[index - 1] + 1);
+    const dayLabel = days.length === 7 ? "每天" : contiguous ? `周${WEEKDAY_LABELS[days[0]]}至周${WEEKDAY_LABELS[days[days.length - 1]]}` : days.map((day) => `周${WEEKDAY_LABELS[day]}`).join("、");
+    const format = (value: number) => value.toLocaleString("zh-CN");
+    const context = rule.maxInputTokens > 0 ? `输入 ${format(rule.minInputTokens)}–${format(rule.maxInputTokens)} Token` : rule.minInputTokens > 0 ? `输入 ≥ ${format(rule.minInputTokens)} Token` : "";
+    const price = (value: number) => (value / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 });
+    return `${[`${dayLabel} ${rule.start}–${rule.end}`, context].filter(Boolean).join(" · ")}：输入 ${price(rule.inputTokenPriceMicrocredits)} / 输出 ${price(rule.outputTokenPriceMicrocredits)} / 缓存读取 ${price(rule.cachedTokenPriceMicrocredits)} 积分/百万 Token`;
+}
+
+export function formatPriceRange(values: number[], suffix: string, locale: InterfaceLocale = currentLocale()) {
     const unique = Array.from(new Set(values)).sort((left, right) => left - right);
-    const format = (value: number) => value.toLocaleString("zh-CN", { maximumFractionDigits: 3 });
+    const format = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 6 });
     return unique.length === 1 ? `${format(unique[0])} ${suffix}` : `${format(unique[0])}-${format(unique[unique.length - 1])} ${suffix}`;
 }
 
-export function modelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): { logicalModelID: string; intent: ModelRequestIntent } | undefined {
+export function modelQuoteDescription(quote: LogicalModelQuote, t: InterfaceTranslate = interfaceTranslator("zh-CN"), locale: InterfaceLocale = "zh-CN") {
+    const amount = (quote.amountMicrocredits / 1_000_000).toLocaleString(locale, { maximumFractionDigits: 6 });
+    const descriptions = [t(quote.estimated ? "sharedUi.quoteEstimated" : "sharedUi.quoteCurrent", { amount })];
+    if (quote.billingMode === "image_usage") return `最多冻结 ${amount} 积分；输入 ${quote.imageUsage?.inputImages ?? 0} 张，最多输出 ${quote.imageUsage?.maxOutputImages ?? quote.quantity} 张（含底图）；完成后按实际输入张数及每张输出像素结算，退回差额`;
+    const breakdown = referenceVideoQuoteBreakdown(quote.referenceVideo);
+    if (breakdown) descriptions.push(breakdown);
+    const estimate = quote.videoTokenEstimate;
+    if (estimate) {
+        descriptions.push(t("sharedUi.quoteTokenFormula", { tokens: estimate.formulaTokens.toLocaleString(locale), margin: estimate.reservationMarginPercent, reserved: estimate.reservedTokens.toLocaleString(locale) }));
+        if (estimate.referenceDurationEstimated && !breakdown) descriptions.push(t("sharedUi.quoteReferenceDuration"));
+        if (estimate.dimensionsEstimated) descriptions.push(t("sharedUi.quoteDimensions"));
+    }
+    if (quote.billingMode === "token") descriptions.push(t(estimate ? "sharedUi.quoteFormulaSettlement" : "sharedUi.quoteActualSettlement"));
+    return descriptions.join(locale.startsWith("zh") || locale === "ja-JP" ? "；" : "; ");
+}
+
+/**
+ * 通用入口的报价请求：直连系统渠道的文本 / 图片模型在前端按价格档位直接算价，不发服务端报价；
+ * 逻辑模型和直连视频模型（Token / 时长计费）才需要服务端报价。
+ */
+export function modelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): ModelQuoteRequest | undefined {
     if (!capability || !value) return undefined;
+    const channel = resolveModelChannel(config, value);
+    const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
+    if (channel.scope === "system" && cost && !cost.logicalModelId && capability !== "video" && cost.billingMode !== "image_usage" && !cost.logicalPriceTiers?.some((tier) => tier.billingMode === "image_usage")) return undefined;
+    return systemModelQuoteRequest(config, value, capability, requirements);
+}
+
+/**
+ * 任意系统模型（逻辑模型或直连渠道模型、任意能力）的服务端报价请求。
+ * 必须先拿到服务端报价才允许提交的流程（例如电商 Agent 的分析与整套出图）用这个入口。
+ */
+export function systemModelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): ModelQuoteRequest | undefined {
+    if (!capability || !value) return undefined;
+    config = requestPricingConfig(config, value, capability, requirements);
+    if (mediaSettingIssues(config, capability, value).length) return undefined;
     const channel = resolveModelChannel(config, value);
     if (channel.scope !== "system") return undefined;
     const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
-    if (!cost?.logicalModelId) return undefined;
+    if (!cost) return undefined;
     const input = requirements?.input;
     const intent: ModelRequestIntent = {
         capability,
@@ -87,13 +160,52 @@ export function modelQuoteRequest(config: AiConfig, value: string, capability?: 
             audio: input?.audioCount || 0,
         },
         options: {
+            ...(capability === "image" || capability === "video" ? {} : requirements?.options || {}),
             ...modelRequestOptions(config, capability),
-            ...(requirements?.options || {}),
-            ...(requirements?.videoSeconds ? { videoSeconds: Number(requirements.videoSeconds) } : {}),
-            ...(requirements?.imageSize ? { size: requirements.imageSize } : {}),
+            ...(capability === "image" ? { count: 1 } : {}),
         },
     };
-    return { logicalModelID: cost.logicalModelId, intent };
+    const durations = referenceVideoQuoteDurations(input);
+    if (capability === "video" && durations) intent.referenceVideoDurationsMs = durations;
+    return cost.logicalModelId ? { logicalModelID: cost.logicalModelId, intent } : { channelId: channel.id, modelKey: modelOptionName(value), intent };
+}
+
+// The local price label and the signed quote use the same adapted request.
+function requestPricingConfig(config: AiConfig, value: string, capability: ModelCapability, requirements?: ModelRequirements) {
+    const requestedOptions = Object.fromEntries(
+        Object.entries(requirements?.options || {})
+            .filter(([key, item]) => ["size", "quality", "imageResolution", "count", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "transparentBackground"].includes(key) && item !== undefined)
+            .map(([key, item]) => [key, String(item)]),
+    );
+    if (capability === "image" && requirements?.options) {
+        try {
+            const extensions = JSON.parse(config.imageParameters || "{}");
+            if (extensions && typeof extensions === "object" && !Array.isArray(extensions)) config = { ...config, imageParameters: JSON.stringify({ ...extensions, ...requirements.options }) };
+        } catch {
+            // Preserve corrupt state for the shared validation below.
+        }
+    }
+    return resolvedMediaConfig({ ...config, ...requestedOptions, ...(requirements?.imageSize ? { size: requirements.imageSize } : {}), ...(requirements?.videoSeconds ? { videoSeconds: requirements.videoSeconds } : {}) }, capability, value);
+}
+
+// 只有全部参考视频时长都已知时才提交给报价接口；任一未知时交给后端按上限预估并标明。
+function referenceVideoQuoteDurations(input: ModelRequirements["input"]) {
+    const durations = input?.videoDurationsMs;
+    if (!input?.videoCount || durations?.length !== input.videoCount) return undefined;
+    return durations.every((value) => Number.isSafeInteger(value) && value > 0 && value <= 3_600_000) ? durations : undefined;
+}
+
+function formatSeconds(value: number) {
+    return value.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
+/** 报价构成，例如“生成 5 秒 + 参考视频 8 秒（参考视频另计费）”。 */
+export function referenceVideoQuoteBreakdown(reference: LogicalModelQuote["referenceVideo"]) {
+    if (!reference || reference.count <= 0) return "";
+    const seconds = reference.billedSeconds > 0 ? reference.billedSeconds : reference.referenceSeconds;
+    const referenceText = seconds > 0 ? `参考视频 ${formatSeconds(seconds)} 秒` : `参考视频 ${reference.count} 个`;
+    const status = reference.billed ? (reference.estimated ? "参考视频另计费，时长未知按 15 秒预估" : "参考视频另计费") : "参考视频不计费";
+    return `生成 ${formatSeconds(reference.generatedSeconds)} 秒 + ${referenceText}（${status}）`;
 }
 
 function creditAmount(billingMode: "fixed_request" | "per_second", unitPriceMicrocredits: number, count?: string | number, seconds?: string | number) {
@@ -103,31 +215,37 @@ function creditAmount(billingMode: "fixed_request" | "per_second", unitPriceMicr
 
 function priceSelectorForRequest(capability: ModelCapability | undefined, config: AiConfig, requirements?: ModelRequirements) {
     const requested: Record<string, string> = {};
+    if (capability) config = requestPricingConfig(config, config.model || (capability === "image" ? config.imageModel : config.videoModel), capability, requirements);
     if (capability === "video") {
         const input = requirements?.input;
         if (input) {
             const imageCount = (input.imageCount || 0) + (input.characterCount || 0);
             requested.operation = input.videoCount > 0 ? "video_to_video" : imageCount > 0 ? "image_to_video" : resolveVideoOperation(input, requirements?.videoOperation);
             if (imageCount > 0) requested.imageCount = String(imageCount);
-        }
-        const resolution = normalizeTierResolution(config.vquality);
+        } else if (requirements?.videoOperation) requested.operation = requirements.videoOperation;
+        const options = modelRequestOptions(config, "video");
+        const resolution = normalizeTierResolution(String(options.vquality ?? ""));
         if (resolution !== "*") requested.vquality = resolution;
-        const seconds = Math.max(0, Math.floor(Number(config.videoSeconds) || 0));
+        const seconds = Math.max(0, Math.floor(Number(options.videoSeconds) || 0));
         if (seconds > 0) requested.videoSeconds = String(seconds);
+        if (options.videoGenerateAudio === true || options.videoGenerateAudio === "true") requested.videoGenerateAudio = "true";
+        if (options.videoGenerateAudio === false || options.videoGenerateAudio === "false") requested.videoGenerateAudio = "false";
     }
     if (capability === "image") {
         requested.operation = imagePriceOperation(requirements);
-        const options = { ...modelRequestOptions(config, "image"), ...requirements?.options, ...(requirements?.imageSize ? { size: requirements.imageSize } : {}) };
-        const imageQuality = String(options.quality ?? "").trim().toLowerCase();
+        const options: Record<string, unknown> = { ...modelRequestOptions(config, "image"), ...requirements?.options, ...(requirements?.imageSize ? { size: requirements.imageSize } : {}) };
+        const profile = modelCapabilityConfigFor(config, config.model || config.imageModel).image;
+        if (profile?.parameters) {
+            for (const field of profile.parameters) {
+                if (field.enabled !== false && field.pricing && options[field.name] !== undefined) requested[field.name] = String(options[field.name]);
+            }
+            return requested;
+        }
+        const imageQuality = String(options.quality ?? "")
+            .trim()
+            .toLowerCase();
         const imageSize = String(options.size ?? "").trim();
-        if ((imageQuality === "" || imageQuality === "auto" || imageQuality === "any") && imageSize) {
-            const resolution = imageResolutionOption(buildImageResolutionOptions([imageSize]), imageSize)?.tier;
-            if (resolution) requested.quality = resolution;
-        }
-        for (const key of ["quality", "size"] as const) {
-            const value = String(options[key] ?? "").trim().toLowerCase();
-            if (value && value !== "auto" && value !== "any" && !requested[key]) requested[key] = value;
-        }
+        Object.assign(requested, imagePriceSelector(imageQuality, imageSize, profile, String(options.imageResolution ?? "")));
     }
     return requested;
 }
@@ -137,8 +255,8 @@ function imagePriceOperation(requirements?: ModelRequirements) {
     return (input?.imageCount || 0) + (input?.characterCount || 0) > 0 ? "image_to_image" : "text_to_image";
 }
 
-function priceSelectorForTier(tier: ModelPriceTier) {
-    const selector = { ...(tier.selector || {}) };
+function priceSelectorForTier(tier: ModelPriceTier, declaredParameters = false) {
+    const selector = normalizeImagePriceSelector({ ...(tier.selector || {}) }, declaredParameters);
     if (!Object.keys(selector).length) {
         const resolution = normalizeTierResolution(tier.resolution);
         if (resolution !== "*") selector.vquality = resolution;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canGenerateImageInPlace, canGenerateMediaInPlace, findAvailableGenerationGroupPosition, imageGenerationGroupSize } from "../src/lib/canvas/canvas-generation-layout";
+import { canGenerateImageInPlace, canGenerateMediaInPlace, findAvailableGenerationGroupPosition, imageGenerationGroupSize, placeCanvasToolResults } from "../src/lib/canvas/canvas-generation-layout";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 
 function node(id: string, x: number, y: number, width = 340, height = 240): CanvasNodeData {
@@ -8,6 +8,10 @@ function node(id: string, x: number, y: number, width = 340, height = 240): Canv
 }
 
 describe("findAvailableGenerationGroupPosition", () => {
+    test("已有存储标识但预览未恢复的媒体不能当作空节点覆盖", () => {
+        expect(canGenerateImageInPlace({ ...node("stored", 0, 0), metadata: { storageKey: "resource:image" } })).toBe(false);
+        expect(canGenerateMediaInPlace({ ...node("video", 0, 0), type: CanvasNodeType.Video, metadata: { storageKey: "resource:video" } }, CanvasNodeType.Video)).toBe(false);
+    });
     test("首选位置没有占用时保持原坐标", () => {
         expect(findAvailableGenerationGroupPosition([node("source", 0, 0)], { x: 436, y: 0 }, { width: 340, height: 240 })).toEqual({ x: 436, y: 0 });
     });
@@ -24,6 +28,34 @@ describe("findAvailableGenerationGroupPosition", () => {
         const groupSize = imageGenerationGroupSize({ width: 340, height: 240 }, { width: 340, height: 240 }, 4);
         expect(groupSize).toEqual({ width: 1176, height: 516 });
         expect(findAvailableGenerationGroupPosition([node("child-area", 900, 0)], { x: 436, y: 0 }, groupSize)).toEqual({ x: 436, y: 276 });
+    });
+});
+
+describe("placeCanvasToolResults", () => {
+    test("avoids an obstacle anywhere in a group without changing its internal layout or existing nodes", () => {
+        const existing = [node("source", 0, 0), node("blocked-second-output", 1000, 0, 340, 900)];
+        const results = [node("prompt", 436, 0), node("output", 900, 0)];
+        const before = structuredClone({ existing, results });
+        const placed = placeCanvasToolResults(existing, results, existing[0]);
+        expect(placed[1].position.x - placed[0].position.x).toBe(464);
+        expect(placed[0].position).toEqual({ x: 436, y: 936 });
+        expect(placed.map((item) => item.id)).toEqual(["prompt", "output"]);
+        expect({ existing, results }).toEqual(before);
+    });
+
+    test("follows the latest source position and width when processing finishes", () => {
+        const source = node("source", 0, 0);
+        const moved = { ...source, position: { x: 100, y: 80 }, width: 500 };
+        expect(placeCanvasToolResults([moved], [node("result", 436, 0)], source)[0].position).toEqual({ x: 696, y: 80 });
+    });
+
+    test("concurrent and repeated results use the newly committed obstacles", () => {
+        const source = node("source", 0, 0);
+        const first = placeCanvasToolResults([source], [node("first", 436, 0)], source);
+        const second = placeCanvasToolResults([source, ...first], [node("second", 436, 0)], source);
+        expect(first[0].position).toEqual({ x: 436, y: 0 });
+        expect(second[0].position).toEqual({ x: 436, y: 276 });
+        expect(placeCanvasToolResults([source, ...first, ...second], [], source)).toEqual([]);
     });
 });
 

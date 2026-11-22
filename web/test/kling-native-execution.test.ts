@@ -1,0 +1,35 @@
+import {expect,mock,test} from 'bun:test';
+import {adaptLtvNativeProject} from '../src/lib/canvas/ltv-native-project';
+import {mapLtvKlingOptions,assertKlingRuntimeOptions} from '../src/lib/canvas/ltv-kling-options';
+import {defaultConfig} from '../src/stores/use-config-store';
+import {applyGenerationTaskResultToNodes} from '../src/lib/canvas/canvas-generation-task-sync';
+const actual=await import('../src/lib/canvas/canvas-project-generation');
+let submitted:any;
+const shots=[{index:1,prompt:'推近',duration:'2'},{index:2,prompt:'拉远',duration:'3'}];
+const resources=await import('../src/services/api/resources');
+mock.module('@/services/api/resources',()=>({...resources,getResourceAccess:async(storageKey:string)=>{expect(storageKey).toBe('resource:kling');return {url:'/api/resources/kling/file'};}}));
+mock.module('@/lib/canvas/canvas-project-generation',()=>({...actual,runCanvasGenerationTaskToConsumer:async(input:any,consumer:any)=>{submitted=input;await consumer.consumeTask({id:'local',status:'succeeded',taskType:'video',inputJson:JSON.stringify(input),resultJson:JSON.stringify({video:{dataUrl:'/api/resources/kling/file',storageKey:'resource:kling',mimeType:'video/mp4'}})});}}));
+const {executeVideoGeneration}=await import('../src/pages/canvas/canvas-media-generation-executors');
+test.each([['kling-v3-omni','kling-v3-omni','kling-omni-video'],['kling-video-o3','kling-v3','kling-v3-video']])('source %s quality reaches actual executor and saved result',async(sourceModel,model,protocol)=>{
+ const converted=adaptLtvNativeProject({nodes:[{id:'v',type:'video',position:{x:0,y:0},data:{action:'video_generate',params:{model:sourceModel,modeType:'text2video',prompt:'一个连贯的多镜头故事',ratio:'16:9',quality:'low',duration:5,multi_prompt:shots,settings:{quality:'high',multi_shot:true,enableSound:'off'},count:1}}}],edges:[]},{channels:[]},'test','story');
+ expect(converted.adoptable).toBe(true);
+ const source=converted.project.nodes[0];
+ expect(source.metadata!.videoKling).toEqual({mode:'pro',multiShot:true,multiPrompt:shots});
+ expect(source.metadata!.vquality).toBe('1080p');
+ expect(converted.issues.some(i=>i.code==='channel-configuration-required')).toBe(true);
+ let nodes=converted.project.nodes,connections=converted.project.connections;
+ await executeVideoGeneration({nodeId:source.id,sourceNode:source,prompt:source.metadata!.prompt,effectivePrompt:source.metadata!.prompt,generationConfig:{...defaultConfig,model:'kling::'+model,vquality:'1080',videoSeconds:'5',videoGenerateAudio:'false'},generationContext:{referenceImages:[],referenceVideos:[],referenceAudios:[],resolvedCharacterVersions:[],resolvedCharacterVoices:[]},controller:new AbortController(),projectId:'fixture',canvasConnections:[],setNodes:(f:any)=>{nodes=f(nodes)},setConnections:(f:any)=>{connections=f(connections)},startGenerationRequest:()=>{},finishGenerationRequest:()=>{},bindGenerationTask:()=>{},registerPendingNodeIds:()=>{},applyGenerationTaskResult:async(id:string,task:any)=>{nodes=(await applyGenerationTaskResultToNodes(nodes,task,id)).nodes},taskContext:{},skillMetadata:{},retryContext:{}} as any);
+ expect(submitted.metadata.providerOptions[protocol]).toEqual({mode:'pro',multiShot:true,multiPrompt:shots});
+ const restored=JSON.parse(JSON.stringify(nodes));
+ expect(restored[0].metadata.videoKling).toEqual({mode:'pro',multiShot:true,multiPrompt:shots});
+ expect(restored[0].metadata.storageKey).toBe('resource:kling');
+ expect(restored[0].metadata.ltvExecutionContract).toBe(protocol);
+});
+test('ordinary 3.0 uses its own contract; declared quality wins over stale resolution and runtime mismatches are rejected',()=>{
+ const fields={model:'kling-v3-omni',modeType:'text2video',ratio:'16:9',quality:'high',duration:5};
+ expect(mapLtvKlingOptions({...fields,model:'kling-video-o3'},{image:0,video:0,audio:0},1)?.ltvExecutionContract).toBe('kling-v3-video');
+ expect(mapLtvKlingOptions({...fields,model:'kling-v2-1'},{image:0,video:0,audio:0},1)).toBeUndefined();
+ expect(mapLtvKlingOptions({...fields,resolution:'720p'},{image:0,video:0,audio:0},1)).toMatchObject({vquality:'1080p',videoKling:{mode:'pro'}});
+ expect(mapLtvKlingOptions({...fields,modeType:'mixed2video'},{image:0,video:1,audio:0},1)).toBeUndefined();
+ expect(()=>assertKlingRuntimeOptions({mode:'pro',multiShot:true,multiPrompt:shots},'kling-v3-omni','720','5','false',{referenceImages:[],referenceVideos:[],referenceAudios:[]})).toThrow('不一致');
+});

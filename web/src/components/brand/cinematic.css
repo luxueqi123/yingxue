@@ -1,0 +1,31 @@
+.yx-cinematic-theme {
+    --yx-ink: #060d19;
+    --yx-panel: #0e1828;
+    --yx-ice: #aee4ff;
+    --yx-blue: #67c8ff;
+    --yx-blue-deep: #4f9dff;
+    --yx-white: #f2f7fc;
+    --yx-muted: #9fadc2;
+    --yx-border: rgb(177 211 243 / 14%);
+    --yx-glass: rgb(21 40 65 / 60%);
+    --yx-radius: 22px;
+    --yx-pill: 999px;
+    --yx-ease: cubic-bezier(.22, 1, .36, 1);
+    color: var(--yx-white);
+    background: var(--yx-ink);
+    color-scheme: dark;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+.yx-cinema { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: #07172c; }
+.yx-cinema-poster, .yx-cinema-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 55% 45%; }
+.yx-cinema-video { opacity: 0; transition: opacity 450ms var(--yx-ease); }
+.yx-cinema-video[data-playing="true"] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .yx-cinema-video { transition: none; } }
+.yx-cinema-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgb(3 12 25 / 35%), rgb(4 15 31 / 22%) 36%, rgb(4 14 29 / 44%) 65%, var(--yx-ink)), linear-gradient(90deg, rgb(3 13 28 / 26%), transparent 70%); }
+.yx-cinema-control { position: absolute; bottom: 34px; right: 40px; z-index: 2; display: flex; align-items: center; gap: 9px; border: 1px solid var(--yx-border); border-radius: var(--yx-pill); padding: 10px 14px; color: var(--yx-muted); background: rgb(6 13 25 / 35%); backdrop-filter: blur(16px); font-size: 11px; cursor: pointer; }
+.yx-cinema-control:hover { color: var(--yx-white); border-color: var(--yx-ice); }
+.yx-cursor-trail { position: fixed; inset: 0; z-index: 200; pointer-events: none; overflow: hidden; }
+.yx-cursor-trail i { position: absolute; top: 0; left: 0; width: 10px; height: 10px; border-radius: 50%; opacity: 0; background: radial-gradient(circle, rgb(169 232 255 / 80%), rgb(103 200 255 / 35%) 35%, transparent 70%); will-change: transform, opacity; }
+.yx-cinematic-theme :focus-visible { outline: 2px solid var(--yx-ice); outline-offset: 5px; }
+@media (max-width: 767px) { .yx-cinema-poster, .yx-cinema-video { object-position: 80% center; } .yx-cinema-control { bottom: 25px; right: 20px; } }
+@media (prefers-reduced-motion: reduce), (pointer: coarse) { .yx-cursor-trail { display: none; } }

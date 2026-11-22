@@ -1,6 +1,7 @@
 import { App, Dropdown, Input } from "antd";
-import { Download, LoaderCircle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Download, Layers3, LoaderCircle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ProjectPreview } from "@/components/canvas/canvas-project-card";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
@@ -9,6 +10,8 @@ import type { CanvasLibrarySummary } from "@/services/api/user-data";
 import { loadCanvasProjectForEditing, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { cn } from "@/lib/utils";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { translateInterface, type InterfaceLocale } from "@/lib/interface-locale";
 
 type CanvasFolderCardProps = {
     project: CanvasLibrarySummary;
@@ -21,6 +24,7 @@ type CanvasFolderCardProps = {
 /** 画布库中的文件夹封面：单一卡片表面承载预览和信息，避免相邻卡片互相侵入。 */
 export function CanvasFolderCard({ project, projectName, onClick, onPrefetch, opening = false }: CanvasFolderCardProps) {
     const { message } = App.useApp();
+    const { locale, t } = useInterfaceTranslation();
     const renameProject = useCanvasStore((state) => state.renameProject);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const editingId = useCanvasUiStore((state) => state.editingProjectId);
@@ -37,39 +41,48 @@ export function CanvasFolderCard({ project, projectName, onClick, onPrefetch, op
         if (!editing) return;
         stopEditing();
         try {
-            await loadCanvasProjectForEditing(project.id);
+            const fullProject = await loadCanvasProjectForEditing(project.id);
+            if (!fullProject) throw new Error(t("canvasB.folderCard.notFound"));
             renameProject(project.id, editingTitle);
-            await saveRemoteUserDataNow();
-        } catch (error) { message.error(error instanceof Error ? error.message : "重命名失败"); }
+            await saveRemoteUserDataNow(project.id);
+        } catch (error) { message.error(error instanceof Error ? error.message : t("canvasLibraryRenameFailed")); }
     };
     const exportProject = async () => {
         try {
             const fullProject = await loadCanvasProjectForEditing(project.id);
-            if (!fullProject) throw new Error("画布不存在");
-            await exportCanvasProjects([fullProject], project.title || "画布");
-        } catch (error) { message.error(error instanceof Error ? error.message : "导出失败"); }
+            if (!fullProject) throw new Error(t("canvasB.folderCard.notFound"));
+            await exportCanvasProjects([fullProject], project.title || t("canvasB.common.canvas"));
+        } catch (error) { message.error(error instanceof Error ? error.message : t("canvasB.common.exportFailed")); }
     };
 
     const handleOpenKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            if (!editing) onClick();
+            if (!editing && !opening) onClick();
         }
     };
 
     return (
-        <article className={cn("canvas-folder-card", selected && "is-selected", editing && "is-editing", opening && "is-opening")} onPointerEnter={onPrefetch} onPointerDown={onPrefetch} onFocusCapture={onPrefetch}>
-            <div className="canvas-folder-open" role="button" tabIndex={0} aria-label={`打开画布 ${project.title}`} aria-busy={opening} onClick={() => !editing && !opening && onClick()} onKeyDown={handleOpenKeyDown}>
-                <div className="canvas-folder-preview" aria-hidden="true">
-                    <ProjectPreview project={{ id: project.id, nodes: project.previewNodes }} preferLatestImage />
-                    {opening ? <div className="canvas-folder-opening"><LoaderCircle className="size-5 animate-spin" /><span>正在打开</span></div> : null}
+        <article className={cn("product-collection-card canvas-collection-card", selected && "is-selected", editing && "is-editing", opening && "is-opening")} onPointerEnter={onPrefetch} onPointerDown={onPrefetch} onFocusCapture={onPrefetch}>
+            <div className="canvas-collection-open" role="button" tabIndex={0} aria-label={t("canvasB.folderCard.openCanvas", { title: project.title })} aria-busy={opening} onClick={() => !editing && !opening && onClick()} onKeyDown={handleOpenKeyDown}>
+                <div className="canvas-collection-preview">
+                    <div className="canvas-collection-preview-media" aria-hidden="true">
+                        <ProjectPreview project={{ id: project.id, nodes: project.previewNodes }} preferLatestImage quiet mosaic />
+                    </div>
+                    <span className="canvas-collection-badge" title={t("canvasB.folderCard.nodeCount", { count: project.nodeCount })}>
+                        <Layers3 aria-hidden="true" />
+                        <span>{project.nodeCount}</span>
+                        <span className="sr-only">{t("canvasB.folderCard.nodesSuffix")}</span>
+                    </span>
+                    {opening ? <div className="canvas-collection-opening"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" /><span>{t("canvasLibraryOpening")}</span></div> : null}
                 </div>
-                <div className="canvas-folder-body">
-                    <div className="canvas-folder-heading-row">
+                <div className="canvas-collection-body">
+                    <div className="canvas-collection-heading-row">
                         {editing ? (
                             <Input
-                                className="canvas-folder-title-input"
+                                className="canvas-collection-title-input"
+                                aria-label={t("canvasLibraryRenameNamed", { name: project.title })}
                                 value={editingTitle}
                                 onChange={(event) => setEditingTitle(event.target.value)}
                                 onClick={(event) => event.stopPropagation()}
@@ -81,59 +94,56 @@ export function CanvasFolderCard({ project, projectName, onClick, onPrefetch, op
                                 autoFocus
                             />
                         ) : (
-                            <span className="canvas-folder-title">{project.title}</span>
+                            <span className="canvas-collection-title">{project.title}</span>
                         )}
                     </div>
-                    <div className="canvas-folder-meta">
-                        <span className="canvas-folder-meta-item">{projectName ? `所属项目：${projectName}` : "自由画布"}</span>
-                        <span className="canvas-folder-meta-separator" aria-hidden="true">·</span>
-                        <span className="canvas-folder-meta-item">{project.nodeCount} 节点</span>
+                    <div className="canvas-collection-meta">
+                        <span className="canvas-collection-meta-item">{projectName ? t("canvasLibraryProject", { name: projectName }) : t("canvasLibraryIndependent")}</span>
+                        <span className="canvas-collection-meta-separator" aria-hidden="true">·</span>
+                        <span className="canvas-collection-meta-item">{t("canvasLibraryNodes", { count: project.nodeCount })}</span>
                     </div>
-                    <div className="canvas-folder-dates">
-                        <span><small>创建时间</small><time dateTime={project.createdAt}>{formatCanvasDate(project.createdAt)}</time></span>
-                        <span><small>最后更新</small><time dateTime={project.updatedAt}>{formatCanvasDate(project.updatedAt)}</time></span>
-                    </div>
+                    <time className="canvas-collection-updated" dateTime={project.updatedAt} title={t("canvasLibraryCreated", { date: formatCanvasDate(project.createdAt, locale) })}>{t("canvasLibraryUpdated", { date: formatCanvasDate(project.updatedAt, locale) })}</time>
                 </div>
             </div>
 
-            <span className={cn("canvas-folder-select", selected && "is-visible")} onClick={(event) => event.stopPropagation()}>
+            <span className={cn("canvas-collection-select", selected && "is-visible")} onClick={(event) => event.stopPropagation()}>
                 <input
                     type="checkbox"
                     checked={selected}
                     onChange={(event) => toggleSelected(project.id, event.target.checked)}
-                    aria-label={`选择 ${project.title}`}
+                    aria-label={t("canvasB.folderCard.selectTitle", { title: project.title })}
                 />
             </span>
 
-            <div className="canvas-folder-actions" onClick={(event) => event.stopPropagation()}>
-                {!editing ? (
-                    <button
-                        type="button"
-                        className="canvas-folder-rename"
-                        aria-label={`重命名 ${project.title}`}
-                        title="重命名"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            startEditing(project.id, project.title);
-                        }}
-                    >
-                        <Pencil />
-                    </button>
-                ) : null}
+            {!editing ? (
+                <button
+                    type="button"
+                    className="product-icon-button canvas-collection-rename"
+                    aria-label={t("canvasLibraryRenameNamed", { name: project.title })}
+                    title={t("canvasLibraryRename")}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        startEditing(project.id, project.title);
+                    }}
+                >
+                    <Pencil />
+                </button>
+            ) : null}
 
+            <div className="canvas-collection-actions" onClick={(event) => event.stopPropagation()}>
                 <Dropdown
                     trigger={["click"]}
                     placement="bottomRight"
                     menu={{
                         onClick: ({ domEvent }) => domEvent.stopPropagation(),
                         items: [
-                            { key: "export", icon: <Download className="size-3.5" />, label: "导出画布", onClick: () => void exportProject() },
+                            { key: "export", icon: <Download className="size-3.5" />, label: t("canvasLibraryExportCard"), onClick: () => void exportProject() },
                             { type: "divider" },
-                            { key: "delete", danger: true, icon: <Trash2 className="size-3.5" />, label: "删除", onClick: () => setDeleteIds([project.id]) },
+                            { key: "delete", danger: true, icon: <Trash2 className="size-3.5" />, label: t("common.delete"), onClick: () => setDeleteIds([project.id]) },
                         ],
                     }}
                 >
-                    <button type="button" className="canvas-folder-more" aria-label={`${project.title} 画布操作`} title="更多操作" onClick={(event) => event.stopPropagation()}>
+                    <button type="button" className="product-icon-button canvas-collection-more" aria-label={t("canvasB.folderCard.canvasActions", { title: project.title })} title={t("canvasB.common.moreActions")} onClick={(event) => event.stopPropagation()}>
                         <MoreHorizontal />
                     </button>
                 </Dropdown>
@@ -142,15 +152,15 @@ export function CanvasFolderCard({ project, projectName, onClick, onPrefetch, op
     );
 }
 
-function formatCanvasDate(value: string) {
+function formatCanvasDate(value: string, locale: InterfaceLocale) {
     const timestamp = Date.parse(value);
     return Number.isFinite(timestamp)
-        ? new Date(timestamp).toLocaleString("zh-CN", {
+        ? new Date(timestamp).toLocaleString(locale, {
               year: "numeric",
               month: "2-digit",
               day: "2-digit",
               hour: "2-digit",
               minute: "2-digit",
           })
-        : "时间不可用";
+        : translateInterface(locale, "canvasLibraryTimeUnavailable");
 }

@@ -43,7 +43,7 @@ export const yingxueIncludedAssets: ImageAsset[] = styles.map((style) => {
         title: style.title,
         coverUrl: url,
         tags: ["映雪内置", "风格参考", ...style.tags],
-        category: "material",
+        category: "other",
         status: "confirmed",
         source: includedSource,
         note: `${style.note} ${includedNote}`,
@@ -53,6 +53,7 @@ export const yingxueIncludedAssets: ImageAsset[] = styles.map((style) => {
             source: "yingxue-included-style-reference",
             catalog: "yingxue-included",
             usage: "reference-only",
+            semanticCategory: "style",
         },
         data: {
             dataUrl: url,

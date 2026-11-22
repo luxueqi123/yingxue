@@ -1,0 +1,670 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "dashscope-happyhorse-reference-video",
+  "name": "DashScope HappyHorse 1.0 / 1.1 Reference Video",
+  "version": "1.0.3",
+  "author": "Yingxue",
+  "description": "HappyHorse 1.0 / 1.1 多图参考生视频声明式协议。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "dashscope-happyhorse-reference-video",
+        "label": "DashScope HappyHorse 1.0 / 1.1 Reference Video",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://dashscope.aliyuncs.com",
+        "inputImages": {
+          "formats": [
+            "jpeg",
+            "png",
+            "webp"
+          ],
+          "maxBytes": 20000000,
+          "minShortSide": 400
+        },
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "values": [
+              "happyhorse-1.0-r2v",
+              "happyhorse-1.1-r2v"
+            ],
+            "description": "官方同模式1.0或1.1精确模型ID；保留请求版本，不自动升级或替代。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "input.prompt",
+            "description": "完整视频正文，不自动截断。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": true,
+            "mapping": "input.media",
+            "description": "1 到 9 张有序参考图。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "mapping": "parameters.duration",
+            "values": [
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9",
+              "10",
+              "11",
+              "12",
+              "13",
+              "14",
+              "15"
+            ],
+            "description": "整数秒数，3 到 15 秒。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "mapping": "parameters.ratio",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "4:5",
+              "5:4",
+              "9:21",
+              "21:9"
+            ],
+            "description": "官方枚举画幅比例。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "mapping": "parameters.resolution",
+            "values": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "description": "480P、720P 或 1080P。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "mapping": "parameters.watermark",
+            "description": "统一水印开关。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "dashscope-happyhorse-reference-video",
+            "description": "本协议命名空间中的 prompt（仅表示引用标记转换后的原文）及 seed。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gte": [
+                        {
+                          "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$lte": [
+                        {
+                          "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                        },
+                        2147483647
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                        },
+                        {
+                          "$toInt": {
+                            "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "seed 必须是 0 至 2147483647 的整数，不能改写后提交"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.model"
+                },
+                [
+                  "happyhorse-1.0-r2v",
+                  "happyhorse-1.1-r2v"
+                ]
+              ]
+            },
+            "message": "仅支持happyhorse-1.0-r2v、happyhorse-1.1-r2v，不替换版本或模式"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.operation"
+                },
+                "reference_to_video"
+              ]
+            },
+            "message": "HappyHorse 参考接口仅支持 reference_to_video"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gte": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    9
+                  ]
+                }
+              ]
+            },
+            "message": "参考图数量必须为 1 到 9"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$in": [
+                          {
+                            "$coalesce": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "reference_image"
+                            ]
+                          },
+                          [
+                            "reference_image",
+                            "subject_reference",
+                            "style_reference"
+                          ]
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "$len": {
+                    "$ref": "request.images"
+                  }
+                }
+              ]
+            },
+            "message": "参考接口不能混入首帧、尾帧或其他媒体角色"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "参考接口不接收视频或音频输入"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gte": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        },
+                        5
+                      ]
+                    },
+                    3
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        },
+                        5
+                      ]
+                    },
+                    15
+                  ]
+                }
+              ]
+            },
+            "message": "视频时长必须为 3 到 15 秒的整数"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.resolution"
+                    },
+                    {
+                      "$ref": "request.resolution"
+                    },
+                    "1080P"
+                  ]
+                },
+                [
+                  "480P",
+                  "720P",
+                  "1080P"
+                ]
+              ]
+            },
+            "message": "清晰度必须为 480P、720P 或 1080P"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.aspectRatio"
+                    },
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    "16:9"
+                  ]
+                },
+                [
+                  "16:9",
+                  "9:16",
+                  "1:1",
+                  "4:3",
+                  "3:4",
+                  "4:5",
+                  "5:4",
+                  "9:21",
+                  "21:9"
+                ]
+              ]
+            },
+            "message": "不支持该视频画幅"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.count"
+                    },
+                    1
+                  ]
+                },
+                1
+              ]
+            },
+            "message": "每次仅生成一个视频"
+          },
+          {
+            "assert": {
+              "$not": {
+                "$ref": "request.output.generateAudio"
+              }
+            },
+            "message": "官方接口没有可选择的 generate_audio 参数，不能忽略声音开关"
+          },
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.prompt"
+                      },
+                      {
+                        "$ref": "request.prompt"
+                      }
+                    ]
+                  }
+                },
+                0
+              ]
+            },
+            "message": "参考生视频需要完整正文"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.prompt"
+                      },
+                      {
+                        "$ref": "request.prompt"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "$if": {
+                    "condition": {
+                      "$hasHan": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.prompt"
+                          },
+                          {
+                            "$ref": "request.prompt"
+                          }
+                        ]
+                      }
+                    },
+                    "then": 2500,
+                    "else": 5000
+                  }
+                }
+              ]
+            },
+            "message": "HappyHorse正文超过官方字符限制：含汉字总长最多2500，否则最多5000；不能截断原文提交"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/api/v1/services/aigc/video-generation/video-synthesis",
+          "originPath": true,
+          "contentType": "application/json",
+          "headers": {
+            "X-DashScope-Async": "enable"
+          },
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "input": {
+              "prompt": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.prompt"
+                  },
+                  {
+                    "$ref": "request.prompt"
+                  }
+                ]
+              },
+              "media": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.images"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "type": "reference_image",
+                    "url": {
+                      "$ref": "media.value"
+                    }
+                  }
+                }
+              }
+            },
+            "parameters": {
+              "resolution": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.resolution"
+                  },
+                  {
+                    "$ref": "request.resolution"
+                  },
+                  "1080P"
+                ]
+              },
+              "ratio": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.aspectRatio"
+                  },
+                  {
+                    "$ref": "request.aspectRatio"
+                  },
+                  "16:9"
+                ]
+              },
+              "duration": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.duration"
+                  },
+                  {
+                    "$ref": "request.duration"
+                  },
+                  5
+                ]
+              },
+              "watermark": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.watermark"
+                  },
+                  {
+                    "$ref": "request.watermark"
+                  },
+                  true
+                ]
+              },
+              "seed": {
+                "$omitEmpty": {
+                  "$ref": "request.providerOptions.dashscope-happyhorse-reference-video.seed"
+                }
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/api/v1/tasks/{{taskId}}",
+          "originPath": true
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.output.task_id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$or": [
+                  {
+                    "$in": [
+                      {
+                        "$lower": {
+                          "$ref": "response.output.task_status"
+                        }
+                      },
+                      [
+                        "failed",
+                        "unknown"
+                      ]
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$lower": {
+                              "$ref": "response.output.task_status"
+                            }
+                          },
+                          "succeeded"
+                        ]
+                      },
+                      {
+                        "$not": {
+                          "$ref": "response.output.video_url"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$not": {
+                          "$ref": "response.output.task_id"
+                        }
+                      },
+                      {
+                        "$not": {
+                          "$ref": "taskId"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "then": "failed",
+              "else": {
+                "$coalesce": [
+                  {
+                    "$ref": "response.output.task_status"
+                  },
+                  "pending"
+                ]
+              }
+            }
+          },
+          "messagePaths": [
+            "output.message",
+            "message"
+          ],
+          "errorPaths": [
+            "output.code",
+            "code"
+          ],
+          "videos": {
+            "$ref": "response.output.video_url"
+          },
+          "resultEphemeral": true,
+          "usage": {
+            "$ref": "response.usage"
+          }
+        }
+      }
+    ]
+  },
+  "documentation": "# HappyHorse 1.0 / 1.1 参考生视频\n\n本包通过影策 `yingce.plugin/v2` 声明式 Provider 接入 `happyhorse-1.0-r2v`与`happyhorse-1.1-r2v`，不包含页面、Worker 或新服务。\n\n架构依据：[《影策插件架构与接入说明》](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb) revision 20，第 6、12、13、14 章。线协议依据：[阿里云 HappyHorse reference-to-video](https://help.aliyun.com/en/model-studio/happyhorse-reference-to-video-api-reference)。\n\nAPI Key 仅由既有渠道配置提供。默认 Base URL 是官方仍支持的北京公共域；使用工作空间专属域时须保持模型、API Key 与端点地区一致。1.0.3包需要支持受控`$hasHan`表达式及`inputImages`声明的更新宿主；宿主检查实际参考图字节／尺寸，再提交同一原字节，不信任自报大小和尺寸，也不改图。正文按Unicode字符检查上限并拒绝自动截断；运行版本与包SHA须另行核验，真实生成和生产仍待验收。\n\n请求参数、参考图限制、状态与未验收范围见 [接口说明](docs/interface.md)。\n\n\n原1.0源节点必须选择1.0模型，原1.1源节点必须选择1.1模型；本包不证明原私有服务默认值或生成效果等价。地域入口优先使用官方业务空间专属域。\n\n---\n\n# 接口合同\n\n- Provider：`dashscope-happyhorse-reference-video`；模型：`happyhorse-1.0-r2v`或`happyhorse-1.1-r2v`；操作：`reference_to_video`。\n- 创建：`POST /api/v1/services/aigc/video-generation/video-synthesis`，Bearer 鉴权与 `X-DashScope-Async: enable`。\n- 优先读取 `request.output`，兼容顶层 duration/aspectRatio/resolution。时长整数 3–15 秒；档位 480P/720P/1080P；画幅 16:9、9:16、1:1、4:3、3:4、4:5、5:4、9:21、21:9。\n- 输入 1–9 张 reference_image（subject/style reference 统一映射为参考图），按 order 排序；首尾帧、音频和视频不属于此接口。`media.value` 是宿主准备的媒体值；官方支持公网 HTTP(S) 或 Base64 图片，不要求插件取得本地文件。\n- 图片须 JPEG/JPG/PNG/WEBP、短边至少 400 像素、每图不超过 20 MB。本包用受控`inputImages`声明允许格式、20000000字节上限及400像素最小短边；宿主在创建前读取实际字节和尺寸头，拒绝伪造MIME、坏数据、尺寸／大小不符，然后按原顺序提交同一字节的Base64，不缩放、重编码或改图。URL读取沿用出站安全规则及收紧的响应大小上限；尺寸头校验不代表完整图片解码或案例验收。\n- 原生正文使用 `[Image N]` 对应有序参考图。LTV 导入正文在正常生成和重试路径从 `@图片N` 转换到此格式，不更换图片、不缩短正文；转换原文位于本 Provider 的命名空间 prompt。\n- 正文最多 5000 非中文字符或 2500 中文字符；源导入和直接 Provider 调用均按含汉字正文总长2500的保守规则检查，否则最多5000个Unicode字符。以实际提交的本Provider命名空间正文为准；合法原文逐字保留，超长拒绝，避免上游自动截断。\n- 1.0.3包需要支持受控`$hasHan`表达式及`inputImages`声明的更新宿主；表达式只检测Unicode Han字符，图片读取由宿主控制。旧宿主可能忽略新增声明而不检查实际图片，因此必须核对更新版本及运行证据，不能把上传成功当作门禁生效。\n- 不提供 generate_audio 或独立 quality 开关；仅接受上述1.0和1.1精确模型ID，不接受其他业务操作。宿主共用配置里的图片 quality 不参与此视频请求，不应导致视频提交失败；导入器仍拒绝源节点中没有落点的有效质量要求。watermark 读取统一输出字段；未指定时由宿主的布尔输出语义决定。seed 使用本 Provider 命名空间。\n- 查询：`GET /api/v1/tasks/{task_id}`；PENDING/RUNNING 继续等待，SUCCEEDED 需 output.video_url；FAILED/CANCELED/UNKNOWN 终止。缺 task_id 或成功缺视频均失败，不生成假 URL。\n- 推荐每 15 秒查询；任务与结果 URL 有效 24 小时，结果标记 ephemeral，由现有宿主资源保存路径归档。插件不隐式重提收费任务。\n- 真实生成、短期结果下载、权利、完整视听和生产尚未通过，本地验证不能替代这些验收。\n\n可选`seed`须为0至2147483647的整数；省略或null不补造值，0及上界保持原值。负数、越界、小数、字符串和布尔值在声明式请求构建前拒绝，不自动取整或钳位。\n\n## 配置与响应映射\n\n`apiKey` 从既有渠道的秘密字段读取，插件不保存凭据。统一输入字段 `model`、`prompt`、`images`、`duration`、`aspectRatio`、`resolution`、`watermark` 与 `providerOptions` 的映射见以下完整合同。\n\n响应读取 `output.task_id`、`output.task_status`、`output.video_url`、`output.code`、`output.message` 及 `usage`；CANCELED 保留取消终态，UNKNOWN 和成功缺媒体均失败。\n\n## Manifest 完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"dashscope-happyhorse-reference-video\",\n  \"name\": \"DashScope HappyHorse 1.0 / 1.1 Reference Video\",\n  \"version\": \"1.0.3\",\n  \"author\": \"Yingxue\",\n  \"description\": \"HappyHorse 1.0 / 1.1 多图参考生视频声明式协议。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"dashscope-happyhorse-reference-video\",\n        \"label\": \"DashScope HappyHorse 1.0 / 1.1 Reference Video\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://dashscope.aliyuncs.com\",\n        \"inputImages\": {\n          \"formats\": [\n            \"jpeg\",\n            \"png\",\n            \"webp\"\n          ],\n          \"maxBytes\": 20000000,\n          \"minShortSide\": 400\n        },\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"values\": [\n              \"happyhorse-1.0-r2v\",\n              \"happyhorse-1.1-r2v\"\n            ],\n            \"description\": \"官方同模式1.0或1.1精确模型ID；保留请求版本，不自动升级或替代。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"input.prompt\",\n            \"description\": \"完整视频正文，不自动截断。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": true,\n            \"mapping\": \"input.media\",\n            \"description\": \"1 到 9 张有序参考图。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"mapping\": \"parameters.duration\",\n            \"values\": [\n              \"3\",\n              \"4\",\n              \"5\",\n              \"6\",\n              \"7\",\n              \"8\",\n              \"9\",\n              \"10\",\n              \"11\",\n              \"12\",\n              \"13\",\n              \"14\",\n              \"15\"\n            ],\n            \"description\": \"整数秒数，3 到 15 秒。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"mapping\": \"parameters.ratio\",\n            \"values\": [\n              \"16:9\",\n              \"9:16\",\n              \"1:1\",\n              \"4:3\",\n              \"3:4\",\n              \"4:5\",\n              \"5:4\",\n              \"9:21\",\n              \"21:9\"\n            ],\n            \"description\": \"官方枚举画幅比例。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"mapping\": \"parameters.resolution\",\n            \"values\": [\n              \"480P\",\n              \"720P\",\n              \"1080P\"\n            ],\n            \"description\": \"480P、720P 或 1080P。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"mapping\": \"parameters.watermark\",\n            \"description\": \"统一水印开关。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"mapping\": \"dashscope-happyhorse-reference-video\",\n            \"description\": \"本协议命名空间中的 prompt（仅表示引用标记转换后的原文）及 seed。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$gte\": [\n                        {\n                          \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$lte\": [\n                        {\n                          \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                        },\n                        2147483647\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                        },\n                        {\n                          \"$toInt\": {\n                            \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                          }\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"seed 必须是 0 至 2147483647 的整数，不能改写后提交\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                [\n                  \"happyhorse-1.0-r2v\",\n                  \"happyhorse-1.1-r2v\"\n                ]\n              ]\n            },\n            \"message\": \"仅支持happyhorse-1.0-r2v、happyhorse-1.1-r2v，不替换版本或模式\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.operation\"\n                },\n                \"reference_to_video\"\n              ]\n            },\n            \"message\": \"HappyHorse 参考接口仅支持 reference_to_video\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    9\n                  ]\n                }\n              ]\n            },\n            \"message\": \"参考图数量必须为 1 到 9\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$ref\": \"request.images\"\n                      },\n                      \"as\": \"media\",\n                      \"where\": {\n                        \"$in\": [\n                          {\n                            \"$coalesce\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"reference_image\"\n                            ]\n                          },\n                          [\n                            \"reference_image\",\n                            \"subject_reference\",\n                            \"style_reference\"\n                          ]\n                        ]\n                      }\n                    }\n                  }\n                },\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                }\n              ]\n            },\n            \"message\": \"参考接口不能混入首帧、尾帧或其他媒体角色\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"参考接口不接收视频或音频输入\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gte\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        },\n                        5\n                      ]\n                    },\n                    3\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        },\n                        5\n                      ]\n                    },\n                    15\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频时长必须为 3 到 15 秒的整数\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.resolution\"\n                    },\n                    {\n                      \"$ref\": \"request.resolution\"\n                    },\n                    \"1080P\"\n                  ]\n                },\n                [\n                  \"480P\",\n                  \"720P\",\n                  \"1080P\"\n                ]\n              ]\n            },\n            \"message\": \"清晰度必须为 480P、720P 或 1080P\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.aspectRatio\"\n                    },\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    \"16:9\"\n                  ]\n                },\n                [\n                  \"16:9\",\n                  \"9:16\",\n                  \"1:1\",\n                  \"4:3\",\n                  \"3:4\",\n                  \"4:5\",\n                  \"5:4\",\n                  \"9:21\",\n                  \"21:9\"\n                ]\n              ]\n            },\n            \"message\": \"不支持该视频画幅\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.count\"\n                    },\n                    1\n                  ]\n                },\n                1\n              ]\n            },\n            \"message\": \"每次仅生成一个视频\"\n          },\n          {\n            \"assert\": {\n              \"$not\": {\n                \"$ref\": \"request.output.generateAudio\"\n              }\n            },\n            \"message\": \"官方接口没有可选择的 generate_audio 参数，不能忽略声音开关\"\n          },\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.prompt\"\n                      },\n                      {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    ]\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"参考生视频需要完整正文\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.prompt\"\n                      },\n                      {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    ]\n                  }\n                },\n                {\n                  \"$if\": {\n                    \"condition\": {\n                      \"$hasHan\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.prompt\"\n                          },\n                          {\n                            \"$ref\": \"request.prompt\"\n                          }\n                        ]\n                      }\n                    },\n                    \"then\": 2500,\n                    \"else\": 5000\n                  }\n                }\n              ]\n            },\n            \"message\": \"HappyHorse正文超过官方字符限制：含汉字总长最多2500，否则最多5000；不能截断原文提交\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/api/v1/services/aigc/video-generation/video-synthesis\",\n          \"originPath\": true,\n          \"contentType\": \"application/json\",\n          \"headers\": {\n            \"X-DashScope-Async\": \"enable\"\n          },\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"input\": {\n              \"prompt\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.prompt\"\n                  },\n                  {\n                    \"$ref\": \"request.prompt\"\n                  }\n                ]\n              },\n              \"media\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.images\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"type\": \"reference_image\",\n                    \"url\": {\n                      \"$ref\": \"media.value\"\n                    }\n                  }\n                }\n              }\n            },\n            \"parameters\": {\n              \"resolution\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.resolution\"\n                  },\n                  {\n                    \"$ref\": \"request.resolution\"\n                  },\n                  \"1080P\"\n                ]\n              },\n              \"ratio\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.aspectRatio\"\n                  },\n                  {\n                    \"$ref\": \"request.aspectRatio\"\n                  },\n                  \"16:9\"\n                ]\n              },\n              \"duration\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.duration\"\n                  },\n                  {\n                    \"$ref\": \"request.duration\"\n                  },\n                  5\n                ]\n              },\n              \"watermark\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.watermark\"\n                  },\n                  {\n                    \"$ref\": \"request.watermark\"\n                  },\n                  true\n                ]\n              },\n              \"seed\": {\n                \"$omitEmpty\": {\n                  \"$ref\": \"request.providerOptions.dashscope-happyhorse-reference-video.seed\"\n                }\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/api/v1/tasks/{{taskId}}\",\n          \"originPath\": true\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.output.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$or\": [\n                  {\n                    \"$in\": [\n                      {\n                        \"$lower\": {\n                          \"$ref\": \"response.output.task_status\"\n                        }\n                      },\n                      [\n                        \"failed\",\n                        \"unknown\"\n                      ]\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$lower\": {\n                              \"$ref\": \"response.output.task_status\"\n                            }\n                          },\n                          \"succeeded\"\n                        ]\n                      },\n                      {\n                        \"$not\": {\n                          \"$ref\": \"response.output.video_url\"\n                        }\n                      }\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$not\": {\n                          \"$ref\": \"response.output.task_id\"\n                        }\n                      },\n                      {\n                        \"$not\": {\n                          \"$ref\": \"taskId\"\n                        }\n                      }\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"response.output.task_status\"\n                  },\n                  \"pending\"\n                ]\n              }\n            }\n          },\n          \"messagePaths\": [\n            \"output.message\",\n            \"message\"\n          ],\n          \"errorPaths\": [\n            \"output.code\",\n            \"code\"\n          ],\n          \"videos\": {\n            \"$ref\": \"response.output.video_url\"\n          },\n          \"resultEphemeral\": true,\n          \"usage\": {\n            \"$ref\": \"response.usage\"\n          }\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->"
+}

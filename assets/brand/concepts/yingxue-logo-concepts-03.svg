@@ -1,0 +1,68 @@
+<svg width="1900" height="760" viewBox="0 0 1900 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1900" y2="760"><stop stop-color="#05070B"/><stop offset="0.5" stop-color="#111A28"/><stop offset="1" stop-color="#06080D"/></linearGradient>
+    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="0.24" stop-color="#B8E5FF"/><stop offset="0.48" stop-color="#E9F8FF"/><stop offset="0.72" stop-color="#8FB6D4"/><stop offset="1" stop-color="#526B86"/></linearGradient>
+    <linearGradient id="panel3" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF" stop-opacity="0.085"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.018"/></linearGradient>
+    <radialGradient id="moonGlow"><stop stop-color="#A8DFFF" stop-opacity="0.25"/><stop offset="1" stop-color="#A8DFFF" stop-opacity="0"/></radialGradient>
+    <filter id="blur3" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="26"/></filter>
+  </defs>
+  <rect width="1900" height="760" fill="url(#bg3)"/>
+  <ellipse cx="950" cy="200" rx="760" ry="430" fill="url(#moonGlow)" opacity="0.32"/>
+  <text x="84" y="84" fill="#F6F8FB" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="32" font-weight="600" letter-spacing="8">映雪 · 人物气质转译</text>
+  <text x="84" y="125" fill="#8492A7" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="16" letter-spacing="3">MOONLIGHT · WHITE ROBE · SWORD INTENT · QUIET STRENGTH</text>
+
+  <g transform="translate(70 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel3)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="118" fill="#8DD8FF" opacity="0.11" filter="url(#blur3)"/>
+    <g transform="translate(109 76) scale(3)">
+      <path d="M43.5 10.5C29 7 14.5 15.8 11 30.3C7.5 44.8 16.3 59.3 30.8 62.8C38.8 64.7 46.8 62.8 52.8 58.3C41.3 59.2 30.3 52.2 26.8 40.7C22.7 27.2 30.3 13 43.5 8.5V10.5Z" fill="url(#jade)"/>
+      <path d="M42 13L45 20H39L42 13ZM39.5 20H44.5V45H39.5V20ZM37 45H47L42 52L37 45Z" fill="url(#jade)"/>
+      <path d="M34 26H50" stroke="url(#jade)" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F8FAFD" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">月魄</text>
+    <text x="205" y="386" text-anchor="middle" fill="#93A2B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">MOON BLADE</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F93" font-family="'Microsoft YaHei', sans-serif" font-size="15">冷月 · 剑锋 · 清绝</text>
+  </g>
+
+  <g transform="translate(520 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel3)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="118" fill="#8DD8FF" opacity="0.11" filter="url(#blur3)"/>
+    <g transform="translate(109 76) scale(3)">
+      <circle cx="32" cy="13" r="4" fill="url(#jade)"/>
+      <path d="M32 18L39 26L48 31L43 37L36 33V51L32 58L28 51V33L21 37L16 31L25 26L32 18Z" fill="url(#jade)"/>
+      <path d="M16 31L6 45L22 38M48 31L58 45L42 38" stroke="url(#jade)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M32 22V48" stroke="#111827" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F8FAFD" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">雪衣</text>
+    <text x="205" y="386" text-anchor="middle" fill="#93A2B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">WHITE ROBE</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F93" font-family="'Microsoft YaHei', sans-serif" font-size="15">白衣 · 流袖 · 立剑</text>
+  </g>
+
+  <g transform="translate(970 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel3)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="118" fill="#8DD8FF" opacity="0.11" filter="url(#blur3)"/>
+    <g transform="translate(109 76) scale(3)" fill="url(#jade)">
+      <circle cx="12" cy="20" r="2.8"/><circle cx="21" cy="12" r="2.8"/><circle cx="32" cy="9" r="2.8"/><circle cx="43" cy="12" r="2.8"/><circle cx="52" cy="20" r="2.8"/><circle cx="16" cy="31" r="2.8"/><circle cx="48" cy="31" r="2.8"/>
+      <path d="M32 14L37 24L34.5 46H29.5L27 24L32 14ZM22 26H42L39 32H25L22 26ZM29.5 46H34.5L32 57L29.5 46Z"/>
+      <path d="M18 40C22.5 45.5 27 48 32 48C37 48 41.5 45.5 46 40" stroke="url(#jade)" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F8FAFD" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">七曜</text>
+    <text x="205" y="386" text-anchor="middle" fill="#93A2B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">SEVEN STARS</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F93" font-family="'Microsoft YaHei', sans-serif" font-size="15">七星 · 剑阵 · 守护</text>
+  </g>
+
+  <g transform="translate(1420 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel3)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="118" fill="#8DD8FF" opacity="0.11" filter="url(#blur3)"/>
+    <g transform="translate(109 76) scale(3)">
+      <path d="M10 45C18 40 22 31 24 18C31 25 34 35 32 48C38 43 43 35 47 24C50 34 53 41 58 45C48 55 21 58 10 45Z" fill="url(#jade)"/>
+      <path d="M32 8L36 17H28L32 8ZM29.5 17H34.5V43H29.5V17Z" fill="url(#jade)"/>
+      <path d="M22 24C25 27 28.3 29 32 30C35.7 29 39 27 42 24" stroke="url(#jade)" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M16 48C26 51 38 51 52 47" stroke="#111827" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F8FAFD" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">雪魄</text>
+    <text x="205" y="386" text-anchor="middle" fill="#93A2B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">FROST SPIRIT</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F93" font-family="'Microsoft YaHei', sans-serif" font-size="15">剑意 · 衣袂 · 雪浪</text>
+  </g>
+  <text x="950" y="716" text-anchor="middle" fill="#647186" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="14" letter-spacing="3">H / I / J / K · ORIGINAL SYMBOLIC TRANSLATION · COMMERCIAL BRANDING DIRECTION</text>
+</svg>

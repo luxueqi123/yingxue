@@ -1,0 +1,59 @@
+[
+  {
+    "obsId": "3FO4K4VYAPGE",
+    "orderId": 0,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "BEAT_CLIP_GROUP_TO_SHOT",
+    "templateName": "单镜独立编排",
+    "templateNameLocaleId": null,
+    "description": "一个镜头生成一个视频，适合画面相对独立的镜头。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "每个clip单独作为1个shot，不用进行clip之间的合并。除非单个shot的totalDuration低于4s，则进行相邻的合并"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VYAM4D",
+    "orderId": 0,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "BEAT_CLIP_GROUP_TO_SHOT",
+    "templateName": "15s 满编编排",
+    "templateNameLocaleId": null,
+    "description": "一个视频任务尽量凑满 15s，充分利用视频模型的时长上限。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "优先撑满15s，保证全局使用的shot数量最少\n"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VYAW5G",
+    "orderId": 0,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "BEAT_CLIP_GROUP_TO_SHOT",
+    "templateName": "剧情连贯编排",
+    "templateNameLocaleId": null,
+    "description": "按剧情将多个镜头合并为一个视频任务，连贯性更强。适合大多数场景。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "# 分镜聚合提示词\n将连续分镜 Clip 聚合为适合视频模型生成的 Shot。每个 Shot 的合并后的时长≤15秒。  \n\n## 核心原则\nShot 的切分依据，不是镜头形式是否变化，而是**是否仍在生成同一个戏剧事件或同一连续剧情段**。  \n只要连续 Clip 仍在共同完成同一事件，或仍属于同一连续剧情段中的自然承接部分，就应优先合并，而不是拆开。\n\n## 第一步：先按剧情找自然边界\n不要逐个 Clip 保守切分。  \n必须先观察整段连续内容，先找出按剧情推进形成的**自然边界**，完成初步切分。  \n\n注意：  \n这些自然边界只是第一轮结果，**不是最终结果**。\n\n## 默认应合并的情况\n以下变化如果仍服务于同一戏剧事件或同一连续剧情段，默认都应合并，不单独切 Shot：\n- 景别变化\n- 视角变化\n- 运镜变化\n- 局部特写\n- 同一人物动作的阶段推进\n- 同一情绪的持续升级\n- 同一关系组内部的主体切换\n- A动作后的B即时反应\n- 爆点后的余波、收束、补充\n- 短OS / 短VO / 内心判断\n- 外部打断刚出现时引发的第一时间反应\n\n## 真正需要切分的情况\n只有出现以下情况，才优先切分为新 Shot：\n1. 前一戏剧事件已经完成，新的独立事件开始主导  \n2. 段落目标真正改变，且不再是前段的继续、结果、反应或余波  \n3. 空间或时间明显变化  \n4. 新主体进入后持续主导，并重组后续行为  \n5. 合并后生成复杂度明显过高，难以稳定完成  \n\n注意：**短暂出声、短暂打断、短暂反应，不等于新 Shot。**\n\n## 第二步：相邻 Shot 二次合并\n初步切分完成后，**不能直接输出**。  \n必须继续检查相邻 Shot 是否可以在不超过15秒的前提下进一步合并。  \n\n若两个相邻 Shot 同时满足以下条件，应优先合并：\n- 仍属于同一连续剧情段\n- 前后是自然承接，而非真正独立的新事件\n- 人物、空间、关系和主视觉中心仍然稳定\n- 合并后总时长不超过15秒\n- 合并后不会明显增加生成复杂度\n\n**也就是说，先按剧情切出自然段，再在15秒内尽量把相邻自然段拼成更大、更完整的 Shot。**  \n不要停留在保守的初步切分结果。\n\n## 第三步：短段强制复核\n在完成二次合并后，必须再执行一次**短段强制复核**。  \n凡时长明显偏短的 Shot（可参考约8秒以下），不得直接保留，必须先判断它是否只是：\n- 前一 Shot 的余波、结果、补充、收束\n- 前一 Shot 爆点后的短反应\n- 后一 Shot 的起势、引子、预备动作\n- 同一连续剧情段中的局部延伸\n\n如果是，则应优先并入前后连续性更强的一侧。  \n只有当该短段本身明确构成**独立事件、关键转折或必要爆点**时，才允许独立存在。\n\n\n\n## 最终准则\n**先按剧情切，再在15秒内尽量做大。**  \n**相邻段只要还能自然衔接，就继续合并，不要停在保守切分。**  \n**短段不是默认保留，而是最后再复核。**\n**shot的最终时长≤15s。**\n\n---"
+    },
+    "deleted": false
+  }
+]

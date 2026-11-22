@@ -1,7 +1,8 @@
-import { ScanSearch, Sparkles } from "lucide-react";
+import { ScanSearch, Shapes } from "lucide-react";
 import { createElement } from "react";
+import { translateInterface } from "@/lib/interface-locale";
 
-import type { FloatingDockEntry } from "@/components/ui/aceternity/floating-dock";
+import type { FloatingDockCommand, FloatingDockEntry, FloatingDockSwitch } from "@/components/ui/aceternity/floating-dock";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { listCreatableNodeDefinitions } from "@/lib/canvas/node-registry";
 
@@ -15,14 +16,20 @@ const addNodeMenuRegistry: AddNodeMenuCommand[] = [];
 export function registerToolbarTools(tools: ToolDefinition[]) {
     for (const tool of tools) {
         const list = registry.get(tool.toolbar) ?? [];
-        list.push(tool);
+        const index = list.findIndex((registered) => registered.id === tool.id);
+        if (index >= 0) list[index] = tool;
+        else list.push(tool);
         registry.set(tool.toolbar, list);
     }
 }
 
 /** 注册添加节点菜单命令 */
 export function registerAddNodeMenuCommands(commands: AddNodeMenuCommand[]) {
-    addNodeMenuRegistry.push(...commands);
+    for (const command of commands) {
+        const index = addNodeMenuRegistry.findIndex((registered) => registered.id === command.id);
+        if (index >= 0) addNodeMenuRegistry[index] = command;
+        else addNodeMenuRegistry.push(command);
+    }
 }
 
 /** 获取某工具栏全部已注册工具（按 defaultOrder 升序） */
@@ -45,7 +52,7 @@ function getPluginNodeMenuCommands(): AddNodeMenuCommand[] {
         .filter((definition) => Boolean(definition.plugin))
         .map((definition, index) => {
             const pluginId = definition.plugin!.pluginId;
-            const FallbackIcon = definition.type === ART_CRITIQUE_NODE_TYPE ? ScanSearch : Sparkles;
+            const FallbackIcon = definition.type === ART_CRITIQUE_NODE_TYPE ? ScanSearch : Shapes;
             return {
                 id: definition.type,
                 label: definition.label,
@@ -58,10 +65,13 @@ function getPluginNodeMenuCommands(): AddNodeMenuCommand[] {
         });
 }
 
-/** 默认偏好：全部工具按 defaultOrder 排列，全部可见 */
+/** 默认偏好：全部工具按 defaultOrder 排列；defaultVisible 为 false 的进入 hidden */
 export function defaultToolbarPrefs(toolbar: ToolbarId): ToolbarPrefs {
     const tools = getToolbarTools(toolbar);
-    return { order: tools.map((tool) => tool.id), hidden: [] };
+    return {
+        order: tools.map((tool) => tool.id),
+        hidden: tools.filter((tool) => !tool.defaultVisible).map((tool) => tool.id),
+    };
 }
 
 /**
@@ -72,6 +82,33 @@ export function defaultToolbarPrefs(toolbar: ToolbarId): ToolbarPrefs {
 export function resolveToolbarEntries(toolbar: ToolbarId, ctx: ToolContext, prefs: ToolbarPrefs | null): FloatingDockEntry[] {
     const tools = resolveToolbarTools(toolbar, ctx, prefs);
     return buildEntriesWithSeparators(tools, ctx);
+}
+
+export function resolveMainToolbarLayout(ctx: ToolContext, prefs: ToolbarPrefs | null) {
+    const dock: FloatingDockEntry[] = [];
+    const more: FloatingDockCommand[] = [];
+    const destructive: FloatingDockCommand[] = [];
+    let quickCommands = 0;
+    let previousGroup: string | undefined;
+    for (const tool of resolveToolbarTools("main", ctx, prefs)) {
+        const entry = toolToEntry(tool, ctx);
+        if (entry.kind !== "switch") {
+            if (entry.danger) {
+                destructive.push(entry);
+                continue;
+            }
+            if (quickCommands >= 4) {
+                more.push(entry);
+                continue;
+            }
+            quickCommands++;
+        }
+        const group = entry.kind === "switch" ? "mode" : tool.category === "history" ? "history" : "action";
+        if (previousGroup && group !== previousGroup) dock.push({ kind: "separator", id: `before-${entry.id}` });
+        dock.push(entry);
+        previousGroup = group;
+    }
+    return { dock, more, destructive };
 }
 
 /**
@@ -98,13 +135,20 @@ export function resolveNodeToolbarPlacement(tool: ToolDefinition, ctx: ToolConte
     const placement = tool.nodeToolbar;
     return {
         group: typeof placement?.group === "function" ? placement.group(ctx) : placement?.group || "more",
-        order: typeof placement?.order === "function" ? placement.order(ctx) : placement?.order ?? tool.defaultOrder,
+        order: typeof placement?.order === "function" ? placement.order(ctx) : (placement?.order ?? tool.defaultOrder),
     };
 }
 
 /** 解析添加节点菜单命令——合并插件节点后按 applicable 过滤并排序。 */
 export function resolveAddNodeMenuCommands(ctx: AddNodeMenuContext): AddNodeMenuCommand[] {
-    return [...getAddNodeMenuCommands(), ...getPluginNodeMenuCommands()].filter((command) => !command.applicable || command.applicable(ctx)).sort((a, b) => a.defaultOrder - b.defaultOrder);
+    return [...getAddNodeMenuCommands(), ...getPluginNodeMenuCommands()]
+        .filter((command) => !command.applicable || command.applicable(ctx))
+        .sort((a, b) => a.defaultOrder - b.defaultOrder)
+        .map((command) => !ctx.locale || (!command.labelKey && !command.badgeKey) ? command : {
+            ...command,
+            label: command.labelKey ? translateInterface(ctx.locale, command.labelKey) : command.label,
+            badge: command.badgeKey ? translateInterface(ctx.locale, command.badgeKey) : command.badge,
+        });
 }
 
 /**
@@ -126,7 +170,19 @@ function buildEntriesWithSeparators(tools: ToolDefinition[], ctx: ToolContext): 
     return entries;
 }
 
-function toolToEntry(tool: ToolDefinition, ctx: ToolContext): FloatingDockEntry {
+function toolToEntry(tool: ToolDefinition, ctx: ToolContext): FloatingDockCommand | FloatingDockSwitch {
+    if (tool.switchGroup) {
+        return {
+            kind: "switch",
+            id: tool.id,
+            label: resolveText(tool.label, ctx),
+            value: tool.switchGroup.value(ctx),
+            options: tool.switchGroup.options.map(option => option.labelKey ? {
+                ...option, label: translateInterface(ctx.locale ?? "zh-CN", option.labelKey),
+            } : option),
+            onChange: (value) => tool.switchGroup?.onChange(ctx, value),
+        };
+    }
     return {
         kind: "command",
         id: tool.id,

@@ -1,3 +1,5 @@
+import { interfaceTranslator, type InterfaceTranslate } from "@/lib/interface-locale";
+
 const TAPNOW_SHARE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const TAPNOW_SHARE_HOST = "app.tapnow.media";
 
@@ -17,9 +19,9 @@ export function parseTapNowShareID(value: string) {
     return TAPNOW_SHARE_ID_PATTERN.test(candidate) ? candidate : "";
 }
 
-export function formatTapNowBatchTime(value: string) {
+export function formatTapNowBatchTime(value: string, t: InterfaceTranslate = interfaceTranslator("zh-CN")) {
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "未知";
+    if (Number.isNaN(date.getTime())) return t("canvasImportUnknown");
     const pad = (part: number) => String(part).padStart(2, "0");
     return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}`;
 }

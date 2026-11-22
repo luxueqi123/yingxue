@@ -1,0 +1,7 @@
+package service
+
+import "infinite-canvas/backend/internal/app"
+
+type FeishuFeedbackSettingsInput = app.FeishuFeedbackSettingsInput
+type FeishuFeedbackSettingsView = app.FeishuFeedbackSettingsView
+type FeishuDigestStateView = app.FeishuDigestStateView

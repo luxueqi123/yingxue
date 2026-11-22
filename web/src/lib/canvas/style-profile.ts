@@ -1,3 +1,5 @@
+import { interfaceTranslator, type InterfaceTranslate } from "@/lib/interface-locale";
+
 export type StyleAssetKind = "lora" | "template" | "reference" | "prompt";
 export type StyleAssetStatus = "draft" | "validated" | "unavailable";
 
@@ -197,41 +199,41 @@ export function applyStyleExecutionPlan(prompt: string, plan: StyleExecutionPlan
     return [content, "【项目画风执行规范】", stylePrompt].filter(Boolean).join("\n\n");
 }
 
-export function styleAssetValidationMessage(asset: StyleAssetBinding) {
-    if (!asset.id.trim()) return "资产 ID 不能为空";
-    if (!asset.title.trim()) return "请填写资产名称";
-    if (!asset.provider.trim()) return "请填写来源平台或适配器";
-    if (asset.weight !== undefined && (!Number.isFinite(asset.weight) || asset.weight < 0 || asset.weight > 2)) return "LoRA 权重必须在 0 到 2 之间";
-    if ((asset.baseModels?.length || 0) > 20) return "单个资产最多声明 20 个兼容模型";
-    if ((asset.triggerWords?.length || 0) > 50) return "单个资产最多声明 50 个触发词";
-    if ((asset.referenceUrls?.length || 0) > 20 || (asset.referenceResourceIds?.length || 0) > 20) return "单个参考图组最多绑定 20 个 URL 和 20 个资源";
-    if (asset.parameters?.steps !== undefined && (!Number.isInteger(asset.parameters.steps) || asset.parameters.steps < 1 || asset.parameters.steps > 200)) return "Steps 必须在 1 到 200 之间";
-    if (asset.parameters?.cfg !== undefined && (!Number.isFinite(asset.parameters.cfg) || asset.parameters.cfg < 0 || asset.parameters.cfg > 50)) return "CFG 必须在 0 到 50 之间";
+export function styleAssetValidationMessage(asset: StyleAssetBinding, t: InterfaceTranslate = interfaceTranslator("zh-CN")) {
+    if (!asset.id.trim()) return t("styleValidationUi.assetIdRequired");
+    if (!asset.title.trim()) return t("styleValidationUi.assetNameRequired");
+    if (!asset.provider.trim()) return t("styleValidationUi.providerRequired");
+    if (asset.weight !== undefined && (!Number.isFinite(asset.weight) || asset.weight < 0 || asset.weight > 2)) return t("styleValidationUi.weightRange");
+    if ((asset.baseModels?.length || 0) > 20) return t("styleValidationUi.baseModelLimit");
+    if ((asset.triggerWords?.length || 0) > 50) return t("styleValidationUi.triggerLimit");
+    if ((asset.referenceUrls?.length || 0) > 20 || (asset.referenceResourceIds?.length || 0) > 20) return t("styleValidationUi.referenceLimit");
+    if (asset.parameters?.steps !== undefined && (!Number.isInteger(asset.parameters.steps) || asset.parameters.steps < 1 || asset.parameters.steps > 200)) return t("styleValidationUi.stepsRange");
+    if (asset.parameters?.cfg !== undefined && (!Number.isFinite(asset.parameters.cfg) || asset.parameters.cfg < 0 || asset.parameters.cfg > 50)) return t("styleValidationUi.cfgRange");
     if (asset.status !== "validated") return "";
-    if (asset.kind === "lora" && !asset.sourceId?.trim() && !asset.sourceUrl?.trim()) return "已验证的 LoRA 必须填写来源资产 ID 或 URL";
-    if ((asset.kind === "prompt" || asset.kind === "template") && !asset.promptFragment?.trim() && !asset.triggerWords?.some((word) => word.trim())) return "已验证的模板或提示词模块必须填写提示词内容";
-    if (asset.kind === "reference" && !asset.referenceUrls?.some((url) => url.trim()) && !asset.referenceResourceIds?.some((id) => id.trim())) return "已验证的参考图组必须绑定参考图";
+    if (asset.kind === "lora" && !asset.sourceId?.trim() && !asset.sourceUrl?.trim()) return t("styleValidationUi.validatedLoraSource");
+    if ((asset.kind === "prompt" || asset.kind === "template") && !asset.promptFragment?.trim() && !asset.triggerWords?.some((word) => word.trim())) return t("styleValidationUi.validatedPromptRequired");
+    if (asset.kind === "reference" && !asset.referenceUrls?.some((url) => url.trim()) && !asset.referenceResourceIds?.some((id) => id.trim())) return t("styleValidationUi.validatedReferenceRequired");
     return "";
 }
 
-export function styleProfileValidationMessage(profile: StyleProfileSnapshot) {
-    if (!profile.presetId.trim() || profile.revision < 1) return "项目画风快照缺少必要字段";
-    if (!profile.title.trim()) return "请填写风格名称";
-    if (!profile.prompt.trim()) return "请填写完整风格 Prompt";
-    if (profile.title.length > 80) return "风格名称最多 80 个字";
-    if (profile.description.length > 500) return "风格简介最多 500 个字";
-    if (profile.tags.length > 20) return "风格标签最多 20 个";
-    if (profile.selection && Object.keys(profile.selection).length > 20) return "项目画风辅助标注最多 20 项";
-    if (profile.selection && Object.entries(profile.selection).some(([key, value]) => !key.trim() || key.length > 64 || value.length > 200)) return "项目画风辅助标注格式无效";
-    if ((profile.coverUrl?.length || 0) > 4096) return "风格封面地址过长";
-    if (profile.coverUrl && !isStyleCoverUrl(profile.coverUrl)) return "风格封面只支持 http(s)、站内路径或图片 Data URL";
-    if ((profile.negativePrompt?.length || 0) > 64 * 1024) return "负面 Prompt 过大";
-    if (profile.assets.length > MAX_STYLE_ASSETS) return `项目画风最多绑定 ${MAX_STYLE_ASSETS} 个执行资产`;
+export function styleProfileValidationMessage(profile: StyleProfileSnapshot, t: InterfaceTranslate = interfaceTranslator("zh-CN")) {
+    if (!profile.presetId.trim() || profile.revision < 1) return t("styleValidationUi.snapshotFieldsRequired");
+    if (!profile.title.trim()) return t("styleValidationUi.styleNameRequired");
+    if (!profile.prompt.trim()) return t("styleValidationUi.stylePromptRequired");
+    if (profile.title.length > 80) return t("styleValidationUi.nameLength");
+    if (profile.description.length > 500) return t("styleValidationUi.descriptionLength");
+    if (profile.tags.length > 20) return t("styleValidationUi.tagLimit");
+    if (profile.selection && Object.keys(profile.selection).length > 20) return t("styleValidationUi.metadataLimit");
+    if (profile.selection && Object.entries(profile.selection).some(([key, value]) => !key.trim() || key.length > 64 || value.length > 200)) return t("styleValidationUi.invalidMetadata");
+    if ((profile.coverUrl?.length || 0) > 4096) return t("styleValidationUi.coverUrlTooLong");
+    if (profile.coverUrl && !isStyleCoverUrl(profile.coverUrl)) return t("styleValidationUi.invalidCoverUrl");
+    if ((profile.negativePrompt?.length || 0) > 64 * 1024) return t("styleValidationUi.negativePromptTooLarge");
+    if (profile.assets.length > MAX_STYLE_ASSETS) return t("styleValidationUi.assetLimit", { count: MAX_STYLE_ASSETS });
     const ids = new Set<string>();
     for (const asset of profile.assets) {
-        const assetMessage = styleAssetValidationMessage(asset);
-        if (assetMessage) return `${asset.title || "未命名资产"}：${assetMessage}`;
-        if (ids.has(asset.id)) return "项目画风执行资产 ID 不能重复";
+        const assetMessage = styleAssetValidationMessage(asset, t);
+        if (assetMessage) return t("styleValidationUi.assetError", { name: asset.title || t("styleToolsUi.untitledAsset"), message: assetMessage });
+        if (ids.has(asset.id)) return t("styleValidationUi.duplicateAssetId");
         ids.add(asset.id);
     }
     return "";

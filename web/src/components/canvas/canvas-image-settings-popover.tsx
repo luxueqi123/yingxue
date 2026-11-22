@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { createPortal } from "react-dom";
-import { Settings2 } from "lucide-react";
-import { Button } from "antd";
-
+import { useTranslation } from "react-i18next";
 import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { modelCapabilityConfigFor, normalizeImageValue } from "@/lib/model-capabilities";
-import { useThemeStore } from "@/stores/use-theme-store";
-import type { AiConfig } from "@/stores/use-config-store";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { preserveImageSettings as normalizeImageValue } from "@/lib/media-settings";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { CanvasSettingsPopover, type CanvasSettingsPlacement } from "./canvas-settings-popover";
 
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
@@ -16,121 +15,30 @@ type CanvasImageSettingsPopoverProps = {
     onOpenChange?: (open: boolean) => void;
     buttonClassName?: string;
     getPopupContainer?: (triggerNode: HTMLElement) => HTMLElement;
-    placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
+    placement?: CanvasSettingsPlacement;
     autoAdjustOverflow?: boolean;
     showCount?: boolean;
+    /** 画布节点的张数是拆单数，传值时按账号同时任务数显示上限。 */
+    countLimit?: number;
 };
 
-export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft", showCount = true }: CanvasImageSettingsPopoverProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const buttonRef = useRef<HTMLSpanElement>(null);
-    const panelRef = useRef<HTMLDivElement>(null);
-    const [open, setOpen] = useState(false);
-    const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
-    const profile = modelCapabilityConfigFor(config, config.model || config.imageModel).image!;
-    const normalized = normalizeImageValue(profile, config);
-    const summaryParts = [
-        ...(profile.size.parameter !== "none" ? [imageSizeLabel(normalized.size)] : []),
-        ...(profile.quality.supported ? [imageQualityLabel(normalized.quality)] : []),
-        ...(showCount && profile.maxOutputs > 1 ? [`${normalized.count} 张`] : []),
-        ...(profile.transparentBackground.supported && normalized.transparentBackground === "true" ? ["透明"] : []),
-    ];
-    const summary = summaryParts.join(" · ");
-    const hasSettings = profile.size.parameter !== "none" || profile.quality.supported || profile.transparentBackground.supported || (showCount && profile.maxOutputs > 1);
-    const updateOpen = (nextOpen: boolean) => {
-        setOpen(nextOpen);
-        onOpenChange?.(nextOpen);
-    };
-
-    useEffect(() => {
-        if (!open) return;
-        const syncPosition = () => setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
-        const closeOnOutsidePointer = (event: PointerEvent) => {
-            const target = event.target;
-            if (!(target instanceof Node)) return;
-            if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-            if (document.activeElement instanceof HTMLElement && panelRef.current?.contains(document.activeElement)) document.activeElement.blur();
-            setOpen(false);
-            onOpenChange?.(false);
-        };
-
-        syncPosition();
-        window.addEventListener("resize", syncPosition);
-        window.addEventListener("scroll", syncPosition, true);
-        window.addEventListener("pointerdown", closeOnOutsidePointer, true);
-        return () => {
-            window.removeEventListener("resize", syncPosition);
-            window.removeEventListener("scroll", syncPosition, true);
-            window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-        };
-    }, [onOpenChange, open]);
-
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} showCount={showCount} onConfigChange={onConfigChange} /> : null;
-
-    if (!hasSettings) return null;
-
+export function CanvasImageSettingsPopover({ config, onConfigChange, showCount = true, countLimit, onMissingConfig: _unused, ...popover }: CanvasImageSettingsPopoverProps) {
+    const { t } = useTranslation();
+    const theme = canvasThemes[useActiveTheme()];
+    const profile = modelCapabilityConfigFor(config, config.model || config.imageModel).image;
+    if (!profile) return null;
+    const current = normalizeImageValue(profile, config, resolveModelRequestConfig(config, config.model || config.imageModel).interfaceType);
+    const parts: string[] = [];
+    if (profile.size.parameter !== "none") parts.push(imageSizeLabel(current.size));
+    if (profile.quality.supported) parts.push(imageQualityLabel(current.quality));
+    // 传了 countLimit 时摘要用原始 config.count，不受单模型 maxOutputs=1 影响。
+    if (showCount && (countLimit === undefined ? profile.maxOutputs > 1 : countLimit > 1))
+        parts.push(t("canvasB.imageSettings.count", { count: countLimit === undefined ? current.count : Math.max(1, Math.min(15, countLimit, Math.floor(Number(config.count)) || 1)) }));
+    if (profile.transparentBackground.supported && current.transparentBackground === "true") parts.push(t("canvasB.imageSettings.transparent"));
+    if (!parts.length && !profile.transparentBackground.supported && !profile.parameters?.some((p) => p.enabled !== false)) return null;
     return (
-        <>
-            <span ref={buttonRef} className="inline-flex min-w-0">
-                <Button size="small" type="text" className={`canvas-generation-settings-trigger ${buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"}`} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} aria-expanded={open} aria-label={`图像设置：${summary}`} title={`图像设置 · ${summary}`} onClick={() => updateOpen(!open)}>
-                    <span className="truncate">{summary}</span>
-                </Button>
-            </span>
-            {panel}
-        </>
-    );
-}
-
-function ImageSettingsPortal({
-    buttonRect,
-    panelRef,
-    placement,
-    theme,
-    config,
-    showCount,
-    onConfigChange,
-}: {
-    buttonRect: DOMRect;
-    panelRef: RefObject<HTMLDivElement | null>;
-    placement: CanvasImageSettingsPopoverProps["placement"];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-    config: AiConfig;
-    showCount: boolean;
-    onConfigChange: (key: keyof AiConfig, value: string) => void;
-}) {
-    const gap = 8;
-    const margin = 12;
-    const width = Math.min(420, window.innerWidth - margin * 2);
-    const alignRight = placement?.endsWith("Right");
-    const alignCenter = placement === "top" || placement === "bottom";
-    const left = alignCenter ? buttonRect.left + buttonRect.width / 2 - width / 2 : alignRight ? buttonRect.right - width : buttonRect.left;
-    const topPlacement = placement?.startsWith("top");
-    const style = {
-        position: "fixed",
-        zIndex: "var(--z-dialog-popover)",
-        width,
-        left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
-        ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),
-        background: theme.canvas.background,
-        border: `1px solid ${theme.toolbar.border}`,
-        borderRadius: 10,
-        boxShadow: `0 24px 72px ${theme.spatial.shadow}`,
-        padding: 12,
-        overflowY: "auto",
-        color: theme.node.text,
-    } as const;
-
-    return createPortal(
-        <div
-            ref={panelRef}
-            className="canvas-image-settings-popover aceternity-floating-panel backdrop-blur-2xl"
-            style={style}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-        >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showCount={showCount} quickCount={3} className="space-y-3" />
-        </div>,
-        document.body,
+        <CanvasSettingsPopover {...popover} label={t("canvasB.imageSettings.label")} summary={parts.join(" · ") || t("canvasB.imageSettings.background")} width={420}>
+            <ImageSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showCount={showCount} quickCount={3} className="space-y-3" countLimit={countLimit} />
+        </CanvasSettingsPopover>
     );
 }

@@ -1,610 +1,969 @@
+import type { PublicUserGroup } from "@/services/api/user-groups";
 import type { ModelChannel } from "@/stores/use-config-store";
 import type { BillingOrder, CreditLedgerEntry } from "@/services/api/wallet";
 import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
 import type { CanvasDrawingEngineSetting } from "@/lib/canvas/canvas-drawing-engine";
 import type { FeatureAvailability } from "@/stores/use-user-store";
-import { apiClient, request } from "@/services/api/request";
-import type { PublicLogicalModel } from "@/services/api/logical-models";
+import { http, apiBaseURL } from "@/services/api/request";
 import type { OSSConnectionTestInput, OSSConnectionTestResult, OSSProvider, S3Preset } from "@/lib/oss-settings";
-
-const api = apiClient;
-
+import type { VerificationPolicy } from "./verification";
+import type { AccountFileStorageUsage } from "@/services/api/resources";
 let authSessionRequest: Promise<AuthSessionPayload> | null = null;
 let authSessionCache: { payload: AuthSessionPayload; expiresAt: number } | null = null;
+let authSessionGeneration = 0;
 
-function invalidateAuthSessionCache() {
+export function invalidateAuthSessionCache() {
+    authSessionGeneration += 1;
     authSessionCache = null;
+    authSessionRequest = null;
 }
-
 export type LocalUser = {
-    id: string;
-    username: string;
-    email?: string;
-    displayName: string;
-    avatarUrl?: string;
-    identityProvider?: string;
-    identityId?: string;
-    identityUsername?: string;
-    role: "admin" | "user";
-    status: "active" | "disabled";
-    lastLoginAt?: string;
-    createdAt: string;
-    updatedAt: string;
+  id: string;
+  username: string;
+  email?: string;
+  phone?: string;
+  emailVerifiedAt?: string;
+  phoneVerifiedAt?: string;
+  displayName: string;
+  avatarUrl?: string;
+  avatarMode?: "custom" | "default" | "";
+  avatarPreset?: string;
+  identityProvider?: string;
+  identityId?: string;
+  identityUsername?: string;
+  role: "admin" | "user";
+  status: "active" | "disabled";
+  isPromoter?: boolean;
+  /** 分组编码；空串属于 default 分组。 */
+  userGroup?: string;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt: string;
 };
-
 export type AdminUser = LocalUser & {
-    availableMicrocredits: number;
-    reservedMicrocredits: number;
+  availableMicrocredits: number;
+  reservedMicrocredits: number;
+  /** 仅用户列表返回：累计充值到账积分与累计已结算消耗。 */
+  rechargedMicrocredits?: number;
+  consumedMicrocredits?: number;
 };
-
 export type AuthSessionPayload = {
-    user: LocalUser | null;
-    logicalModels?: PublicLogicalModel[];
-    runtimeLimits?: RuntimeLimits;
-    drawingEngine?: CanvasDrawingEngineSetting;
-    features?: FeatureAvailability;
+  user: LocalUser | null;
+  runtimeLimits?: RuntimeLimits;
+  drawingEngine?: CanvasDrawingEngineSetting;
+  features?: FeatureAvailability;
+  /** 当前账号能否进入推广中心；由后台推广设置和推广人标记共同决定。 */
+  referralAvailable?: boolean;
+  /** 当前账号所属分组的展示信息；分组配置缺失时为空。 */
+  userGroup?: PublicUserGroup | null;
+};
+export type RuntimeLimits = {
+  activeTaskLimit: number;
+  resourceUploadMB: number;
+  storedFileGB: number;
+  recycleBinRetentionDays?: number;
+  sessionUploadMB: number;
+};
+export type ApiLogGenerationReference = {
+    id: string;
+    kind: "image" | "video" | "audio";
+    label: string;
+    name: string;
+    role?: string;
+    available: boolean;
+    unavailableReason?: string;
+    mediaUrl?: string;
 };
 
-export type RuntimeLimits = {
-    activeTaskLimit: number;
-    resourceUploadMB: number;
-    sessionUploadMB: number;
-    recycleBinRetentionDays?: number;
+export type ApiLogGenerationContent = {
+    prompt: string;
+    references: ApiLogGenerationReference[];
+    source: "snapshot" | "task" | "request";
+    incomplete: boolean;
+    note?: string;
 };
 
 export type ApiCallLog = {
-    id: string;
+  id: string;
+  userId: string;
+  userDisplayName?: string;
+  userAccount?: string;
+  channelId: string;
+  channelName: string;
+  taskId?: string;
+  taskStatus?: TaskStatus;
+  mediaStage?: GenerationTask["mediaStage"];
+  billingOrderId?: string;
+  billingStatus?: BillingOrder["status"];
+  /** 订单预授权额；与实收分列，未结算时不能当成扣费额。 */
+  billingReservedMicrocredits: number;
+  /** 仅已结算订单返回实收。 */
+  billingSettledMicrocredits?: number;
+  billingAvailable: boolean;
+  source: string;
+  capability: "text" | "image" | "video" | "audio" | "";
+  operation?: string;
+  requestKind: "create" | "poll" | "download" | "upload" | "local_save" | "local_fallback" | "offload" | "register" | "repair" | "";
+  billable: boolean;
+  apiFormat: string;
+  method: string;
+  path: string;
+  model: string;
+  status: "succeeded" | "failed";
+  statusCode: number;
+  durationMs: number;
+  pollCount: number;
+  providerStatus?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens?: number;
+  usageAvailable: boolean;
+  mediaCount: number;
+  mediaPreviewUrl?: string;
+  mediaPreviewKind?: "image" | "video";
+  videoSeconds: number;
+  providerRequestId?: string;
+  estimatedCostMicros: number;
+  creditCostConfigured?: boolean;
+  creditCostMicrocredits?: number;
+  costAvailable: boolean;
+  currency?: string;
+  errorCode?: string;
+  error?: string;
+  concurrencyLimit: number;
+  upstreamUrl: string;
+  requestContentType?: string;
+  requestBody?: string;
+  responseBody?: string;
+  generationContent?: ApiLogGenerationContent;
+  startedAt?: string;
+  createdAt: string;
+};
+export type AdminProviderTaskQueryResult = {
+  task: GenerationTask;
+  providerStatus: string;
+  recovered: boolean;
+  billingSettled: boolean;
+};
+export type AdminAuditEvent = {
+  id: string;
+  actorUserId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  summary: string;
+  metadataJson?: string;
+  createdAt: string;
+};
+export type AdminUserDetail = {
+  user: LocalUser;
+  account: {
     userId: string;
-    userDisplayName?: string;
-    userAccount?: string;
-    channelId: string;
-    channelName: string;
-    taskId?: string;
-    taskStatus?: TaskStatus;
-    billingOrderId?: string;
-    billingStatus?: BillingOrder["status"];
-    billingAmountMicrocredits: number;
-    billingAvailable: boolean;
-    source: string;
-    capability: "text" | "image" | "video" | "audio" | "";
-    operation?: string;
-    requestKind: "create" | "poll" | "download" | "repair" | "";
-    billable: boolean;
-    apiFormat: string;
-    method: string;
-    path: string;
+    availableMicrocredits: number;
+    reservedMicrocredits: number;
+    version: number;
+  };
+  counts: {
+    ledgerEntries: number;
+    tasks: number;
+    apiCalls: number;
+    auditEvents: number;
+    rechargeMicrocredits: number;
+    checkinMicrocredits: number;
+  };
+  storageUsage: {
+    assetCount: number;
+    assetBytes: number;
+    canvasCount: number;
+    canvasBytes: number;
+    taskCount: number;
+    taskBytes: number;
+    apiCallCount: number;
+    sessionCount: number;
+    sessionBytes: number;
+    agentBytes: number;
+    agentLimitBytes: number;
+    mcpBytes: number;
+    mcpLimitBytes: number;
+  };
+  storedFileBytes: number;
+  dailyUploadBytes: number;
+  quota: RuntimeResourcePolicy;
+  /** 包含已购扩容的有效容量与超额状态。 */
+  storageCapacity: AccountFileStorageUsage;
+};
+export type AdminUserTask = {
+  id: string;
+  type: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  stage: string;
+  progress: number;
+  model?: string;
+  providerRequestId?: string;
+  createdAt: string;
+};
+export type AnalyticsFilters = {
+  from?: string;
+  to?: string;
+  userId?: string;
+  model?: string;
+  channelId?: string;
+  capability?: string;
+};
+export type AdminReferenceData = {
+  users: Array<{
+    id: string;
+    username: string;
+    displayName: string;
+  }>;
+  channels: Array<{
+    id: string;
+    name: string;
+    enabled: boolean;
+    models: string[];
+    modelDisplayNames?: string[];
+  }>;
+};
+export type AnalyticsFinance = {
+  settledOrders: number;
+  costedOrders: number;
+  revenueMicrocredits: number;
+  costMicrocredits: number;
+  profitMicrocredits: number | null;
+  profitMargin: number | null;
+};
+export type AdminAnalytics = {
+  from: string;
+  to: string;
+  kpi: {
+    activeUsers: number;
+    dau: number;
+    wau: number;
+    mau: number;
+    generationTasks: number;
+    upstreamRequests: number;
+    successRate: number;
+    p95DurationMs: number;
+    currentQueuedTasks: number;
+    totalBalanceMicrocredits?: number;
+    finance?: AnalyticsFinance | null;
+  };
+  /** 成功率为 null 表示当天没有已完成的请求，不是 0%。consumedMicrocredits 为已结算订单实收。 */
+  trend: Array<{
+    day: string;
+    tasks: number;
+    requests: number;
+    activeUsers: number;
+    requestSuccessRate: number | null;
+    consumedMicrocredits: number;
+  }>;
+  models: Array<{
     model: string;
-    status: "succeeded" | "failed";
-    statusCode: number;
-    durationMs: number;
-    pollCount: number;
-    providerStatus?: string;
+    capability: string;
+    tasks: number;
+    requests: number;
+    uniqueUsers: number;
+    taskSuccessRate: number | null;
+    requestSuccessRate: number | null;
+    p50DurationMs: number;
+    p95DurationMs: number;
     inputTokens: number;
     outputTokens: number;
     cachedTokens: number;
     usageAvailable: boolean;
     mediaCount: number;
-    mediaPreviewUrl?: string;
-    mediaPreviewKind?: "image" | "video";
     videoSeconds: number;
-    providerRequestId?: string;
-    estimatedCostMicros: number;
-    costAvailable: boolean;
-    currency?: string;
-    errorCode?: string;
-    error?: string;
-    concurrencyLimit: number;
-    upstreamUrl: string;
-    requestContentType?: string;
-    requestBody?: string;
-    responseBody?: string;
-    startedAt?: string;
-    createdAt: string;
-};
-
-export type AdminProviderTaskQueryResult = {
-    task: GenerationTask;
-    providerStatus: string;
-    recovered: boolean;
-    billingSettled: boolean;
-};
-
-export type AdminAuditEvent = {
-    id: string;
-    actorUserId: string;
-    action: string;
-    targetType: string;
-    targetId: string;
-    summary: string;
-    metadataJson?: string;
-    createdAt: string;
-};
-
-export type AdminUserDetail = {
-    user: LocalUser;
-    account: { userId: string; availableMicrocredits: number; reservedMicrocredits: number; version: number };
-    counts: { ledgerEntries: number; tasks: number; apiCalls: number; auditEvents: number };
-    storageUsage: {
-        assetCount: number;
-        assetBytes: number;
-        canvasCount: number;
-        canvasBytes: number;
-        sessionCount: number;
-        sessionBytes: number;
-        taskCount: number;
-        taskBytes: number;
-        apiCallCount: number;
-    };
-    storedFileBytes: number;
-    dailyUploadBytes: number;
-    quota: RuntimeResourcePolicy;
-};
-
-export type AdminUserTask = {
-    id: string;
-    type: string;
-    status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-    stage: string;
-    progress: number;
-    model?: string;
-    providerRequestId?: string;
-    createdAt: string;
-};
-
-export type AnalyticsFilters = {
-    from?: string;
-    to?: string;
-    userId?: string;
-    model?: string;
-    channelId?: string;
-    capability?: string;
-};
-
-export type AdminReferenceData = {
-    users: Array<{ id: string; username: string; displayName: string }>;
-    channels: Array<{ id: string; name: string; enabled: boolean; models: string[] }>;
-};
-
-export type AdminAnalytics = {
-    from: string;
-    to: string;
-    kpi: {
-        activeUsers: number;
-        dau: number;
-        wau: number;
-        mau: number;
-        generationTasks: number;
-        upstreamRequests: number;
-        successRate: number;
-        p95DurationMs: number;
-        currentQueuedTasks: number;
-        estimatedCostMicros: number;
-        costAvailable: boolean;
-        currency?: string;
-    };
-    trend: Array<{ day: string; tasks: number; requests: number; activeUsers: number; requestSuccessRate: number }>;
-    models: Array<{
-        model: string;
-        capability: string;
-        tasks: number;
-        requests: number;
-        uniqueUsers: number;
-        taskSuccessRate: number;
-        requestSuccessRate: number;
-        p50DurationMs: number;
-        p95DurationMs: number;
-        inputTokens: number;
-        outputTokens: number;
-        cachedTokens: number;
-        usageAvailable: boolean;
-        mediaCount: number;
-        videoSeconds: number;
-        estimatedCostMicros: number;
-        costAvailable: boolean;
-        currency?: string;
-    }>;
-    users: Array<{ userId: string; name: string; activeDays: number; tasks: number; agentMessages: number; canvasDays: number; assets: number; resources: number; commonModel?: string }>;
-    failures: Array<{ type: string; model: string; count: number; lastError?: string; lastSeenAt: string }>;
-};
-
-export type ModelPricing = {
-    id: string;
-    channelId?: string;
-    model: string;
-    capability: "text" | "image" | "video" | "audio";
-    currency: string;
-    inputPerMillionMicros: number;
-    outputPerMillionMicros: number;
-    cachedPerMillionMicros: number;
-    perRequestMicros: number;
-    perMediaMicros: number;
-    perVideoSecondMicros: number;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type PromptTemplate = {
-    id: string;
-    operation: string;
+    finance?: AnalyticsFinance | null;
+  }>;
+  users: Array<{
+    userId: string;
     name: string;
-    version: number;
-    content: string;
-    outputType: "json" | "text";
-    enabled: boolean;
-    createdBy?: string;
-    createdAt: string;
-    updatedAt: string;
+    activeDays: number;
+    tasks: number;
+    agentMessages: number;
+    canvasDays: number;
+    assets: number;
+    resources: number;
+    commonModel?: string;
+  }>;
+  failures: Array<{
+    type: string;
+    model: string;
+    count: number;
+    lastError?: string;
+    lastSeenAt: string;
+  }>;
 };
-
+export type ModelPricing = {
+  id: string;
+  channelId?: string;
+  model: string;
+  capability: "text" | "image" | "video" | "audio";
+  currency: string;
+  inputPerMillionMicros: number;
+  outputPerMillionMicros: number;
+  cachedPerMillionMicros: number;
+  perRequestMicros: number;
+  perMediaMicros: number;
+  perVideoSecondMicros: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type PromptTemplate = {
+  id: string;
+  operation: string;
+  name: string;
+  version: number;
+  content: string;
+  outputType: "json" | "text";
+  enabled: boolean;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type PromptTemplateVariable = {
-    label: string;
-    placeholder: string;
+  label: string;
+  placeholder: string;
 };
-
 export type PromptOperationDefinition = {
-    operation: string;
-    label: string;
-    category: string;
-    description: string;
-    outputType: "json" | "text";
-    schemaKey?: string;
-    variables: PromptTemplateVariable[];
-    outputContract: string;
+  operation: string;
+  label: string;
+  category: string;
+  description: string;
+  outputType: "json" | "text";
+  schemaKey?: string;
+  variables: PromptTemplateVariable[];
+  outputContract: string;
 };
-
 export type UserPromptCustomization = {
-    id: string;
-    operation: string;
-    mode: "inherit" | "append" | "rewrite";
-    content: string;
-    baseTemplateId: string;
-    updatedAt: string;
+  id: string;
+  operation: string;
+  mode: "inherit" | "append" | "rewrite";
+  content: string;
+  baseTemplateId: string;
+  updatedAt: string;
 };
-
 export type UserPromptPreference = {
-    definition: PromptOperationDefinition;
-    template: PromptTemplate | null;
-    customization?: UserPromptCustomization;
-    outdated: boolean;
+  definition: PromptOperationDefinition;
+  template: PromptTemplate | null;
+  customization?: UserPromptCustomization;
+  outdated: boolean;
 };
-
 export type AdminOSSSetting = {
-    enabled: boolean;
-    provider: OSSProvider;
-    s3Preset: S3Preset;
-    region: string;
-    endpoint: string;
-    cdnBaseUrl: string;
-    bucket: string;
-    accessKeyId: string;
-    accessKeySecret?: string;
-    hasAccessKeySecret: boolean;
-    sessionToken?: string;
-    hasSessionToken: boolean;
-    pathStyle: boolean;
-    allowUserS3: boolean;
-    publicBaseUrl: string;
-    pathPrefix: string;
-    testedAt?: string;
-    testedDigest?: string;
-    historyCount?: number;
-    referencedResourceCount?: number;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
+  enabled: boolean;
+  provider: OSSProvider;
+  s3Preset: S3Preset;
+  region: string;
+  endpoint: string;
+  cdnBaseUrl: string;
+  cdnAuthMode: "" | "public" | "qiniu" | string;
+  requireCDN: boolean;
+  allowPrivateProxy: boolean;
+  bucket: string;
+  accessKeyId: string;
+  accessKeySecret?: string;
+  hasAccessKeySecret: boolean;
+  sessionToken?: string;
+  hasSessionToken: boolean;
+  pathStyle: boolean;
+  allowUserS3: boolean;
+  publicBaseUrl: string;
+  pathPrefix: string;
+  testedAt?: string;
+  testedDigest?: string;
+  historyCount?: number;
+  referencedResourceCount?: number;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
-
 export type AdminArkPrivateAssetSetting = {
-    enabled: boolean;
-    region: string;
-    projectName: string;
-    accessKeyId: string;
-    accessKeySecret?: string;
-    hasAccessKeySecret: boolean;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
+  /** Seedance 可信参考素材自动同步。 */
+  enabled: boolean;
+  /** 开放用户自建真人 / 虚拟素材组，与可信素材自动同步相互独立。 */
+  realEnabled: boolean;
+  virtualEnabled: boolean;
+  realGroupLimit: number;
+  virtualGroupLimit: number;
+  /** 按组一次性收费；平台积分功能关闭时不生效。 */
+  billingEnabled: boolean;
+  realGroupPriceMicrocredits: number;
+  virtualGroupPriceMicrocredits: number;
+  realReviewRequired: boolean;
+  virtualReviewRequired: boolean;
+  realAuthorizationDays: number;
+  /** 方舟站点：火山引擎或 BytePlus 海外站，决定控制面域名。 */
+  site: "volcengine" | "byteplus";
+  /** 真人认证回调使用的站点公网根地址；为空时后端使用 CANVAS_PUBLIC_BASE_URL。 */
+  callbackBaseUrl: string;
+  region: string;
+  projectName: string;
+  accessKeyId: string;
+  accessKeySecret?: string;
+  hasAccessKeySecret: boolean;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
-
 export type RuntimeResourcePolicy = {
-    resourceUploadMB: number;
-    sessionUploadMB: number;
-    generatedFileMB: number;
-    dailyUploadMB: number;
-    storedFileGB: number;
-    structuredDataMB: number;
-    taskDataGB: number;
-    assetCount: number;
-    canvasCount: number;
-    sessionCount: number;
-    taskCount: number;
-    apiCallLogCount: number;
-    recycleBinRetentionDays?: number;
+  resourceUploadMB: number;
+  generatedFileMB: number;
+  dailyUploadMB: number;
+  storedFileGB: number;
+  structuredDataMB: number;
+  taskDataGB: number;
+  assetCount: number;
+  canvasCount: number;
+  taskCount: number;
+  apiCallLogCount: number;
+  recycleBinRetentionDays?: number;
+  sessionUploadMB: number;
+  sessionCount: number;
+    agentHistoryMB: number;
 };
-
+export type RuntimeStoragePolicy = {
+  transferTimeoutSeconds: number;
+  accessURLTTLSeconds: number;
+  providerAccessURLTTLSeconds: number;
+  nonSeekableBufferMB: number;
+  errorBodyKB: number;
+};
 export type RuntimeTaskPolicy = {
-    workerConcurrency: number;
-    channelConcurrency: number;
-    activeTaskLimit: number;
-    imageTimeoutMinutes: number;
-    textTimeoutMinutes: number;
-    audioTimeoutMinutes: number;
-    videoTimeoutMinutes: number;
-    storyboardTimeoutMinutes: number;
-    defaultTimeoutMinutes: number;
+  workerConcurrency: number;
+  channelConcurrency: number;
+  activeTaskLimit: number;
+  imageTimeoutMinutes: number;
+  textTimeoutMinutes: number;
+  audioTimeoutMinutes: number;
+  videoTimeoutMinutes: number;
+  storyboardTimeoutMinutes: number;
+  defaultTimeoutMinutes: number;
+  /** 画布 Agent 单步模型调用的输出上限（思考 + 正文 + 工具参数）；0 表示不限制。 */
+  agentStepMaxOutputTokens: number;
+  /** 画布 Agent 单步模型调用的秒级墙钟；0 表示沿用文本任务超时。 */
+  agentStepTimeoutSeconds: number;
+  /** 同时进行中的画布 Agent 轮次上限。审批等待不占用名额。 */
+  agentMaxSessions: number;
+    agentMaxRunsPerUser: number;
 };
-
 export type RuntimeRequestPolicy = {
-    taskCreatePerMinute: number;
-    sessionCreatePerMinute: number;
-    resourceUploadPerMinute: number;
-    resourceImportPerMinute: number;
-    sessionFilePerMinute: number;
-    assetWritePerMinute: number;
-    canvasWritePerMinute: number;
-    registerPerHour: number;
-    emailCodePerHour: number;
-    loginIPPerTenMinutes: number;
-    loginAccountPerTenMinutes: number;
-    systemRelayPerMinute: number;
-    customRelayPerMinute: number;
-    customRelayConcurrency: number;
-    customRelayRequestMB: number;
-    customRelayResponseMB: number;
-    customRelayTimeoutMinutes: number;
-    systemRelayRequestMB: number;
-    systemRelayResponseMB: number;
-    channelCircuitFailureCount: number;
-    channelCircuitOpenSeconds: number;
+  taskCreatePerMinute: number;
+  resourceUploadPerMinute: number;
+  resourceImportPerMinute: number;
+  assetWritePerMinute: number;
+  canvasWritePerMinute: number;
+  registerPerHour: number;
+  emailCodePerHour: number;
+  loginIPPerTenMinutes: number;
+  loginAccountPerTenMinutes: number;
+  systemRelayPerMinute: number;
+  customRelayPerMinute: number;
+  customRelayConcurrency: number;
+  customRelayRequestMB: number;
+  customRelayResponseMB: number;
+  customRelayTimeoutMinutes: number;
+  systemRelayRequestMB: number;
+  systemRelayResponseMB: number;
+  channelCircuitFailureCount: number;
+  channelCircuitOpenSeconds: number;
+  sessionCreatePerMinute: number;
+  sessionFilePerMinute: number;
 };
-
 export type RuntimePolicySetting = {
-    resource: RuntimeResourcePolicy;
-    task: RuntimeTaskPolicy;
-    request: RuntimeRequestPolicy;
-    configured?: boolean;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
+  resource: RuntimeResourcePolicy;
+  storage: RuntimeStoragePolicy;
+  task: RuntimeTaskPolicy;
+  request: RuntimeRequestPolicy;
+  configured?: boolean;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
+/** 登录注册打开方式：modal 在当前页面弹窗，page 跳转独立的 /login 页面。 */
+export type AuthLoginMode = "modal" | "page";
+export type AuthSettings = VerificationPolicy & {
+  firstUser: boolean;
+  registrationEnabled: boolean;
+  linuxdoEnabled: boolean;
+  googleEnabled: boolean;
+  githubEnabled?: boolean;
+  githubRegistrationEnabled?: boolean;
+  oidcEnabled?: boolean;
+  emailEnabled: boolean;
+  emailCodeRequired: boolean;
+  /** 注册必须填写邮箱。旧服务端未返回时按选填处理。 */
+  emailRequired?: boolean;
+  /** 注册必须先通过验证码。旧服务端未返回时按必须处理。 */
+  emailVerificationRequired?: boolean;
+  smsBindingAvailable: boolean;
+  emailBindingAvailable: boolean;
+  agreementTitle?: string;
+  agreementContent?: string;
+  loginMode: AuthLoginMode;
+    wechatEnabled?: boolean;
+    turnstileEnabled: boolean;
+    turnstileSiteKey: string;
+};
 export function getAuthSettings() {
-    return request<{ firstUser: boolean; registrationEnabled: boolean; linuxdoEnabled: boolean; emailEnabled: boolean; emailCodeRequired: boolean }>(api.get("/auth/settings"));
+  return http.get<AuthSettings>("/auth/settings", { session: "public" });
+}
+export function linuxDOLoginURL(next: string, acceptedTerms?: boolean) {
+  const base = String(apiBaseURL).replace(/\/$/, "");
+  const termsQuery = acceptedTerms === undefined ? "" : `&acceptedTerms=${acceptedTerms ? "true" : "false"}`;
+  return `${base}/auth/linuxdo/start?next=${encodeURIComponent(next)}${termsQuery}`;
+}
+export function googleLoginURL(next: string, acceptedTerms = false) {
+  const base = String(apiBaseURL).replace(/\/$/, "");
+  return `${base}/auth/google/start?next=${encodeURIComponent(next)}&acceptedTerms=${acceptedTerms}`;
 }
 
-export function linuxDOLoginURL(next: string) {
-    const base = String(api.defaults.baseURL || "/api").replace(/\/$/, "");
-    return `${base}/auth/linuxdo/start?next=${encodeURIComponent(next)}`;
+export function githubLoginURL(next: string, acceptedTerms = false) {
+  const base = String(apiBaseURL).replace(/\/$/, "");
+  return `${base}/auth/github/start?${new URLSearchParams({ next, acceptedTerms: String(acceptedTerms) })}`;
+}
+
+export function oidcLoginURL(next: string, acceptedTerms: boolean) {
+    const base = String(apiBaseURL).replace(/\/$/, "");
+    const query = new URLSearchParams({ next, acceptedTerms: String(acceptedTerms) });
+    return `${base}/auth/oidc/start?${query}`;
 }
 
 export function getAuthSession() {
     const now = Date.now();
     if (authSessionCache && authSessionCache.expiresAt > now) return Promise.resolve(authSessionCache.payload);
     if (authSessionRequest) return authSessionRequest;
-    authSessionRequest = request<AuthSessionPayload>(api.get("/auth/session"))
+    const generation = authSessionGeneration;
+    const pending = http
+        .get<AuthSessionPayload>("/auth/session", { session: "public" })
         .then((payload) => {
+            if (generation !== authSessionGeneration) throw new DOMException("认证会话已变化", "AbortError");
             authSessionCache = { payload, expiresAt: Date.now() + 5_000 };
             return payload;
         })
         .finally(() => {
-            authSessionRequest = null;
+            if (authSessionRequest === pending) authSessionRequest = null;
         });
+    authSessionRequest = pending;
     return authSessionRequest;
 }
-
 export function getSystemChannels() {
-    return request<{ channels: ModelChannel[] }>(api.get("/channels/system"));
+  return http.get<{
+    channels: ModelChannel[];
+  }>("/channels/system");
 }
-
 export function getFeatureAvailability() {
-    return request<{ features: FeatureAvailability }>(api.get("/features"));
+  return http.get<{
+    features: FeatureAvailability;
+  }>("/features");
 }
-
 export function getAdminFeatureAvailability() {
-    return request<{ features: FeatureAvailability }>(api.get("/admin/settings/features"));
+  return http.get<{
+    features: FeatureAvailability;
+  }>("/admin/settings/features");
+}
+export function updateAdminFeatureAvailability(features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "teamsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers" | "inspirationSourcesVisible" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled" | "ecommerceEnabled" | "ecommerceVideoEnabled">>) {
+  return http.patch<{
+    features: FeatureAvailability;
+  }>("/admin/settings/features", features);
 }
 
-export function updateAdminFeatureAvailability(features: Pick<FeatureAvailability, "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">) {
-    return request<{ features: FeatureAvailability }>(api.patch("/admin/settings/features", features));
-}
-
-export async function login(input: { username: string; password: string }) {
-    const result = await request<{ user: LocalUser }>(api.post("/auth/login", input));
+/** autoRegister：一体表单在账号不存在且允许注册时收到 reason=account_not_registered，而不是“密码不正确”。 */
+export async function login(input: { username: string; password: string; autoRegister?: boolean; turnstileToken?: string }) {
+    const result = await http.post<{ user: LocalUser }>("/auth/login", input, { session: "public" });
     // 登录会改变服务端会话身份，不能让登录前缓存的游客 session 污染后续恢复。
     invalidateAuthSessionCache();
     return result;
 }
 
 export function sendRegistrationEmailCode(email: string) {
-    return request<{ sent: boolean }>(api.post("/auth/email-code", { email }));
+    return http.post<{ sent: boolean }>("/auth/email-code", { email }, { session: "public" });
 }
-
 export function sendPasswordResetEmailCode(email: string) {
-    return request<{ sent: boolean }>(api.post("/auth/password-reset-code", { email }));
+    return http.post<{ sent: boolean }>("/auth/password-reset-code", { email }, { session: "public" });
 }
 
 export function resetPassword(input: { email: string; emailCode: string; password: string }) {
-    return request<{ reset: boolean }>(api.post("/auth/password-reset", input));
+    return http.post<{ reset: boolean }>("/auth/password-reset", input, { session: "public" });
 }
 
-export function register(input: { username: string; displayName?: string; password: string }) {
-    return request<{ user: LocalUser }>(api.post("/auth/register", input));
-}
-
-export async function logout() {
-    const result = await request<{ ok: boolean }>(api.post("/auth/logout"));
+export async function register(input: {
+    username: string;
+    email?: string;
+    emailCode?: string;
+    phone?: string;
+    smsCode?: string;
+    ticket?: string;
+    displayName?: string;
+    password: string;
+    acceptedTerms: boolean;
+    referralCode?: string;
+    turnstileToken?: string;
+}) {
+    const result = await http.post<{ user: LocalUser }>("/auth/register", input, { session: "public" });
     invalidateAuthSessionCache();
     return result;
 }
-
-export type AdminListParams = { keyword?: string; status?: string; role?: string; page?: number; limit?: number };
-
+export async function logout() {
+  const result = await http.post<{
+    ok: boolean;
+  }>("/auth/logout");
+  invalidateAuthSessionCache();
+  return result;
+}
+export type AdminListParams = {
+  keyword?: string;
+  status?: string;
+  role?: string;
+  group?: string;
+  page?: number;
+  pageSize?: number;
+};
 export function listAdminUsers(params: AdminListParams = {}) {
-    return request<{ users: AdminUser[]; total: number; page: number; limit: number }>(api.get("/admin/users", { params }));
+  return http.get<{
+    users: AdminUser[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>("/admin/users", {
+    params
+  });
 }
-
-export function createAdminUser(input: { username: string; displayName: string; email?: string; password: string; role: LocalUser["role"]; status: LocalUser["status"] }) {
-    return request<{ user: AdminUser }>(api.post("/admin/users", input));
+export function createAdminUser(input: {
+  userGroup?: string;
+  username: string;
+  displayName: string;
+  email?: string;
+  password: string;
+  role: LocalUser["role"];
+  status: LocalUser["status"];
+}) {
+  return http.post<{
+    user: AdminUser;
+  }>("/admin/users", input);
 }
-
 export function getAdminReferences() {
-    return request<AdminReferenceData>(api.get("/admin/references"));
+  return http.get<AdminReferenceData>("/admin/references");
 }
-
 export function getAdminUserDetail(id: string) {
-    return request<AdminUserDetail>(api.get(`/admin/users/${encodeURIComponent(id)}/detail`));
+  return http.get<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}/detail`);
 }
 
-export function listAdminUserLedger(id: string, params: { page?: number; limit?: number; type?: string } = {}) {
-    return request<{ entries: CreditLedgerEntry[]; total: number; page: number; limit: number }>(api.get(`/admin/users/${encodeURIComponent(id)}/ledger`, { params }));
+export function clearAdminUserAgentHistory(id: string) {
+    return http.delete<{ freedBytes: number }>(`/admin/users/${encodeURIComponent(id)}/agent-history`);
 }
 
-export function listAdminUserTasks(id: string, params: { page?: number; limit?: number } = {}) {
-    return request<{ tasks: AdminUserTask[]; total: number; page: number; limit: number }>(api.get(`/admin/users/${encodeURIComponent(id)}/tasks`, { params }));
+export function listAdminUserLedger(id: string, params: { page?: number; pageSize?: number; type?: string } = {}) {
+    return http.get<{ entries: CreditLedgerEntry[]; total: number; page: number; pageSize: number }>(`/admin/users/${encodeURIComponent(id)}/ledger`, { params });
 }
-
-export function listAdminUserAuditEvents(id: string, params: { page?: number; limit?: number } = {}) {
-    return request<{ events: AdminAuditEvent[]; total: number; page: number; limit: number }>(api.get(`/admin/users/${encodeURIComponent(id)}/audit-events`, { params }));
+export function listAdminUserTasks(id: string, params: {
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  return http.get<{
+    tasks: AdminUserTask[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/admin/users/${encodeURIComponent(id)}/tasks`, {
+    params
+  });
 }
-
-export function updateAdminUser(id: string, input: Partial<Pick<LocalUser, "displayName" | "email" | "role" | "status">> & { password?: string }) {
-    return request<{ user: LocalUser }>(api.patch(`/admin/users/${encodeURIComponent(id)}`, input));
+export function listAdminUserAuditEvents(id: string, params: {
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  return http.get<{
+    events: AdminAuditEvent[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/admin/users/${encodeURIComponent(id)}/audit-events`, {
+    params
+  });
 }
-
+export function updateAdminUser(id: string, input: Partial<Pick<LocalUser, "displayName" | "email" | "role" | "status" | "isPromoter" | "userGroup">> & {
+  password?: string;
+}) {
+  return http.patch<{
+    user: LocalUser;
+  }>(`/admin/users/${encodeURIComponent(id)}`, input);
+}
 export function deleteAdminUser(id: string) {
-    return request<{ ok: boolean }>(api.delete(`/admin/users/${encodeURIComponent(id)}`));
+  return http.delete<{
+    ok: boolean;
+  }>(`/admin/users/${encodeURIComponent(id)}`);
 }
-
 export function bulkDisableAdminUsers(userIds: string[]) {
-    return request<{ users: LocalUser[]; disabledCount: number }>(api.post("/admin/users/bulk-disable", { userIds }));
+  return http.post<{
+    users: LocalUser[];
+    disabledCount: number;
+  }>("/admin/users/bulk-disable", {
+    userIds
+  });
 }
-
 export function listAdminChannels(params: AdminListParams = {}) {
-    return request<{ channels: ModelChannel[]; total: number; page: number; limit: number }>(api.get("/admin/channels", { params }));
+  return http.get<{
+    channels: ModelChannel[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>("/admin/channels", {
+    params
+  });
 }
-
-export function createAdminChannel(input: Partial<ModelChannel> & { useGlobalConcurrency?: boolean }) {
-    return request<{ channel: ModelChannel }>(api.post("/admin/channels", input));
+export function createAdminChannel(input: Partial<ModelChannel> & {
+  useGlobalConcurrency?: boolean;
+  expectedUpdatedAt?: string;
+}) {
+  return http.post<{
+    channel: ModelChannel;
+  }>("/admin/channels", input);
 }
-
-export function updateAdminChannel(id: string, input: Partial<ModelChannel> & { useGlobalConcurrency?: boolean }) {
-    return request<{ channel: ModelChannel }>(api.patch(`/admin/channels/${encodeURIComponent(id)}`, input));
+export function duplicateAdminChannel(id: string) {
+  return http.post<{
+    channel: ModelChannel;
+  }>(`/admin/channels/${encodeURIComponent(id)}/duplicate`);
 }
-
+export function updateAdminChannel(id: string, input: Partial<ModelChannel> & {
+  useGlobalConcurrency?: boolean;
+  expectedUpdatedAt?: string;
+}) {
+  return http.patch<{
+    channel: ModelChannel;
+  }>(`/admin/channels/${encodeURIComponent(id)}`, input);
+}
 export function deleteAdminChannel(id: string) {
-    return request<{ ok: boolean }>(api.delete(`/admin/channels/${encodeURIComponent(id)}`));
+  return http.delete<{
+    ok: boolean;
+  }>(`/admin/channels/${encodeURIComponent(id)}`);
 }
-
 export function listAdminPromptTemplates() {
-    return request<{ templates: PromptTemplate[]; definitions: PromptOperationDefinition[] }>(api.get("/admin/prompt-templates"));
+  return http.get<{
+    templates: PromptTemplate[];
+    definitions: PromptOperationDefinition[];
+  }>("/admin/prompt-templates");
 }
-
-export function createAdminPromptTemplate(input: Pick<PromptTemplate, "operation" | "name" | "content"> & { enabled?: boolean }) {
-    return request<{ template: PromptTemplate }>(api.post("/admin/prompt-templates", input));
+export function createAdminPromptTemplate(input: Pick<PromptTemplate, "operation" | "name" | "content"> & {
+  enabled?: boolean;
+}) {
+  return http.post<{
+    template: PromptTemplate;
+  }>("/admin/prompt-templates", input);
 }
-
-export function updateAdminPromptTemplate(id: string, input: Pick<PromptTemplate, "operation" | "name" | "content"> & { enabled?: boolean }) {
-    return request<{ template: PromptTemplate }>(api.patch(`/admin/prompt-templates/${encodeURIComponent(id)}`, input));
+export function updateAdminPromptTemplate(id: string, input: Pick<PromptTemplate, "operation" | "name" | "content"> & {
+  enabled?: boolean;
+}) {
+  return http.patch<{
+    template: PromptTemplate;
+  }>(`/admin/prompt-templates/${encodeURIComponent(id)}`, input);
 }
-
 export function deleteAdminPromptTemplate(id: string) {
-    return request<{ ok: boolean }>(api.delete(`/admin/prompt-templates/${encodeURIComponent(id)}`));
+  return http.delete<{
+    ok: boolean;
+  }>(`/admin/prompt-templates/${encodeURIComponent(id)}`);
 }
-
 export function listUserPromptPreferences() {
-    return request<{ preferences: UserPromptPreference[] }>(api.get("/settings/prompt-templates"));
+  return http.get<{
+    preferences: UserPromptPreference[];
+  }>("/settings/prompt-templates");
 }
-
 export function updateUserPromptCustomization(operation: string, input: Pick<UserPromptCustomization, "mode" | "content">) {
-    return request<{ customization: UserPromptCustomization }>(api.patch(`/settings/prompt-templates/${encodeURIComponent(operation)}`, input));
+  return http.patch<{
+    customization: UserPromptCustomization;
+  }>(`/settings/prompt-templates/${encodeURIComponent(operation)}`, input);
 }
-
 export function resetUserPromptCustomization(operation: string) {
-    return request<{ ok: boolean }>(api.delete(`/settings/prompt-templates/${encodeURIComponent(operation)}`));
+  return http.delete<{
+    ok: boolean;
+  }>(`/settings/prompt-templates/${encodeURIComponent(operation)}`);
 }
-
 export function getAdminOSSSetting() {
-    return request<{ setting: AdminOSSSetting }>(api.get("/admin/settings/oss"));
+  return http.get<{
+    setting: AdminOSSSetting;
+  }>("/admin/settings/oss");
 }
-
 export function updateAdminOSSSetting(input: Partial<AdminOSSSetting>) {
-    return request<{ setting: AdminOSSSetting }>(api.patch("/admin/settings/oss", input));
+  return http.patch<{
+    setting: AdminOSSSetting;
+  }>("/admin/settings/oss", input);
 }
-
 export function testAdminOSSConnection(input: OSSConnectionTestInput) {
-    return request<OSSConnectionTestResult>(api.post("/admin/settings/oss/test", input));
+  return http.post<OSSConnectionTestResult>("/admin/settings/oss/test", input);
 }
-
 export function getAdminArkPrivateAssetSetting() {
-    return request<{ setting: AdminArkPrivateAssetSetting }>(api.get("/admin/settings/ark-private-assets"));
+  return http.get<{
+    setting: AdminArkPrivateAssetSetting;
+  }>("/admin/settings/ark-private-assets");
 }
-
 export function updateAdminArkPrivateAssetSetting(input: Partial<AdminArkPrivateAssetSetting>) {
-    return request<{ setting: AdminArkPrivateAssetSetting }>(api.patch("/admin/settings/ark-private-assets", input));
+  return http.patch<{
+    setting: AdminArkPrivateAssetSetting;
+  }>("/admin/settings/ark-private-assets", input);
 }
-
 export function getAdminRuntimePolicySetting() {
-    return request<{ setting: RuntimePolicySetting }>(api.get("/admin/settings/runtime-policy"));
+  return http.get<{
+    setting: RuntimePolicySetting;
+  }>("/admin/settings/runtime-policy");
 }
-
 export function getAdminSelfUseRuntimePolicy() {
-    return request<{ setting: RuntimePolicySetting }>(api.get("/admin/settings/runtime-policy/self-use"));
+  return http.get<{
+    setting: RuntimePolicySetting;
+  }>("/admin/settings/runtime-policy/self-use");
 }
-
-export function updateAdminRuntimePolicySetting(input: Pick<RuntimePolicySetting, "resource" | "task" | "request">) {
-    return request<{ setting: RuntimePolicySetting }>(api.put("/admin/settings/runtime-policy", input));
+export function updateAdminRuntimePolicySetting(input: Pick<RuntimePolicySetting, "resource" | "storage" | "task" | "request">) {
+  return http.put<{
+    setting: RuntimePolicySetting;
+  }>("/admin/settings/runtime-policy", input);
 }
-
 export function resetAdminRuntimePolicySetting() {
-    return request<{ setting: RuntimePolicySetting }>(api.delete("/admin/settings/runtime-policy"));
+  return http.delete<{
+    setting: RuntimePolicySetting;
+  }>("/admin/settings/runtime-policy");
 }
-
 export function getAdminDrawingEngineSetting() {
-    return request<{ setting: CanvasDrawingEngineSetting }>(api.get("/admin/settings/drawing-engine"));
+  return http.get<{
+    setting: CanvasDrawingEngineSetting;
+  }>("/admin/settings/drawing-engine");
 }
-
 export function updateAdminDrawingEngineSetting(input: Pick<CanvasDrawingEngineSetting, "defaultEngine" | "tldrawLicenseKey">) {
-    return request<{ setting: CanvasDrawingEngineSetting }>(api.patch("/admin/settings/drawing-engine", input));
+  return http.patch<{
+    setting: CanvasDrawingEngineSetting;
+  }>("/admin/settings/drawing-engine", input);
 }
-
-export function listAdminApiLogs(params: AdminListParams = {}) {
-    return request<{ logs: ApiCallLog[]; total: number; page: number; limit: number }>(api.get("/admin/api-logs", { params }));
+export type AdminApiLogParams = AdminListParams & Pick<AnalyticsFilters, "from" | "to" | "userId" | "model" | "channelId"> & {
+  recordType?: "request" | "download" | "all";
+  capability?: "text" | "image" | "video" | "audio";
+};
+export function listAdminApiLogs(params: AdminApiLogParams = {}) {
+  return http.get<{
+    logs: ApiCallLog[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>("/admin/api-logs", {
+    params
+  });
 }
-
 export function getAdminApiLog(id: string) {
-    return request<{ log: ApiCallLog }>(api.get(`/admin/api-logs/${encodeURIComponent(id)}`));
+  return http.get<{
+    log: ApiCallLog;
+  }>(`/admin/api-logs/${encodeURIComponent(id)}`);
 }
-
-export function queryAdminApiLogTask(id: string) {
-    return request<AdminProviderTaskQueryResult>(api.post(`/admin/api-logs/${encodeURIComponent(id)}/query-task`));
+export function queryAdminApiLogTask(id: string, providerRequestId?: string) {
+  return http.post<AdminProviderTaskQueryResult>(`/admin/api-logs/${encodeURIComponent(id)}/query-task`, providerRequestId ? {
+    providerRequestId
+  } : undefined, {
+    timeout: 120_000
+  });
 }
-
-export async function exportAdminApiLogs(params: AdminListParams & { ids?: string[] } = {}) {
-    const response = await api.get<Blob>("/admin/api-logs-export.csv", { params: { ...params, ids: params.ids?.join(",") }, responseType: "blob" });
-    return response.data;
+export function recoverAdminApiLogVideoByURL(id: string, url: string, providerRequestId?: string) {
+  return http.post<AdminProviderTaskQueryResult>(`/admin/api-logs/${encodeURIComponent(id)}/recover-url`, {
+    url,
+    providerRequestId
+  }, {
+    timeout: 120_000
+  });
 }
-
+export function batchRecoverAdminApiLogs(ids: string[]) {
+  return http.post<{
+    items: Array<{
+      logId: string;
+      recovered: boolean;
+      providerStatus?: string;
+      error?: string;
+    }>;
+    success: number;
+    failed: number;
+    skipped: number;
+  }>("/admin/api-logs/recover-batch", {
+    ids
+  }, {
+    timeout: 180_000
+  });
+}
+export async function exportAdminApiLogs(params: AdminApiLogParams & {
+  ids?: string[];
+} = {}) {
+  const response = await http.raw<Blob>({
+    method: "get",
+    url: "/admin/api-logs-export.csv",
+    params: {
+      ...params,
+      ids: params.ids?.join(",")
+    },
+    responseType: "blob"
+  });
+  return response.data;
+}
 export function getAdminAnalytics(params: AnalyticsFilters) {
-    return request<AdminAnalytics>(api.get("/admin/analytics/overview", { params }));
+  return http.get<AdminAnalytics>("/admin/analytics/overview", {
+    params
+  });
 }
-
 export async function exportAdminAnalytics(params: AnalyticsFilters) {
-    const response = await api.get<Blob>("/admin/analytics/export.csv", { params, responseType: "blob" });
-    return response.data;
+  const response = await http.raw<Blob>({
+    method: "get",
+    url: "/admin/analytics/export.csv",
+    params,
+    responseType: "blob"
+  });
+  return response.data;
 }
-
 export function listAdminModelPricings() {
-    return request<{ pricings: ModelPricing[] }>(api.get("/admin/model-pricings"));
+  return http.get<{
+    pricings: ModelPricing[];
+  }>("/admin/model-pricings");
 }
-
 export function createAdminModelPricing(input: Omit<ModelPricing, "id" | "createdAt" | "updatedAt">) {
-    return request<{ pricing: ModelPricing }>(api.post("/admin/model-pricings", input));
+  return http.post<{
+    pricing: ModelPricing;
+  }>("/admin/model-pricings", input);
 }
-
 export function updateAdminModelPricing(id: string, input: Omit<ModelPricing, "id" | "createdAt" | "updatedAt">) {
-    return request<{ pricing: ModelPricing }>(api.patch(`/admin/model-pricings/${encodeURIComponent(id)}`, input));
+  return http.patch<{
+    pricing: ModelPricing;
+  }>(`/admin/model-pricings/${encodeURIComponent(id)}`, input);
+}
+export function deleteAdminModelPricing(id: string) {
+  return http.delete<{
+    ok: boolean;
+  }>(`/admin/model-pricings/${encodeURIComponent(id)}`);
+}
+/** 系统渠道导出文件：不含 API Key、Secret Key、自定义请求头和代理地址。 */
+export type SystemChannelExport = {
+  format: string;
+  version: number;
+  exportedAt: string;
+  channels: Array<{
+    name: string;
+    models: unknown[];
+  } & Record<string, unknown>>;
+};
+export type SystemChannelImportResult = {
+  createdChannels: string[];
+  updatedChannels: string[];
+  savedModels: number;
+  errors: string[];
+};
+export function exportAdminChannels(ids?: string[]) {
+  return http.post<SystemChannelExport>("/admin/channels/export", {
+    ids: ids || []
+  });
+}
+export function importAdminChannels(payload: SystemChannelExport) {
+  return http.post<SystemChannelImportResult>("/admin/channels/import", payload);
+}
+/** 重新保存“作品已生成但保存失败”的任务。订单已退款时必须选择补扣（charge）或免除（waive）。 */
+export function recoverAdminApiLogTaskMedia(id: string, refundedBilling?: "charge" | "waive") {
+  return http.post<{
+    task: GenerationTask;
+  }>(`/admin/api-logs/${encodeURIComponent(id)}/recover-media`, refundedBilling ? {
+    refundedBilling
+  } : undefined);
 }
 
-export function deleteAdminModelPricing(id: string) {
-    return request<{ ok: boolean }>(api.delete(`/admin/model-pricings/${encodeURIComponent(id)}`));
+export function adminApiLogReferenceMediaURL(logId: string, referenceId: string) {
+    return `${String(apiBaseURL).replace(/\/+$/, "")}/admin/api-logs/${encodeURIComponent(logId)}/references/${encodeURIComponent(referenceId)}/media`;
 }

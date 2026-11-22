@@ -1,21 +1,42 @@
-import { useRef, useState } from "react";
-import { Alert, App, Button, Form, Input, Modal, Segmented, Switch, Tabs } from "antd";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Alert, App, Button, Form, Input, Segmented, Select, Switch, Tabs } from "antd";
+import { ModelDisplayNameInput } from "./model-display-name-input";
+import { AdminModal } from "@/pages/admin/ui/overlays";
 import { FlaskConical, Plus } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
+import { MediaTransportFields } from "./media-transport-fields";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
 import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
-import type { ModelProtocolDefinition } from "@/lib/model-protocols";
-import { createAdminChannelModel, testAdminChannelModel, updateAdminChannelModel, type ChannelModel } from "@/services/api/wallet";
+import { definitionForRelease, type ModelProtocolDefinition } from "@/lib/model-protocols";
+import { createAdminChannelModel, getAdminChannelProtocolSuggestion, testAdminChannelModel, updateAdminChannelModel, type ChannelModel, type ChannelProtocolSuggestion } from "@/services/api/wallet";
 import type { ModelChannel } from "@/stores/use-config-store";
-import { defaultPriceTier, priceTierResolutionFromForm, priceTierVideoSecondsFromForm, skuSelectorFromForm } from "./channel-model-price-tier-form";
+import { priceCurrencyOptions } from "@/services/api/user-groups";
+import { defaultPriceTier, normalizeUpstreamModelKey, priceTierPayloadFromForm } from "./channel-model-price-tier-form";
 import { PriceTierFields } from "./channel-model-price-tier-fields";
-import { changeChannelModelCapability, editorSectionForField, initialChannelModelValues, validateChannelModelPrices, validateChannelModelProtocol, type ChannelModelFormValues as FormValues, type EditorSection } from "./channel-model-editor-form";
+import { TokenPriceRulesSection } from "./channel-model-token-rules";
+import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
+import { CapabilityTemplatePanel, PricingTemplatePanel } from "./channel-model-template-panels";
+import { priceSelectorIssues } from "./channel-model-templates";
+import {
+    changeChannelModelCapability,
+    changeChannelModelProtocol,
+    editorSectionForField,
+    initialChannelModelValues,
+    opensModelParameters,
+    replaceChannelModelFormValues,
+    updateChannelModelUpstreamCapabilities,
+    validateChannelModelPrices,
+    validateChannelModelProtocol,
+    type ChannelModelFormValues as FormValues,
+    type EditorSection,
+} from "./channel-model-editor-form";
 
 export function ChannelModelEditor({
     channel,
     editing,
+    draftValues,
     protocols,
     protocolLoading,
     protocolError,
@@ -25,6 +46,7 @@ export function ChannelModelEditor({
 }: {
     channel: ModelChannel;
     editing: ChannelModel | null;
+    draftValues?: FormValues;
     protocols: ModelProtocolDefinition[];
     protocolLoading: boolean;
     protocolError: string;
@@ -34,22 +56,85 @@ export function ChannelModelEditor({
 }) {
     const { message, modal } = App.useApp();
     const [form] = Form.useForm<FormValues>();
-    const [initialValues] = useState(() => initialChannelModelValues(editing, protocols));
-    const [activeSection, setActiveSection] = useState<EditorSection>("identity");
+    const enabledHintId = useId();
+    const [initialValues] = useState(() => draftValues ?? initialChannelModelValues(editing, protocols));
+    const [editVersion] = useState(() => (editing ? { expectedUpdatedAt: editing.updatedAt, expectedPriceVersion: editing.priceVersion } : {}));
+    const previousUpstream = useRef(normalizeUpstreamModelKey(initialValues.providerModelKey || initialValues.modelKey));
+    const [activeSection, setActiveSection] = useState<EditorSection>(opensModelParameters(editing) ? "capabilities" : "identity");
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [configurationChanged, setConfigurationChanged] = useState(false);
     const busyRef = useRef(false);
     const dirtyRef = useRef(false);
+    const explicitProtocol = useRef(false);
+    const preserveTemplateCapability = useRef(false);
+    const [protocolSuggestion, setProtocolSuggestion] = useState<ChannelProtocolSuggestion>();
+    const [suggestionError, setSuggestionError] = useState("");
     const modelCapability = Form.useWatch("capability", form);
     const modelProtocol = Form.useWatch("protocol", form);
+    const protocolRelease = Form.useWatch("protocolRelease", form);
     const modelKey = Form.useWatch("modelKey", form) || "";
     const providerModelKey = Form.useWatch("providerModelKey", form) || "";
     const capabilityConfig = Form.useWatch("capabilityConfig", form);
     const modelEnabled = Form.useWatch("enabled", form) !== false;
+    const referenceVideoBilling = Form.useWatch("referenceVideoBilling", form) === true;
     const priceTiers = Form.useWatch("priceTiers", form) || [];
     const hasDefaultPriceTier = priceTiers.some((tier) => tier.matchMode === "default");
+    const tiersWithOwnUpstream = priceTiers.filter((tier) => tier.providerModelKey?.trim());
+    const modelUpstream = normalizeUpstreamModelKey(providerModelKey || modelKey);
+    const protocolFamily = protocols.find((item) => item.value === modelProtocol);
+    const protocolDefinition = definitionForRelease(protocolFamily, protocolRelease);
+    const releases = protocolFamily?.releases || [];
+    const selectedRelease = releases.find((release) => release.sha256 === protocolRelease);
+    const capabilityEditorProps = {
+        model: providerModelKey || modelKey,
+        protocol: modelProtocol,
+        definition: protocolDefinition,
+        imageParameters: protocolDefinition?.imageParameters,
+        workflows: protocolDefinition?.workflows,
+        value: capabilityConfig,
+        onChange: (next: ModelCapabilityConfig) => {
+            dirtyRef.current = true;
+            form.setFieldValue("capabilityConfig", { ...next, mediaTransport: form.getFieldValue(["capabilityConfig", "mediaTransport"]) });
+        },
+    };
     const busy = saving || testing;
+    const selectorIssues = modelCapability ? priceSelectorIssues({ capability: modelCapability, protocol: modelProtocol, capabilityConfig, priceTiers, protocols }) : [];
+
+    useEffect(() => {
+        // 复制草稿保留预填协议，但预填本身不构成新的明确选择事件。
+        const copiedProtocol = draftValues?.protocol && draftValues.capability === modelCapability;
+        if (editing?.protocol || copiedProtocol || explicitProtocol.current || !modelUpstream || !modelCapability || protocolLoading || protocolError) return;
+        let cancelled = false;
+        setProtocolSuggestion(undefined);
+        setSuggestionError("");
+        form.setFieldValue("protocol", undefined);
+        void getAdminChannelProtocolSuggestion(channel.id, modelUpstream, modelCapability)
+            .then((suggestion) => {
+                if (cancelled || explicitProtocol.current) return;
+                const definition = protocols.find((item) => item.value === suggestion.protocol && item.capability === modelCapability && item.enabled !== false);
+                if (suggestion.protocol && !definition) {
+                    setProtocolSuggestion({ ...suggestion, source: "invalid", reason: "建议的协议未安装、已停用或与当前能力不匹配，请手动选择" });
+                    return;
+                }
+                setProtocolSuggestion(suggestion);
+                if (definition && (suggestion.source === "selection" || suggestion.source === "history")) {
+                    const current = form.getFieldsValue(true);
+                    const next = changeChannelModelProtocol(current, definition.value, protocols);
+                    form.setFieldValue("protocol", definition.value);
+                    form.setFieldValue("protocolRelease", next.protocolRelease);
+                    // 模板操作早于或晚于建议请求，都应保留用户明确设置的能力。
+                    if (!preserveTemplateCapability.current) form.setFieldValue("capabilityConfig", next.capabilityConfig);
+                    // 自动协议建议不能改写价格，也不构成新的明确协议选择。
+                }
+            })
+            .catch((error) => {
+                if (!cancelled) setSuggestionError(error instanceof Error ? error.message : "协议建议读取失败，可手动选择协议");
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [channel.id, editing?.protocol, draftValues?.protocol, draftValues?.capability, form, modelUpstream, modelCapability, protocolLoading, protocolError, protocols]);
 
     const requestClose = () => {
         if (busyRef.current) return;
@@ -63,11 +148,34 @@ export function ChannelModelEditor({
     const handleFormValuesChange = (changed: Partial<FormValues>) => {
         dirtyRef.current = true;
         if (changed.capability) {
-            form.setFieldsValue(changeChannelModelCapability(form.getFieldsValue(true), protocols));
+            explicitProtocol.current = false;
+            preserveTemplateCapability.current = false;
+            setProtocolSuggestion(undefined);
+            replaceChannelModelFormValues(form, changeChannelModelCapability(form.getFieldsValue(true), protocols));
             setConfigurationChanged(true);
         } else if (changed.protocol) {
-            form.setFieldValue("capabilityConfig", modelCapability === "audio" ? undefined : defaultModelCapabilityConfig(changed.protocol, providerModelKey.trim() || modelKey.trim()));
+            explicitProtocol.current = true;
+            preserveTemplateCapability.current = false;
+            setProtocolSuggestion(undefined);
+            replaceChannelModelFormValues(form, changeChannelModelProtocol(form.getFieldsValue(true), changed.protocol, protocols));
             setConfigurationChanged(true);
+        } else if (changed.protocolRelease) {
+            const values = form.getFieldsValue(true);
+            const next = updateChannelModelUpstreamCapabilities(values, protocols);
+            form.setFieldValue("capabilityConfig", next.capabilityConfig);
+            setConfigurationChanged(true);
+        } else if (changed.providerModelKey !== undefined || changed.modelKey !== undefined) {
+            const values = form.getFieldsValue(true);
+            const upstream = normalizeUpstreamModelKey(values.providerModelKey || values.modelKey);
+            if (!values.channelLabel?.trim() || values.channelLabel.trim() === previousUpstream.current) {
+                form.setFieldValue("channelLabel", upstream);
+            }
+            previousUpstream.current = upstream;
+            const next = updateChannelModelUpstreamCapabilities(values, protocols);
+            if (next !== values) {
+                form.setFieldValue("capabilityConfig", next.capabilityConfig);
+                setConfigurationChanged(true);
+            }
         }
     };
 
@@ -100,25 +208,21 @@ export function ChannelModelEditor({
         setSaving(true);
         try {
             const payload = {
+                ...editVersion,
                 modelKey: values.modelKey.trim(),
                 providerModelKey: upstreamModel,
-                displayName: values.displayName?.trim() || values.modelKey.trim(),
+                displayName: values.displayName?.trim() || "未分类",
+                channelLabel: values.channelLabel?.trim() || upstreamModel,
+                tags: (values.tags || []).map((tag) => ({ text: tag.text.trim(), color: tag.color })),
+                description: values.description?.trim() || "",
                 icon: values.icon?.trim() || "",
                 capability: values.capability,
                 protocol: values.protocol,
-                priceTiers: values.priceTiers.map((tier) => ({
-                    selector: skuSelectorFromForm(values.capability, tier),
-                    resolution: priceTierResolutionFromForm(values.capability, tier),
-                    videoSeconds: priceTierVideoSecondsFromForm(values.capability, tier),
-                    providerModelKey: tier.providerModelKey?.trim() || upstreamModel,
-                    billingMode: tier.billingMode,
-                    unitPriceMicrocredits: Math.round((tier.unitPrice || 0) * 1_000_000),
-                    inputTokenPriceMicrocredits: Math.round((tier.inputTokenPrice || 0) * 1_000_000),
-                    outputTokenPriceMicrocredits: Math.round((tier.outputTokenPrice || 0) * 1_000_000),
-                    cachedTokenPriceMicrocredits: Math.round((tier.cachedTokenPrice || 0) * 1_000_000),
-                    priceConfigured: tier.priceConfigured !== false,
-                    enabled: tier.enabled !== false,
-                })),
+                protocolRelease: values.protocolRelease,
+                protocolSelectionExplicit: explicitProtocol.current && (!editing || editing.protocol !== values.protocol),
+                priceTiers: values.priceTiers.map((tier) => priceTierPayloadFromForm(values.capability, tier, upstreamModel, capabilityConfig)),
+                priceCurrency: values.priceCurrency || "credits",
+                referenceVideoBilling: values.capability === "video" && values.referenceVideoBilling === true,
                 enabled: values.enabled !== false,
                 capabilityConfig,
             };
@@ -141,7 +245,7 @@ export function ChannelModelEditor({
 
     const testModel = async () => {
         if (busyRef.current) return;
-        const values = await validateEditor(["modelKey", "providerModelKey", "capability", "protocol", "capabilityConfig"]);
+        const values = await validateEditor(["modelKey", "providerModelKey", "capability", "protocol", "protocolRelease", "capabilityConfig"]);
         if (!values) return;
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
         const capabilityConfig =
@@ -154,6 +258,7 @@ export function ChannelModelEditor({
                 providerModelKey: upstreamModel,
                 capability: values.capability,
                 protocol: values.protocol,
+                protocolRelease: values.protocolRelease,
                 capabilityConfig,
             });
             message.success(`模型测试通过，耗时 ${(result.durationMs / 1000).toFixed(2)} 秒`);
@@ -166,13 +271,13 @@ export function ChannelModelEditor({
     };
 
     return (
-        <Modal
+        <AdminModal
             open
             title={
                 <div className="admin-model-editor-title">
-                    <span>{editing ? "编辑模型" : "新增模型"}</span>
+                    <span>{draftValues ? "复制模型" : editing ? "编辑模型" : "新增模型"}</span>
                     <p>
-                        {channel.name} · {editing?.displayName || editing?.modelKey || "配置调用方式与用户积分价格"}
+                        {channel.name} · {editing?.displayName || editing?.modelKey || draftValues?.displayName || "配置调用方式与用户积分价格"}
                     </p>
                 </div>
             }
@@ -183,12 +288,15 @@ export function ChannelModelEditor({
             keyboard={!busy}
             closable={!busy}
             onCancel={requestClose}
-            styles={{ container: { padding: 0, overflow: "hidden" }, body: { padding: 0, minHeight: 0, flex: 1 }, header: { margin: 0 }, footer: { margin: 0 } }}
+            flush
+            classNames={{ footer: "admin-model-editor-footer" }}
+            styles={{ body: { minHeight: 0, flex: 1 }, header: { margin: 0 }, footer: { margin: 0 } }}
             footer={
-                <div className="admin-model-editor-footer-actions">
-                    <div className="admin-model-editor-footer-status">
+                <>
+                    <label className="admin-model-editor-footer-status">
                         <Switch
                             aria-label="启用模型"
+                            aria-describedby={enabledHintId}
                             checked={modelEnabled}
                             disabled={busy}
                             onChange={(checked) => {
@@ -196,13 +304,12 @@ export function ChannelModelEditor({
                                 form.setFieldValue("enabled", checked);
                             }}
                         />
-                        <div>
-                            <strong>{modelEnabled ? "模型启用" : "模型停用"}</strong>
-                            <small>保存后生效</small>
-                        </div>
-                    </div>
+                        <span>启用模型</span>
+                        <small id={enabledHintId}>保存后生效</small>
+                    </label>
                     <div className="admin-model-editor-footer-primary">
                         <Button
+                            type="text"
                             icon={<FlaskConical className="size-4" />}
                             loading={testing}
                             disabled={saving || protocolLoading || Boolean(protocolError)}
@@ -210,14 +317,14 @@ export function ChannelModelEditor({
                         >
                             测试模型
                         </Button>
-                        <Button disabled={busy} onClick={requestClose}>
+                        <Button type="text" disabled={busy} onClick={requestClose}>
                             取消
                         </Button>
-                        <Button type="primary" loading={saving} disabled={testing || protocolLoading || Boolean(protocolError)} onClick={() => void save()}>
+                        <Button type="primary" loading={saving} disabled={testing || protocolLoading || Boolean(protocolError) || selectorIssues.length > 0} onClick={() => void save()}>
                             {editing ? "保存修改" : "添加模型"}
                         </Button>
                     </div>
-                </div>
+                </>
             }
         >
             <Form className="admin-model-editor-form" form={form} initialValues={initialValues} layout="vertical" disabled={busy} inert={busy} onValuesChange={handleFormValuesChange}>
@@ -241,7 +348,12 @@ export function ChannelModelEditor({
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="模型身份" description="区分产品侧展示标识与上游实际调用 ID。" />
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
-                                            <Form.Item name="modelKey" label="产品模型标识" rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}>
+                                            <Form.Item
+                                                name="modelKey"
+                                                label="产品模型标识"
+                                                tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。"
+                                                rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}
+                                            >
                                                 <Input
                                                     prefix={
                                                         <span className="grid size-6 place-items-center">
@@ -251,16 +363,42 @@ export function ChannelModelEditor({
                                                     placeholder="例如：seedance-2-5"
                                                 />
                                             </Form.Item>
-                                            <Form.Item name="providerModelKey" label="上游模型 ID" tooltip="实际发送给供应商；留空时使用产品模型标识。">
+                                            <Form.Item name="providerModelKey" label="上游模型 ID" tooltip="实际发送给供应商；留空时使用产品模型标识。价格档可配置独立上游 ID，命中时优先于此处。">
                                                 <Input placeholder="留空则使用产品模型标识" />
                                             </Form.Item>
-                                            <Form.Item name="displayName" label="后台显示名称" tooltip="仅用于后台识别，不改变调用 ID。">
-                                                <Input placeholder="不填则使用模型标识" />
+                                            <Form.Item name="displayName" label="模型展示名（一级目录）" tooltip="跨所有系统渠道按此名称分组；新模型默认未分类。同名模型归入同一组，不改变调用 ID。">
+                                                <ModelDisplayNameInput />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name="channelLabel"
+                                                label="渠道展示名（二级目录）"
+                                                tooltip="默认跟随上游模型 ID；手动名称最多 80 字。"
+                                                rules={[
+                                                    {
+                                                        validator: async (_, value: string | undefined) => {
+                                                            if (value?.trim() !== modelUpstream && Array.from(value?.trim() || "").length > 80) throw new Error("渠道展示名不能超过 80 字");
+                                                        },
+                                                    },
+                                                ]}
+                                            >
+                                                <Input maxLength={80} placeholder={modelUpstream || "默认使用上游模型 ID"} />
                                             </Form.Item>
                                             <Form.Item name="icon" label="模型 Logo">
                                                 <ModelIconPicker />
                                             </Form.Item>
                                         </div>
+                                        {tiersWithOwnUpstream.length ? (
+                                            <Alert
+                                                type="info"
+                                                showIcon
+                                                title={`${tiersWithOwnUpstream.length} 个价格档配置了独立上游模型 ID`}
+                                                description="命中的请求会优先使用价格档的上游 ID；修改上方上游模型 ID 时，只有与旧值相同的档位会自动跟随更新，其余保持不变。"
+                                            />
+                                        ) : null}
+                                        <ChannelModelTagsEditor />
+                                        <Form.Item name="description" label="模型描述" extra="在创作端二级渠道选项中常驻显示，可说明适用场景、渠道差异和注意事项。" rules={[{ max: 500, message: "模型描述不能超过 500 字" }]}>
+                                            <Input.TextArea rows={3} maxLength={500} showCount placeholder="填写此渠道模型的使用说明" />
+                                        </Form.Item>
                                     </section>
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="能力与协议" description="先选任务类型，再选择对应的调用协议；更换后请核对参数与价格。" />
@@ -279,6 +417,51 @@ export function ChannelModelEditor({
                                             <Form.Item className="admin-model-protocol-field" name="protocol" label="调用协议" rules={[{ validator: async (_, value) => validateChannelModelProtocol(form.getFieldValue("capability"), value, protocols) }]}>
                                                 <ModelProtocolBrowser disabled={busy} capability={modelCapability} protocols={protocols} loading={protocolLoading} error={protocolError} />
                                             </Form.Item>
+                                            {(releases.length > 0 || (initialValues.protocolRelease && !protocolDefinition)) && (
+                                                <Form.Item
+                                                    name="protocolRelease"
+                                                    label="插件发行版本"
+                                                    tooltip={selectedRelease ? `${selectedRelease.pluginId} · SHA-256 ${selectedRelease.sha256}` : undefined}
+                                                    extra={protocolRelease && !selectedRelease ? "原绑定版本在当前实例不可用，请选择已安装版本。" : "保存后绑定到本模型。已经入队的任务继续使用提交时的版本。"}
+                                                    rules={[
+                                                        {
+                                                            validator: async (_, digest) => {
+                                                                if (!releases.some((release) => release.sha256 === digest)) throw new Error("请选择已安装的插件发行版本");
+                                                            },
+                                                        },
+                                                    ]}
+                                                >
+                                                    <Select
+                                                        aria-label="插件发行版本"
+                                                        disabled={busy}
+                                                        placeholder="选择已安装版本"
+                                                        options={releases.map((release) => ({ value: release.sha256, label: `v${release.version} · ${release.sha256.slice(0, 12)}${release.current ? "（当前发行版）" : ""}` }))}
+                                                    />
+                                                </Form.Item>
+                                            )}
+                                            {protocolSuggestion && protocolSuggestion.source !== "none" ? (
+                                                <Alert
+                                                    type={protocolSuggestion.source === "invalid" || protocolSuggestion.source === "conflict" ? "warning" : "info"}
+                                                    showIcon
+                                                    title={
+                                                        protocolSuggestion.source === "selection"
+                                                            ? "已预选同网站上次明确保存的协议"
+                                                            : protocolSuggestion.source === "history"
+                                                              ? "已根据同网站一致的历史配置预选协议"
+                                                              : protocolSuggestion.source === "conflict"
+                                                                ? "同网站历史协议存在冲突，请手动选择"
+                                                                : "协议建议已失效，请手动选择"
+                                                    }
+                                                    description={
+                                                        <>
+                                                            {protocolSuggestion.reason}
+                                                            {protocolSuggestion.candidates?.length ? <p>候选协议：{protocolSuggestion.candidates.join("、")}</p> : null}
+                                                            {protocolSuggestion.source === "selection" || protocolSuggestion.source === "history" ? <p>仅继承协议，参数按协议默认初始化，请核对当前 Key 的实际能力和价格。</p> : null}
+                                                        </>
+                                                    }
+                                                />
+                                            ) : null}
+                                            {suggestionError ? <Alert type="warning" title="协议建议读取失败，可手动选择" description={suggestionError} /> : null}
                                             {protocolError && (
                                                 <Alert
                                                     type="error"
@@ -303,43 +486,50 @@ export function ChannelModelEditor({
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
-                                    {configurationChanged && <Alert type="warning" showIcon title="能力或协议已变更" description="引用与参数已恢复为新协议默认值，旧规格条件已在切换能力时清除。价格与计费方式保留，请在保存前核对。" />}{" "}
-                                    {modelCapability === "text" || modelCapability === "image" || modelCapability === "video" ? (
-                                        <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-references">
-                                            <SectionHeading title="引用与限制" description="按媒体类型纵向配置数量、大小、时长及通用约束。" />
-                                            <div className="admin-model-editor-section-content">
-                                                <ModelCapabilityEditor
-                                                    capability={modelCapability}
-                                                    model={providerModelKey || modelKey}
-                                                    protocol={form.getFieldValue("protocol")}
-                                                    section="references"
-                                                    value={capabilityConfig}
-                                                    onChange={(next) => {
-                                                        dirtyRef.current = true;
-                                                        form.setFieldValue("capabilityConfig", next);
-                                                    }}
-                                                />
-                                            </div>
-                                        </section>
-                                    ) : null}
-                                    {modelCapability === "image" || modelCapability === "video" ? (
-                                        <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-parameters">
-                                            <SectionHeading title="协议参数" description="配置可发送参数、支持值与默认值；仅影响当前模型。" />
-                                            <div className="admin-model-editor-section-content">
-                                                <ModelCapabilityEditor
-                                                    capability={modelCapability}
-                                                    model={providerModelKey || modelKey}
-                                                    protocol={form.getFieldValue("protocol")}
-                                                    section="protocol"
-                                                    value={capabilityConfig}
-                                                    onChange={(next) => {
-                                                        dirtyRef.current = true;
-                                                        form.setFieldValue("capabilityConfig", next);
-                                                    }}
-                                                />
-                                            </div>
-                                        </section>
-                                    ) : null}
+                                    {configurationChanged && <Alert type="warning" showIcon title="能力或协议已变更" description="引用与参数已恢复为新协议默认值，旧规格条件已在切换能力时清除。价格与计费方式保留，请在保存前核对。" />}
+                                    <CapabilitySections
+                                        key={modelCapability}
+                                        capability={modelCapability}
+                                        protocol={protocolDefinition}
+                                        templates={
+                                            <CapabilityTemplatePanel
+                                                form={form}
+                                                protocols={protocols}
+                                                channelMediaTransport={channel.mediaTransport}
+                                                disabled={busy}
+                                                onApplied={() => {
+                                                    dirtyRef.current = true;
+                                                    preserveTemplateCapability.current = true;
+                                                }}
+                                            />
+                                        }
+                                        inputs={
+                                            modelCapability &&
+                                            modelCapability !== "audio" && (
+                                                <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-references">
+                                                    <SectionHeading title="引用与限制" description="按媒体类型设置数量、大小和时长。" />
+                                                    <Form.Item name={["capabilityConfig", "mediaTransport"]} label="参考素材发送方式" extra="优先使用模型设置，其次渠道默认值，最后使用协议默认行为。">
+                                                        <MediaTransportFields channel={channel.mediaTransport || {}} />
+                                                    </Form.Item>
+                                                    <ModelCapabilityEditor {...capabilityEditorProps} capability={modelCapability} disabled={busy} section="references" />
+                                                </section>
+                                            )
+                                        }
+                                        parameters={
+                                            modelCapability &&
+                                            modelCapability !== "audio" &&
+                                            (modelCapability === "video" || modelCapability === "image" ? (
+                                                <ModelCapabilityEditor {...capabilityEditorProps} capability={modelCapability} disabled={busy} section="protocol" />
+                                            ) : (
+                                                <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-parameters">
+                                                    <SectionHeading title="协议参数" description="配置可发送参数、支持值与默认值；仅影响当前模型。" />
+                                                    <div className="admin-model-editor-section-content">
+                                                        <ModelCapabilityEditor {...capabilityEditorProps} capability={modelCapability} disabled={busy} section="protocol" />
+                                                    </div>
+                                                </section>
+                                            ))
+                                        }
+                                    />
                                     {modelCapability === "audio" && <Alert type="info" title="音频模型无需额外配置引用与参数" description="调用协议和积分定价仍需在对应分组中配置。" />}
                                 </div>
                             ),
@@ -350,53 +540,163 @@ export function ChannelModelEditor({
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
+                                    <PricingTemplatePanel
+                                        form={form}
+                                        protocols={protocols}
+                                        disabled={busy}
+                                        onApplied={() => {
+                                            dirtyRef.current = true;
+                                        }}
+                                    />
+                                    {selectorIssues.length ? (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            title="请调整不兼容或重复的价格条件"
+                                            description={
+                                                <ul>
+                                                    {selectorIssues.map((issue) => (
+                                                        <li key={issue}>{issue}</li>
+                                                    ))}
+                                                </ul>
+                                            }
+                                        />
+                                    ) : null}
                                     {configurationChanged && <Alert type="warning" showIcon title="请核对定价" description="能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。" />}{" "}
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="用户积分价格" description="默认只需填写一个统一价格；需要区分生成方式、质量或尺寸时，再添加规格价格。" />
                                         <div className="admin-model-editor-section-content">
+                                            <Form.Item name="priceCurrency" label="计价货币" extra="积分：售价即扣除的积分。USD / CNY：售价按货币填写，扣费时按用户分组的「1 USD / 1 CNY = N 积分」换算；成本价仍以积分计。">
+                                                <Segmented
+                                                    options={priceCurrencyOptions}
+                                                    onChange={() => {
+                                                        dirtyRef.current = true;
+                                                    }}
+                                                />
+                                            </Form.Item>
+                                            {modelCapability === "video" ? (
+                                                <Form.Item
+                                                    name="referenceVideoBilling"
+                                                    label="参考视频计费"
+                                                    valuePropName="checked"
+                                                    extra={
+                                                        referenceVideoBilling
+                                                            ? "已开启：挂参考视频的请求使用各价格档的「带参考视频」价格。按秒 =（生成秒数 + 参考视频秒数）× 带参考视频每秒价，参考视频时长由后端实测，测不出时拒绝提交；视频 Token 按含参考视频的用量 × 带参考视频 Token 价。不挂参考视频的请求仍用原价。"
+                                                            : "已关闭：参考视频不计费。按秒只计生成秒数，视频 Token 只按生成时长计算用量。用户侧会显示「参考视频不计费」。"
+                                                    }
+                                                >
+                                                    <Switch
+                                                        aria-label="参考视频计费"
+                                                        onChange={() => {
+                                                            dirtyRef.current = true;
+                                                        }}
+                                                    />
+                                                </Form.Item>
+                                            ) : null}
                                             <Form.List
                                                 name="priceTiers"
                                                 rules={[
                                                     {
                                                         validator: async (_, value) => {
-                                                            validateChannelModelPrices({ capability: form.getFieldValue("capability"), protocol: form.getFieldValue("protocol"), priceTiers: value });
+                                                            validateChannelModelPrices({
+                                                                capability: form.getFieldValue("capability"),
+                                                                protocol: form.getFieldValue("protocol"),
+                                                                priceTiers: value,
+                                                                capabilityConfig: form.getFieldValue("capabilityConfig"),
+                                                                protocols,
+                                                                referenceVideoBilling: form.getFieldValue("referenceVideoBilling"),
+                                                            });
                                                         },
                                                     },
                                                 ]}
                                             >
                                                 {(fields, { add, remove }, { errors }) => (
-                                                    <div className="space-y-3">
-                                                        {fields.map((field, index) => (
-                                                            <PriceTierFields
-                                                                key={field.key}
-                                                                index={field.name}
-                                                                ordinal={index + 1}
-                                                                form={form}
-                                                                capability={modelCapability}
-                                                                protocol={modelProtocol}
-                                                                capabilityConfig={capabilityConfig}
-                                                                onDirty={() => {
-                                                                    dirtyRef.current = true;
-                                                                }}
-                                                                onRemove={() => remove(field.name)}
-                                                            />
-                                                        ))}
-                                                        <Button className="admin-model-editor-add-tier" type="dashed" block icon={<Plus className="size-4" />} onClick={() => add(defaultPriceTier(hasDefaultPriceTier ? "advanced" : "default"))}>
-                                                            {hasDefaultPriceTier ? "新增规格价格" : "新增统一默认价格"}
-                                                        </Button>
-                                                        <Form.ErrorList errors={errors} />
+                                                    <div className="admin-price-tier-list-shell">
+                                                        <div className="admin-price-tier-list" aria-label="积分价格规则列表">
+                                                            {fields.map((field, index) => (
+                                                                <PriceTierFields
+                                                                    key={field.key}
+                                                                    index={field.name}
+                                                                    ordinal={index + 1}
+                                                                    form={form}
+                                                                    capability={modelCapability}
+                                                                    protocol={modelProtocol}
+                                                                    capabilityConfig={capabilityConfig}
+                                                                    modelUpstream={modelUpstream}
+                                                                    onDirty={() => {
+                                                                        dirtyRef.current = true;
+                                                                    }}
+                                                                    onRemove={() => remove(field.name)}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                        <div className="admin-price-tier-list-footer">
+                                                            <Button className="admin-model-editor-add-tier" type="dashed" block icon={<Plus className="size-4" />} onClick={() => add(defaultPriceTier(hasDefaultPriceTier ? "advanced" : "default"))}>
+                                                                {hasDefaultPriceTier ? "新增规格价格" : "新增统一默认价格"}
+                                                            </Button>
+                                                            <Form.ErrorList errors={errors} />
+                                                        </div>
                                                     </div>
                                                 )}
                                             </Form.List>
                                         </div>
                                     </section>
+                                    {modelCapability === "text" ? (
+                                        <TokenPriceRulesSection
+                                            form={form}
+                                            onDirty={() => {
+                                                dirtyRef.current = true;
+                                            }}
+                                        />
+                                    ) : null}
                                 </div>
                             ),
                         },
                     ]}
                 />
             </Form>
-        </Modal>
+        </AdminModal>
+    );
+}
+
+function CapabilitySections({ capability, protocol, templates, inputs, parameters }: { capability?: FormValues["capability"]; protocol?: ModelProtocolDefinition; templates: ReactNode; inputs: ReactNode; parameters: ReactNode }) {
+    const [view, setView] = useState<"parameters" | "inputs" | "templates">("parameters");
+    if (capability !== "image" && capability !== "video")
+        return (
+            <>
+                {templates}
+                {inputs}
+                {parameters}
+            </>
+        );
+    return (
+        <>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                <Segmented
+                    aria-label={capability === "image" ? "图片能力分组" : "视频能力分组"}
+                    value={view}
+                    onChange={setView}
+                    options={[
+                        { label: "生成参数", value: "parameters" },
+                        { label: "输入素材", value: "inputs" },
+                        { label: "能力模板", value: "templates" },
+                    ]}
+                />
+                {protocol && (
+                    <span className="break-all text-xs text-foreground/65">
+                        {protocol.label}
+                        {protocol.version && (
+                            <code className="ml-2" title="本模型选择的插件发行版本">
+                                v{protocol.version}
+                            </code>
+                        )}
+                    </span>
+                )}
+            </div>
+            <div hidden={view !== "parameters"}>{parameters}</div>
+            <div hidden={view !== "inputs"}>{inputs}</div>
+            <div hidden={view !== "templates"}>{templates}</div>
+        </>
     );
 }
 

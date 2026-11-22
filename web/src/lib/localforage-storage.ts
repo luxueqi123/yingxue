@@ -1,26 +1,43 @@
 import localforage from "localforage";
 import type { StateStorage } from "zustand/middleware";
 
-import { scopedStorageKey } from "@/lib/user-scope";
+import { assertCurrentUserSession, captureUserSession, isUserScopedPersistenceSuppressed, scopedStorageKey } from "@/lib/user-scope";
 
 localforage.config({
-    name: "infinite-canvas",
+    name: "yingce",
     storeName: "app_state",
 });
 
-export function localForageStorageForScope(scope?: string): StateStorage {
+// localforage 需要 localStorage / indexedDB 等浏览器存储驱动；测试进程等环境可能只有 window 而无存储 API，
+// 此时直接跳过读写，避免 localforage 内部回退并输出 "No available storage method found"。
+function browserStorageAvailable(): boolean {
+    if (typeof window === "undefined") return false;
+    return typeof window.localStorage !== "undefined" || typeof window.indexedDB !== "undefined";
+}
+
+export function localForageStorageForScope(scope?: string): StateStorage & { keys: () => Promise<string[]> } {
     const keyFor = (name: string) => scopedStorageKey(name, scope);
     return {
+        keys: async () => {
+            if (!browserStorageAvailable()) return [];
+            const suffix = keyFor("");
+            return (await localforage.keys()).filter(key => key.endsWith(suffix)).map(key => key.slice(0, -suffix.length));
+        },
         getItem: async (name) => {
-            if (typeof window === "undefined") return null;
-            return (await localforage.getItem<string>(keyFor(name))) || null;
+            if (!browserStorageAvailable()) return null;
+            const session = captureUserSession(true);
+            const value = await localforage.getItem<string>(scopedStorageKey(name, scope ?? session.scope));
+            assertCurrentUserSession(session, true);
+            return value || null;
         },
         setItem: async (name, value) => {
-            if (typeof window === "undefined") return;
+            if (!browserStorageAvailable()) return;
+            if (isUserScopedPersistenceSuppressed()) return;
             await localforage.setItem(keyFor(name), value);
         },
         removeItem: async (name) => {
-            if (typeof window === "undefined") return;
+            if (!browserStorageAvailable()) return;
+            if (isUserScopedPersistenceSuppressed()) return;
             await localforage.removeItem(keyFor(name));
         },
     };

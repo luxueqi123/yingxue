@@ -1,0 +1,10 @@
+Asset type: premium brand logo concept for the Yingxue AI creation website
+Primary request: Create a highly recognizable logo mark for "映雪" using a refined upper-moon / central-wordmark / lower-moon composition, with the lunar forms designed as disciplined calligraphic geometry rather than literal crescents.
+Subject: exact Chinese brush-calligraphy "映雪" in the center, strong and broad. Above it, a wide dark silver moon shadow appears as one soft-edged flattened orbit with a deliberate interruption above the center, giving an ethereal virtual-moon impression. Below it, a narrower bright return stroke curves upward in the opposite rhythm and connects visually to the lower strokes of "映" and "雪" without touching both ends like a tray.
+Style/medium: original luxury technology-culture brand mark, disciplined 2.5D relief, brushed platinum and frosted silver, minimal material depth, powerful not delicate, vector-ready silhouette.
+Composition/framing: pure black square field, emblem centered and upright, strong compact triangular balance, readable at 80 px, only the upper orbit, exact wordmark and lower return stroke.
+Lighting/mood: moonlit, sharp cold edge light, quiet depth, no ambient haze over the text.
+Color palette: pale platinum, cold gray, charcoal, a hairline of ice blue.
+Text (verbatim): "映雪"
+Constraints: exact two characters only once; no other text; upper and lower forms visibly different; no complete circle; balanced negative space; professional identity-system quality.
+Avoid: chaotic debris, particles, point clouds, shards, smoke, ribbons, motion streaks, excessive glow, bloom, softness, cheap 3D chrome, plastic, ornate fantasy, game UI, badge, seal, weapon, mirrored crescents, symmetric side moons, literal moon photo, base platform, tray, extra strokes, watermark, English.

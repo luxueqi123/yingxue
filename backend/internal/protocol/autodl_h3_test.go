@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -69,5 +70,65 @@ func TestAutoDLH3AdapterRejectsInvalidWorkflowInputs(t *testing.T) {
 				t.Fatal("invalid request error is empty")
 			}
 		})
+	}
+}
+
+func TestAutoDLH3AdapterPreservesDeclaredDimensions(t *testing.T) {
+	adapter, _ := Builtins().Get("autodl-h3-video")
+	for _, workflow := range AutoDLH3Workflows() {
+		request := GenerationRequest{Model: workflow.ID, Prompt: "scene", Duration: 5}
+		for i := 0; i < workflow.MinImages; i++ {
+			request.Images = append(request.Images, MediaReference{URL: "https://cdn.example/ref.png"})
+		}
+		if workflow.ID == "minimax_h3_image_audio_to_video" {
+			request.Audios = []MediaReference{{URL: "https://cdn.example/ref.mp3"}}
+		}
+		t.Run(workflow.ID+"/omitted-dimensions", func(t *testing.T) {
+			spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spec.Body.(map[string]any)["resolution"]; got != "768p横" {
+				t.Fatalf("omitted dimensions = %v", got)
+			}
+		})
+		for _, resolution := range workflow.Resolutions {
+			for _, ratio := range workflow.Ratios {
+				t.Run(workflow.ID+"/"+resolution+"/"+ratio, func(t *testing.T) {
+					request.Resolution, request.AspectRatio = strings.ToUpper(resolution), ratio
+					spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+					if err != nil {
+						t.Fatal(err)
+					}
+					suffix := map[string]string{"16:9": "横", "9:16": "竖", "1:1": "(1:1)"}[ratio]
+					if got := spec.Body.(map[string]any)["resolution"]; got != resolution+suffix {
+						t.Fatalf("resolution = %v, want %s", got, resolution+suffix)
+					}
+				})
+			}
+		}
+		for _, dimension := range []struct {
+			resolution, ratio string
+			supported         bool
+		}{
+			{"1080p", "16:9", slices.Contains(workflow.Resolutions, "1080p")},
+			{"480p", "1:1", slices.Contains(workflow.Ratios, "1:1")},
+		} {
+			t.Run(workflow.ID+"/workflow-boundary/"+dimension.resolution+"/"+dimension.ratio, func(t *testing.T) {
+				request.Resolution, request.AspectRatio = dimension.resolution, dimension.ratio
+				_, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+				if (err == nil) != dimension.supported {
+					t.Fatalf("supported=%v, error=%v", dimension.supported, err)
+				}
+			})
+		}
+		for _, dimensions := range [][2]string{{"480p", "adaptive"}, {"480p", "3:4"}, {"480p", "4:3"}, {"4k", "16:9"}, {"720p", "16:9"}} {
+			t.Run(workflow.ID+"/reject/"+dimensions[0]+"/"+dimensions[1], func(t *testing.T) {
+				request.Resolution, request.AspectRatio = dimensions[0], dimensions[1]
+				if _, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request}); err == nil {
+					t.Fatal("unsupported dimensions silently changed")
+				}
+			})
+		}
 	}
 }

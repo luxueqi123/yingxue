@@ -1,0 +1,25 @@
+Asset type: premium brand logo concept for the Yingxue AI creation website
+
+Primary request: Redesign a clean, iconic brand mark inspired by Image 1's overall vertical composition only. Keep the strong hierarchy of an upper lunar shadow, the central Chinese wordmark, and a lower reflected moon form, but remove the visual chaos and redesign every shape with professional restraint.
+
+Input images:
+- Image 1 is a composition reference only: keep the upper-moon / central-wordmark / lower-moon relationship, not its fragments, lighting noise, or exact artwork.
+- Image 2 is the exact typography anchor: the center must read exactly "映雪" in the same expressive Chinese brush-calligraphy silhouette. Preserve the two characters and their stroke identity.
+
+Scene/backdrop: pure near-black background, no environment, no mockup, generous negative space.
+
+Subject: one centered brand emblem. The word "映雪" is the primary visual mass. Above it, create an abstract virtual moon-shadow: broad, quiet, partially dissolved by controlled tonal fading, never a complete solid crescent. Below it, create a different moon response: a concise upward arc of cold light or an ice-blade reflection that supports the wordmark without looking like a tray. The upper and lower forms must be visibly different, not mirrored copies.
+
+Style/medium: premium cinematic identity design, vector-friendly silhouette with restrained 2.5D metal and frosted-jade material, powerful and contemporary, closer to a luxury film studio identity than a game badge.
+
+Composition/framing: centered square emblem, compact and balanced, strong at 80 px, wordmark occupies about 58 percent of the emblem width, upper moon shadow behind the top third of the characters, lower arc crosses behind or grows naturally from the final brush strokes. Only three large visual masses: upper moon shadow, exact wordmark, lower moon response.
+
+Lighting/mood: cold moonlight, decisive rim lighting, deep charcoal shadows, at most two controlled highlights, crisp edges, no haze covering the characters.
+
+Color palette: platinum silver, dark gunmetal, restrained ice-blue only in very small reflected accents, near-black background.
+
+Text (verbatim): "映雪"
+
+Constraints: render exactly the two Chinese characters "映雪" once; no other text; preserve legibility; powerful silhouette; clean negative space; professional brand-system quality; centered and not tilted; upper and lower moon forms must be structurally different; no complete circular border.
+
+Avoid: debris, particle clouds, scattered shards, long motion trails, smoky ribbons, foam-like dots, star fields, excessive glow, bloom, blur, cheap chrome, plastic shine, ornate frame, seal shape, badge shape, weapon logo, game UI emblem, symmetrical left-right crescents, mirrored moons, literal photographic moon, tray-like base, extra calligraphy strokes, watermark, letters, English text.

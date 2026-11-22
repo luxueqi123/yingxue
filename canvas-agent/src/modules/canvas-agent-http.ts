@@ -1,4 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { parseSkillResourceFiles } from "../skill-resources.js";
 
 import {
     archiveCodexThread,
@@ -220,15 +221,17 @@ export function parseAgentSkills(value: unknown) {
         if (!item || typeof item !== "object" || Array.isArray(item)) return [];
         const input = item as Record<string, unknown>;
         const name = typeof input.name === "string" ? input.name.trim().slice(0, 120) : "";
-        const instruction = typeof input.instruction === "string" ? input.instruction.trim().slice(0, 24_000) : "";
-        const files = parseAgentSkillFiles(input.files);
+        const instruction = typeof input.instruction === "string" ? input.instruction.trim() : "";
+        if (Array.from(instruction).length > 100_000) throw new Error("技能正文过大，无法完整加载");
+        const textFiles = Array.isArray(input.files) && input.files.some(file => file && typeof file === "object" && "content" in file);
+        const files = textFiles ? parseSkillResourceFiles(input.files) : parseAgentSkillFiles(input.files);
         if (!name || (!instruction && !files.length)) return [];
         return [{
             ...(typeof input.skillId === "string" ? { skillId: input.skillId.trim().slice(0, 120) } : {}),
             name,
             ...(typeof input.description === "string" ? { description: input.description.trim().slice(0, 500) } : {}),
             ...(typeof input.version === "string" ? { version: input.version.trim().slice(0, 120) } : {}),
-            ...(files.length ? { files } : { instruction }),
+            ...(files.length ? { files, ...(textFiles ? { instruction } : {}) } : { instruction }),
         }];
     });
 }

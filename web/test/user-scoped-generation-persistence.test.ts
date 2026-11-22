@@ -14,8 +14,9 @@ import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore, type Asset,
 import { withGenerationAssetStorageLock } from "../src/services/generation-asset-repository";
 import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore, withCanvasStorePersistenceLock, withCanvasStorePersistenceSuppressed, type CanvasProject } from "../src/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasNodeData } from "../src/types/canvas";
-import { deleteAssetWithRemoteSync, deleteCanvasProjectsWithRemoteSync, initializeRemoteUserDataSession, loadCanvasProjectForEditing, loadAssetLibraryPage, installRemoteUserDataAutoSync, resetRemoteUserDataSync, saveRemoteUserDataNow, syncRemoteUserData, withRemoteUserDataSyncExclusive } from "../src/services/user-data-sync";
+import { deleteAssetWithRemoteSync, deleteCanvasProjectsWithRemoteSync, hasRemoteUserDataSyncSession, initializeRemoteUserDataSession, loadCanvasProjectForEditing, loadAssetLibraryPage, installRemoteUserDataAutoSync, resetRemoteUserDataSync, saveRemoteUserDataNow, syncRemoteUserData, withRemoteUserDataSyncExclusive } from "../src/services/user-data-sync";
 import { apiClient } from "../src/services/api/request";
+import type { CanvasOperationsRequest } from "../src/services/api/user-data";
 import { useUserStore } from "../src/stores/use-user-store";
 import { CANVAS_HISTORY_STORE_KEY, useCanvasHistoryStore } from "../src/stores/canvas/use-canvas-history-store";
 import { repairMissingCanvasAssets } from "../src/services/canvas-asset-repair";
@@ -94,6 +95,7 @@ function storedCanvasProject(id: string, title: string): CanvasProject {
         title,
         createdAt: "2026-08-14T00:00:00.000Z",
         updatedAt: "2026-08-14T00:00:00.000Z",
+        revision: 0,
         nodes: [],
         connections: [],
         chatSessions: [],
@@ -3992,6 +3994,9 @@ test("account switching keeps new generation consumers closed while old persiste
 
 test("an in-flight provider request is aborted and drained before the account changes", async () => {
     const originalWindow = (globalThis as { window?: unknown }).window;
+    const originalGetItem = localforage.getItem.bind(localforage);
+    const originalSetItem = localforage.setItem.bind(localforage);
+    const indexedValues = new Map<string, string>();
     const localStorageValues = new Map<string, string>();
     Object.defineProperty(globalThis, "window", {
         configurable: true,
@@ -4003,6 +4008,11 @@ test("an in-flight provider request is aborted and drained before the account ch
             },
         },
     });
+    localforage.getItem = (async (key: string) => indexedValues.get(key) ?? null) as typeof localforage.getItem;
+    localforage.setItem = (async (key: string, value: string) => {
+        indexedValues.set(key, value);
+        return value;
+    }) as typeof localforage.setItem;
     setActiveUserScope("account-A");
     const request = beginGenerationConsumer();
     let abortObserved = false;
@@ -4023,6 +4033,8 @@ test("an in-flight provider request is aborted and drained before the account ch
         expect(getActiveUserScope()).toBe("account-B");
     } finally {
         request.release();
+        localforage.getItem = originalGetItem;
+        localforage.setItem = originalSetItem;
         if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
         else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
     }
@@ -4071,17 +4083,21 @@ test("account scope transition drains an active remote deletion before entering 
     const previousAssets = useAssetStore.getState().assets;
     const requestUrls: string[] = [];
     let releaseDelete!: () => void;
-    const deleteReleased = new Promise<void>((resolve) => {
+      const deleteReleased = new Promise<void>((resolve) => {
         releaseDelete = resolve;
     });
     let deleteStarted = false;
+    let markDeleteStarted!: () => void;
+    const deletionStarted = new Promise<void>(resolve => { markDeleteStarted = resolve; });
     apiClient.defaults.adapter = async (config) => {
         const url = String(config.url || "");
         requestUrls.push(url);
-        if (config.method === "delete") {
+        if (config.method === "post" && url.endsWith("/assets/batch-delete")) {
+            expect(JSON.parse(String(config.data))).toEqual(["shared-asset"]);
             deleteStarted = true;
+            markDeleteStarted();
             await deleteReleased;
-            return { data: { code: 0, data: { id: "shared-asset" }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+            return { data: { code: 0, data: { ids: ["shared-asset"] }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
         }
         const data = url.includes("user-data/snapshot") ? { projects: [], assets: [] } : url.includes("canvas-projects") ? { projects: [] } : { assets: [] };
         return { data: { code: 0, data, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
@@ -4131,7 +4147,7 @@ test("account scope transition drains an active remote deletion before entering 
             },
         ]);
         const deletion = deleteAssetWithRemoteSync("shared-asset");
-        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        await deletionStarted;
         expect(deleteStarted).toBe(true);
         let transitionEntered = false;
         const transition = withRemoteUserDataSyncExclusive(async () => {
@@ -4288,6 +4304,9 @@ test("remote resource preparation never overwrites an edit made while upload is 
         if (url.includes("user-data/snapshot")) {
             return { data: { code: 0, data: { projects: [], assets: [] }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
         }
+        if (method === "get" && url.startsWith("/assets/")) {
+            return { data: { code: 404, data: null, msg: "Asset not found" }, status: 404, statusText: "Not Found", headers: {}, config };
+        }
         if (method === "post" && url === "/resources") {
             resourceUploads += 1;
             uploadStartedResolve();
@@ -4406,6 +4425,14 @@ test("failed remote baseline cannot upload stale local cache", async () => {
 
 test("incremental sessions leave cached entities untouched and fetch only the opened canvas", async () => {
     const originalWindow = (globalThis as { window?: unknown }).window;
+    const originalGetItem = localforage.getItem.bind(localforage);
+    const originalSetItem = localforage.setItem.bind(localforage);
+    const durableValues = new Map<string, unknown>();
+    localforage.getItem = (async (key: string) => durableValues.get(key) ?? null) as typeof localforage.getItem;
+    localforage.setItem = (async (key: string, value: unknown) => {
+        durableValues.set(key, structuredClone(value));
+        return value;
+    }) as typeof localforage.setItem;
     Object.defineProperty(globalThis, "window", { configurable: true, value: { setTimeout: () => 1, clearTimeout: () => undefined, localStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined } } });
     const previousAdapter = apiClient.defaults.adapter;
     const previousProjects = useCanvasStore.getState().projects;
@@ -4436,6 +4463,191 @@ test("incremental sessions leave cached entities untouched and fetch only the op
         apiClient.defaults.adapter = previousAdapter;
         useCanvasStore.setState({ projects: previousProjects });
         useAssetStore.setState({ assets: previousAssets });
+        localforage.getItem = originalGetItem;
+        localforage.setItem = originalSetItem;
+        if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+        else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+});
+
+test("concurrent canvas opens share one remote detail request", async () => {
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    const previousAdapter = apiClient.defaults.adapter;
+    const previousProjects = useCanvasStore.getState().projects;
+    const requests: string[] = [];
+    const project = storedCanvasProject("concurrent-open", "Concurrent");
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { setTimeout: () => 1, clearTimeout: () => undefined, localStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined } },
+    });
+    apiClient.defaults.adapter = async (config) => {
+        requests.push(`${config.method} ${config.url}`);
+        throw new Error("detail unavailable");
+    };
+    try {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: [project] });
+        await initializeRemoteUserDataSession("concurrent-open-owner");
+        const first = loadCanvasProjectForEditing(project.id).catch((error: unknown) => error);
+        const second = loadCanvasProjectForEditing(project.id).catch((error: unknown) => error);
+        const firstError = await first;
+        const secondError = await second;
+        expect(firstError).toBeInstanceOf(Error);
+        expect(secondError).toBeInstanceOf(Error);
+        expect((firstError as Error).message).toContain("detail unavailable");
+        expect((secondError as Error).message).toContain("detail unavailable");
+        expect(requests).toEqual(["get /canvas-projects/concurrent-open"]);
+    } finally {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: previousProjects });
+        apiClient.defaults.adapter = previousAdapter;
+        if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+        else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+});
+
+test("concurrent canvas opens notify every caller without repeating the detail request", async () => {
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    const originalGetItem = localforage.getItem.bind(localforage);
+    const originalSetItem = localforage.setItem.bind(localforage);
+    const durableValues = new Map<string, unknown>();
+    const previousAdapter = apiClient.defaults.adapter;
+    const previousProjects = useCanvasStore.getState().projects;
+    const requests: string[] = [];
+    const callbacks: CanvasProject[] = [];
+    const project = storedCanvasProject("concurrent-open-callback", "Concurrent callback");
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { setTimeout: () => 1, clearTimeout: () => undefined, localStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined } },
+    });
+    localforage.getItem = (async (key: string) => durableValues.get(key) ?? null) as typeof localforage.getItem;
+    localforage.setItem = (async (key: string, value: unknown) => {
+        durableValues.set(key, structuredClone(value));
+        return value;
+    }) as typeof localforage.setItem;
+    apiClient.defaults.adapter = async (config) => {
+        requests.push(`${config.method} ${config.url}`);
+        return { data: { code: 0, data: { project }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+    };
+    try {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: [project] });
+        await initializeRemoteUserDataSession("concurrent-open-callback-owner");
+        await Promise.all([
+            loadCanvasProjectForEditing(project.id, { onLoad: (loaded) => callbacks.push(loaded) }),
+            loadCanvasProjectForEditing(project.id, { onLoad: (loaded) => callbacks.push(loaded) }),
+        ]);
+        expect(requests).toEqual(["get /canvas-projects/concurrent-open-callback"]);
+        expect(callbacks).toHaveLength(2);
+        expect(callbacks.map((loaded) => loaded.id)).toEqual([project.id, project.id]);
+    } finally {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: previousProjects });
+        apiClient.defaults.adapter = previousAdapter;
+        localforage.getItem = originalGetItem;
+        localforage.setItem = originalSetItem;
+        if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+        else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+});
+
+test("remote canvas edits use acknowledged operations without repeating detail reads", async () => {
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    const originalGetItem = localforage.getItem.bind(localforage);
+    const originalSetItem = localforage.setItem.bind(localforage);
+    const durableValues = new Map<string, unknown>();
+    localforage.getItem = (async (key: string) => durableValues.get(key) ?? null) as typeof localforage.getItem;
+    localforage.setItem = (async (key: string, value: unknown) => {
+        durableValues.set(key, structuredClone(value));
+        return value;
+    }) as typeof localforage.setItem;
+    const previousAdapter = apiClient.defaults.adapter;
+    const previousProjects = useCanvasStore.getState().projects;
+    const requests: string[] = [];
+    const cached = { ...storedCanvasProject("latched-conflict", "Cached"), revision: 1 };
+    let remote = { ...cached, updatedAt: "2026-09-11T00:00:00.000Z" };
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { setTimeout: () => 1, clearTimeout: () => undefined, localStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined } },
+    });
+    apiClient.defaults.adapter = async (config) => {
+        requests.push(`${config.method} ${config.url}`);
+        if (config.method === "get") return { data: { code: 0, data: { project: remote }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+        expect(config.method).toBe("patch");
+        expect(config.url).toBe("/canvas-projects/latched-conflict/operations");
+        const body = JSON.parse(config.data) as CanvasOperationsRequest;
+        expect(body.mutationId).toBeTruthy();
+        expect(body.operations).toContainEqual({ type: "set_field", field: "title", value: "Edited locally", beforeValue: remote.title });
+        remote = { ...remote, title: "Edited locally", revision: remote.revision + 1 };
+        return { data: { code: 0, data: { project: remote, mutationId: body.mutationId }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+    };
+    try {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: [cached] });
+        await initializeRemoteUserDataSession("latched-conflict-owner");
+        await loadCanvasProjectForEditing(cached.id);
+        useCanvasStore.getState().renameProject(cached.id, "Edited locally");
+        await saveRemoteUserDataNow();
+        await expect(saveRemoteUserDataNow()).resolves.toBeUndefined();
+        expect(requests).toEqual([
+            "get /canvas-projects/latched-conflict",
+            "patch /canvas-projects/latched-conflict/operations",
+            "get /canvas-projects/latched-conflict",
+        ]);
+    } finally {
+        resetRemoteUserDataSync();
+        useCanvasStore.setState({ projects: previousProjects });
+        apiClient.defaults.adapter = previousAdapter;
+        localforage.getItem = originalGetItem;
+        localforage.setItem = originalSetItem;
+        if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+        else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+});
+
+test("a remote asset page rejects incomplete records instead of patching them into the store", async () => {
+    const previousAdapter = apiClient.defaults.adapter;
+    const previousAssets = useAssetStore.getState().assets;
+    const legacy = {
+        id: "legacy-remote-image",
+        kind: "image",
+        title: "镜头01 · 图片",
+        category: "material",
+        coverUrl: "opaque://legacy",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+        data: { dataUrl: "opaque://legacy", width: 1, height: 1, bytes: 1, mimeType: "image/png" },
+    };
+    apiClient.defaults.adapter = async (config) => ({
+        data: { code: 0, data: { assets: [legacy], page: 1, pageSize: 40, total: 1, hasMore: false }, msg: "" },
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config,
+    });
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    const localStorageValues = new Map<string, string>();
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: {
+            setTimeout: () => 1,
+            clearTimeout: () => undefined,
+            localStorage: {
+                getItem: (key: string) => localStorageValues.get(key) ?? null,
+                setItem: (key: string, value: string) => localStorageValues.set(key, value),
+                removeItem: (key: string) => localStorageValues.delete(key),
+            },
+        },
+    });
+    try {
+        useAssetStore.setState({ assets: [] });
+        await initializeRemoteUserDataSession("account-legacy");
+        await expect(loadAssetLibraryPage({ page: 1, pageSize: 40 })).rejects.toThrow(/tags/);
+        expect(useAssetStore.getState().assets).toEqual([]);
+    } finally {
+        resetRemoteUserDataSync();
+        apiClient.defaults.adapter = previousAdapter;
+        useAssetStore.setState({ assets: previousAssets });
         if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
         else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
     }
@@ -4465,7 +4677,7 @@ test("an asset page arriving after account switch cannot populate the new accoun
     }
 });
 
-test("user session initializes without downloading the full remote snapshot", async () => {
+test("user session establishes its canvas baseline while the model catalog remains pending without a full snapshot", async () => {
     const originalWindow = (globalThis as { window?: unknown }).window;
     const originalGetItem = localforage.getItem.bind(localforage);
     const originalSetItem = localforage.setItem.bind(localforage);
@@ -4473,6 +4685,9 @@ test("user session initializes without downloading the full remote snapshot", as
     const previousUserState = useUserStore.getState();
     const localValues = new Map<string, string>();
     let snapshotRequests = 0;
+    let releaseCatalog!: () => void;
+    let catalogReleased = false;
+    const catalogGate = new Promise<void>((resolve) => { releaseCatalog = () => { catalogReleased = true; resolve(); }; });
     const localStorageValues = new Map<string, string>();
     Object.defineProperty(globalThis, "window", {
         configurable: true,
@@ -4494,7 +4709,8 @@ test("user session initializes without downloading the full remote snapshot", as
     apiClient.defaults.adapter = async (config) => {
         const url = String(config.url || "");
         if (url === "/model-catalog") {
-            return { data: { code: 0, data: { source: "frontend", models: [] }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+            await catalogGate;
+            return { data: { code: 0, data: { source: "system", channels: [] }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
         }
         if (url.includes("user-data/snapshot")) {
             snapshotRequests += 1;
@@ -4519,10 +4735,14 @@ test("user session initializes without downloading the full remote snapshot", as
             },
         });
         expect(useUserStore.getState().hydrated).toBe(false);
-        await applying;
+        const result = await Promise.race([applying.then(() => "ready"), new Promise<string>((resolve) => setTimeout(() => resolve("blocked by catalog"), 1500))]);
+        expect(result).toBe("ready");
+        expect(hasRemoteUserDataSyncSession()).toBe(true);
+        expect(catalogReleased).toBe(false);
         expect(useUserStore.getState().hydrated).toBe(true);
         expect(snapshotRequests).toBe(0);
     } finally {
+        releaseCatalog();
         await applying?.catch(() => undefined);
         resetRemoteUserDataSync();
         useUserStore.setState(previousUserState);
@@ -4643,7 +4863,7 @@ test("canvas asset repair backfills node and timeline media with one shared asse
     }
 });
 
-test("login repair persists the missing asset before its canvas", async () => {
+test.each([false, true, "throttle", "exhausted", "gateway-502", "gateway-503", "gateway-504", "gateway-exhausted", "forbidden"])("login repair persists assets before canvas with bounded concurrency (failure=%s)", async (failAsset) => {
     const originalWindow = (globalThis as { window?: unknown }).window;
     const originalGetItem = localforage.getItem.bind(localforage);
     const originalSetItem = localforage.setItem.bind(localforage);
@@ -4651,20 +4871,26 @@ test("login repair persists the missing asset before its canvas", async () => {
     const previousProjects = useCanvasStore.getState().projects;
     const previousAssets = useAssetStore.getState().assets;
     const writes: Array<{ kind: "asset" | "canvas"; body: Record<string, unknown> }> = [];
+    let active = 0;
+    let peak = 0;
+    let throttledAttempts = 0;
+    let firstThrottleAt = 0;
     const project: CanvasProject = {
         ...storedCanvasProject("canvas-remote-ghost", "待修复画布"),
-        nodes: [
+        revision: 1,
+        nodes: Array.from({ length: 17 }, (_, index) => (
             {
-                id: "remote-image",
+                id: `remote-image-${index}`,
                 type: CanvasNodeType.Image,
                 title: "远端图片",
                 position: { x: 0, y: 0 },
                 width: 320,
                 height: 180,
-                metadata: { content: "/api/resources/remote-ghost/file", storageKey: "resource:remote-ghost" },
-            },
-        ],
+                metadata: { content: `/api/resources/remote-ghost-${index}/file`, storageKey: `resource:remote-ghost-${index}` },
+            }
+        )),
     };
+    let savedProject = project;
 
     Object.defineProperty(globalThis, "window", {
         configurable: true,
@@ -4682,21 +4908,79 @@ test("login repair persists the missing asset before its canvas", async () => {
         if (url.includes("user-data/snapshot")) {
             return { data: { code: 0, data: { projects: [project], assets: [] }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
         }
+        if (method === "get" && url === "/canvas-projects/canvas-remote-ghost") {
+            return { data: { code: 0, data: { project: savedProject }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+        }
+        if (method === "get" && url.startsWith("/assets/")) {
+            return { data: { code: 404, data: null, msg: "Asset not found" }, status: 404, statusText: "Not Found", headers: {}, config };
+        }
         const body = (typeof config.data === "string" ? JSON.parse(config.data) : config.data) as Record<string, unknown>;
-        if (method === "put" && url.startsWith("/assets/")) writes.push({ kind: "asset", body });
-        else if (method === "put" && url.startsWith("/canvas-projects/")) writes.push({ kind: "canvas", body });
+        if (method === "put" && url.startsWith("/assets/")) {
+            active++; peak = Math.max(peak, active);
+            await new Promise(resolve => setTimeout(resolve, 2));
+            active--;
+            if ((body.asset as Asset).data.storageKey === "resource:remote-ghost-0") {
+                if (failAsset === true) throw new Error("asset save rejected");
+                if (typeof failAsset === "string" && (failAsset.startsWith("gateway-") || failAsset === "forbidden")) {
+                    throttledAttempts++;
+                    if (throttledAttempts === 1) firstThrottleAt = Date.now();
+                    if (throttledAttempts === 1 || failAsset === "gateway-exhausted" || failAsset === "forbidden") {
+                        const status = failAsset === "forbidden" ? 403 : failAsset === "gateway-exhausted" ? 502 : Number(failAsset.slice("gateway-".length));
+                        return { data: { code: status, data: null, msg: "fixture transient asset rejection" }, status, statusText: "Rejected", headers: { "retry-after": "0.01" }, config };
+                    }
+                    expect(Date.now() - firstThrottleAt).toBeGreaterThanOrEqual(10);
+                }
+                if (failAsset === "throttle" || failAsset === "exhausted") {
+                    throttledAttempts++;
+                    if (throttledAttempts === 1) firstThrottleAt = Date.now();
+                    if (throttledAttempts === 1 || failAsset === "exhausted") {
+                        return { data: { code: 429, data: null, msg: "fixture throttle" }, status: 429, statusText: "Too Many Requests", headers: { "retry-after": "0.01" }, config };
+                    }
+                    expect(Date.now() - firstThrottleAt).toBeGreaterThanOrEqual(10);
+                }
+            }
+            writes.push({ kind: "asset", body });
+        }
+        else if (method === "patch" && url === "/canvas-projects/canvas-remote-ghost/operations") {
+            expect(active).toBe(0);
+            expect(writes.filter(item => item.kind === "asset")).toHaveLength(17);
+            writes.push({ kind: "canvas", body });
+            const mutation = body as CanvasOperationsRequest;
+            expect(mutation.mutationId).toBeTruthy();
+            const nodePatches = mutation.operations.filter((operation) => operation.type === "patch_node");
+            savedProject = { ...project, revision: project.revision! + 1, nodes: project.nodes.map((node) => {
+                const patch = nodePatches.find((operation) => operation.id === node.id)?.patch;
+                return patch ? { ...node, ...patch } as CanvasNodeData : node;
+            }) };
+            return { data: { code: 0, data: { project: savedProject, mutationId: mutation.mutationId }, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
+        }
         else throw new Error(`unexpected request: ${method} ${url}`);
         return { data: { code: 0, data: {}, msg: "" }, status: 200, statusText: "OK", headers: {}, config };
     };
 
     try {
         resetRemoteUserDataSync();
-        await syncRemoteUserData("account-repair-order");
-        expect(writes.map((item) => item.kind)).toEqual(["asset", "canvas"]);
-        const asset = writes[0]?.body.asset as Asset;
-        const canvas = writes[1]?.body.project as CanvasProject;
-        expect(asset.data.storageKey).toBe("resource:remote-ghost");
-        expect(canvas.nodes[0]?.metadata?.assetId).toBe(asset.id);
+        if (failAsset === true || failAsset === "exhausted" || failAsset === "gateway-exhausted" || failAsset === "forbidden") {
+            const message = failAsset === true ? "asset save rejected" : failAsset === "exhausted" ? "fixture throttle" : "fixture transient asset rejection";
+            await expect(syncRemoteUserData("account-repair-order")).rejects.toThrow(message);
+            expect(writes.some(item => item.kind === "canvas")).toBe(false);
+            if (failAsset === "exhausted" || failAsset === "gateway-exhausted") expect(throttledAttempts).toBe(4);
+            if (failAsset === "forbidden") expect(throttledAttempts).toBe(1);
+        } else {
+            await syncRemoteUserData("account-repair-order");
+            expect(writes.map(item => item.kind)).toEqual([...Array(17).fill("asset"), "canvas"]);
+            const mutation = writes[17].body as CanvasOperationsRequest;
+            const nodeWrites = mutation.operations.filter((operation) => operation.type === "patch_node");
+            expect(nodeWrites).toHaveLength(17);
+            for (const operation of nodeWrites) {
+                const metadata = operation.patch.metadata as CanvasNodeData["metadata"];
+                expect(writes.some(item => (item.body.asset as Asset | undefined)?.id === metadata?.assetId)).toBe(true);
+            }
+            if (failAsset === "throttle" || typeof failAsset === "string" && failAsset.startsWith("gateway-")) expect(throttledAttempts).toBe(2);
+        }
+        expect(peak).toBeGreaterThan(1);
+        expect(peak).toBeLessThanOrEqual(8);
+        expect(active).toBe(0);
     } finally {
         resetRemoteUserDataSync();
         useAssetStore.getState().replaceAssets(previousAssets);

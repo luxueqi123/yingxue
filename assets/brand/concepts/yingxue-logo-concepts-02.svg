@@ -1,0 +1,69 @@
+<svg width="1900" height="760" viewBox="0 0 1900 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1900" y2="760"><stop stop-color="#06080D"/><stop offset="0.48" stop-color="#131B29"/><stop offset="1" stop-color="#080B11"/></linearGradient>
+    <linearGradient id="ice2" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="0.28" stop-color="#8DC7EB"/><stop offset="0.55" stop-color="#F6FBFF"/><stop offset="0.78" stop-color="#B4C2D1"/><stop offset="1" stop-color="#6E8198"/></linearGradient>
+    <linearGradient id="panel2" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF" stop-opacity="0.09"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.02"/></linearGradient>
+    <radialGradient id="halo2"><stop stop-color="#A5DDFF" stop-opacity="0.24"/><stop offset="1" stop-color="#A5DDFF" stop-opacity="0"/></radialGradient>
+    <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="24"/></filter>
+  </defs>
+  <rect width="1900" height="760" fill="url(#bg2)"/>
+  <ellipse cx="950" cy="210" rx="720" ry="390" fill="url(#halo2)" opacity="0.34"/>
+  <text x="85" y="86" fill="#F4F7FB" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="32" font-weight="600" letter-spacing="8">映雪 · 第二轮品牌标志探索</text>
+  <text x="85" y="126" fill="#8491A5" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="16" letter-spacing="3">LESS LITERAL SNOW · MORE DISTINCTIVE BRAND LANGUAGE</text>
+
+  <g transform="translate(70 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel2)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="116" fill="#8DD8FF" opacity="0.11" filter="url(#blur2)"/>
+    <g transform="translate(109 76) scale(3)">
+      <rect x="9.5" y="9.5" width="45" height="45" rx="13.5" stroke="url(#ice2)" stroke-width="3"/>
+      <path d="M32 15L47 32L32 49L17 32L32 15Z" stroke="url(#ice2)" stroke-width="3"/>
+      <path d="M32 21V43M22 32H42" stroke="url(#ice2)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M32 25L39 32L32 39L25 32L32 25Z" fill="url(#ice2)"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F7F9FC" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">雪印</text>
+    <text x="205" y="386" text-anchor="middle" fill="#94A3B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">FROST SEAL</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F92" font-family="'Microsoft YaHei', sans-serif" font-size="15">方印 · 冰晶 · 秩序感</text>
+  </g>
+
+  <g transform="translate(520 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel2)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="116" fill="#8DD8FF" opacity="0.11" filter="url(#blur2)"/>
+    <g transform="translate(109 76) scale(3)">
+      <path d="M8 32C14 17 25 17 32 32C39 47 50 47 56 32C50 17 39 17 32 32C25 47 14 47 8 32Z" stroke="url(#ice2)" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M32 18V46M23.5 23.5L40.5 40.5M40.5 23.5L23.5 40.5" stroke="url(#ice2)" stroke-width="2.6" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="4" fill="url(#ice2)"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F7F9FC" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">无界</text>
+    <text x="205" y="386" text-anchor="middle" fill="#94A3B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">INFINITE FROST</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F92" font-family="'Microsoft YaHei', sans-serif" font-size="15">无限 · 雪核 · 连续创作</text>
+  </g>
+
+  <g transform="translate(970 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel2)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="116" fill="#8DD8FF" opacity="0.11" filter="url(#blur2)"/>
+    <g transform="translate(109 76) scale(3)">
+      <path d="M10 24V10H24M40 10H54V24M54 40V54H40M24 54H10V40" stroke="url(#ice2)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M32 16L45.9 24V40L32 48L18.1 40V24L32 16Z" stroke="url(#ice2)" stroke-width="3"/>
+      <path d="M32 22L40.7 27V37L32 42L23.3 37V27L32 22Z" fill="url(#ice2)"/>
+      <circle cx="32" cy="32" r="4" fill="#111827"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F7F9FC" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">镜核</text>
+    <text x="205" y="386" text-anchor="middle" fill="#94A3B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">CINEMA CORE</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F92" font-family="'Microsoft YaHei', sans-serif" font-size="15">取景 · 镜头 · 创作核心</text>
+  </g>
+
+  <g transform="translate(1420 180)">
+    <rect width="410" height="480" rx="28" fill="url(#panel2)" stroke="#FFFFFF" stroke-opacity="0.11"/>
+    <circle cx="205" cy="172" r="116" fill="#8DD8FF" opacity="0.11" filter="url(#blur2)"/>
+    <g transform="translate(109 76) scale(3)">
+      <circle cx="32" cy="32" r="24" stroke="url(#ice2)" stroke-width="3"/>
+      <path d="M13 34L23.5 22L29 28L36 17L51 34H13Z" fill="url(#ice2)"/>
+      <path d="M15 39H49M20 44H44M27 49H37" stroke="url(#ice2)" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M36 17L38.5 25L32.5 22.5L36 17Z" fill="#111827"/>
+    </g>
+    <text x="205" y="350" text-anchor="middle" fill="#F7F9FC" font-family="'Microsoft YaHei', sans-serif" font-size="29" font-weight="600" letter-spacing="7">山映</text>
+    <text x="205" y="386" text-anchor="middle" fill="#94A3B6" font-family="Inter, sans-serif" font-size="14" letter-spacing="4">SNOW REFLECTION</text>
+    <text x="205" y="430" text-anchor="middle" fill="#727F92" font-family="'Microsoft YaHei', sans-serif" font-size="15">雪山 · 倒影 · 东方意境</text>
+  </g>
+  <text x="950" y="716" text-anchor="middle" fill="#647186" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="14" letter-spacing="3">D / E / F / G · VECTOR MASTER · SMALL-SIZE READY</text>
+</svg>

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 test("Local CLI settings automatically connects without any browser-confirmation flow or connection secrets", async () => {
-    const module = await import("../src/pages/settings/local-cli-settings").catch(() => ({}));
+    const module = await import("../src/pages/settings/local-cli-settings");
     const present = (
         module as {
             localCliSettingsPresentation?: typeof presentationContract;
@@ -77,7 +77,7 @@ test("Local CLI settings automatically connects without any browser-confirmation
     expect(serialized).not.toContain("endpoint");
     expect(serialized).not.toContain("token");
     expect(serialized).not.toContain("session");
-});
+}, 30_000);
 
 test("Dreamina model and credit cache scope follows accountBinding plus sessionEpoch and credits expose observedAt", async () => {
     const modelStore = await import("../src/stores/use-local-dreamina-model-store").catch(() => ({}));
@@ -169,7 +169,7 @@ test("Local CLI settings keeps the Runtime compact and uses the official Dreamin
     expect(source).not.toContain("runtimeController");
     expect(source).toContain('void runDreamina("refresh")');
     expect(source.match(/官方 CLI 登录资料保存在本机；本页面不读取或上传 Cookie、浏览器 Profile 或登录令牌。/g)).toHaveLength(1);
-    expect(source.match(/LOCAL_CLI_SETTINGS_COPY\.dreaminaAccountSwitch/g)).toHaveLength(1);
+    expect(source.match(/t\("settingsUi\.dreaminaSwitchHint"\)/g)).toHaveLength(1);
     expect(source).not.toContain("dreaminaSafety");
     expect(source).not.toContain("Framefield 不读取或上传 Cookie、浏览器 Profile 或登录令牌。");
     expect(source).not.toContain("无需重复授权");

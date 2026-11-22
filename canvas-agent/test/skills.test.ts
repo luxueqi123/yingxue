@@ -80,3 +80,22 @@ test("parseAgentSkills validates and bounds browser skill bundles", () => {
     assert.deepEqual(parsed[0].files?.map((file) => file.path), ["SKILL.md", "references/a.md"]);
     assert.deepEqual(parsed[1], { skillId: "legacy", name: "legacy", instruction: "instruction" });
 });
+
+test("production resources reach the native runtime without truncation", async () => {
+    const content = "配套资料".repeat(10_000);
+    const parsed = parseAgentSkills([{ name: "完整制作规范", instruction: "主指令".repeat(10_000), files: [{ path: "references/quality.md", content }] }]);
+    const prepared = await writeSkillFiles(parsed);
+    try {
+        assert.equal((await fs.readFile(path.join(path.dirname(prepared.inputs[0].path), "references/quality.md"), "utf8")), content);
+        assert.ok((await fs.readFile(prepared.inputs[0].path, "utf8")).includes(parsed[0].instruction));
+    } finally {
+        await Promise.all(prepared.directories.map(directory => fs.rm(directory, { recursive: true, force: true })));
+    }
+});
+
+test("production resources cannot escape or overwrite the skill entry", () => {
+    for (const file of ["../secret", "C:/secret", "/root/key", "references/../../secret", "SKILL.md", "con.md", "x/../y"]) {
+        assert.throws(() => parseAgentSkills([{ name: "测试", instruction: "规范", files: [{ path: file, content: "x" }] }]));
+    }
+    assert.throws(() => parseAgentSkills([{ name: "测试", instruction: "x".repeat(100_001) }]));
+});

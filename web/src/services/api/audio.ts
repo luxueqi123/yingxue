@@ -1,10 +1,7 @@
-import axios from "axios";
-
-import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
-import { createClientId } from "@/lib/client-id";
-import { channelRequest } from "@/services/api/custom-channel-relay";
+import { audioMimeType, normalizeAudioFormatForConfig, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceForConfig, normalizeAudioVoiceValue } from "@/lib/audio-generation";
+import { createChannelTransport } from "@/services/api/channel-transport";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, isSystemProxyBaseUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -12,18 +9,20 @@ function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
 }
 
-function aiHeaders(config: AiConfig) {
-    return {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-        ...(isSystemProxyBaseUrl(config.baseUrl) ? { "X-Canvas-Scene": "audio", "X-Idempotency-Key": createClientId() } : {}),
-    };
+function audioTransport(config: AiConfig) {
+    return createChannelTransport(config, "audio");
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     assertAudioConfig(requestConfig, model);
+    if (requestConfig.interfaceType === "minimax-speech") {
+        return requestMiniMaxSpeech(requestConfig, model, prompt, options);
+    }
+    if (requestConfig.interfaceType === "evolink-seed-audio" || requestConfig.interfaceType === "evolink-qwen-audio-tts") {
+        return requestEvoLinkAudio(requestConfig, model, prompt, requestConfig.interfaceType === "evolink-qwen-audio-tts", options);
+    }
     const format = normalizeAudioFormatValue(config.audioFormat);
     const instructions = config.audioInstructions.trim();
     const payload = {
@@ -39,19 +38,80 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
         if (requestConfig.interfaceType === "async-audio") {
             return await requestAsyncAudioGeneration(requestConfig, payload, format, options);
         }
-        const request = channelRequest(requestConfig, aiApiUrl(requestConfig, "/audio/speech"), aiHeaders(requestConfig));
-        const response = await axios.post<Blob>(request.url, payload, { headers: request.headers, withCredentials: request.credentials === "include", responseType: "blob", signal: options?.signal });
-        await assertAudioBlob(response.data);
-        return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
+        const blob = await audioTransport(requestConfig).postBlob(aiApiUrl(requestConfig, "/audio/speech"), payload, { signal: options?.signal });
+        await assertAudioBlob(blob);
+        return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
     } catch (error) {
         throw new Error(readAxiosError(error, "音频生成失败"));
     }
 }
 
+async function requestMiniMaxSpeech(config: AiConfig, model: string, text: string, options?: RequestOptions): Promise<Blob> {
+    const format = normalizeAudioFormatForConfig(config, config.audioFormat);
+    const speed = Math.max(0.5, Math.min(2, Number(normalizeAudioSpeedValue(config.audioSpeed))));
+    try {
+        const response = await audioTransport(config).postJson<{ base_resp?: { status_code?: number; status_msg?: string }; data?: { audio?: string } }>(
+            aiApiUrl(config, "/t2a_v2"),
+            {
+                model,
+                text,
+                stream: false,
+                output_format: "hex",
+                voice_setting: { voice_id: normalizeAudioVoiceForConfig(config, config.audioVoice), speed },
+                audio_setting: { format },
+            },
+            options,
+        );
+        if (response.base_resp?.status_code !== 0) throw new Error(response.base_resp?.status_msg || "MiniMax 语音合成失败");
+        const hex = response.data?.audio;
+        if (!hex || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) throw new Error("MiniMax 未返回有效音频");
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let index = 0; index < bytes.length; index += 1) bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+        return new Blob([bytes], { type: audioMimeType(format) });
+    } catch (error) {
+        throw new Error(readAxiosError(error, "MiniMax 语音合成失败"));
+    }
+}
+
+async function requestEvoLinkAudio(config: AiConfig, model: string, prompt: string, qwenTTS: boolean, options?: RequestOptions): Promise<Blob> {
+    const format = normalizeAudioFormatForConfig(config, config.audioFormat);
+    const speed = Math.max(0.5, Math.min(2, Number(normalizeAudioSpeedValue(config.audioSpeed))));
+    const instructions = config.audioInstructions.trim();
+    const payload = qwenTTS
+        ? {
+              model,
+              prompt,
+              voice: normalizeAudioVoiceForConfig(config, config.audioVoice),
+              response_format: format,
+              speech_rate: speed,
+              sample_rate: 24000,
+              ...(instructions ? { instruction: instructions } : {}),
+          }
+        : { model, prompt, format, speech_rate: speed };
+    try {
+        const created = await audioTransport(config).postJson<Record<string, unknown>>(aiApiUrl(config, "/audios/generations"), payload, options);
+        const taskId = asyncAudioTaskId(created);
+        if (!taskId) throw new Error("EvoLink 未返回任务 ID");
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+            await waitForAudioPoll(options?.signal);
+            const state = await audioTransport(config).get<Record<string, unknown>>(aiApiUrl(config, `/tasks/${encodeURIComponent(taskId)}`), options);
+            if (asyncAudioSucceeded(state)) {
+                if (!asyncAudioResultUrl(state)) throw new Error("EvoLink 已完成任务，但未返回音频地址");
+                return downloadAsyncAudio(config, taskId, state, format, options);
+            }
+            if (["failed", "cancelled", "canceled", "expired", "error"].includes(String(state.status || "").toLowerCase())) {
+                throw new Error(asyncAudioError(state));
+            }
+        }
+        throw new Error(`EvoLink 音频生成超时（任务 ${taskId}）`);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "EvoLink 音频生成失败"));
+    }
+}
+
 async function requestAsyncAudioGeneration(config: AiConfig, payload: Record<string, unknown>, format: string, options?: RequestOptions) {
-    const createRequest = channelRequest(config, aiApiUrl(config, "/audio/tasks"), aiHeaders(config));
-    const created = await axios.post<Record<string, unknown>>(createRequest.url, payload, { headers: createRequest.headers, withCredentials: createRequest.credentials === "include", signal: options?.signal });
-    let state = asyncAudioPayload(created.data);
+    const created = await audioTransport(config).postJson<Record<string, unknown>>(aiApiUrl(config, "/audio/tasks"), payload, options);
+    let state = asyncAudioPayload(created);
     const taskId = asyncAudioTaskId(state);
     if (!taskId) throw new Error("异步音频接口没有返回任务 ID");
     for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -61,9 +121,8 @@ async function requestAsyncAudioGeneration(config: AiConfig, payload: Record<str
             throw new Error(asyncAudioError(state));
         }
         await waitForAudioPoll(options?.signal);
-        const pollRequest = channelRequest(config, aiApiUrl(config, `/audio/tasks/${encodeURIComponent(taskId)}`), aiHeaders(config));
-        const polled = await axios.get<Record<string, unknown>>(pollRequest.url, { headers: pollRequest.headers, withCredentials: pollRequest.credentials === "include", signal: options?.signal });
-        state = asyncAudioPayload(polled.data);
+        const polled = await audioTransport(config).get<Record<string, unknown>>(aiApiUrl(config, `/audio/tasks/${encodeURIComponent(taskId)}`), options);
+        state = asyncAudioPayload(polled);
     }
     throw new Error(`异步音频生成超时（任务 ${taskId}）`);
 }
@@ -93,6 +152,18 @@ function asyncAudioResultUrl(payload: Record<string, unknown>): string {
         const value = payload[key];
         if (typeof value === "string" && (/^https?:\/\//i.test(value) || value.startsWith("data:audio/"))) return value;
     }
+    for (const key of ["result_data", "results"]) {
+        const value = payload[key];
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (typeof item === "string" && /^https?:\/\//i.test(item)) return item;
+                if (item && typeof item === "object" && !Array.isArray(item)) {
+                    const nested = asyncAudioResultUrl(item as Record<string, unknown>);
+                    if (nested) return nested;
+                }
+            }
+        }
+    }
     for (const key of ["audio", "data", "result", "output"]) {
         const value = payload[key];
         if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -109,10 +180,9 @@ async function downloadAsyncAudio(config: AiConfig, taskId: string, state: Recor
     if (resultUrl.startsWith("data:audio/")) {
         blob = await (await fetch(resultUrl, { signal: options?.signal })).blob();
     } else if (/^https?:\/\//i.test(resultUrl)) {
-        blob = (await axios.get<Blob>(resultUrl, { responseType: "blob", signal: options?.signal })).data;
+        blob = await audioTransport(config).getExternalBlob(resultUrl, undefined, options);
     } else {
-        const contentRequest = channelRequest(config, aiApiUrl(config, `/audio/tasks/${encodeURIComponent(taskId)}/content`), aiHeaders(config));
-        blob = (await axios.get<Blob>(contentRequest.url, { headers: contentRequest.headers, withCredentials: contentRequest.credentials === "include", responseType: "blob", signal: options?.signal })).data;
+        blob = await audioTransport(config).getBlob(aiApiUrl(config, `/audio/tasks/${encodeURIComponent(taskId)}/content`), options);
     }
     await assertAudioBlob(blob);
     return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
@@ -173,16 +243,6 @@ async function assertAudioBlob(blob: Blob) {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
-        const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || statusMessage(error.response?.status, fallback);
-    }
+    if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
-}
-
-function statusMessage(status: number | undefined, fallback: string) {
-    if (status === 401 || status === 403) return "鉴权失败，请检查 API Key、套餐权限或模型权限";
-    if (status === 429) return "请求被限流或额度不足，请稍后重试";
-    return status ? `${fallback}（${status}）` : fallback;
 }

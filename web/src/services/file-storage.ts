@@ -3,61 +3,146 @@ import { nanoid } from "nanoid";
 
 import { getActiveUserScope } from "@/lib/user-scope";
 import { captureVideoPoster, detectVideoAudioTrackFromBlob } from "@/lib/video-poster";
-import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
+import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile, type ResourceAccessVariant } from "@/services/api/resources";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
-import { getCachedResourceBlob, getCachedResourceObjectUrl, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { getCachedResourceBlob, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { assertLocalMediaSession, localMediaSession, peekLocalMediaObjectUrl, releaseLocalMediaObjectUrls, storeLocalMediaObjectUrl } from "@/services/local-media-object-urls";
 
-export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number; hasAudio?: boolean; preview?: UploadedImage };
+export type UploadedFile = {
+    url: string;
+    storageKey: string;
+    bytes: number;
+    mimeType: string;
+    width?: number;
+    height?: number;
+    durationMs?: number;
+    hasAudio?: boolean;
+    preview?: UploadedImage;
+    /**
+     * true 表示直传失败、文件当前只存在于本机 IndexedDB。语义与 UploadedImage 一致：
+     * 云端数据同步会用同一幂等键重传，但在那之前 `url` 是页面级 objectURL，刷新即失效。
+     */
+    pendingRemoteUpload?: boolean;
+    /** 直传失败原因，仅在 pendingRemoteUpload 为 true 时有值。 */
+    remoteUploadError?: string;
+};
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
-const objectUrls = new Map<string, string>();
+const store = localforage.createInstance({ name: "yingce", storeName: "media_files" });
 
-export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
+export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<UploadedFile> {
     // 直传和失败后的本地同步必须复用同一上传身份，避免响应丢失后创建第二个对象。
-    const storageKey = `${prefix}:${getActiveUserScope()}:${nanoid()}`;
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    const session = localMediaSession();
+    const storageKey = `${prefix}:${session.scope}:${nanoid()}`;
+    const blob = input;
     const previewUrl = URL.createObjectURL(blob);
-    const captured = blob.type.startsWith("video/") ? await captureVideoPoster(previewUrl).catch(() => undefined) : undefined;
-    // Browser track probes can report a false negative for MP4/MOV files.
-    // Re-check only when capture did not positively confirm an audio track so
-    // normal uploads avoid an extra full-blob parse.
-    const parsedHasAudio = blob.type.startsWith("video/") && captured?.hasAudio !== true ? await detectVideoAudioTrackFromBlob(blob) : undefined;
-    const resolvedHasAudio = parsedHasAudio ?? (captured?.hasAudio === false ? undefined : captured?.hasAudio);
-    const meta: { width?: number; height?: number; durationMs?: number; hasAudio?: boolean } = captured
-        ? { width: captured.width, height: captured.height, durationMs: captured.durationMs, hasAudio: resolvedHasAudio }
-        : blob.type.startsWith("audio/")
-            ? await readAudioMeta(previewUrl)
-            : { hasAudio: resolvedHasAudio };
-    const poster = captured?.poster ? await uploadImage(captured.poster).catch(() => undefined) : undefined;
+    let retainPreviewUrl = false;
+
     try {
-        const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
-        const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey });
-        await primeResourceBlobCache(resourceStorageKey(resource.id), blob).catch(() => "");
-        URL.revokeObjectURL(previewUrl);
-        return { url: resource.publicUrl || resourceFileUrl(resource.id), storageKey: resourceStorageKey(resource.id), bytes: resource.size || blob.size, mimeType: resource.mimeType || blob.type || "application/octet-stream", width: resource.width || meta.width, height: resource.height || meta.height, durationMs: resource.durationMs || meta.durationMs, hasAudio: meta.hasAudio, preview: poster };
-    } catch {
-        // OSS is optional during local/self-hosted setup. Keep the existing local fallback.
+        let captured: Awaited<ReturnType<typeof captureVideoPoster>> | undefined;
+        if (blob.type.startsWith("video/")) {
+            try {
+                captured = await captureVideoPoster(previewUrl);
+            } catch (error) {
+                // 封面和轨道信息属于展示增强：失败不阻断原文件上传，但必须留下可诊断信号。
+                console.warn("读取视频封面与媒体信息失败，继续上传原文件", { mimeType: blob.type, bytes: blob.size, error });
+            }
+        }
+
+        // 浏览器轨道探测对部分 MP4/MOV 会误报；只有未确认存在音轨时才做二次解析，
+        // 避免正常上传重复读取整个文件。
+        let parsedHasAudio: boolean | undefined;
+        if (blob.type.startsWith("video/") && captured?.hasAudio !== true) {
+            try {
+                parsedHasAudio = await detectVideoAudioTrackFromBlob(blob);
+            } catch (error) {
+                console.warn("解析视频音轨失败，继续上传但不写入音轨结论", { mimeType: blob.type, bytes: blob.size, error });
+            }
+        }
+        const resolvedHasAudio = parsedHasAudio ?? (captured?.hasAudio === false ? undefined : captured?.hasAudio);
+
+        let meta: { width?: number; height?: number; durationMs?: number; hasAudio?: boolean };
+        if (captured) {
+            meta = { width: captured.width, height: captured.height, durationMs: captured.durationMs, hasAudio: resolvedHasAudio };
+        } else if (blob.type.startsWith("audio/")) {
+            try {
+                meta = await readAudioMeta(previewUrl);
+            } catch (error) {
+                console.warn("读取音频时长失败，继续上传原文件", { mimeType: blob.type, bytes: blob.size, error });
+                meta = {};
+            }
+        } else {
+            meta = { hasAudio: resolvedHasAudio };
+        }
+
+        let poster: UploadedImage | undefined;
+        if (captured?.poster) {
+            try {
+                poster = await uploadImage(captured.poster);
+            } catch (error) {
+                // 预览图失败不应把已经可用的视频降级成本地文件；视频本体仍按强校验上传。
+                console.warn("上传视频预览图失败，继续保存视频本体", { mimeType: blob.type, bytes: blob.size, error });
+            }
+        }
+
+        let remoteUploadError = "";
+        try {
+            const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
+            const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
+            assertLocalMediaSession(session);
+            try {
+                await primeResourceBlobCache(resourceStorageKey(resource.id), blob);
+            } catch (error) {
+                // 缓存只影响后续读取性能，服务端资源已经成功落盘，不得把缓存失败误报为上传失败。
+                console.warn("预热媒体缓存失败，服务端资源已保存", { resourceId: resource.id, error });
+            }
+            return {
+                url: resource.publicUrl || resourceFileUrl(resource.id),
+                storageKey: resourceStorageKey(resource.id),
+                bytes: resource.size || blob.size,
+                mimeType: resource.mimeType || blob.type || "application/octet-stream",
+                width: resource.width || meta.width,
+                height: resource.height || meta.height,
+                durationMs: resource.durationMs || meta.durationMs,
+                hasAudio: meta.hasAudio,
+                preview: poster,
+            };
+        } catch (error) {
+            // 与图片上传同一套判定：永久性失败必须当场暴露，不能混进“稍后自动同步”。
+            if (error instanceof ResourceUploadError && error.permanent) throw error;
+            remoteUploadError = error instanceof Error ? error.message : "媒体直传失败";
+        }
+
+        // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
+        assertLocalMediaSession(session);
+        await store.setItem(storageKey, blob);
+        storeLocalMediaObjectUrl("media", storageKey, blob, session, { replace: true, url: previewUrl });
+        retainPreviewUrl = true;
+        return { url: previewUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster, pendingRemoteUpload: true, remoteUploadError };
+    } finally {
+        // 只有本地降级结果需要把 objectURL 留给页面；成功上传和所有异常路径都及时释放。
+        if (!retainPreviewUrl) URL.revokeObjectURL(previewUrl);
     }
-    await store.setItem(storageKey, blob);
-    const url = previewUrl;
-    objectUrls.set(storageKey, url);
-    return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster };
 }
 
-export async function resolveMediaUrl(storageKey?: string, fallback = "") {
+export async function resolveMediaUrl(storageKey?: string, fallback = "", variant: ResourceAccessVariant = "original") {
     if (!storageKey) return fallback;
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
-        const cached = await getCachedResourceObjectUrl(storageKey).catch(() => "");
-        return cached || resourceFileUrl(resourceId);
+        // 展示直接命中 OSS/CDN；平台资源文件接口只保留给私有源站代理或本地存储兜底。
+        return resolveResourceAccessURL((await getResourceAccess(storageKey, "display", variant)).url);
     }
-    const cached = objectUrls.get(storageKey);
+    const session = localMediaSession();
+    const cached = peekLocalMediaObjectUrl("media", storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    assertLocalMediaSession(session);
     if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("media", storageKey, blob, session);
+}
+
+/** Resolve a video through the browser-compatible playback variant when one exists. */
+export function resolveVideoMediaUrl(storageKey?: string, fallback = "") {
+    return resolveMediaUrl(storageKey, fallback, "playback");
 }
 
 export async function getMediaBlob(storageKey: string) {
@@ -67,20 +152,17 @@ export async function getMediaBlob(storageKey: string) {
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const session = localMediaSession();
     await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("media", storageKey, blob, session, { replace: true });
 }
 
 export async function deleteStoredMedia(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
             if (resourceIdFromStorageKey(key)) return;
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
             await store.removeItem(key);
+            releaseLocalMediaObjectUrls("media", key);
         }),
     );
 }
@@ -93,7 +175,7 @@ export async function cleanupUnusedMedia(usedData: unknown, scope = getActiveUse
         const parts = key.split(":");
         if (parts.length >= 3 && parts[1] === currentScope && !usedKeys.has(key)) unused.push(key);
     });
-    await Promise.all(unused.map((key) => store.removeItem(key)));
+    await deleteStoredMedia(unused);
 }
 
 export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {

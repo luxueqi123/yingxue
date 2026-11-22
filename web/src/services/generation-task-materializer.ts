@@ -22,7 +22,7 @@ function abortError(): DOMException {
 }
 
 function throwIfAborted(signal?: AbortSignal) {
-    if (signal?.aborted) throw abortError();
+    if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : abortError();
 }
 
 async function waitForAbortableDelay(delayMs: number, signal?: AbortSignal) {
@@ -93,7 +93,7 @@ export function createGenerationTaskMaterializer(dependencies: { effects: Genera
         let wake: (() => void) | undefined;
         let failure: unknown;
         const controller = new AbortController();
-        const abortFromParent = () => controller.abort();
+        const abortFromParent = () => controller.abort(parentSignal?.reason);
         if (parentSignal?.aborted) abortFromParent();
         else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
         const done = (async () => {
@@ -109,7 +109,7 @@ export function createGenerationTaskMaterializer(dependencies: { effects: Genera
             }
         })().catch((error) => {
             failure = error;
-            controller.abort();
+            controller.abort(error);
         });
         const stop = async () => {
             if (!stopped) {
@@ -125,18 +125,18 @@ export function createGenerationTaskMaterializer(dependencies: { effects: Genera
     }
 
     async function releaseClaim(effectKey: string, taskId: string, binding: string | undefined, stopHeartbeat: () => Promise<void>, original: unknown): Promise<never> {
-        let failure = original;
+        // 释放租约失败是次要问题，保留真正导致失败的原因，便于在节点上展示和排查。
         try {
             await stopHeartbeat();
-        } catch (error) {
-            failure = error;
+        } catch {
+            /* original error wins */
         }
         try {
             await dependencies.effects.release(effectKey, taskId, binding);
-        } catch (error) {
-            failure = error;
+        } catch {
+            /* original error wins */
         }
-        throw failure;
+        throw original;
     }
     async function consumeEffect(
         effectKey: string,

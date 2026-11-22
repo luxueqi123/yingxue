@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { RefObject } from "react";
 
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-workspace-overlays";
@@ -6,7 +7,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers } from "@/lib/canvas/tool-registry";
 import type { CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
 
 type CanvasProjectSelectionToolbarProps = {
     anchorRef: RefObject<HTMLDivElement | null>;
@@ -17,16 +18,43 @@ type CanvasProjectSelectionToolbarProps = {
     onAlign: (mode: CanvasAlignmentMode) => void;
     onArrange: (mode: "row" | "column" | "grid" | "flow") => void;
     onCreateStoryboard: () => void;
+    onCreateFrame: () => void;
     onCreateReferenceGroup: () => void;
     onBatchConnect: () => void;
     onMergeVideos: () => void;
+    onCompareImages?: () => void;
+    onSendSelectionToAgent: () => void;
 };
 
-export function CanvasProjectSelectionToolbar({ anchorRef, containerRef, count, selectedVideoCount, mergingVideos, onAlign, onArrange, onCreateStoryboard, onCreateReferenceGroup, onBatchConnect, onMergeVideos }: CanvasProjectSelectionToolbarProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+export function CanvasProjectSelectionToolbar({
+    anchorRef,
+    containerRef,
+    count,
+    selectedVideoCount,
+    mergingVideos,
+    onAlign,
+    onArrange,
+    onCreateStoryboard,
+    onCreateFrame,
+    onCreateReferenceGroup,
+    onBatchConnect,
+    onMergeVideos,
+    onCompareImages,
+    onSendSelectionToAgent,
+}: CanvasProjectSelectionToolbarProps) {
+    const { t } = useTranslation();
+    const theme = canvasThemes[useCanvasThemeStore((state) => state.theme)];
 
     const handlers = {
-        onAlign, onArrange, onCreateStoryboard, onCreateReferenceGroup, onBatchConnect, onMergeVideos,
+        onAlign,
+        onArrange,
+        onCreateStoryboard,
+        onCreateFrame,
+        onCreateReferenceGroup,
+        onBatchConnect,
+        onMergeVideos,
+        onCompareImages,
+        onSendSelectionToAgent,
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
 
     const ctx: ToolContext = {
@@ -53,7 +81,7 @@ export function CanvasProjectSelectionToolbar({ anchorRef, containerRef, count, 
 
     return (
         <CanvasSelectionToolbar anchorRef={anchorRef} containerRef={containerRef} count={count}>
-            <FloatingDock items={items} size="compact" className="canvas-floating-dock" style={canvasDockStyle(theme)} ariaLabel="多选节点布局工具" />
+            <FloatingDock items={items} size="compact" className="canvas-floating-dock" style={canvasDockStyle(theme)} ariaLabel={t("canvasPage.selectionToolbar.ariaLabel")} />
         </CanvasSelectionToolbar>
     );
 }

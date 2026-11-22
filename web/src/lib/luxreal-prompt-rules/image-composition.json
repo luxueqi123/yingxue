@@ -1,0 +1,135 @@
+[
+  {
+    "obsId": "3FO4K4VWOCOJ",
+    "orderId": 1,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "角色设定图",
+    "templateNameLocaleId": null,
+    "description": "左侧展示角色特写，右侧展示全身三视图，形象服装统一，纯白背景。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "生成一个主体，图像左侧展示主体上半身特写（胸部以上特写），图像右侧依次展示主体的三个视图（正面视图、侧面视图和背面视图，主体全身完整，静态A-pose站姿），主体在特写视图和三视图中必须保持一致的面部和服装，纯白色背景，画面中一定不能出现除主体身上以外的文字、文字标注及水印，以下是具体的描述。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VWO9CI",
+    "orderId": 2,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "角色脸部三视图",
+    "templateNameLocaleId": null,
+    "description": "用于生成角色头部三视图，面部统一，纯白背景。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "生成这个主体形象的头部三视图。图像从左到右依次展示主体的正面视图、斜45度视图、侧面视图。 主体在三个视角必须保持一致的面部，纯白色背景，画面中一定不能出现除主体身上以外的文字、文字标注及水印。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VWOJDL",
+    "orderId": 3,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "人像质感调节",
+    "templateNameLocaleId": null,
+    "description": "增强皮肤细节、毛孔、真实光影，去除AI常见的“塑料感”或过度平滑。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "强化皮肤毛孔和表皮纹理，但保持自然的皮肤状态。增加细微的汗腺和细微汗毛，光影具有次表面散射效果，呈现出皮肤半透明的真实生物感，保留原图构图和背景不发生变化，仅增强面部纹理。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VPF56I",
+    "orderId": 4,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4FBBKAWF4",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "场景设定图",
+    "templateNameLocaleId": null,
+    "description": "用于生成广角镜头场景图，还原指定场景描述。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "生成一个场景图像，广角镜头，图像中没有人和文字水印，以下是具体的场景描述。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VPB83C",
+    "orderId": 5,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4FBBKAWF4",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "场景对向双视图",
+    "templateNameLocaleId": null,
+    "description": "用于生成同一场景正向与对向双视图宫格图，还原指定场景描述。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "你是一位拥有电影摄影专业知识的场景设计专家，你的任务是根据提供的场景描述，生成一张1x2宫格的场景图像（两个角度，从不同摄影角度/方向展示同一场景：全景定场镜头、对向视角），这两张图像必须共享相同的场景几何体、纹理、资产、光照和艺术风格。图片中不能出现人物、文字及文字水印。两个视角布局如下（两个格子中间接缝用白色的细线隔开）：正上格子：全景定场镜头；正下格子：对向视角 (180度旋转)。 将相机从全景定场视角水平旋转 180 度。从场景的对面看向全景定场视角所在的区域。显示全景定场镜头中“相机背后”的内容。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VPEXHG",
+    "orderId": 6,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4FBBKAWF4",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "道具设定图",
+    "templateNameLocaleId": null,
+    "description": "用于生成道具白底图，还原道具整体造型和细节特征。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "生成一个主体对象，正面面对镜头，纯白色背景，以下是具体的描述。"
+    },
+    "deleted": false
+  },
+  {
+    "obsId": "3FO4K4VWO2NG",
+    "orderId": 7,
+    "scopeType": "PUBLIC",
+    "obsOwnerId": "3FO4K4VYB76J",
+    "obsCreatedBy": "3FO4K4VYB76J",
+    "obsTeamId": null,
+    "canEdit": false,
+    "canDelete": false,
+    "templateType": "CANVAS_IMAGE_COMPOSITION",
+    "templateName": "道具拆解图",
+    "templateNameLocaleId": null,
+    "description": "用于生成专业道具设定图，含三视图、渲染图、爆炸图与产品信息。",
+    "fieldList": [],
+    "placeholderValueMap": {
+      "requirements": "基于我提供的产品参考图，生成一张专业的产品设定图 / 工业设计说明图，严格保持参考产品的外观结构、颜色、材质、比例关系、轮廓特征和关键细节，不要重新设计产品，不要改变产品品类。画面采用干净的白色或浅灰色设计图纸背景，整体风格为高级工业设计作品集、产品研发设定图、商业产品展示板，版式清晰、有秩序感，使用网格化排版。画面中需要包含产品三视图，包括正视图、侧视图、背视图或俯视图，根据产品形态选择最能说明结构的角度，三视图使用正交视角，结构准确，边缘清晰，对齐整齐，可加入简洁的尺寸辅助线和技术标注；同时展示一个高质量产品主视觉渲染图，使用最能体现产品美感和结构的角度，材质真实，光影柔和，细节清晰；画面中还需要包含产品爆炸图，将产品主要部件沿合理装配方向分解展开，保持正确的空间层级和装配逻辑，使用细线连接、编号标注和部件说明标签，表现产品内部结构、模块组成、材质层次和功能关系；另外加入产品介绍区，包含产品名称、产品类别、核心功能、主要材质、颜色工艺、使用场景、设计亮点和卖点说明，排版类似专业产品设计手册，信息层级明确，文字尽量清晰简洁。整体视觉要求高级、干净、专业、科技感、设计感、产品研发图纸风格、工业设计手册风格、真实商业产品渲染质感；不要出现人物，不要出现杂乱背景，不要添加无关产品，不要出现错误结构，不要改变原产品设计，不要生成多余品牌Logo，不要出现侵权品牌元素。"
+    },
+    "deleted": false
+  }
+]

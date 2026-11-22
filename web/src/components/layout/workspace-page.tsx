@@ -1,9 +1,12 @@
-import { Button, Select } from "antd";
-import { ChevronLeft, ChevronRight, ListFilter, RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
+import { Button } from "antd";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Ellipsis, ListFilter, RotateCcw } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import { currentLocale } from "@/i18n";
 
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/base/select";
 
 export function WorkspacePage({ children, className, grid = false, fluid = false, scroll = true }: { children: ReactNode; className?: string; grid?: boolean; fluid?: boolean; scroll?: boolean }) {
     return (
@@ -18,7 +21,7 @@ export function PageHeader({ title, description, meta, actions }: { title: strin
         <header className="app-page-header flex min-h-14 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
                 <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h1 className="app-page-header-title truncate font-semibold leading-7">{title}</h1>
                         {meta}
                     </div>
@@ -49,6 +52,7 @@ export function ListToolbar({
     onReset?: () => void;
     className?: string;
 }) {
+    const { t } = useTranslation();
     const [filtersOpen, setFiltersOpen] = useState(false);
 
     useEffect(() => {
@@ -57,13 +61,14 @@ export function ListToolbar({
 
     return (
         <div className={cn("admin-list-toolbar mt-3 flex min-h-12 flex-col gap-2 pb-3 lg:flex-row lg:items-center lg:justify-between", className)}>
-            <div className="admin-list-toolbar-main flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
+            <div className="admin-list-toolbar-main flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 {children}
                 {filters ? (
                     <>
                         {!filtersAlwaysVisible ? (
                             <Button type="default" className="admin-filter-toggle" aria-expanded={filtersOpen} icon={<ListFilter className="size-3.5" />} onClick={() => setFiltersOpen((open) => !open)}>
-                                筛选{active ? <span className="admin-filter-active-dot" aria-label="有已应用筛选" /> : null}
+                                {t("account.layout.list.filter")}
+                                {active ? <span className="admin-filter-active-dot" aria-label={t("account.layout.list.filterActive")} /> : null}
                             </Button>
                         ) : null}
                         <div className={cn("admin-list-toolbar-filters flex flex-wrap items-center gap-2", (filtersAlwaysVisible || filtersOpen) && "is-open")}>{filters}</div>
@@ -74,7 +79,7 @@ export function ListToolbar({
             <div className="admin-list-toolbar-actions flex shrink-0 flex-wrap items-center gap-2">
                 {active && onReset ? (
                     <Button type="text" icon={<RotateCcw className="size-3.5" />} onClick={onReset}>
-                        重置
+                        {t("account.layout.list.reset")}
                     </Button>
                 ) : null}
                 {trailing}
@@ -95,12 +100,19 @@ export function CollectionGrid({ children, className, style }: { children: React
     );
 }
 
-/* 自研轻量分页：页码胶囊 + 省略号 + 每页条数 + 总数，替代 AntD Pagination（无 AntD 残留样式，与工具栏容器同语言）。 */
-function pageItems(current: number, pages: number): (number | "…")[] {
-    if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
-    if (current <= 4) return [1, 2, 3, 4, 5, "…", pages];
-    if (current >= pages - 3) return [1, "…", pages - 4, pages - 3, pages - 2, pages - 1, pages];
-    return [1, "…", current - 1, current, current + 1, "…", pages];
+/* 自研轻量分页：总数 + 胶囊页码组 + 跳页 + 每页条数。用户端和后台共用，外观集中在 globals.css 的 app-pagination-*。 */
+function pageItems(current: number, pages: number) {
+    if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+    let visible: number[];
+    if (current <= 4) visible = [1, 2, 3, 4, 5, pages];
+    else if (current >= pages - 3) visible = [1, pages - 4, pages - 3, pages - 2, pages - 1, pages];
+    else visible = [1, current - 1, current, current + 1, pages];
+    return visible.flatMap((page, index): (number | { direction: "back" | "forward"; target: number })[] => {
+        const previous = visible[index - 1];
+        if (!previous || page === previous + 1) return [page];
+        const back = page <= current;
+        return [{ direction: back ? "back" : "forward", target: Math.max(previous + 1, Math.min(page - 1, current + (back ? -5 : 5))) }, page];
+    });
 }
 
 export function PaginationBar({
@@ -110,7 +122,8 @@ export function PaginationBar({
     onChange,
     pageSizeOptions = [20, 50, 100],
     alwaysShow = false,
-    itemLabel = "条",
+    itemLabel,
+    className,
 }: {
     current: number;
     pageSize: number;
@@ -119,35 +132,105 @@ export function PaginationBar({
     pageSizeOptions?: number[];
     alwaysShow?: boolean;
     itemLabel?: string;
+    className?: string;
 }) {
+    const { t } = useTranslation();
+    const [jump, setJump] = useState("");
+    const item = itemLabel ?? t("account.layout.pagination.item");
     if (!alwaysShow && total <= pageSize && current === 1) return null;
     const pages = Math.max(1, Math.ceil(total / pageSize));
     const start = total === 0 ? 0 : (current - 1) * pageSize + 1;
     const end = total === 0 ? 0 : Math.min(total, current * pageSize);
     const items = pageItems(current, pages);
+    const go = (page: number) => {
+        const next = Math.min(pages, Math.max(1, page));
+        if (next !== current) onChange(next, pageSize);
+    };
+    const submitJump = () => {
+        const page = Number.parseInt(jump, 10);
+        setJump("");
+        if (Number.isFinite(page)) go(page);
+    };
     return (
-        <div className="app-pagination-bar admin-pagination-bar mt-4 flex min-h-10 min-w-0 items-center justify-end gap-2 px-2 py-1.5">
-            <span className="admin-pagination-total">{total === 0 ? `共 0 ${itemLabel}` : `${start}-${end} / 共 ${total} ${itemLabel}`}</span>
-            <Select size="small" value={pageSize} className="app-pagination-size" options={pageSizeOptions.map((size) => ({ value: size, label: `${size} ${itemLabel}/页` }))} onChange={(value) => onChange(1, Number(value))} />
-            <div className="app-pagination-pages" role="navigation" aria-label="分页">
-                <button type="button" className="app-pagination-btn app-pagination-prev" disabled={current <= 1} aria-label="上一页" onClick={() => onChange(current - 1, pageSize)}>
-                    <ChevronLeft className="size-4" />
-                </button>
-                {items.map((item) =>
-                    item === "…" ? (
-                        <span key={`ellipsis-${items.indexOf(item)}`} className="app-pagination-ellipsis">
-                            …
-                        </span>
-                    ) : (
-                        <button key={item} type="button" className={`app-pagination-btn${item === current ? " is-active" : ""}`} aria-current={item === current ? "page" : undefined} onClick={() => onChange(item, pageSize)}>
-                            {item}
-                        </button>
-                    ),
+        <nav className={cn("app-pagination-bar", className)} aria-label={t("account.layout.pagination.label")}>
+            <span className="app-pagination-total" aria-live="polite" aria-atomic="true">
+                {total === 0 ? (
+                    <Trans i18nKey="account.layout.pagination.totalEmpty" values={{ item }} components={{ b: <b /> }} />
+                ) : (
+                    <Trans i18nKey="account.layout.pagination.totalRange" values={{ start, end, total: total.toLocaleString(currentLocale()), item }} components={{ b: <b /> }} />
                 )}
-                <button type="button" className="app-pagination-btn app-pagination-next" disabled={current >= pages} aria-label="下一页" onClick={() => onChange(current + 1, pageSize)}>
-                    <ChevronRight className="size-4" />
-                </button>
+            </span>
+            <div className="app-pagination-controls">
+                <div className="app-pagination-pages" style={{ "--pagination-digits": `${String(pages).length}ch` } as CSSProperties}>
+                    <button type="button" className="app-pagination-btn app-pagination-prev" disabled={current <= 1} aria-label={t("account.layout.pagination.prev")} onClick={() => go(current - 1)}>
+                        <ChevronLeft className="size-4" />
+                    </button>
+                    {items.map((item) =>
+                        typeof item !== "number" ? (
+                            <button
+                                key={item.direction}
+                                type="button"
+                                className="app-pagination-btn app-pagination-skip"
+                                aria-label={t("account.layout.pagination.page", { page: item.target })}
+                                title={t("account.layout.pagination.page", { page: item.target })}
+                                onClick={() => go(item.target)}
+                            >
+                                <Ellipsis aria-hidden />
+                                {item.direction === "back" ? <ChevronsLeft aria-hidden /> : <ChevronsRight aria-hidden />}
+                            </button>
+                        ) : (
+                            <button
+                                key={item}
+                                type="button"
+                                className={cn("app-pagination-btn", item === current && "is-active")}
+                                aria-current={item === current ? "page" : undefined}
+                                aria-label={t("account.layout.pagination.page", { page: item })}
+                                onClick={() => go(item)}
+                            >
+                                {item}
+                            </button>
+                        ),
+                    )}
+                    <button type="button" className="app-pagination-btn app-pagination-next" disabled={current >= pages} aria-label={t("account.layout.pagination.next")} onClick={() => go(current + 1)}>
+                        <ChevronRight className="size-4" />
+                    </button>
+                </div>
+                {pages > 7 ? (
+                    <label className="app-pagination-jump">
+                        {t("account.layout.pagination.jumpBefore")}
+                        <input
+                            inputMode="numeric"
+                            value={jump}
+                            placeholder={String(current)}
+                            aria-label={t("account.layout.pagination.jumpLabel")}
+                            onChange={(event) => setJump(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                            onKeyDown={(event) => {
+                                if (event.nativeEvent.isComposing) return;
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    submitJump();
+                                } else if (event.key === "Escape" && jump) {
+                                    event.stopPropagation();
+                                    setJump("");
+                                }
+                            }}
+                            onBlur={() => setJump("")}
+                        />
+                        {t("account.layout.pagination.jumpAfter")}
+                    </label>
+                ) : null}
+                {pageSizeOptions.length > 1 ? (
+                    <Select
+                        size="small"
+                        value={pageSize}
+                        className="app-pagination-size"
+                        popupMatchSelectWidth={false}
+                        ariaLabel={t("account.layout.pagination.pageSize")}
+                        options={pageSizeOptions.map((size) => ({ value: size, label: t("account.layout.pagination.perPage", { size, item }) }))}
+                        onChange={(value) => onChange(1, Number(value))}
+                    />
+                ) : null}
             </div>
-        </div>
+        </nav>
     );
 }

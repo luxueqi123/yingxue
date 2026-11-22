@@ -1,3 +1,5 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { interfaceTranslator, type InterfaceLocale, type InterfaceTranslate } from "@/lib/interface-locale";
 import { App, Button, Popconfirm, Tag, Typography } from "antd";
 import { StatusBadge } from "@/components/ui/base/badges";
 import { CheckCircle2, Copy, ExternalLink, LogIn, LogOut, RefreshCw, Server, SquareTerminal } from "lucide-react";
@@ -34,37 +36,38 @@ export const LOCAL_CLI_SETTINGS_COPY = {
     dreaminaRefresh: "刷新状态",
 } as const;
 
-export function localCliSettingsPresentation(input: { connection: string; moduleAvailable: boolean; dreamina?: DreaminaCliStatus; timeZone?: string }): { runtime: Presentation; dreamina: Presentation } {
-    const runtime = runtimePresentation(input.connection as LocalRuntimeConnectionState);
+export function localCliSettingsPresentation(input: { connection: string; moduleAvailable: boolean; dreamina?: DreaminaCliStatus; timeZone?: string; locale?: InterfaceLocale; t?: InterfaceTranslate }): { runtime: Presentation; dreamina: Presentation } {
+    const t = input.t || interfaceTranslator(input.locale || "zh-CN");
+    const runtime = runtimePresentation(input.connection as LocalRuntimeConnectionState, t);
     if (input.connection !== "connected") {
-        return { runtime, dreamina: { label: LOCAL_CLI_SETTINGS_COPY.dreaminaDisconnected, tone: "default", action: null } };
+        return { runtime, dreamina: { label: t("settingsUi.dreaminaAfterConnect"), tone: "default", action: null } };
     }
     if (!input.moduleAvailable) {
-        return { runtime, dreamina: { label: "模块未加载", tone: "error", action: "refresh" } };
+        return { runtime, dreamina: { label: t("settingsUi.moduleNotLoaded"), tone: "error", action: "refresh" } };
     }
     const status = input.dreamina;
-    if (!status) return { runtime, dreamina: { label: "正在检测", tone: "processing", action: "refresh" } };
+    if (!status) return { runtime, dreamina: { label: t("settingsUi.detecting"), tone: "processing", action: "refresh" } };
     const creditObservedAt = formatCreditObservedAt(status.creditObservedAt, input.timeZone);
     const hasScopedCredit = status.totalCredit !== undefined && Boolean(status.accountBinding) && status.sessionEpoch !== undefined && Boolean(creditObservedAt);
-    if (status.state === "missing") return { runtime, dreamina: { label: "未安装", tone: "error", action: "refresh" } };
-    if (status.state === "login_pending") return { runtime, dreamina: { label: "等待官方授权", tone: "processing", action: "open_verification" } };
+    if (status.state === "missing") return { runtime, dreamina: { label: t("settingsUi.notInstalled"), tone: "error", action: "refresh" } };
+    if (status.state === "login_pending") return { runtime, dreamina: { label: t("settingsUi.authorizationPending"), tone: "processing", action: "open_verification" } };
     if (status.authenticated)
         return {
             runtime,
             dreamina: {
-                label: "已登录",
+                label: t("settingsUi.signedIn"),
                 tone: "success",
                 action: "logout",
                 ...(!hasScopedCredit
                     ? {}
                     : {
-                          creditLabel: `即梦积分 ${new Intl.NumberFormat("zh-CN").format(status.totalCredit!)}`,
+                          creditLabel: t("settingsUi.dreaminaCredits", { count: new Intl.NumberFormat(input.locale || "zh-CN").format(status.totalCredit!) }),
                       }),
-                ...(creditObservedAt ? { creditObservedAtLabel: `上次刷新积分 ${creditObservedAt}` } : {}),
+                ...(creditObservedAt ? { creditObservedAtLabel: t("settingsUi.creditsRefreshed", { time: creditObservedAt }) } : {}),
             },
         };
-    if (status.state === "installed") return { runtime, dreamina: { label: "未登录", tone: "warning", action: "login" } };
-    return { runtime, dreamina: { label: "检测失败", tone: "error", action: "refresh" } };
+    if (status.state === "installed") return { runtime, dreamina: { label: t("signedOut"), tone: "warning", action: "login" } };
+    return { runtime, dreamina: { label: t("settingsUi.detectionFailed"), tone: "error", action: "refresh" } };
 }
 
 export function formatCreditObservedAt(value: unknown, timeZone?: string) {
@@ -85,6 +88,7 @@ export function formatCreditObservedAt(value: unknown, timeZone?: string) {
 }
 
 export function LocalCliSettings() {
+    const { t, locale } = useInterfaceTranslation();
     const { message } = App.useApp();
     const connection = useLocalRuntimeStore((state) => state.connection);
     const connecting = useLocalRuntimeStore((state) => state.connecting);
@@ -98,7 +102,7 @@ export function LocalCliSettings() {
         revision: 0,
         controller: null,
     });
-    const presentation = localCliSettingsPresentation({ connection, moduleAvailable, dreamina: status });
+    const presentation = localCliSettingsPresentation({ connection, moduleAvailable, dreamina: status, t, locale });
 
     const refreshRuntime = useCallback(() => {
         const controller = new AbortController();
@@ -108,7 +112,7 @@ export function LocalCliSettings() {
     const runDreamina = useCallback(
         async (action: Exclude<PendingAction, "">) => {
             if (connection !== "connected" || !moduleAvailable) {
-                message.warning("请先连接已加载 Dreamina 的本机运行时");
+                message.warning(t("settingsUi.connectDreamina"));
                 return;
             }
             lifecycle.current.controller?.abort();
@@ -122,14 +126,14 @@ export function LocalCliSettings() {
                 const next = action === "login" ? await loginDreamina(client, options) : action === "logout" ? await logoutDreamina(client, options) : await getDreaminaStatus(client, options);
                 if (revision !== lifecycle.current.revision || controller.signal.aborted) return;
                 setStatus(next);
-                if (action === "logout") message.success("Dreamina CLI 已退出登录");
+                if (action === "logout") message.success(t("settingsUi.dreaminaSignedOut"));
                 if (action === "login" && next.state === "login_pending") {
-                    message.info("请打开官方验证页完成授权，再刷新状态");
+                    message.info(t("settingsUi.dreaminaAuthorize"));
                 }
             } catch (error) {
                 if (revision !== lifecycle.current.revision || controller.signal.aborted) return;
                 setStatus(undefined);
-                message.error(error instanceof DreaminaAgentError ? error.message : "Dreamina CLI 操作失败");
+                message.error(error instanceof DreaminaAgentError ? error.message : t("settingsUi.dreaminaActionFailed"));
             } finally {
                 if (revision === lifecycle.current.revision) {
                     lifecycle.current.controller = null;
@@ -137,7 +141,7 @@ export function LocalCliSettings() {
                 }
             }
         },
-        [connection, message, moduleAvailable],
+        [connection, message, moduleAvailable, t],
     );
 
     useEffect(() => {
@@ -171,14 +175,14 @@ export function LocalCliSettings() {
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                         <Server className="size-4 shrink-0 text-foreground/60" />
                         <h2 id="local-runtime-title" className="text-base font-semibold">
-                            {LOCAL_CLI_SETTINGS_COPY.runtimeTitle}
+                            {t("settingsUi.localConnection")}
                         </h2>
                         <StatusBadge variant="filled" className="m-0" tone={presentation.runtime.tone === "processing" ? "loading" : presentation.runtime.tone === "default" ? "neutral" : presentation.runtime.tone} label={presentation.runtime.label} />
-                        <p className="min-w-0 text-sm text-foreground/60">{connection === "connected" ? LOCAL_CLI_SETTINGS_COPY.runtimeConnected : runtimeError || LOCAL_CLI_SETTINGS_COPY.runtimeDetecting}</p>
-                        <p className="basis-full text-xs leading-5 text-foreground/55">{LOCAL_CLI_SETTINGS_COPY.runtimeSafety}</p>
+                        <p className="min-w-0 text-sm text-foreground/60">{connection === "connected" ? t("settingsUi.runtimeConnectedHint") : runtimeError || t("settingsUi.runtimeDetectingHint")}</p>
+                        <p className="basis-full text-xs leading-5 text-foreground/55">{t("settingsUi.runtimePrivacy")}</p>
                     </div>
                     <Button icon={<RefreshCw className="size-4" />} loading={connecting} onClick={refreshRuntime}>
-                        {presentation.runtime.actionLabel || LOCAL_CLI_SETTINGS_COPY.runtimeRefresh}
+                        {presentation.runtime.actionLabel || t("settingsUi.refreshStatus")}
                     </Button>
                 </div>
             </section>
@@ -207,29 +211,29 @@ export function LocalCliSettings() {
                                     </Tag>
                                 ) : null}
                             </div>
-                            <p className="mt-1 text-sm text-foreground/60">{LOCAL_CLI_SETTINGS_COPY.dreaminaDescription}</p>
+                            <p className="mt-1 text-sm text-foreground/60">{t("settingsUi.dreaminaStatusHint")}</p>
                             {presentation.dreamina.creditObservedAtLabel ? <p className="mt-1 text-xs text-foreground/50">{presentation.dreamina.creditObservedAtLabel}</p> : null}
                         </div>
                     </div>
                     <Button icon={<RefreshCw className="size-4" />} loading={pending === "refresh"} disabled={connection !== "connected" || !moduleAvailable || Boolean(pending && pending !== "refresh")} onClick={() => void runDreamina("refresh")}>
-                        {LOCAL_CLI_SETTINGS_COPY.dreaminaRefresh}
+                        {t("settingsUi.refreshStatus")}
                     </Button>
                 </div>
 
                 <div className="grid gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                     <div className="space-y-3 text-sm">
-                        <p className="text-foreground/75">{status?.message || dreaminaEmptyMessage(connection, moduleAvailable)}</p>
-                        <p className="text-xs leading-6 text-foreground/60">{LOCAL_CLI_SETTINGS_COPY.dreaminaMembership}</p>
-                        <p className="text-xs leading-6 text-foreground/55">{LOCAL_CLI_SETTINGS_COPY.dreaminaConsistency}</p>
-                        <p className="text-xs leading-6 text-foreground/55">{LOCAL_CLI_SETTINGS_COPY.dreaminaCancel}</p>
-                        <p className="text-xs leading-6 text-foreground/55">{LOCAL_CLI_SETTINGS_COPY.dreaminaAccountSwitch}</p>
+                        <p className="text-foreground/75">{status?.message || dreaminaEmptyMessage(connection, moduleAvailable, t)}</p>
+                        <p className="text-xs leading-6 text-foreground/60">{t("settingsUi.dreaminaPermissions")}</p>
+                        <p className="text-xs leading-6 text-foreground/55">{t("settingsUi.dreaminaPolling")}</p>
+                        <p className="text-xs leading-6 text-foreground/55">{t("settingsUi.dreaminaCancelHint")}</p>
+                        <p className="text-xs leading-6 text-foreground/55">{t("settingsUi.dreaminaSwitchHint")}</p>
                         {status?.state === "missing" ? (
-                            <p className="rounded-md bg-foreground/[0.035] p-3 text-xs leading-6 text-foreground/65">未检测到官方 Dreamina CLI。请按官方说明安装并确保命令在 PATH 中可用，安装后点击“刷新状态”。当前版本不内置未经核实的安装源。</p>
+                            <p className="rounded-md bg-foreground/[0.035] p-3 text-xs leading-6 text-foreground/65">{t("settingsUi.dreaminaInstallHint")}</p>
                         ) : null}
                         {status?.state === "login_pending" ? (
                             <div className="rounded-md border border-border/70 p-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-xs text-foreground/60">官方验证用户码</span>
+                                    <span className="text-xs text-foreground/60">{t("settingsUi.officialUserCode")}</span>
                                     <Typography.Text
                                         strong
                                         copyable={{
@@ -240,7 +244,7 @@ export function LocalCliSettings() {
                                         {status.userCode}
                                     </Typography.Text>
                                 </div>
-                                {status.expiresAt ? <p className="mt-1 text-xs text-foreground/50">有效期至 {new Date(status.expiresAt).toLocaleTimeString()}</p> : null}
+                                {status.expiresAt ? <p className="mt-1 text-xs text-foreground/50">{t("settingsUi.validUntil")} {new Date(status.expiresAt).toLocaleTimeString(locale)}</p> : null}
                             </div>
                         ) : null}
                     </div>
@@ -248,18 +252,18 @@ export function LocalCliSettings() {
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                         {status?.state === "installed" ? (
                             <Button type="primary" icon={<LogIn className="size-4" />} loading={pending === "login"} disabled={Boolean(pending && pending !== "login")} onClick={() => void runDreamina("login")}>
-                                登录
+                                {t("login")}
                             </Button>
                         ) : null}
                         {status?.state === "login_pending" ? (
                             <Button type="primary" icon={<ExternalLink className="size-4" />} onClick={openVerification}>
-                                打开官方验证页
+                                {t("settingsUi.openVerification")}
                             </Button>
                         ) : null}
                         {status?.authenticated ? (
-                            <Popconfirm title="退出 Dreamina CLI？" description="只清除当前 OS 用户的官方 CLI 登录状态。" okText="退出" cancelText="取消" onConfirm={() => void runDreamina("logout")}>
+                            <Popconfirm title={t("settingsUi.dreaminaLogoutConfirm")} description={t("settingsUi.dreaminaLogoutHint")} okText={t("settingsUi.exit")} cancelText={t("timelineCancel")} onConfirm={() => void runDreamina("logout")}>
                                 <Button danger icon={<LogOut className="size-4" />} loading={pending === "logout"}>
-                                    退出登录
+                                    {t("logout")}
                                 </Button>
                             </Popconfirm>
                         ) : null}
@@ -270,18 +274,18 @@ export function LocalCliSettings() {
     );
 }
 
-function runtimePresentation(connection: LocalRuntimeConnectionState): Presentation {
-    if (connection === "connected") return { label: "已连接", tone: "success", action: "refresh" };
-    if (connection === "connecting") return { label: "正在检测", tone: "processing", action: null };
-    if (connection === "origin_not_trusted") return { label: "需要重新连接", tone: "error", action: "refresh", actionLabel: LOCAL_CLI_SETTINGS_COPY.runtimeReconnect };
-    if (connection === "unreachable") return { label: "未发现", tone: "error", action: "refresh" };
-    if (connection === "incompatible") return { label: "版本不兼容", tone: "error", action: "refresh" };
-    if (connection === "runtime_error") return { label: "运行时错误", tone: "error", action: "refresh" };
-    return { label: "尚未检测", tone: "default", action: "refresh" };
+function runtimePresentation(connection: LocalRuntimeConnectionState, t: InterfaceTranslate): Presentation {
+    if (connection === "connected") return { label: t("settingsUi.connected"), tone: "success", action: "refresh" };
+    if (connection === "connecting") return { label: t("settingsUi.detecting"), tone: "processing", action: null };
+    if (connection === "origin_not_trusted") return { label: t("settingsUi.reconnectNeeded"), tone: "error", action: "refresh", actionLabel: t("stateReconnect") };
+    if (connection === "unreachable") return { label: t("settingsUi.notFound"), tone: "error", action: "refresh" };
+    if (connection === "incompatible") return { label: t("settingsUi.incompatible"), tone: "error", action: "refresh" };
+    if (connection === "runtime_error") return { label: t("settingsUi.runtimeError"), tone: "error", action: "refresh" };
+    return { label: t("settingsUi.notChecked"), tone: "default", action: "refresh" };
 }
 
-function dreaminaEmptyMessage(connection: LocalRuntimeConnectionState, moduleAvailable: boolean) {
-    if (connection !== "connected") return LOCAL_CLI_SETTINGS_COPY.dreaminaDisconnectedMessage;
-    if (!moduleAvailable) return "当前 Runtime 未加载 Dreamina 模块，请更新并重启 Runtime。";
-    return "正在检测 Dreamina CLI…";
+function dreaminaEmptyMessage(connection: LocalRuntimeConnectionState, moduleAvailable: boolean, t: InterfaceTranslate) {
+    if (connection !== "connected") return t("settingsUi.dreaminaReconnectHint");
+    if (!moduleAvailable) return t("settingsUi.dreaminaModuleMissing");
+    return t("settingsUi.dreaminaChecking");
 }

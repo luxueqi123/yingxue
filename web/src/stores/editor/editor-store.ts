@@ -1,28 +1,19 @@
 // 编辑器状态机（ADR-0002）：命令唯一入口 + 有界快照撤销 + 1.5s 防抖保存。
 // - dispatch：同步 apply 命令，失败（fail-closed）不改状态、错误进 saveError 供 UI 上报
-// - 保存层依赖注入（saveTimeline），M4 前不绑定后端；保存串行化防止旧快照覆盖新状态
+// - 保存层依赖注入（saveTimeline），当前由页面绑定本地存储；保存串行化防止旧快照覆盖新状态
 // - previewGesture/commitGesture/cancelGesture：拖拽等连续手势期间只改渲染态，
 //   松手提交时一次性入历史（手势不逐帧污染撤销栈）
-
 import { create, type StoreApi, type UseBoundStore } from "zustand";
-
 import type { TimelineProject } from "@/types/timeline";
-import {
-    createEditorHistory,
-    pushEditorHistory,
-    redoEditorHistory,
-    undoEditorHistory,
-    type EditorHistory,
-} from "@/lib/timeline/editor-history";
+import { createEditorHistory, pushEditorHistory, redoEditorHistory, undoEditorHistory, type EditorHistory } from "@/lib/timeline/editor-history";
 import { getEditorCommandRegistry, type EditCommand, type EditorCommandRegistry } from "@/lib/timeline/editor-commands";
-
 export type SaveTimeline = (project: TimelineProject) => Promise<void>;
-
 export const EDITOR_SAVE_DEBOUNCE_MS = 1500;
-
 export type EditorStore = {
     /** 编辑器当前项目；null 表示尚未加载（进入编辑器前由 load 注入）。 */
     project: TimelineProject | null;
+    /** Only load advances this identity; edits must not masquerade as a project switch. */
+    loadRevision: number;
     history: EditorHistory | null;
     /** 手势预览进行中（drag/trim 未松手）：期间 dispatch/undo/redo 被拒绝。 */
     inPreview: boolean;
@@ -36,6 +27,9 @@ export type EditorStore = {
     /** 播放头位置（监视器与时间线面板共享的 transport，毫秒；纯 UI 状态，不入命令历史）。 */
     transportMs: number;
     setTransportMs: (ms: number) => void;
+    /** 用户定位请求独立于播放回写，即便只移动一帧也必须被预览消费。 */
+    seekRequest: { timeMs: number } | null;
+    seekTransportMs: (ms: number) => void;
     /** 加载/切换项目：重置历史与保存状态（数据由外部传入，不触发保存）。 */
     load: (project: TimelineProject) => void;
     /** 应用一条编辑命令（唯一修改入口）。 */
@@ -51,40 +45,55 @@ export type EditorStore = {
     /** 立即保存（离开编辑器/卸载前调用）。 */
     flushSave: () => Promise<void>;
 };
-
 export type EditorStoreOptions = {
     saveTimeline?: SaveTimeline;
     registry?: EditorCommandRegistry;
     debounceMs?: number;
 };
-
+/**
+ * 创建一个项目级时间线状态容器。
+ *
+ * 状态容器不负责服务端持久化：saveTimeline 是调用方注入的本地存储适配器，
+ * 这里仅保证命令、撤销历史和保存队列的一致性。保存失败必须保留 isDirty，
+ * 让 UI 能提示未落盘并在下一次变更或卸载冲刷时重试。
+ */
 export function createEditorStore(options: EditorStoreOptions = {}): UseBoundStore<StoreApi<EditorStore>> {
     const registry = options.registry ?? getEditorCommandRegistry();
     const saveTimeline = options.saveTimeline;
     const debounceMs = options.debounceMs ?? EDITOR_SAVE_DEBOUNCE_MS;
-
     return create<EditorStore>((set, get) => {
         let saveTimer: ReturnType<typeof setTimeout> | null = null;
         // 保存串行链：避免并行保存导致旧快照后落地覆盖新状态
         let saveChain: Promise<void> = Promise.resolve();
-
-        const setSaveError = (err: unknown) =>
-            set({ saveError: err instanceof Error ? err.message : String(err) });
-
+        let pendingSaves = 0;
+        const setSaveError = (err: unknown) => set({ saveError: err instanceof Error ? err.message : String(err) });
         const performSave = (): Promise<void> => {
-            const { project } = get();
+            const { history, loadRevision } = get();
+            // 拖拽预览不属于已提交内容，取消手势后也不应留在存储中。
+            const project = history?.current;
             if (!project) return Promise.resolve();
+            pendingSaves += 1;
             set({ saving: true });
             const chain = saveChain
-                .then(() => saveTimeline!(project))
+                .then(() => {
+                    // 已发出的写入无法撤回，但重载后尚未发出的旧快照必须失效。
+                    if (get().loadRevision === loadRevision) return saveTimeline!(project);
+                })
                 .then(
-                    () => set({ saving: false, isDirty: false, saveError: null, lastSavedAt: Date.now() }),
-                    (err: unknown) => set({ saving: false, saveError: err instanceof Error ? err.message : String(err), isDirty: true }),
+                    () => {
+                        if (get().loadRevision !== loadRevision) return;
+                        pendingSaves -= 1;
+                        set({ saving: pendingSaves > 0, isDirty: get().history?.current !== project, saveError: null, lastSavedAt: Date.now() });
+                    },
+                    (err: unknown) => {
+                        if (get().loadRevision !== loadRevision) return;
+                        pendingSaves -= 1;
+                        set({ saving: pendingSaves > 0, saveError: err instanceof Error ? err.message : String(err), isDirty: true });
+                    },
                 );
             saveChain = chain;
             return chain;
         };
-
         const scheduleSave = () => {
             if (!saveTimeline) return; // 未注入保存层：保持 dirty，由上层决定持久化时机
             if (saveTimer) clearTimeout(saveTimer);
@@ -93,9 +102,9 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
                 if (get().isDirty) performSave();
             }, debounceMs);
         };
-
         return {
             project: null,
+            loadRevision: 0,
             history: null,
             inPreview: false,
             isDirty: false,
@@ -104,19 +113,33 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
             lastSavedAt: null,
             selectedClipId: null,
             transportMs: 0,
-
+            seekRequest: null,
             selectClip: (id) => set({ selectedClipId: id }),
-
             setTransportMs: (ms) => set({ transportMs: Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : 0 }),
-
+            seekTransportMs: (ms) => {
+                const timeMs = Number.isFinite(ms) ? Math.min(get().project?.durationMs ?? 0, Math.max(0, Math.round(ms))) : 0;
+                set({ transportMs: timeMs, seekRequest: { timeMs } });
+            },
             load: (project) => {
                 if (saveTimer) {
                     clearTimeout(saveTimer);
                     saveTimer = null;
                 }
-                set({ project, history: createEditorHistory(project), inPreview: false, isDirty: false, saving: false, saveError: null, lastSavedAt: null, selectedClipId: null, transportMs: 0 });
+                pendingSaves = 0;
+                set({
+                    project,
+                    loadRevision: get().loadRevision + 1,
+                    history: createEditorHistory(project),
+                    inPreview: false,
+                    isDirty: false,
+                    saving: false,
+                    saveError: null,
+                    lastSavedAt: null,
+                    selectedClipId: null,
+                    transportMs: 0,
+                    seekRequest: { timeMs: 0 },
+                });
             },
-
             dispatch: (cmd) => {
                 const { project, history, inPreview } = get();
                 if (!project || !history) return;
@@ -134,7 +157,6 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
                 set({ project: next, history: pushEditorHistory(history, next), isDirty: true, saveError: null });
                 scheduleSave();
             },
-
             undo: () => {
                 const { project, history, inPreview } = get();
                 if (!project || !history || inPreview) return;
@@ -143,7 +165,6 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
                 set({ project: next.current, history: next, isDirty: true });
                 scheduleSave();
             },
-
             redo: () => {
                 const { project, history, inPreview } = get();
                 if (!project || !history || inPreview) return;
@@ -152,7 +173,6 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
                 set({ project: next.current, history: next, isDirty: true });
                 scheduleSave();
             },
-
             previewGesture: (cmd) => {
                 const { project, history } = get();
                 if (!project || !history) return;
@@ -167,20 +187,17 @@ export function createEditorStore(options: EditorStoreOptions = {}): UseBoundSto
                 }
                 set({ project: next, inPreview: true });
             },
-
             commitGesture: () => {
                 const { project, history, inPreview } = get();
                 if (!project || !history || !inPreview) return;
                 set({ project, history: pushEditorHistory(history, project), inPreview: false, isDirty: true, saveError: null });
                 scheduleSave();
             },
-
             cancelGesture: () => {
                 const { history, inPreview } = get();
                 if (!history || !inPreview) return;
                 set({ project: history.current, history, inPreview: false });
             },
-
             flushSave: async () => {
                 if (saveTimer) {
                     clearTimeout(saveTimer);

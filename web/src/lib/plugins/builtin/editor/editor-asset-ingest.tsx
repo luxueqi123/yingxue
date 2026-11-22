@@ -1,9 +1,9 @@
-// 资产导入（editor-shell 预设插件贡献 asset-ingest 插槽，M3.4）。
 // 展示项目资产库，按来源区分「本地上传」与「项目素材」；点击资产 → makeClipFromAsset
 // → dispatch addClip 加入时间线（添加到匹配 kind 的轨道末尾）。资产是
 // "仅时间线作用域"直连媒体（nodeId=asset:<id>）。导入链路：uploadResourceFile →
 // linkProjectAsset（后端按资源元数据合成资产记录）→ refreshAssets。
 
+import { createClientUUID } from "@/lib/client-id";
 import { useEffect, useRef, useState } from "react";
 import { Boxes, Check, ChevronDown, ChevronRight, Clapperboard, Film, FolderOpen, HardDrive, Image as ImageIcon, Loader2, Music2, Plus, X } from "lucide-react";
 
@@ -93,17 +93,17 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
     }, [asset.storageKey, isImage]);
     if (url) {
         return (
-            <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-md bg-[var(--director-control-hover)]">
+            <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-md bg-[var(--previs-control-hover)]">
                 <img src={url} alt="" className="size-full object-cover" />
             </div>
         );
     }
     const kind =
         asset.mediaType === "video"
-            ? { icon: <Film className="size-4" />, tone: "text-[var(--director-accent)]", tile: "bg-[var(--director-accent)]/15" }
+            ? { icon: <Film className="size-4" />, tone: "text-[var(--previs-accent)]", tile: "bg-[var(--previs-accent)]/15" }
             : asset.mediaType === "audio"
-              ? { icon: <Music2 className="size-4" />, tone: "text-[var(--director-dock-fg)]/70", tile: "bg-[var(--director-control-hover)]" }
-              : { icon: <ImageIcon className="size-4" />, tone: "text-[var(--director-dock-fg)]/60", tile: "bg-[var(--director-control-hover)]" };
+              ? { icon: <Music2 className="size-4" />, tone: "text-[var(--previs-dock-fg)]/70", tile: "bg-[var(--previs-control-hover)]" }
+              : { icon: <ImageIcon className="size-4" />, tone: "text-[var(--previs-dock-fg)]/60", tile: "bg-[var(--previs-control-hover)]" };
     return (
         <div className={`grid size-9 shrink-0 place-items-center overflow-hidden rounded-md ${kind.tile}`}>
             <span className={kind.tone}>{kind.icon}</span>
@@ -111,7 +111,7 @@ function AssetThumb({ asset }: { asset: ProjectAsset }) {
     );
 }
 
-/** 尝试用 <video> 抓取视频首帧作为封面 dataURL；失败返回 null（保持图标占位）。 */
+/** 尝试用 <video> 抓取视频首帧作为封面 dataURL；失败时保留媒体类型图标。 */
 function useVideoPoster(url: string | null): string | null {
     const [poster, setPoster] = useState<string | null>(null);
     useEffect(() => {
@@ -174,7 +174,7 @@ function MediaPreview({ asset }: { asset: ProjectAsset }) {
     }, [asset.storageKey]);
     const poster = useVideoPoster(asset.mediaType === "video" ? url : null);
     if (asset.mediaType === "image") {
-        return url ? <img src={url} alt="" className="h-28 w-full rounded-md object-cover" /> : <div className="h-28 animate-pulse rounded-md bg-[var(--director-control-hover)]" />;
+        return url ? <img src={url} alt="" className="h-28 w-full rounded-md object-cover" /> : <div className="h-28 animate-pulse rounded-md bg-[var(--previs-control-hover)]" />;
     }
     if (asset.mediaType === "video") {
         return (
@@ -187,14 +187,14 @@ function MediaPreview({ asset }: { asset: ProjectAsset }) {
                     playsInline
                     className="aspect-video w-full"
                 />
-                {!url ? <div className="aspect-video w-full animate-pulse bg-[var(--director-control-hover)]" /> : null}
+                {!url ? <div className="aspect-video w-full animate-pulse bg-[var(--previs-control-hover)]" /> : null}
             </div>
         );
     }
     return (
-        <div className="flex h-16 items-center justify-center gap-2 rounded-md bg-[var(--director-control-hover)] text-[var(--director-dock-fg)]/60">
+        <div className="flex h-16 items-center justify-center gap-2 rounded-md bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg)]/60">
             <Music2 className="size-4" />
-            <span className="text-[10px]">音频素材 · 点击下方按钮加入时间线</span>
+            <span className="text-[var(--fs-label)]">音频素材 · 点击下方按钮加入时间线</span>
         </div>
     );
 }
@@ -233,15 +233,15 @@ function AssetDetailSheet({
         <div
             role="dialog"
             aria-label={`${asset.title || "素材"} 详情`}
-            className={`absolute inset-1.5 z-10 flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 ease-out ${
+            className={`absolute inset-1.5 z-10 flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] shadow-[0_12px_32px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 ease-out ${
                 shown ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
             }`}
         >
-            <div className="flex items-center gap-2 border-b border-[var(--director-sequencer-border)] px-2.5 py-2">
-                <span className="grid size-5 shrink-0 place-items-center rounded-[5px] bg-[var(--director-accent)]/15">
+            <div className="flex items-center gap-2 border-b border-[var(--previs-sequencer-border)] px-2 py-2">
+                <span className="grid size-5 shrink-0 place-items-center rounded-[4px] bg-[var(--previs-accent)]/15">
                     <AssetIcon mediaType={asset.mediaType} />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--director-dock-fg-strong)]">
+                <span className="min-w-0 flex-1 truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">
                     {asset.title || asset.storageKey}
                 </span>
                 <button
@@ -249,38 +249,38 @@ function AssetDetailSheet({
                     type="button"
                     onClick={onClose}
                     aria-label="关闭详情"
-                    className="grid size-5 shrink-0 place-items-center rounded-md text-[var(--director-dock-fg)]/55 transition-colors hover:bg-[var(--director-control-hover)] hover:text-[var(--director-dock-fg-strong)]"
+                    className="grid size-5 shrink-0 place-items-center rounded-md text-[var(--previs-dock-fg)]/55 transition-colors hover:bg-[var(--previs-control-hover)] hover:text-[var(--previs-dock-fg-strong)]"
                 >
                     <X className="size-3.5" />
                 </button>
             </div>
-            <div className="director-scroll min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+            <div className="director-scroll min-h-0 flex-1 overflow-y-auto px-2 py-2">
                 <MediaPreview asset={asset} />
-                <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                    <dt className="text-[var(--director-dock-fg)]/60">媒体类型</dt>
-                    <dd className="truncate text-right capitalize text-[var(--director-dock-fg-strong)]">{asset.mediaType}</dd>
-                    <dt className="text-[var(--director-dock-fg)]/60">分类</dt>
-                    <dd className="truncate text-right text-[var(--director-dock-fg-strong)]">{asset.category}</dd>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[var(--fs-label)]">
+                    <dt className="text-[var(--previs-dock-fg)]/60">媒体类型</dt>
+                    <dd className="truncate text-right capitalize text-[var(--previs-dock-fg-strong)]">{asset.mediaType}</dd>
+                    <dt className="text-[var(--previs-dock-fg)]/60">分类</dt>
+                    <dd className="truncate text-right text-[var(--previs-dock-fg-strong)]">{asset.category}</dd>
                     {asset.durationMs ? (
                         <>
-                            <dt className="text-[var(--director-dock-fg)]/60">时长</dt>
-                            <dd className="text-right tabular-nums text-[var(--director-dock-fg-strong)]">{formatDurationMs(asset.durationMs)}</dd>
+                            <dt className="text-[var(--previs-dock-fg)]/60">时长</dt>
+                            <dd className="text-right tabular-nums text-[var(--previs-dock-fg-strong)]">{formatDurationMs(asset.durationMs)}</dd>
                         </>
                     ) : null}
                 </dl>
                 {asset.previewText ? (
-                    <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-[var(--director-dock-fg)]/60">{asset.previewText}</p>
+                    <p className="mt-2 line-clamp-2 text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/60">{asset.previewText}</p>
                 ) : null}
             </div>
-            <div className="border-t border-[var(--director-sequencer-border)] p-2">
+            <div className="border-t border-[var(--previs-sequencer-border)] p-2">
                 <button
                     type="button"
                     disabled={added}
                     onClick={onAdd}
-                    className={`flex h-7 w-full items-center justify-center gap-1 rounded-md text-[11px] font-medium transition-colors ${
+                    className={`flex h-7 w-full items-center justify-center gap-1 rounded-md text-[var(--fs-label)] font-medium transition-colors ${
                         added
-                            ? "bg-[var(--director-success-soft)] text-[var(--director-success)]"
-                            : "bg-[var(--director-accent)] text-[var(--director-on-accent)] hover:bg-[var(--director-accent-hover)]"
+                            ? "bg-[var(--previs-success-soft)] text-[var(--previs-success)]"
+                            : "bg-[var(--previs-accent)] text-[var(--previs-on-accent)] hover:bg-[var(--previs-accent-hover)]"
                     }`}
                 >
                     {added ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
@@ -415,6 +415,7 @@ export function EditorAssetIngest() {
         const trackId = trackIdForKind(kind, project);
         const startMs = trackEndMs(project, trackId);
         const clip = makeClipFromAsset(asset, {
+            id: `asset:${asset.id}:${createClientUUID()}`,
             trackId,
             startMs,
             defaultDurationMs: kind === "image" ? 3_000 : 5_000,
@@ -438,7 +439,7 @@ export function EditorAssetIngest() {
 
     return (
         <div
-            className={`flex h-full min-h-0 flex-col bg-[var(--director-sequencer-surface)] ${dragOver ? "ring-2 ring-inset ring-[var(--director-accent)]" : ""}`}
+            className={`flex h-full min-h-0 flex-col bg-[var(--previs-sequencer-surface)] ${dragOver ? "ring-2 ring-inset ring-[var(--previs-accent)]" : ""}`}
             onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -451,7 +452,7 @@ export function EditorAssetIngest() {
             }}
         >
             {/* 标题行：媒体库 + 导入按钮 */}
-            <div className="flex items-center gap-1.5 p-2 pb-1">
+            <div className="flex items-center gap-2 p-2 pb-1">
                 <input
                     ref={inputRef}
                     type="file"
@@ -463,14 +464,14 @@ export function EditorAssetIngest() {
                         e.target.value = "";
                     }}
                 />
-                <span className="text-xs font-semibold text-[var(--director-dock-fg-strong)]">媒体库</span>
-                <span className="rounded-full bg-[var(--director-control-hover)] px-1.5 text-[9px] tabular-nums text-[var(--director-dock-fg)]/70">{totalCount}</span>
+                <span className="text-xs font-semibold text-[var(--previs-dock-fg-strong)]">媒体库</span>
+                <span className="rounded-full bg-[var(--previs-control-hover)] px-2 text-[var(--fs-label)] tabular-nums text-[var(--previs-dock-fg)]/70">{totalCount}</span>
                 <div className="flex-1" />
                 <button
                     type="button"
                     disabled={importing}
                     onClick={() => inputRef.current?.click()}
-                    className="flex h-7 items-center gap-1.5 rounded-md border border-dashed border-[var(--director-sequencer-border)] px-2.5 text-[11px] font-medium text-[var(--director-dock-fg-strong)] transition-colors hover:border-[var(--director-accent)] hover:bg-[var(--director-control-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-7 items-center gap-2 rounded-md border border-dashed border-[var(--previs-sequencer-border)] px-2 text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)] transition-colors hover:border-[var(--previs-accent)] hover:bg-[var(--previs-control-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                     {importing ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
                     {importing ? "导入中…" : "导入媒体"}
@@ -485,10 +486,10 @@ export function EditorAssetIngest() {
                         type="button"
                         aria-pressed={filter === tab.id}
                         onClick={() => setFilter(tab.id)}
-                        className={`h-6 rounded-md px-2 text-[10px] transition-colors ${
+                        className={`h-6 rounded-md px-2 text-[var(--fs-label)] transition-colors ${
                             filter === tab.id
-                                ? "bg-[var(--director-dock-active-surface)] text-[var(--director-dock-fg-strong)]"
-                                : "text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
+                                ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]"
+                                : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                         }`}
                     >
                         {tab.label}
@@ -496,22 +497,22 @@ export function EditorAssetIngest() {
                 ))}
             </div>
 
-            {importError ? <p className="px-2 pb-1 text-[10px] text-[var(--director-danger)]">{importError}</p> : null}
-            {importNote ? <p className="px-2 pb-1 text-[10px] text-[var(--director-success)]">{importNote}</p> : null}
+            {importError ? <p className="px-2 pb-1 text-[var(--fs-label)] text-[var(--previs-danger)]">{importError}</p> : null}
+            {importNote ? <p className="px-2 pb-1 text-[var(--fs-label)] text-[var(--previs-success)]">{importNote}</p> : null}
 
             <div className="relative min-h-0 flex-1">
-                <div className="director-scroll h-full overflow-y-auto p-1.5">
+                <div className="director-scroll h-full overflow-y-auto p-2">
                 {assets.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                        <p className="text-xs text-[var(--director-dock-fg)]/60">项目暂无资产</p>
-                        <p className="max-w-[180px] text-[11px] leading-relaxed text-[var(--director-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
+                        <p className="text-xs text-[var(--previs-dock-fg)]/60">项目暂无资产</p>
+                        <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
                     </div>
                 ) : visibleGroups.every((g) => g.items.length === 0) ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                        <p className="text-xs text-[var(--director-dock-fg)]/60">
+                        <p className="text-xs text-[var(--previs-dock-fg)]/60">
                             {filter === "uploaded" ? "暂无本地上传的媒体" : filter === "project" ? "暂无项目素材" : "项目暂无资产"}
                         </p>
-                        <p className="max-w-[180px] text-[11px] leading-relaxed text-[var(--director-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
+                        <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
                     </div>
                 ) : (
                     <div className="flex flex-col gap-1">
@@ -524,18 +525,18 @@ export function EditorAssetIngest() {
                                         type="button"
                                         aria-expanded={open}
                                         onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
-                                        className="group flex h-7 w-full items-center gap-1.5 rounded-md px-1 text-left transition-colors hover:bg-[var(--director-control-hover)]"
+                                        className="group flex h-7 w-full items-center gap-2 rounded-md px-1 text-left transition-colors hover:bg-[var(--previs-control-hover)]"
                                     >
                                         <span
-                                            className={`grid size-4 shrink-0 place-items-center rounded-[5px] transition-colors ${
-                                                open ? "bg-[var(--director-accent)]/15 text-[var(--director-accent)]" : "bg-[var(--director-control-hover)] text-[var(--director-dock-fg)]/55 group-hover:text-[var(--director-dock-fg-strong)]"
+                                            className={`grid size-4 shrink-0 place-items-center rounded-[4px] transition-colors ${
+                                                open ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg)]/55 group-hover:text-[var(--previs-dock-fg-strong)]"
                                             }`}
                                         >
                                             <ChevronRight className={`size-3 transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`} />
                                         </span>
-                                        <group.icon className={`size-3.5 shrink-0 transition-colors ${open ? "text-[var(--director-accent)]" : "text-[var(--director-dock-fg)]/60"}`} />
-                                        <span className="truncate text-[11px] font-medium text-[var(--director-dock-fg-strong)]">{group.label}</span>
-                                        <span className="ml-auto rounded-full bg-[var(--director-control-hover)] px-1.5 text-[9px] tabular-nums text-[var(--director-dock-fg)]/70">{group.items.length}</span>
+                                        <group.icon className={`size-3.5 shrink-0 transition-colors ${open ? "text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/60"}`} />
+                                        <span className="truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">{group.label}</span>
+                                        <span className="ml-auto rounded-full bg-[var(--previs-control-hover)] px-2 text-[var(--fs-label)] tabular-nums text-[var(--previs-dock-fg)]/70">{group.items.length}</span>
                                     </button>
                                     {open ? (
                                         <ul className="flex flex-col">
@@ -548,21 +549,21 @@ export function EditorAssetIngest() {
                                                             aria-expanded={expanded}
                                                             onClick={() => setExpandedId(expanded ? null : asset.id)}
                                                             title={asset.title || asset.storageKey}
-                                                            className={`group flex w-full items-center gap-2 rounded-md px-1 py-[3px] text-left transition-colors ${
-                                                                added === asset.id ? "bg-[var(--director-accent)]/15" : "hover:bg-[var(--director-control-hover)]"
+                                                            className={`group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors ${
+                                                                added === asset.id ? "bg-[var(--previs-accent)]/15" : "hover:bg-[var(--previs-control-hover)]"
                                                             }`}
                                                         >
                                                             <AssetThumb asset={asset} />
                                                             <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-[11px] text-[var(--director-dock-fg-strong)]">{asset.title || asset.storageKey}</span>
-                                                                <span className="mt-0.5 flex items-center gap-1 text-[9px] text-[var(--director-dock-fg)]/60">
+                                                                <span className="block truncate text-[var(--fs-label)] text-[var(--previs-dock-fg-strong)]">{asset.title || asset.storageKey}</span>
+                                                                <span className="mt-0.5 flex items-center gap-1 text-[var(--fs-label)] text-[var(--previs-dock-fg)]/60">
                                                                     <span className="uppercase">{asset.mediaType}</span>
                                                                     {asset.durationMs ? <span className="tabular-nums opacity-80">{formatDurationMs(asset.durationMs)}</span> : null}
                                                                 </span>
                                                             </span>
                                                             <span
-                                                                className={`grid size-5 shrink-0 place-items-center rounded-[5px] transition-colors ${
-                                                                    expanded ? "bg-[var(--director-accent)]/15 text-[var(--director-accent)]" : "text-[var(--director-dock-fg)]/40 group-hover:text-[var(--director-dock-fg)]/80"
+                                                                className={`grid size-5 shrink-0 place-items-center rounded-[4px] transition-colors ${
+                                                                    expanded ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/40 group-hover:text-[var(--previs-dock-fg)]/80"
                                                                 }`}
                                                             >
                                                                 <ChevronDown className={`size-3.5 transition-transform duration-150 ease-out ${expanded ? "rotate-180" : ""}`} />

@@ -1,0 +1,1460 @@
+package repository
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/model"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// ErrDramaPlanPending 表示还有章节在等待分集规划，此时不能逐集追加。
+var ErrDramaPlanPending = errors.New("drama plan pending")
+
+func (r *Repository) DramaProduction(projectID string) (*model.DramaProduction, error) {
+	var production model.DramaProduction
+	if err := r.db.First(&production, "project_id = ?", projectID).Error; err != nil {
+		return nil, err
+	}
+	return &production, nil
+}
+
+// RunningDramaProductions 返回需要调度循环推进的项目：运行中的项目，以及暂停或已完成但仍有已派发任务的项目。
+// 后者只回收任务结果并处理显式请求的成片拼接，不再派发模型生成。
+// 含“上游已成功、本地保存失败且仍有恢复检查点”的失败作业，避免暂停后项目掉出调度、已出图无法落库。
+func (r *Repository) RunningDramaProductions(limit int) ([]model.DramaProduction, error) {
+	var productions []model.DramaProduction
+	pending := r.db.Model(&model.DramaJob{}).Select("project_id").Where("status = ? OR (kind = ? AND status = ?)", model.DramaJobRunning, model.DramaJobCompose, model.DramaJobQueued)
+	recoverable := r.db.Model(&model.DramaJob{}).Select("project_id").Where(
+		"status = ? AND updated_at > ? AND task_id IN (?)",
+		model.DramaJobFailed,
+		time.Now().Add(-24*time.Hour),
+		r.db.Model(&model.Task{}).Select("id").Where("status = ? AND media_recovery_json <> '' AND media_recovery_json IS NOT NULL", model.TaskStatusFailed),
+	)
+	err := r.db.Where("status = ? OR project_id IN (?) OR project_id IN (?)", model.DramaStatusRunning, pending, recoverable).
+		Order("updated_at asc").Limit(limit).Find(&productions).Error
+	return productions, err
+}
+
+// CreateDramaProject 在同一事务内写入项目、章节与制作控制面，避免出现无章节的半成品项目。
+// episodes 非空表示每章直接成为一集（逐集制作），不经过分集规划。
+func (r *Repository) CreateDramaProject(project *model.Project, chapters []model.ProjectUnit, production *model.DramaProduction, episodes ...model.DramaEpisode) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}, {Name: "name"}}, DoNothing: true}).Create(project)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrProjectNameConflict
+		}
+		if len(chapters) > 0 {
+			if err := tx.CreateInBatches(&chapters, 200).Error; err != nil {
+				return err
+			}
+		}
+		if len(episodes) > 0 {
+			if err := tx.CreateInBatches(&episodes, 200).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(production).Error
+	})
+}
+
+// ErrDramaDraftStarted 表示要重存的草稿已经开工（状态不是草稿或已有作业）。
+var ErrDramaDraftStarted = errors.New("drama draft started")
+
+// ReplaceDramaDraft 在同一事务内整体替换草稿：项目名称与画幅、原著章节、按章分集的集和制作控制面。
+// 只在作品仍是草稿且没有任何作业时替换；名称与同用户其他项目重复时返回 ErrProjectNameConflict。
+func (r *Repository) ReplaceDramaDraft(project *model.Project, chapters []model.ProjectUnit, production *model.DramaProduction, episodes []model.DramaEpisode) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var current model.DramaProduction
+		if err := tx.First(&current, "project_id = ? AND user_id = ?", project.ID, project.UserID).Error; err != nil {
+			return err
+		}
+		var jobs int64
+		if err := tx.Model(&model.DramaJob{}).Where("project_id = ?", project.ID).Count(&jobs).Error; err != nil {
+			return err
+		}
+		if current.Status != model.DramaStatusDraft || jobs > 0 {
+			return ErrDramaDraftStarted
+		}
+		var taken int64
+		if err := tx.Model(&model.Project{}).Where("user_id = ? AND name = ? AND id <> ?", project.UserID, project.Name, project.ID).Count(&taken).Error; err != nil {
+			return err
+		}
+		if taken > 0 {
+			return ErrProjectNameConflict
+		}
+		if err := tx.Model(&model.Project{}).Where("id = ? AND user_id = ?", project.ID, project.UserID).Updates(map[string]any{
+			"name": project.Name, "aspect_ratio": project.AspectRatio, "source_type": project.SourceType,
+			"revision": gorm.Expr("revision + 1"), "updated_at": project.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ? AND kind = ?", project.ID, model.ProjectUnitKindChapter).Delete(&model.ProjectUnit{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ?", project.ID).Delete(&model.DramaEpisode{}).Error; err != nil {
+			return err
+		}
+		if len(chapters) > 0 {
+			if err := tx.CreateInBatches(&chapters, 200).Error; err != nil {
+				return err
+			}
+		}
+		if len(episodes) > 0 {
+			if err := tx.CreateInBatches(&episodes, 200).Error; err != nil {
+				return err
+			}
+		}
+		production.Revision = current.Revision + 1
+		return tx.Select("*").Where("project_id = ?", project.ID).Updates(production).Error
+	})
+}
+
+// DramaEpisodePlacement 指定新的一集插在哪一集之前或之后。
+type DramaEpisodePlacement struct {
+	AnchorEpisodeID string
+	Before          bool
+}
+
+// AddDramaEpisodeSource 写入一章原文和对应的一集，并把分集游标推过这一章，调度循环不会再把它交给分集规划。
+// placement 为 nil 时追加到末尾；否则插到锚点集之前或之后：后续集号顺延，原文插到锚点集章节的前后，
+// 之后的章节位置与造型的默认适用章节号一起后移。标题为空时按最终集号取默认标题。
+// 只允许在分集规划完成后写入，否则游标会把新章节并入规划批次。
+func (r *Repository) AddDramaEpisodeSource(projectID string, chapter *model.ProjectUnit, episode *model.DramaEpisode, placement *DramaEpisodePlacement) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var production model.DramaProduction
+		if err := tx.First(&production, "project_id = ?", projectID).Error; err != nil {
+			return err
+		}
+		if !production.PlanDone {
+			return ErrDramaPlanPending
+		}
+		// 规划游标只数已加入制作的章节；追加时位置仍排在全部章节（含预留章节）之后。
+		var count int64
+		if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND status <> ?", projectID, model.ProjectUnitKindChapter, model.ProjectUnitStatusReserved).Count(&count).Error; err != nil {
+			return err
+		}
+		var position int
+		if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ?", projectID, model.ProjectUnitKindChapter).Select("COALESCE(MAX(position), -1)").Scan(&position).Error; err != nil {
+			return err
+		}
+		var number int
+		if err := tx.Model(&model.DramaEpisode{}).Where("project_id = ?", projectID).Select("COALESCE(MAX(number), 0)").Scan(&number).Error; err != nil {
+			return err
+		}
+		chapter.Position = position + 1
+		episode.Number = number + 1
+		if placement != nil {
+			var anchor model.DramaEpisode
+			if err := tx.Select("id", "number", "chapter_ids_json").First(&anchor, "id = ? AND project_id = ?", placement.AnchorEpisodeID, projectID).Error; err != nil {
+				return err
+			}
+			episode.Number = anchor.Number + 1
+			if placement.Before {
+				episode.Number = anchor.Number
+			}
+			var positions []int
+			if ids := decodeDramaIDs(anchor.ChapterIDsJSON); len(ids) > 0 {
+				if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND id IN ?", projectID, model.ProjectUnitKindChapter, ids).Pluck("position", &positions).Error; err != nil {
+					return err
+				}
+			}
+			// 锚点集没有关联章节时原文仍排到末尾，只调整集号。
+			if len(positions) > 0 {
+				chapter.Position = slices.Max(positions) + 1
+				if placement.Before {
+					chapter.Position = slices.Min(positions)
+				}
+				if err := shiftDramaChaptersForInsert(tx, projectID, chapter.Position); err != nil {
+					return err
+				}
+			}
+			if err := shiftDramaEpisodeNumbers(tx, projectID, episode.Number, 1); err != nil {
+				return err
+			}
+		}
+		if chapter.Title == "" {
+			chapter.Title = model.DramaEpisodeDefaultTitle(episode.Number)
+		}
+		if episode.Title == "" {
+			episode.Title = model.DramaEpisodeDefaultTitle(episode.Number)
+		}
+		if err := tx.Create(chapter).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(episode).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.DramaProduction{}).Where("project_id = ?", projectID).
+			Updates(map[string]any{"plan_cursor": count + 1, "plan_done": true, "updated_at": time.Now()}).Error
+	})
+}
+
+var (
+	// ErrDramaLastEpisode 表示作品只剩这一集，不能再删。
+	ErrDramaLastEpisode = errors.New("drama last episode")
+	// ErrDramaEpisodeBusy 表示这一集还有已提交的生成任务在进行，结果回写前不能删除。
+	ErrDramaEpisodeBusy = errors.New("drama episode busy")
+	// ErrDramaEpisodeConfirmRequired 表示这一集生成过视频，删除需要用户输入确认。
+	ErrDramaEpisodeConfirmRequired = errors.New("drama episode confirm required")
+)
+
+// DeleteDramaEpisode 删除一集及其镜头、剧情段、段视频与成片的版本记录和调度作业，后续集号前移一位。
+// releaseChapterIDs 是只被这一集使用的章节，退回预留状态（原文保留，可在原著章节里重新加入制作），规划游标随之重算。
+// 这一集生成过视频且 confirmed=false 时返回 ErrDramaEpisodeConfirmRequired，不做任何修改。
+func (r *Repository) DeleteDramaEpisode(projectID, episodeID string, releaseChapterIDs []string, confirmed bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var production model.DramaProduction
+		if err := tx.First(&production, "project_id = ?", projectID).Error; err != nil {
+			return err
+		}
+		if !production.PlanDone {
+			return ErrDramaPlanPending
+		}
+		var episode model.DramaEpisode
+		if err := tx.Select("id", "number", "final_resource_id").First(&episode, "id = ? AND project_id = ?", episodeID, projectID).Error; err != nil {
+			return err
+		}
+		var total int64
+		if err := tx.Model(&model.DramaEpisode{}).Where("project_id = ?", projectID).Count(&total).Error; err != nil {
+			return err
+		}
+		if total <= 1 {
+			return ErrDramaLastEpisode
+		}
+		// 已提交的任务已经计费，结果要回写到本集的剧情段；等它们结束再删，避免付费结果无处落地。
+		var running int64
+		if err := tx.Model(&model.DramaJob{}).Where("project_id = ? AND episode_id = ? AND status = ?", projectID, episode.ID, model.DramaJobRunning).Count(&running).Error; err != nil {
+			return err
+		}
+		if running > 0 {
+			return ErrDramaEpisodeBusy
+		}
+		if !confirmed {
+			generated, err := dramaEpisodeHasVideo(tx, projectID, episode)
+			if err != nil {
+				return err
+			}
+			if generated {
+				return ErrDramaEpisodeConfirmRequired
+			}
+		}
+		segments := tx.Model(&model.DramaSegment{}).Select("id").Where("episode_id = ?", episode.ID)
+		if err := tx.Where("project_id = ? AND ((kind = ? AND owner_id IN (?)) OR (kind = ? AND owner_id = ?))", projectID, "video", segments, "final", episode.ID).Delete(&model.DramaTake{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ? AND episode_id = ?", projectID, episode.ID).Delete(&model.DramaJob{}).Error; err != nil {
+			return err
+		}
+		for _, entity := range []any{&model.DramaSegment{}, &model.DramaShot{}} {
+			if err := tx.Where("project_id = ? AND episode_id = ?", projectID, episode.ID).Delete(entity).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("id = ? AND project_id = ?", episode.ID, projectID).Delete(&model.DramaEpisode{}).Error; err != nil {
+			return err
+		}
+		if err := shiftDramaEpisodeNumbers(tx, projectID, episode.Number+1, -1); err != nil {
+			return err
+		}
+		now := time.Now()
+		if len(releaseChapterIDs) > 0 {
+			if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND id IN ?", projectID, model.ProjectUnitKindChapter, releaseChapterIDs).
+				Updates(map[string]any{"status": model.ProjectUnitStatusReserved, "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		var count int64
+		if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND status <> ?", projectID, model.ProjectUnitKindChapter, model.ProjectUnitStatusReserved).Count(&count).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.DramaProduction{}).Where("project_id = ?", projectID).Updates(map[string]any{"plan_cursor": count, "updated_at": now}).Error
+	})
+}
+
+// dramaEpisodeHasVideo 判断一集是否生成过视频：成片、当前段视频、段视频与成片的历史版本，
+// 以及成功的段视频或合成作业（重新改编会删掉旧剧情段，旧段视频只能从作业记录对上本集）。
+func dramaEpisodeHasVideo(tx *gorm.DB, projectID string, episode model.DramaEpisode) (bool, error) {
+	if episode.FinalResourceID != "" {
+		return true, nil
+	}
+	segments := tx.Model(&model.DramaSegment{}).Select("id").Where("episode_id = ?", episode.ID)
+	checks := []*gorm.DB{
+		tx.Model(&model.DramaSegment{}).Where("project_id = ? AND episode_id = ? AND video_resource_id <> ''", projectID, episode.ID),
+		tx.Model(&model.DramaTake{}).Where("project_id = ? AND ((kind = ? AND owner_id IN (?)) OR (kind = ? AND owner_id = ?))", projectID, "video", segments, "final", episode.ID),
+		tx.Model(&model.DramaJob{}).Where("project_id = ? AND episode_id = ? AND kind IN ? AND status = ?", projectID, episode.ID, []string{model.DramaJobSegmentVideo, model.DramaJobRender, model.DramaJobCompose}, model.DramaJobSucceeded),
+	}
+	for _, check := range checks {
+		var count int64
+		if err := check.Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// shiftDramaChaptersForInsert 为插到 position 的新章节腾位置：之后的章节（含预留章节）后移一位，
+// 造型的默认适用章节号（从 1 起，0 表示不限）同步后移，仍对应原来那些章节。
+func shiftDramaChaptersForInsert(tx *gorm.DB, projectID string, position int) error {
+	if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND position >= ?", projectID, model.ProjectUnitKindChapter, position).
+		Update("position", gorm.Expr("position + 1")).Error; err != nil {
+		return err
+	}
+	for _, column := range []string{"look_from_chapter", "look_to_chapter"} {
+		if err := tx.Model(&model.DramaCast{}).Where("project_id = ? AND "+column+" >= ?", projectID, position+1).
+			Update(column, gorm.Expr(column+" + 1")).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// shiftDramaEpisodeNumbers 把 from 号及之后各集的集号加 delta（插入 +1，删除 -1）。(project_id, number) 唯一，
+// 逐行加减会和相邻集号冲突，所以先翻成负数再写回。仍是默认标题的集随新集号改名，以“第 N 集”开头的作业标签同步改号。
+func shiftDramaEpisodeNumbers(tx *gorm.DB, projectID string, from, delta int) error {
+	var episodes []model.DramaEpisode
+	if err := tx.Select("id", "number", "title").Where("project_id = ? AND number >= ?", projectID, from).Find(&episodes).Error; err != nil {
+		return err
+	}
+	if len(episodes) == 0 {
+		return nil
+	}
+	if err := tx.Model(&model.DramaEpisode{}).Where("project_id = ? AND number >= ?", projectID, from).
+		Update("number", gorm.Expr(fmt.Sprintf("-(number + %d)", delta))).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.DramaEpisode{}).Where("project_id = ? AND number < 0", projectID).Update("number", gorm.Expr("-number")).Error; err != nil {
+		return err
+	}
+	for _, episode := range episodes {
+		before, after := model.DramaEpisodeDefaultTitle(episode.Number), model.DramaEpisodeDefaultTitle(episode.Number+delta)
+		if episode.Title == before {
+			if err := tx.Model(&model.DramaEpisode{}).Where("id = ?", episode.ID).Update("title", after).Error; err != nil {
+				return err
+			}
+		}
+		// “第 3 集%”不会匹配“第 30 集”：集号后面紧跟空格。
+		// 只改标签不动 updated_at，队列历史仍按原来的时间排序。
+		if err := tx.Model(&model.DramaJob{}).Where("project_id = ? AND episode_id = ? AND label LIKE ?", projectID, episode.ID, before+"%").
+			UpdateColumn("label", gorm.Expr(fmt.Sprintf("CAST(? AS TEXT) || SUBSTR(label, %d)", utf8.RuneCountInString(before)+1), after)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeDramaIDs(raw string) []string {
+	var ids []string
+	_ = json.Unmarshal([]byte(raw), &ids)
+	return ids
+}
+
+// UpdateDramaChapterSource 修改一章原文与字数。
+func (r *Repository) UpdateDramaChapterSource(projectID, chapterID string, fields map[string]any) error {
+	fields["updated_at"] = time.Now()
+	return r.db.Model(&model.ProjectUnit{}).Where("id = ? AND project_id = ? AND kind = ?", chapterID, projectID, model.ProjectUnitKindChapter).Updates(fields).Error
+}
+
+// InsertDramaShot 在同一剧情段内插入镜头：后续镜头顺延，本段提示词与视频过期。
+func (r *Repository) InsertDramaShot(shot model.DramaShot) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.DramaShot{}).Where("episode_id = ? AND position >= ?", shot.EpisodeID, shot.Position).
+			Update("position", gorm.Expr("position + 1")).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&shot).Error; err != nil {
+			return err
+		}
+		return refreshDramaSegmentAfterShotChange(tx, shot)
+	})
+}
+
+// DeleteDramaShot 删除镜头并前移后续镜头；调用方保证本段还剩其他镜头。
+func (r *Repository) DeleteDramaShot(shot model.DramaShot) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ? AND project_id = ?", shot.ID, shot.ProjectID).Delete(&model.DramaShot{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DramaShot{}).Where("episode_id = ? AND position > ?", shot.EpisodeID, shot.Position).
+			Update("position", gorm.Expr("position - 1")).Error; err != nil {
+			return err
+		}
+		return refreshDramaSegmentAfterShotChange(tx, shot)
+	})
+}
+
+func refreshDramaSegmentAfterShotChange(tx *gorm.DB, shot model.DramaShot) error {
+	var segment model.DramaSegment
+	if err := tx.Where("episode_id = ? AND segment_index = ?", shot.EpisodeID, shot.SegmentIndex).First(&segment).Error; err != nil {
+		return err
+	}
+	fields := map[string]any{"prompt_status": promptStatusAfterInputChange(segment.PromptStatus)}
+	if strings.TrimSpace(segment.VideoPromptOverride) != "" || strings.TrimSpace(segment.VideoPrompt) != "" {
+		fields["prompt_status"] = model.DramaPromptConflict
+		fields["prompt_error"] = "镜头数量已变化，原提示词已保留。请核对并保存完整提示词，也可选择 AI 重新撰写。"
+	}
+	if err := invalidateDramaSegment(tx, segment, fields, true); err != nil {
+
+		return err
+	}
+	if err := tx.Model(&model.DramaEpisode{}).Where("id = ?", shot.EpisodeID).Update("duration_ms", tx.Model(&model.DramaShot{}).Select("COALESCE(SUM(duration_ms),0)").Where("episode_id = ?", shot.EpisodeID)).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.DramaEpisode{}).Where("id = ?", shot.EpisodeID).Update("shot_count", tx.Model(&model.DramaShot{}).Select("COUNT(*)").Where("episode_id = ?", shot.EpisodeID)).Error
+}
+
+// DramaChapters 返回已加入制作的章节（不含预留章节），供资产提取与分集规划读取原文。
+func (r *Repository) DramaChapters(projectID string) ([]model.ProjectUnit, error) {
+	var units []model.ProjectUnit
+	err := r.db.Where("project_id = ? AND kind = ? AND status <> ?", projectID, model.ProjectUnitKindChapter, model.ProjectUnitStatusReserved).Order("position asc").Find(&units).Error
+	return units, err
+}
+
+// DramaChapterSummaries 与 DramaChapters 同一范围但不读原文；分集规划游标按这个列表计数。
+func (r *Repository) DramaChapterSummaries(projectID string) ([]model.ProjectUnit, error) {
+	var units []model.ProjectUnit
+	err := dramaChapterSummaryQuery(r.db, projectID).Where("status <> ?", model.ProjectUnitStatusReserved).Find(&units).Error
+	return units, err
+}
+
+// DramaChapterOutline 返回全部原著章节（含预留章节）的目录，不读原文。
+func (r *Repository) DramaChapterOutline(projectID string) ([]model.ProjectUnit, error) {
+	var units []model.ProjectUnit
+	err := dramaChapterSummaryQuery(r.db, projectID).Find(&units).Error
+	return units, err
+}
+
+func dramaChapterSummaryQuery(db *gorm.DB, projectID string) *gorm.DB {
+	return db.Select("id", "project_id", "kind", "title", "word_count", "position", "status", "created_at", "updated_at").
+		Where("project_id = ? AND kind = ?", projectID, model.ProjectUnitKindChapter).Order("position asc")
+}
+
+// ErrDramaChaptersChanged 表示要加入制作的章节已不是预留状态（已被加入或不属于本作品）。
+var ErrDramaChaptersChanged = errors.New("drama chapters changed")
+
+// ProduceDramaChapters 把预留章节加入制作，并在同一事务内追加对应的集（编号接在现有分集之后）、
+// 把规划游标推到已加入制作的章节数。只在分集规划完成后允许：在途的规划按游标批次读取章节，中途插入会错位。
+func (r *Repository) ProduceDramaChapters(projectID string, chapterIDs []string, episodes []model.DramaEpisode) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var production model.DramaProduction
+		if err := tx.First(&production, "project_id = ?", projectID).Error; err != nil {
+			return err
+		}
+		if !production.PlanDone {
+			return ErrDramaPlanPending
+		}
+		now := time.Now()
+		result := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND status = ? AND id IN ?", projectID, model.ProjectUnitKindChapter, model.ProjectUnitStatusReserved, chapterIDs).
+			Updates(map[string]any{"status": model.ProjectUnitStatusReady, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(chapterIDs)) {
+			return ErrDramaChaptersChanged
+		}
+		var count int64
+		if err := tx.Model(&model.ProjectUnit{}).Where("project_id = ? AND kind = ? AND status <> ?", projectID, model.ProjectUnitKindChapter, model.ProjectUnitStatusReserved).Count(&count).Error; err != nil {
+			return err
+		}
+		var number int
+		if err := tx.Model(&model.DramaEpisode{}).Where("project_id = ?", projectID).Select("COALESCE(MAX(number), 0)").Scan(&number).Error; err != nil {
+			return err
+		}
+		for i := range episodes {
+			episodes[i].Number = number + 1 + i
+		}
+		if len(episodes) > 0 {
+			if err := tx.CreateInBatches(&episodes, 200).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.DramaProduction{}).Where("project_id = ?", projectID).
+			Updates(map[string]any{"plan_cursor": count, "plan_done": true, "updated_at": now}).Error
+	})
+}
+
+func (r *Repository) DramaChaptersByIDs(projectID string, ids []string) ([]model.ProjectUnit, error) {
+	var units []model.ProjectUnit
+	if len(ids) == 0 {
+		return units, nil
+	}
+	err := r.db.Where("project_id = ? AND id IN ?", projectID, ids).Order("position asc").Find(&units).Error
+	return units, err
+}
+
+func (r *Repository) DramaCasts(projectID string) ([]model.DramaCast, error) {
+	var casts []model.DramaCast
+	err := r.db.Where("project_id = ?", projectID).Order("kind asc, position asc").Find(&casts).Error
+	return casts, err
+}
+
+func (r *Repository) DramaCast(projectID string, id string) (*model.DramaCast, error) {
+	var cast model.DramaCast
+	if err := r.db.First(&cast, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &cast, nil
+}
+
+func (r *Repository) CreateDramaCasts(casts []model.DramaCast) error {
+	if len(casts) == 0 {
+		return nil
+	}
+	return r.db.Create(&casts).Error
+}
+
+func (r *Repository) DramaEpisodes(projectID string) ([]model.DramaEpisode, error) {
+	var episodes []model.DramaEpisode
+	err := r.db.Omit("subtitle_srt").Where("project_id = ?", projectID).Order("number asc").Find(&episodes).Error
+	return episodes, err
+}
+
+func (r *Repository) DramaEpisode(projectID string, id string) (*model.DramaEpisode, error) {
+	var episode model.DramaEpisode
+	if err := r.db.First(&episode, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &episode, nil
+}
+
+func (r *Repository) MaxDramaEpisodeNumber(projectID string) (int, error) {
+	var number int
+	err := r.db.Model(&model.DramaEpisode{}).Where("project_id = ?", projectID).Select("COALESCE(MAX(number), 0)").Scan(&number).Error
+	return number, err
+}
+
+func (r *Repository) LastDramaEpisode(projectID string) (*model.DramaEpisode, error) {
+	var episode model.DramaEpisode
+	err := r.db.Where("project_id = ?", projectID).Order("number desc").First(&episode).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &episode, nil
+}
+
+// AppendDramaEpisodes 写入规划出的分集并推进规划游标，保证重复回填不会生成重复集。
+func (r *Repository) AppendDramaEpisodes(production *model.DramaProduction, episodes []model.DramaEpisode, expectedCursor int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.DramaProduction{}).Where("project_id = ? AND plan_cursor = ?", production.ProjectID, expectedCursor).
+			Updates(map[string]any{"plan_cursor": production.PlanCursor, "plan_done": production.PlanDone, "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrInvalidData
+		}
+		if len(episodes) == 0 {
+			return nil
+		}
+		return tx.Create(&episodes).Error
+	})
+}
+
+func (r *Repository) DramaShots(episodeID string) ([]model.DramaShot, error) {
+	var shots []model.DramaShot
+	err := r.db.Where("episode_id = ?", episodeID).Order("position asc").Find(&shots).Error
+	return shots, err
+}
+
+func (r *Repository) DramaShot(projectID string, id string) (*model.DramaShot, error) {
+	var shot model.DramaShot
+	if err := r.db.First(&shot, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &shot, nil
+}
+
+func (r *Repository) CreateDramaTake(take *model.DramaTake) error {
+	if take.TaskID != "" {
+		var count int64
+		if err := r.db.Model(&model.DramaTake{}).Where("task_id = ? AND owner_id = ? AND kind = ?", take.TaskID, take.OwnerID, take.Kind).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var current int
+		if err := tx.Model(&model.DramaTake{}).Where("owner_id = ? AND kind = ?", take.OwnerID, take.Kind).Select("COALESCE(MAX(version), 0)").Scan(&current).Error; err != nil {
+			return err
+		}
+		take.Version = current + 1
+		return tx.Create(take).Error
+	})
+}
+
+// DramaTake 按作品读取一条产物版本；找不到时返回 gorm.ErrRecordNotFound。
+func (r *Repository) DramaTake(projectID, id string) (*model.DramaTake, error) {
+	var take model.DramaTake
+	if err := r.db.First(&take, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &take, nil
+}
+
+func (r *Repository) DramaJobsByStatus(projectID string, statuses ...string) ([]model.DramaJob, error) {
+	var jobs []model.DramaJob
+	err := r.db.Where("project_id = ? AND status IN ?", projectID, statuses).Order("priority desc, created_at asc").Find(&jobs).Error
+	return jobs, err
+}
+
+func (r *Repository) DramaJob(projectID string, id string) (*model.DramaJob, error) {
+	var job model.DramaJob
+	if err := r.db.First(&job, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+// LatestDramaJob 返回某集某类工作的最近一条记录，用于回看剧本改编的提示词与模型返回。
+func (r *Repository) LatestDramaJob(projectID string, kind string, episodeID string) (*model.DramaJob, error) {
+	var job model.DramaJob
+	err := r.db.Where("project_id = ? AND kind = ? AND episode_id = ?", projectID, kind, episodeID).Order("created_at desc").First(&job).Error
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+func (r *Repository) RecentDramaJobs(projectID string, limit int) ([]model.DramaJob, error) {
+	var jobs []model.DramaJob
+	err := r.db.Where("project_id = ?", projectID).Order("updated_at desc").Limit(limit).Find(&jobs).Error
+	return jobs, err
+}
+
+func (r *Repository) DramaJobCounts(projectID string) (map[string]int64, error) {
+	var rows []struct {
+		Status string
+		Count  int64
+	}
+	if err := r.db.Model(&model.DramaJob{}).Select("status, COUNT(*) AS count").Where("project_id = ?", projectID).Group("status").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := map[string]int64{}
+	for _, row := range rows {
+		counts[row.Status] = row.Count
+	}
+	return counts, nil
+}
+
+func (r *Repository) CreateDramaJobs(jobs []model.DramaJob) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		batch := make([]model.DramaJob, 0, len(jobs))
+		for _, job := range jobs {
+			if job.Kind == model.DramaJobRender {
+				if err := queueDramaRender(tx, &job, 0, false); err != nil {
+					return err
+				}
+			} else {
+				batch = append(batch, job)
+			}
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		return tx.Create(&batch).Error
+	})
+}
+
+func (r *Repository) QueueDramaComposition(job *model.DramaJob, revision int64, complete bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return queueDramaRender(tx, job, revision, complete)
+	})
+}
+
+// 自动调度与用户请求可能同时入队；锁住同一集后再判断是否需要新的渲染。
+func queueDramaRender(tx *gorm.DB, job *model.DramaJob, revision int64, complete bool) error {
+	var episode model.DramaEpisode
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "revision", "stage", "error", "final_resource_id").First(&episode, "project_id = ? AND id = ?", job.ProjectID, job.EpisodeID).Error; err != nil {
+		return err
+	}
+	var active []model.DramaJob
+	if err := tx.Select("kind", "status", "payload_json").Where("episode_id = ? AND kind IN ? AND status IN ?", episode.ID, []string{model.DramaJobRender, model.DramaJobCompose}, []string{model.DramaJobQueued, model.DramaJobRunning}).Find(&active).Error; err != nil {
+		return err
+	}
+	if job.Kind == model.DramaJobRender {
+		if episode.Stage != model.DramaEpisodeRender || episode.Error != "" || len(active) > 0 {
+			return nil
+		}
+		return tx.Create(job).Error
+	}
+	if episode.Revision != revision {
+		return ErrDramaJobChanged
+	}
+	for _, existing := range active {
+		if existing.Kind == model.DramaJobRender && existing.Status == model.DramaJobQueued {
+			continue
+		}
+		var payload struct{ Revision int64 }
+		if err := json.Unmarshal([]byte(existing.PayloadJSON), &payload); err != nil {
+			return err
+		}
+		if payload.Revision == revision {
+			return nil
+		}
+	}
+	if err := tx.Model(&model.DramaJob{}).Where("episode_id = ? AND kind = ? AND status = ?", episode.ID, model.DramaJobRender, model.DramaJobQueued).Updates(map[string]any{"status": model.DramaJobCanceled, "updated_at": time.Now()}).Error; err != nil {
+		return err
+	}
+	if complete && (episode.Stage == model.DramaEpisodeDone || episode.Stage == model.DramaEpisodeRender) {
+		if err := tx.Model(&episode).Updates(map[string]any{"stage": model.DramaEpisodeRender, "error": "", "final_stale": episode.FinalResourceID != ""}).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Create(job).Error
+}
+
+func (r *Repository) SaveDramaJob(job *model.DramaJob) error {
+	job.UpdatedAt = time.Now()
+	return r.db.Save(job).Error
+}
+
+// RecordDramaJobCost 按 attempts_json 乐观锁写入本次任务的去重记录与作业花费：结算后先落库再应用结果，
+// 中断恢复时已记录的任务不会再记一次。作品花费按订单汇总（DramaBillingTotals），这里不改 drama_productions。
+func (r *Repository) RecordDramaJobCost(job *model.DramaJob, previousAttempts string) error {
+	result := r.db.Model(&model.DramaJob{}).
+		Where("id = ? AND project_id = ? AND task_id = ? AND COALESCE(attempts_json, '') = ?", job.ID, job.ProjectID, job.TaskID, previousAttempts).
+		Updates(map[string]any{"attempts_json": job.AttemptsJSON, "cost_microcredits": job.CostMicrocredits, "updated_at": time.Now()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrDramaJobChanged
+	}
+	return nil
+}
+
+// ErrDramaJobChanged 表示作业在读取后已被取消、重试或绑定到其他任务，本次写入作废。
+var ErrDramaJobChanged = errors.New("短剧作业已变化，请重新读取")
+
+// BindDramaJobTask 只在作业仍是派发前读到的状态与任务时写入新的绑定（整行写回），
+// 防止用户在派发期间取消或重试后被覆盖回运行中，或复活已删除的作业。
+func (r *Repository) BindDramaJobTask(job *model.DramaJob, expectedStatus, expectedTaskID string) error {
+	job.UpdatedAt = time.Now()
+	result := r.db.Model(job).
+		Where("project_id = ? AND status = ? AND COALESCE(task_id, '') = ?", job.ProjectID, expectedStatus, expectedTaskID).
+		Select("*").Omit("id", "project_id", "created_at").Updates(job)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrDramaJobChanged
+	}
+	return nil
+}
+
+// CancelDramaJobs 取消尚未派发的排队工作；已提交的任务由任务中心各自收尾。
+func (r *Repository) CancelQueuedDramaJobs(projectID string, filter func(*gorm.DB) *gorm.DB) error {
+	query := r.db.Model(&model.DramaJob{}).Where("project_id = ? AND status = ?", projectID, model.DramaJobQueued)
+	if filter != nil {
+		query = filter(query)
+	}
+	return query.Updates(map[string]any{"status": model.DramaJobCanceled, "updated_at": time.Now()}).Error
+}
+
+// FailedDramaCastErrors 返回各角色/场景最近一次参考图失败的原因，供收件箱展示真实错误。
+func (r *Repository) FailedDramaCastErrors(projectID string) (map[string]string, error) {
+	var jobs []model.DramaJob
+	err := r.db.Select("cast_id", "error").
+		Where("project_id = ? AND kind = ? AND status = ? AND cast_id <> ''", projectID, model.DramaJobCastImage, model.DramaJobFailed).
+		Order("updated_at asc").Find(&jobs).Error
+	errors := make(map[string]string, len(jobs))
+	for _, job := range jobs {
+		errors[job.CastID] = job.Error
+	}
+	return errors, err
+}
+
+// AttentionDramaShots 返回需要人工处理的失败镜头，供“待处理”收件箱使用。
+
+func (r *Repository) DramaProjectsPage(userID string, search string, status string, page int, pageSize int) ([]model.Project, int64, error) {
+	query := r.db.Model(&model.Project{}).
+		Joins("JOIN drama_productions ON drama_productions.project_id = projects.id").
+		Where("projects.user_id = ?", userID)
+	if search = strings.TrimSpace(search); search != "" {
+		query = query.Where("LOWER(projects.name) LIKE ? ESCAPE '\\'", "%"+strings.ToLower(escapeLike(search))+"%")
+	}
+	if status != "" {
+		query = query.Where("drama_productions.status = ?", status)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var projects []model.Project
+	err := query.Select("projects.*").Order("projects.updated_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&projects).Error
+	return projects, total, err
+}
+
+// DramaStatusCounts 统计用户各状态的短剧数量，供列表筛选标签显示。
+func (r *Repository) DramaStatusCounts(userID string) (map[string]int64, error) {
+	var rows []struct {
+		Status string
+		Count  int64
+	}
+	err := r.db.Model(&model.DramaProduction{}).Select("status, COUNT(*) AS count").Where("user_id = ?", userID).Group("status").Scan(&rows).Error
+	result := map[string]int64{}
+	for _, row := range rows {
+		result[row.Status] = row.Count
+	}
+	return result, err
+}
+
+func escapeLike(value string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(value)
+}
+
+func (r *Repository) DramaProductionsForUser(userID string, projectIDs []string) (map[string]model.DramaProduction, error) {
+	var productions []model.DramaProduction
+	if len(projectIDs) == 0 {
+		return map[string]model.DramaProduction{}, nil
+	}
+	if err := r.db.Where("user_id = ? AND project_id IN ?", userID, projectIDs).Find(&productions).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]model.DramaProduction, len(productions))
+	for _, production := range productions {
+		result[production.ProjectID] = production
+	}
+	return result, nil
+}
+
+// DramaEpisodeCounts 汇总项目列表卡片所需的集数与完成数。
+func (r *Repository) DramaEpisodeCounts(projectIDs []string) (map[string][2]int64, error) {
+	var rows []struct {
+		ProjectID string
+		Total     int64
+		Done      int64
+	}
+	result := map[string][2]int64{}
+	if len(projectIDs) == 0 {
+		return result, nil
+	}
+	err := r.db.Model(&model.DramaEpisode{}).Select("project_id, COUNT(*) AS total, SUM(CASE WHEN stage = 'done' THEN 1 ELSE 0 END) AS done").
+		Where("project_id IN ?", projectIDs).Group("project_id").Scan(&rows).Error
+	for _, row := range rows {
+		result[row.ProjectID] = [2]int64{row.Total, row.Done}
+	}
+	return result, err
+}
+
+// DramaCoverResources 取每个项目前几张已就绪的角色参考图，列表卡片拼成封面。
+func (r *Repository) DramaCoverResources(projectIDs []string, limit int) (map[string][]string, error) {
+	var casts []model.DramaCast
+	result := map[string][]string{}
+	if len(projectIDs) == 0 {
+		return result, nil
+	}
+	err := r.db.Select("project_id", "image_resource_id", "position").Where("project_id IN ? AND kind = ? AND image_status = ?", projectIDs, "character", model.DramaMediaReady).
+		Order("position asc").Find(&casts).Error
+	for _, cast := range casts {
+		if len(result[cast.ProjectID]) < limit {
+			result[cast.ProjectID] = append(result[cast.ProjectID], cast.ImageResourceID)
+		}
+	}
+	return result, err
+}
+
+// ===== 定向更新 =====
+// 调度循环与用户操作并发写同一行时，整行 Save 会互相覆盖；以下方法只写各自负责的列，
+// 并用状态或版本号做条件，过期的写入直接失效，由下一轮调度重新推导。
+
+// UpdateDramaProduction 写入用户侧控制字段，并递增版本。
+func (r *Repository) UpdateDramaProduction(projectID string, fields map[string]any) error {
+	fields["updated_at"] = time.Now()
+	fields["revision"] = gorm.Expr("revision + 1")
+	return r.db.Model(&model.DramaProduction{}).Where("project_id = ?", projectID).Updates(fields).Error
+}
+
+// SaveDramaProductionProgress 写入调度循环负责的进度字段；状态只在仍处于 expectedStatus 时改变。
+func (r *Repository) SaveDramaProductionProgress(production *model.DramaProduction, expectedStatus string, statusChanged bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Model(&model.DramaProduction{}).Where("project_id = ?", production.ProjectID).Updates(map[string]any{
+			"stage": production.Stage, "bible_json": production.BibleJSON, "spent_microcredits": production.SpentMicrocredits,
+			"plan_done": production.PlanDone, "last_tick_at": production.LastTickAt, "updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if !statusChanged {
+			return nil
+		}
+		return tx.Model(&model.DramaProduction{}).Where("project_id = ? AND status = ?", production.ProjectID, expectedStatus).
+			Updates(map[string]any{"status": production.Status, "pause_reason": production.PauseReason}).Error
+	})
+}
+
+// UpdateDramaEpisodeIfRevision 只在集未被用户改动（版本未变）时写入调度结果。
+func (r *Repository) UpdateDramaEpisodeIfRevision(id string, revision int64, fields map[string]any) (bool, error) {
+	fields["updated_at"] = time.Now()
+	result := r.db.Model(&model.DramaEpisode{}).Where("id = ? AND revision = ?", id, revision).Updates(fields)
+	return result.RowsAffected == 1, result.Error
+}
+
+// UpdateDramaEpisodeUser 写入用户修改并递增版本，使调度循环基于旧版本的写入失效。
+func (r *Repository) UpdateDramaEpisodeUser(id string, fields map[string]any) error {
+	fields["updated_at"] = time.Now()
+	fields["revision"] = gorm.Expr("revision + 1")
+	return r.db.Model(&model.DramaEpisode{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// UpdateDramaShotIf 只在槽位状态仍为 allowed 之一时写入，防止旧任务结果覆盖用户刚发起的重做。
+
+func (r *Repository) UpdateDramaCastIf(id string, allowed []string, fields map[string]any) (bool, error) {
+	fields["updated_at"] = time.Now()
+	result := r.db.Model(&model.DramaCast{}).Where("id = ? AND image_status IN ?", id, allowed).Updates(fields)
+	return result.RowsAffected == 1, result.Error
+}
+
+// ApplyDramaScript 写入一集的新镜头；revision 不为 nil 时要求集版本未变。
+func (r *Repository) ApplyDramaScript(episodeID string, revision *int64, fields map[string]any, shots []model.DramaShot) (bool, error) {
+	applied := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		fields["updated_at"] = time.Now()
+		query := tx.Model(&model.DramaEpisode{}).Where("id = ?", episodeID)
+		if revision != nil {
+			query = query.Where("revision = ?", *revision)
+		} else {
+			fields["revision"] = gorm.Expr("revision + 1")
+		}
+		result := query.Updates(fields)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		if err := tx.Where("episode_id = ?", episodeID).Delete(&model.DramaShot{}).Error; err != nil {
+			return err
+		}
+		// 剧情段随镜头重新切分，旧段的提示词不再对得上，重建为待撰写。
+		if err := tx.Where("episode_id = ?", episodeID).Delete(&model.DramaSegment{}).Error; err != nil {
+			return err
+		}
+		if len(shots) > 0 {
+			if err := tx.CreateInBatches(&shots, 100).Error; err != nil {
+				return err
+			}
+			segments := []model.DramaSegment{}
+			seen := map[int]bool{}
+			now := time.Now()
+			for _, shot := range shots {
+				if !seen[shot.SegmentIndex] {
+					seen[shot.SegmentIndex] = true
+					segments = append(segments, model.DramaSegment{ID: kernel.NewID(), ProjectID: shot.ProjectID, EpisodeID: episodeID, SegmentIndex: shot.SegmentIndex, CreatedAt: now, UpdatedAt: now})
+				}
+			}
+			if err := tx.Create(&segments).Error; err != nil {
+				return err
+			}
+		}
+		applied = true
+		return nil
+	})
+	return applied, err
+}
+
+func (r *Repository) UpdateDramaCastFields(id string, fields map[string]any) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		fields["updated_at"] = time.Now()
+		fields["revision"] = gorm.Expr("revision + 1")
+		if err := tx.Model(&model.DramaCast{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+			return err
+		}
+		// Textual cast changes invalidate prompt inputs. Lock-only edits do not change media.
+		changed := false
+		for _, key := range []string{"name", "appearance", "description", "voice_instructions", "aliases_json"} {
+			if _, ok := fields[key]; ok {
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		var cast model.DramaCast
+		if err := tx.First(&cast, "id = ?", id).Error; err != nil {
+			return err
+		}
+		shots, err := (&Repository{db: tx}).DramaShotsReferencingCast(cast.ProjectID, id)
+		if err != nil {
+			return err
+		}
+		seen := map[string]bool{}
+		for _, shot := range shots {
+			key := shot.EpisodeID + ":" + fmt.Sprint(shot.SegmentIndex)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			var seg model.DramaSegment
+			if err := tx.Where("episode_id = ? AND segment_index = ?", shot.EpisodeID, shot.SegmentIndex).First(&seg).Error; err != nil {
+				return err
+			}
+			if err := invalidateDramaSegment(tx, seg, map[string]any{"prompt_status": promptStatusAfterInputChange(seg.PromptStatus), "video_prompt_override": ""}, true); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// promptStatusAfterInputChange 决定撰写素材变化后的提示词状态：写好的才标记过期、等用户确认重写；
+// 待撰写或撰写中的退回待撰写，由调度按新素材自动写；失败保持失败，等用户重试。
+func promptStatusAfterInputChange(current string) string {
+	switch current {
+	case model.DramaPromptConflict:
+		return model.DramaPromptConflict
+	case model.DramaPromptReview:
+		return model.DramaPromptConflict
+	case model.DramaMediaReady, model.DramaMediaStale:
+		return model.DramaMediaStale
+	case model.DramaMediaFailed:
+		return model.DramaMediaFailed
+	}
+	return ""
+}
+func (r *Repository) UpdateDramaCastRevision(id string, revision int64, fields map[string]any) (bool, error) {
+	fields["updated_at"] = time.Now()
+	result := r.db.Model(&model.DramaCast{}).Where("id = ? AND revision = ?", id, revision).Updates(fields)
+	return result.RowsAffected > 0, result.Error
+}
+
+// UpdateDramaEpisodeMeta 修改不影响已生成内容的集字段（标题、素材类型），不递增版本，避免打断调度写入。
+func (r *Repository) UpdateDramaEpisodeMeta(episodeID string, fields map[string]any) error {
+	fields["updated_at"] = time.Now()
+	return r.db.Model(&model.DramaEpisode{}).Where("id = ?", episodeID).Updates(fields).Error
+}
+
+func (r *Repository) DramaSegments(episodeID string) ([]model.DramaSegment, error) {
+	var segments []model.DramaSegment
+	err := r.db.Where("episode_id = ?", episodeID).Order("segment_index asc").Find(&segments).Error
+	return segments, err
+}
+
+var ErrDramaSegmentEditConflict = errors.New("drama segment changed while editing")
+
+// SaveDramaSegmentEdits 原子保存参考选择与按其身份换号的正文，拒绝覆盖计算换号后发生的并发编辑。
+func (r *Repository) SaveDramaSegmentEdits(segment model.DramaSegment, fields map[string]any) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var current model.DramaSegment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ?", segment.ID, segment.ProjectID).First(&current).Error; err != nil {
+			return err
+		}
+		if current.Revision != segment.Revision {
+			return ErrDramaSegmentEditConflict
+		}
+		values := map[string]string{"reference_cast_ids_json": current.ReferenceCastIDsJSON, "reference_images_json": current.ReferenceImagesJSON, "audio_cast_ids_json": current.AudioCastIDsJSON, "video_prompt_override": current.VideoPromptOverride, "prompt_status": current.PromptStatus, "prompt_error": current.PromptError}
+		changed, referencesChanged := false, false
+		for key, value := range fields {
+			if values[key] != value {
+				changed = true
+				if key == "reference_cast_ids_json" || key == "reference_images_json" || key == "audio_cast_ids_json" {
+					referencesChanged = true
+				}
+			}
+		}
+		if !changed {
+			return nil
+		}
+		if _, explicitStatus := fields["prompt_status"]; referencesChanged && !explicitStatus {
+			fields["prompt_status"] = promptStatusAfterInputChange(current.PromptStatus)
+		}
+		return invalidateDramaSegment(tx, current, fields, true)
+	})
+}
+
+// RequestDramaSegmentPrompts 把指定段标记为待撰写；正在撰写的段保持不动。返回实际排队的段数。
+func (r *Repository) RequestDramaSegmentPrompts(projectID, episodeID string, indexes []int) (int, error) {
+	queued := 0
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		for _, index := range indexes {
+			var segment model.DramaSegment
+			if err := tx.Where("project_id = ? AND episode_id = ? AND segment_index = ?", projectID, episodeID, index).First(&segment).Error; err != nil {
+				return err
+			}
+			if segment.PromptStatus == model.DramaMediaRunning {
+				continue
+			}
+			if err := invalidateDramaSegment(tx, segment, map[string]any{"prompt_status": "", "prompt_error": ""}, true); err != nil {
+				return err
+			}
+			queued++
+		}
+		return nil
+	})
+	return queued, err
+}
+
+// PendingDramaSegments 返回待撰写提示词的段；按集与段序排列。
+func (r *Repository) PendingDramaSegments(projectID string) ([]model.DramaSegment, error) {
+	var segments []model.DramaSegment
+	err := r.db.Where("project_id = ? AND prompt_status = ?", projectID, "").Order("episode_id asc, segment_index asc").Limit(500).Find(&segments).Error
+	return segments, err
+}
+
+func (r *Repository) DramaSegment(projectID string, id string) (*model.DramaSegment, error) {
+	var segment model.DramaSegment
+	if err := r.db.First(&segment, "id = ? AND project_id = ?", id, projectID).Error; err != nil {
+		return nil, err
+	}
+	return &segment, nil
+}
+
+// MarkDramaSegmentVideoStale 在参考图重做后让该段已生成或生成中的视频过期。提示词只引用参考图编号，
+// 不含图片内容，因此保持不变；尚未生成的视频提交时会读取新参考图，无需处理。返回是否有视频被标记。
+func (r *Repository) MarkDramaSegmentVideoStale(episodeID string, index int) (bool, error) {
+	marked := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var segment model.DramaSegment
+		if err := tx.Where("episode_id = ? AND segment_index = ?", episodeID, index).First(&segment).Error; err != nil {
+			return err
+		}
+		if segment.VideoStatus != model.DramaMediaReady && segment.VideoStatus != model.DramaMediaRunning {
+			return nil
+		}
+		fields := map[string]any{"video_status": model.DramaMediaStale, "revision": gorm.Expr("revision + 1"), "updated_at": time.Now()}
+		// 版本递增会让撰写中的提示词结果作废，退回待撰写由调度重写。
+		if segment.PromptStatus == model.DramaMediaRunning {
+			fields["prompt_status"] = ""
+		}
+		if err := tx.Model(&model.DramaSegment{}).Where("id = ?", segment.ID).Updates(fields).Error; err != nil {
+			return err
+		}
+		marked = true
+		_, err := markLaterSegmentsStale(tx, segment.EpisodeID, segment.SegmentIndex)
+		return err
+	})
+	return marked, err
+}
+
+// DeleteDramaCastLook 删除一套造型，并把引用它的镜头回退到角色本体（从 look_cast_ids_json 里移除）。
+// 段级手动参考中的造型同步回退到角色本体，重新编号后提示词与视频过期。
+func (r *Repository) DeleteDramaCastLook(projectID, lookID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var look model.DramaCast
+		if err := tx.First(&look, "id = ? AND project_id = ? AND parent_id <> ''", lookID, projectID).Error; err != nil {
+			return err
+		}
+		var shots []model.DramaShot
+		if err := tx.Where("project_id = ? AND look_cast_ids_json LIKE ?", projectID, "%\""+lookID+"\"%").Find(&shots).Error; err != nil {
+			return err
+		}
+		for _, shot := range shots {
+			var ids []string
+			_ = json.Unmarshal([]byte(shot.LookCastIDsJSON), &ids)
+			kept := make([]string, 0, len(ids))
+			for _, id := range ids {
+				if id != lookID {
+					kept = append(kept, id)
+				}
+			}
+			encoded, _ := json.Marshal(kept)
+			if err := tx.Model(&model.DramaShot{}).Where("id = ?", shot.ID).Update("look_cast_ids_json", string(encoded)).Error; err != nil {
+				return err
+			}
+		}
+		var segments []model.DramaSegment
+		if err := tx.Where("project_id = ? AND reference_cast_ids_json LIKE ?", projectID, "%\""+lookID+"\"%").Find(&segments).Error; err != nil {
+			return err
+		}
+		for _, segment := range segments {
+			var ids []string
+			if err := json.Unmarshal([]byte(segment.ReferenceCastIDsJSON), &ids); err != nil {
+				return err
+			}
+			kept := []string{}
+			seen := map[string]bool{}
+			for _, id := range ids {
+				if id == lookID {
+					id = look.ParentID
+				}
+				if !seen[id] {
+					kept = append(kept, id)
+					seen[id] = true
+				}
+			}
+			encoded, err := json.Marshal(kept)
+			if err != nil {
+				return err
+			}
+			if err := invalidateDramaSegment(tx, segment, map[string]any{"reference_cast_ids_json": string(encoded), "prompt_status": promptStatusAfterInputChange(segment.PromptStatus)}, true); err != nil {
+				return err
+			}
+		}
+		return tx.Where("id = ? AND project_id = ?", lookID, projectID).Delete(&model.DramaCast{}).Error
+	})
+}
+
+func (r *Repository) DramaShotsReferencingCast(projectID string, castID string) ([]model.DramaShot, error) {
+	var shots []model.DramaShot
+	pattern := "%\"" + castID + "\"%"
+	segments := r.db.Model(&model.DramaSegment{}).Select("1").Where("drama_segments.episode_id = drama_shots.episode_id AND drama_segments.segment_index = drama_shots.segment_index AND (reference_cast_ids_json LIKE ? OR audio_cast_ids_json LIKE ?)", pattern, pattern)
+	err := r.db.Where("project_id = ? AND (scene_cast_id = ? OR cast_ids_json LIKE ? OR prop_ids_json LIKE ? OR look_cast_ids_json LIKE ? OR EXISTS (?))", projectID, castID, pattern, pattern, pattern, segments).Find(&shots).Error
+	return shots, err
+}
+
+// DramaSegmentStat 是集列表进度使用的剧情段聚合计数；VideoGenerated 是持有视频的段（含已过期的旧视频）。
+type DramaSegmentStat struct {
+	EpisodeID      string
+	Total          int64
+	PromptReady    int64
+	VideoReady     int64
+	VideoGenerated int64
+	Failed         int64
+}
+
+func (r *Repository) DramaSegmentStats(projectID string) (map[string]DramaSegmentStat, error) {
+	var rows []DramaSegmentStat
+	err := r.db.Model(&model.DramaSegment{}).Select(`episode_id,
+		COUNT(*) AS total,
+		SUM(CASE WHEN prompt_status = 'ready' OR (prompt_status = 'stale' AND video_prompt_override <> '') THEN 1 ELSE 0 END) AS prompt_ready,
+		SUM(CASE WHEN video_status = 'ready' THEN 1 ELSE 0 END) AS video_ready,
+		SUM(CASE WHEN video_resource_id <> '' THEN 1 ELSE 0 END) AS video_generated,
+		SUM(CASE WHEN prompt_status = 'failed' OR video_status = 'failed' THEN 1 ELSE 0 END) AS failed`).
+		Where("project_id = ?", projectID).Group("episode_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	stats := make(map[string]DramaSegmentStat, len(rows))
+	for _, row := range rows {
+		stats[row.EpisodeID] = row
+	}
+	return stats, nil
+}
+
+// FailedDramaSegments 返回提示词或视频失败的剧情段，供待处理与一键重试使用。
+func (r *Repository) FailedDramaSegments(projectID string, limit int) ([]model.DramaSegment, error) {
+	var segments []model.DramaSegment
+	query := r.db.Where("project_id = ? AND (prompt_status = ? OR video_status = ?)", projectID, model.DramaMediaFailed, model.DramaMediaFailed).
+		Order("updated_at desc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	err := query.Find(&segments).Error
+	return segments, err
+}
+
+func (r *Repository) CountFailedDramaSegments(projectID string) (int, error) {
+	var total int64
+	err := r.db.Model(&model.DramaSegment{}).
+		Where("project_id = ? AND (prompt_status = ? OR video_status = ?)", projectID, model.DramaMediaFailed, model.DramaMediaFailed).
+		Count(&total).Error
+	return int(total), err
+}
+
+func (r *Repository) UpdateDramaSegmentFields(id string, fields map[string]any) error {
+	fields["updated_at"] = time.Now()
+	return r.db.Model(&model.DramaSegment{}).Where("id = ?", id).Updates(fields).Error
+}
+
+func (r *Repository) UpdateDramaSegmentRevision(id string, revision int64, fields map[string]any) (bool, error) {
+	fields["updated_at"] = time.Now()
+	result := r.db.Model(&model.DramaSegment{}).Where("id = ? AND revision = ?", id, revision).Updates(fields)
+	return result.RowsAffected > 0, result.Error
+}
+
+// SetDramaSegmentTail 写入后台抽好的尾帧：只在段版本未变、段视频仍是抽取的那一条且尚无尾帧时生效，
+// 迟到的旧视频尾帧不会落到新视频上。
+func (r *Repository) SetDramaSegmentTail(id string, revision int64, videoResourceID string, tailResourceID string) (bool, error) {
+	result := r.db.Model(&model.DramaSegment{}).
+		Where("id = ? AND revision = ? AND video_resource_id = ? AND tail_frame_resource_id = ''", id, revision, videoResourceID).
+		Updates(map[string]any{"tail_frame_resource_id": tailResourceID, "updated_at": time.Now()})
+	return result.RowsAffected > 0, result.Error
+}
+
+// markLaterSegmentsStale returns whether later segments depend on the edited
+// segment. Independent videos keep their revisions and in-flight result slots.
+// 并行出片各段互不依赖，跳过级联，避免重做一段误标后续段「视频需重新生成」。
+func markLaterSegmentsStale(tx *gorm.DB, episodeID string, index int) (bool, error) {
+	var production model.DramaProduction
+	if err := tx.Select("drama_productions.settings_json").
+		Joins("JOIN drama_episodes ON drama_episodes.project_id = drama_productions.project_id").
+		Where("drama_episodes.id = ?", episodeID).First(&production).Error; err != nil {
+		return false, err
+	}
+	var settings struct {
+		VideoContinuity string `json:"videoContinuity"`
+	}
+	if strings.TrimSpace(production.SettingsJSON) != "" {
+		if err := json.Unmarshal([]byte(production.SettingsJSON), &settings); err != nil {
+			return false, err
+		}
+	}
+	if settings.VideoContinuity == "parallel" {
+		return false, nil
+	}
+	// Queued descendants remain requested, but receive a new revision and wait for the new tail.
+	// The new revision also voids running prompt jobs, so those segments go back to pending instead of staying "running".
+	return true, tx.Model(&model.DramaSegment{}).Where("episode_id = ? AND segment_index > ?", episodeID, index).
+		Updates(map[string]any{
+			"video_status":  gorm.Expr("CASE WHEN video_status IN ? THEN ? ELSE video_status END", []string{"ready", "running"}, "stale"),
+			"prompt_status": gorm.Expr("CASE WHEN prompt_status = ? THEN '' ELSE prompt_status END", model.DramaMediaRunning),
+			"revision":      gorm.Expr("revision + 1"),
+			"updated_at":    time.Now(),
+		}).Error
+}
+
+// invalidateDramaSegment makes user edits and downstream invalidation one transaction.
+func invalidateDramaSegment(tx *gorm.DB, segment model.DramaSegment, fields map[string]any, prompts bool) error {
+	if _, ok := fields["video_status"]; !ok {
+		if segment.VideoStatus != "" {
+			fields["video_status"] = model.DramaMediaStale
+		}
+	}
+	fields["revision"] = gorm.Expr("revision + 1")
+	fields["updated_at"] = time.Now()
+	if err := tx.Model(&model.DramaSegment{}).Where("id = ?", segment.ID).Updates(fields).Error; err != nil {
+		return err
+	}
+	cascade, err := markLaterSegmentsStale(tx, segment.EpisodeID, segment.SegmentIndex)
+	if err != nil {
+		return err
+	}
+	stage := "video"
+	if prompts {
+		stage = "prompts"
+	}
+	if err := tx.Model(&model.DramaEpisode{}).Where("id = ?", segment.EpisodeID).Updates(map[string]any{"stage": stage, "approved": false, "final_stale": true, "error": "", "revision": gorm.Expr("revision + 1"), "updated_at": time.Now()}).Error; err != nil {
+		return err
+	}
+	jobs := tx.Model(&model.DramaJob{}).Where("episode_id = ? AND status = ? AND kind IN ?", segment.EpisodeID, "queued", []string{"segment_prompt", "segment_video", model.DramaJobRender, model.DramaJobCompose})
+	if !cascade {
+		jobs = jobs.Where("shot_id = ? OR kind IN ?", segment.ID, []string{model.DramaJobRender, model.DramaJobCompose})
+	}
+	return jobs.Updates(map[string]any{"status": "canceled", "updated_at": time.Now()}).Error
+}
+
+var ErrDramaSegmentChanged = errors.New("drama segment changed")
+
+func (r *Repository) UpdateDramaShotScript(shot model.DramaShot, fields map[string]any, expected model.DramaSegment, promptFields map[string]any) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var segment model.DramaSegment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ?", expected.ID, shot.ProjectID).First(&segment).Error; err != nil {
+			return err
+		}
+		if segment.Revision != expected.Revision {
+			return ErrDramaSegmentChanged
+		}
+		var current model.DramaShot
+		if err := tx.Where("id = ? AND project_id = ?", shot.ID, shot.ProjectID).First(&current).Error; err != nil {
+			return err
+		}
+		if !current.UpdatedAt.Equal(shot.UpdatedAt) {
+			return ErrDramaSegmentChanged
+		}
+		fields["updated_at"] = time.Now()
+		if err := tx.Model(&model.DramaShot{}).Where("id = ? AND project_id = ?", shot.ID, shot.ProjectID).Updates(fields).Error; err != nil {
+			return err
+		}
+		if err := invalidateDramaSegment(tx, segment, promptFields, true); err != nil {
+			return err
+		}
+		return tx.Model(&model.DramaEpisode{}).Where("id = ?", shot.EpisodeID).Update("duration_ms", tx.Model(&model.DramaShot{}).Select("COALESCE(SUM(duration_ms),0)").Where("episode_id = ?", shot.EpisodeID)).Error
+	})
+}
+
+func (r *Repository) RequestDramaSegmentVideos(projectID, episodeID string, indexes []int, modelJSON *string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var episode model.DramaEpisode
+		if err := tx.Select("approved").Where("id = ? AND project_id = ?", episodeID, projectID).First(&episode).Error; err != nil {
+			return err
+		}
+		for _, index := range indexes {
+			var segment model.DramaSegment
+			if err := tx.Where("project_id = ? AND episode_id = ? AND segment_index = ?", projectID, episodeID, index).First(&segment).Error; err != nil {
+				return err
+			}
+			if segment.VideoStatus == "running" {
+				return errors.New("剧情段视频正在生成")
+			}
+			fields := map[string]any{"video_status": "queued", "video_error": ""}
+			if modelJSON != nil {
+				fields["video_model_json"] = *modelJSON
+			}
+			if err := invalidateDramaSegment(tx, segment, fields, false); err != nil {
+				return err
+			}
+		}
+		// 显式生成剧情段只放行本集素材，整集确认状态保持原样：未确认的集不因点了一段就被确认
+		// （否则调度会把其余未生成的段一起排队），已确认的集重做一段也不必重新确认。
+		return tx.Model(&model.DramaEpisode{}).Where("id = ?", episodeID).Updates(map[string]any{"media_released": true, "approved": episode.Approved}).Error
+	})
+}
+
+func (r *Repository) RetryDramaResultJobs(projectID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// A successful provider task is re-applied, never submitted a second time.
+		if err := tx.Model(&model.DramaJob{}).Where("project_id = ? AND status = ? AND task_id IN (?)", projectID, "failed", tx.Model(&model.Task{}).Select("id").Where("status = ?", model.TaskStatusSucceeded)).Updates(map[string]any{"status": "running", "error": "", "finished_at": nil}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// ReopenDramaSegmentVideoJob 把生成任务已成功、回写失败的段视频作业重新置为运行中，
+// 调度循环会重放同一任务结果；段状态同步改回生成中。返回作业是否仍满足重放条件。
+func (r *Repository) ReopenDramaSegmentVideoJob(jobID, segmentID string) (bool, error) {
+	reopened := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		result := tx.Model(&model.DramaJob{}).
+			Where("id = ? AND shot_id = ? AND kind = ? AND status = ? AND task_id IN (?)", jobID, segmentID, model.DramaJobSegmentVideo, model.DramaJobFailed, tx.Model(&model.Task{}).Select("id").Where("status = ?", model.TaskStatusSucceeded)).
+			Updates(map[string]any{"status": model.DramaJobRunning, "error": "", "finished_at": nil, "updated_at": now})
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		segment := tx.Model(&model.DramaSegment{}).Where("id = ? AND video_status = ?", segmentID, model.DramaMediaFailed).Updates(map[string]any{"video_status": model.DramaMediaRunning, "video_error": "", "updated_at": now})
+		if segment.Error != nil {
+			return segment.Error
+		}
+		if segment.RowsAffected == 0 {
+			// 段状态已被并发操作改变（例如用户刚点了重新生成），放弃重放。
+			return errReopenRaced
+		}
+		reopened = true
+		return nil
+	})
+	if errors.Is(err, errReopenRaced) {
+		return false, nil
+	}
+	return reopened, err
+}
+
+var errReopenRaced = errors.New("drama segment changed during reopen")
+
+func (r *Repository) RecentDramaSegmentJobs(projectID, episodeID string) ([]model.DramaJob, error) {
+	var jobs []model.DramaJob
+	err := r.db.Where("project_id = ? AND episode_id = ? AND kind IN ?", projectID, episodeID, []string{model.DramaJobSegmentPrompt, model.DramaJobSegmentVideo}).Order("created_at desc").Find(&jobs).Error
+	return jobs, err
+}
+func (r *Repository) DeleteDramaProductionData(projectID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, entity := range []any{&model.DramaJob{}, &model.DramaTake{}, &model.DramaSegment{}, &model.DramaShot{}, &model.DramaEpisode{}, &model.DramaCast{}, &model.DramaProduction{}} {
+			if err := tx.Where("project_id = ?", projectID).Delete(entity).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

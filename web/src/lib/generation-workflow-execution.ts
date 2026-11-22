@@ -56,6 +56,7 @@ export function resolveGenerationWorkflowExecution(config: AiConfig, mode: Gener
         };
     }
 
+    if (workflowProvider !== "comfyui") throw new Error("未知工作流提供方");
     if (!workflowProviderPluginEnabled(usePluginStore.getState().runtimeStatuses, "comfyui")) throw new Error("ComfyUI Bridge 工作流插件未启用");
     const comfyBridge = config.comfyBridge;
     const workflowId = comfyBridge.workflowId.trim();

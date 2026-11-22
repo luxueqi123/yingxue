@@ -1,6 +1,6 @@
 # OpenAI Images
 
-OpenAI Images 插件实现 JSON 文生图请求，并解析 OpenAI Images 风格的 `data[]` 响应。上游官方还提供 multipart 图像编辑接口，但当前宿主适配器的创建路径只构造 `/v1/images/generations`；详情中列出编辑接口是为了说明协议能力，不代表当前画布已发送编辑请求。
+OpenAI Images 声明式插件实现 JSON 文生图和 multipart 图像编辑，并解析 OpenAI Images 风格的 `data[]` 响应。后端从 `openai-images.yingce-plugin` 加载协议，不经旧的手写创建分支。
 
 ## 接口与鉴权
 
@@ -12,17 +12,19 @@ Authorization: Bearer <API_KEY>
 Content-Type: application/json
 ```
 
-官方编辑接口为 `POST /v1/images/edits`、`multipart/form-data`。当前适配器未在有参考图时切换到该路径，这是明确的实现缺口。
+提供参考图时，请求改为 `POST /v1/images/edits`、`multipart/form-data`；每张原图是一个 `image` 文件分段，蒙版是独立的 `mask` 文件分段。蒙版没有原图时在提交前失败。
 
 ## 模型、尺寸与质量
 
 模型、允许尺寸、质量枚举、单次张数和计费会随上游服务变化，插件不维护可能过期的白名单。渠道若是 OpenAI 兼容实现，必须分别验证它是否支持 `n`、`quality`、`background`、`output_format` 和 Base64 响应。
 
+模型能力配置中的 `responseFormat` 同时声明 `supported` 和 `default`。`default` 可选 `auto`、`b64_json` 或 `url`：`auto` 不发送 `response_format`，由上游使用默认行为；另外两项会明确发送对应值。不要根据 `openai-image` 协议名称推断所有兼容渠道都接受 Base64；需要保存上游实际验证过的模型级配置。
+
 ## 参数与字段映射
 
 {{PARAMETERS}}
 
-当前实现：`imageCount -> n`、`aspectRatio -> size`、`quality -> quality`；`extra` 可透传 `size`、`quality`、`background`、`response_format`、`output_format`、`style`、`n`。`images` 和 `resolution` 当前不会进入文生图请求。
+当前实现：`imageCount -> n`、`aspectRatio -> size`、`quality -> quality`；`images` 根据角色进入编辑请求的 `image` / `mask` 文件分段，不进入文生图 JSON。`resolution` 当前不会进入请求。协议还可声明 `background`、`response_format`、`output_format`、`style` 等扩展字段。
 
 ## 文生图请求
 
@@ -63,7 +65,7 @@ curl "{channel_base_url}/v1/images/edits" \
   -F "prompt=保持人物一致，改成雨夜街道"
 ```
 
-该示例是上游协议参考；在宿主中使用前必须补 multipart 构造、参考图数量与 MIME 校验、编辑响应测试。
+本地协议回归使用包内真实 manifest 和 HTTP 捕获，断言编辑路径、multipart 内容类型及 `image` / `mask` 分段字节。参考图和蒙版的源媒体读取仍受宿主下载、出站地址校验与大小限制约束。正式渠道的模型兼容性与计费需另行验证。
 
 ## 官方资料
 

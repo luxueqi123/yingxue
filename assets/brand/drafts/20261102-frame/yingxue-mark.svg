@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="yingxue-ice" x1="3" y1="2" x2="29" y2="31" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d8f6ff"/>
+      <stop offset=".5" stop-color="#79dafa"/>
+      <stop offset="1" stop-color="#3aa8d7"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#yingxue-ice)">
+    <path d="M5 3h13.5L28 12.5h-7.5L14 6H5V3Z"/>
+    <path d="M29 5v13.5L19.5 28v-7.5L26 14V5h3Z"/>
+    <path d="M27 29H13.5L4 19.5h7.5L18 26h9v3Z"/>
+    <path d="M3 27V13.5L12.5 4v7.5L6 18v9H3Z"/>
+  </g>
+</svg>

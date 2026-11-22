@@ -1,0 +1,397 @@
+.membership-welcome-modal-title {
+    position: absolute;
+    inset-block-start: 0;
+    margin: 0;
+}
+
+.membership-welcome {
+    --steel-low: var(--color-neutral-300);
+    --steel-face: var(--color-neutral-200);
+    --steel-high: var(--color-neutral-50);
+    --steel-edge: var(--color-neutral-400);
+    --steel-rim: var(--color-neutral-0);
+    --steel-grain-opacity: 0.14;
+    --steel-video-opacity: 0.54;
+    --welcome-text: var(--color-neutral-950);
+    --welcome-muted: var(--color-neutral-700);
+    --welcome-line: color-mix(in srgb, var(--welcome-text) 18%, transparent);
+    --welcome-inset: color-mix(in srgb, var(--welcome-text) 5%, transparent);
+    --welcome-gutter: var(--space-8);
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    max-block-size: calc(100dvh - 36px);
+    overflow: hidden;
+    border: 1px solid var(--steel-edge);
+    border-radius: var(--radius-2xl);
+    background: linear-gradient(180deg, transparent 70%, var(--welcome-inset)), linear-gradient(112deg, var(--steel-low), var(--steel-face) 15%, var(--steel-high) 38%, var(--steel-face) 62%, var(--steel-low) 89%, var(--steel-face));
+    color: var(--welcome-text);
+    font-family: var(--font-sans, "Inter Variable", "Microsoft YaHei", system-ui, sans-serif);
+    box-shadow:
+        inset 0 1px 0 var(--steel-rim),
+        inset 0 -2px color-mix(in srgb, var(--color-neutral-950) 32%, transparent);
+}
+
+.dark .membership-welcome {
+    --steel-low: var(--color-neutral-900);
+    --steel-face: color-mix(in oklab, var(--color-neutral-800) 83%, var(--color-neutral-700));
+    --steel-high: color-mix(in oklab, var(--color-neutral-800) 54%, var(--color-neutral-700));
+    --steel-edge: color-mix(in oklab, var(--color-neutral-600) 67%, var(--color-neutral-800));
+    --steel-rim: color-mix(in srgb, var(--color-neutral-0) 44%, var(--steel-face));
+    --steel-grain-opacity: 0.2;
+    --steel-video-opacity: 0.5;
+    --welcome-text: var(--color-neutral-50);
+    --welcome-muted: var(--color-neutral-300);
+    --welcome-line: color-mix(in srgb, var(--welcome-text) 20%, transparent);
+    --welcome-inset: color-mix(in srgb, var(--color-neutral-950) 16%, transparent);
+}
+
+.membership-welcome::before,
+.membership-welcome-backdrop,
+.membership-welcome-rim-light {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.membership-welcome::before {
+    z-index: -2;
+    background: url("/showcase/membership/brushed-metal.webp") center / 640px auto repeat;
+    mix-blend-mode: soft-light;
+    opacity: var(--steel-grain-opacity);
+    content: "";
+}
+
+.membership-welcome-backdrop {
+    z-index: -1;
+    background: url("/showcase/membership/brushed-steel-reflection.webp") center / cover no-repeat;
+    mix-blend-mode: soft-light;
+    opacity: var(--steel-video-opacity);
+}
+
+.membership-welcome-backdrop-video {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    opacity: 0;
+}
+
+.membership-welcome-backdrop-video[data-visible="true"] {
+    opacity: 1;
+}
+
+.membership-welcome-rim-light {
+    z-index: 1;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(104deg, var(--steel-rim), transparent 24%, transparent 62%, var(--steel-rim) 88%, transparent);
+    mask:
+        linear-gradient(var(--color-neutral-0) 0 0) content-box,
+        linear-gradient(var(--color-neutral-0) 0 0);
+    mask-composite: exclude;
+}
+
+.membership-welcome-header,
+.membership-welcome-footer {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-inline: var(--welcome-gutter);
+}
+
+.membership-welcome-header {
+    padding-block: var(--space-5) var(--space-4);
+}
+
+.membership-welcome-header h2 {
+    margin: 0;
+    font-size: var(--typ-display-sm);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+}
+
+.membership-welcome-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.membership-welcome-close {
+    display: grid;
+    place-items: center;
+    inline-size: var(--space-8);
+    block-size: var(--space-8);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--welcome-muted);
+    cursor: pointer;
+}
+
+.membership-welcome-close:hover {
+    background: var(--welcome-line);
+    color: var(--welcome-text);
+}
+
+.membership-welcome-content {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline: var(--welcome-gutter);
+}
+
+.membership-welcome-trial {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+    padding-block: var(--space-3);
+    border-block: 1px solid var(--welcome-line);
+}
+
+.membership-welcome-trial-head {
+    display: grid;
+    gap: var(--space-half);
+}
+
+.membership-welcome-trial-head h3,
+.membership-welcome-models h3 {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 660;
+    line-height: 1.4;
+}
+
+.membership-welcome-trial-head time,
+.membership-welcome-trial-head > span {
+    color: var(--welcome-muted);
+    font-size: var(--typ-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.membership-welcome-trial-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+}
+
+.membership-welcome-trial-actions button,
+.membership-welcome-plan-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--welcome-text);
+    font-size: var(--typ-caption);
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+}
+
+.membership-welcome-trial-actions button {
+    min-block-size: var(--space-8);
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.membership-welcome-trial-actions button:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+}
+
+.membership-welcome-plans {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-block-end: 1px solid var(--welcome-line);
+}
+
+.membership-welcome-plan {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    padding-block: var(--space-5);
+}
+
+.membership-welcome-plan:first-child {
+    padding-inline-end: var(--welcome-gutter);
+}
+
+.membership-welcome-plan + .membership-welcome-plan {
+    padding-inline-start: var(--welcome-gutter);
+    border-inline-start: 1px solid var(--welcome-line);
+}
+
+.membership-welcome-plan h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--fs-heading);
+    font-weight: 660;
+    line-height: 1.4;
+}
+
+.membership-welcome-plan-numbers {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: end;
+    gap: var(--space-2) var(--space-4);
+    font-variant-numeric: tabular-nums;
+}
+
+.membership-welcome-price {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    margin: 0;
+    color: var(--welcome-muted);
+    font-size: var(--fs-caption);
+    white-space: nowrap;
+}
+
+.membership-welcome-price strong {
+    color: var(--welcome-text);
+    font-size: var(--typ-display-lg);
+    font-weight: 670;
+    letter-spacing: -0.065em;
+    line-height: 1;
+}
+
+.membership-welcome-plan-numbers .membership-credit-summary {
+    display: contents;
+}
+
+.membership-welcome-plan-numbers .membership-credit-summary-amount {
+    padding: var(--space-1) 0 var(--space-1) var(--space-4);
+    border-inline-start: 1px solid var(--welcome-line);
+    font-size: var(--fs-caption);
+    line-height: 1.2;
+}
+
+.membership-welcome-plan-numbers .membership-credit-summary-amount strong {
+    font-size: var(--typ-display-sm);
+    font-weight: 670;
+    letter-spacing: -0.035em;
+}
+
+.membership-welcome-plan-numbers .membership-credit-summary-meta {
+    grid-column: 1 / -1;
+    gap: 0 var(--space-3);
+    font-size: var(--typ-caption);
+}
+
+.membership-welcome-plan-numbers .membership-credit-summary-count {
+    color: var(--welcome-text);
+    font-weight: 600;
+}
+
+.membership-welcome-benefits {
+    display: grid;
+    flex: 1 0 auto;
+    align-content: start;
+    gap: var(--space-1);
+    margin: var(--space-3) 0 var(--space-4);
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-body);
+    line-height: 1.45;
+}
+
+.membership-welcome-benefits li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.membership-welcome-benefits svg {
+    flex: 0 0 auto;
+    color: var(--welcome-muted);
+}
+
+.membership-welcome-plan-action {
+    align-self: start;
+    min-block-size: var(--space-8);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--welcome-line);
+    border-radius: var(--radius-md);
+    background: var(--welcome-inset);
+}
+
+.membership-welcome-plan-action:hover {
+    background: var(--welcome-line);
+}
+
+.membership-welcome-models {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-2) var(--space-6);
+    padding-block: var(--space-4);
+}
+
+.membership-welcome-models .membership-model-access {
+    margin: 0;
+    font-size: var(--typ-caption);
+}
+
+.membership-welcome-models .membership-model-access > div {
+    grid-template-columns: var(--space-16) minmax(0, 1fr);
+}
+
+.membership-welcome-footer {
+    padding-block: var(--space-2);
+    border-block-start: 1px solid var(--welcome-line);
+    background: var(--welcome-inset);
+}
+
+.membership-welcome-footer .ant-checkbox-wrapper {
+    color: var(--welcome-muted);
+    font-size: var(--typ-caption);
+}
+
+.membership-welcome button:focus-visible {
+    outline: 2px solid var(--welcome-text);
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .membership-welcome {
+        --welcome-gutter: var(--space-4);
+        max-block-size: calc(100dvh - 28px);
+    }
+
+    .membership-welcome-header {
+        padding-block: var(--space-3);
+    }
+
+    .membership-welcome-plans,
+    .membership-welcome-models {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .membership-welcome-trial {
+        padding-block: var(--space-2);
+    }
+
+    .membership-welcome-plan,
+    .membership-welcome-models {
+        padding-block: var(--space-3);
+    }
+
+    .membership-welcome-plan:first-child {
+        padding-inline-end: 0;
+    }
+
+    .membership-welcome-plan + .membership-welcome-plan {
+        padding-inline-start: 0;
+        border-inline-start: 0;
+        border-block-start: 1px solid var(--welcome-line);
+    }
+
+    .membership-welcome-price strong {
+        font-size: var(--fs-display);
+    }
+}

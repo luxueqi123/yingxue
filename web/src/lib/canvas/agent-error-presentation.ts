@@ -1,0 +1,54 @@
+import { ApiError } from "@/services/api/request";
+import { AgentStreamError } from "@/services/api/agent";
+import { interfaceTranslator, type InterfaceMessageKey, type InterfaceTranslate } from "@/lib/interface-locale";
+import { currentLocale } from "@/i18n";
+
+function agentRuntimeText(t: InterfaceTranslate | undefined, key: string, fallback: string) {
+    const text = (t ?? interfaceTranslator(currentLocale()))(key as InterfaceMessageKey);
+    return text === key ? fallback : text;
+}
+
+export function agentErrorPresentation(cause: unknown, fallback = "Agent 执行失败") {
+    const text = typeof cause === "string" ? cause.trim() : cause instanceof Error ? cause.message : fallback;
+    if ((cause instanceof ApiError || cause instanceof AgentStreamError) && cause.status === 404) {
+        return {
+            title: "Agent 接口或资源不存在",
+            text: text || "当前后端未找到请求的 Agent 接口或会话资源。",
+            meta: "请确认后端已加载 Agent 路由，以及画布、会话和模型仍可访问；旧进程需要更新后重启。",
+            uiTitle: { key: "agentRuntimeUiErrorAgentResourceMissing" },
+            ...(!text ? { uiMessage: { key: "agentRuntimeUiErrorAgentResourceMissingDescription" } } : {}),
+            uiMeta: { key: "agentRuntimeUiErrorAgentResourceMissingHelp" },
+        };
+    }
+    if (cause instanceof ApiError && cause.status === 501) {
+        return {
+            title: "当前 Agent 能力尚未开放",
+            text: text || "当前请求的 Agent 能力尚未开放，请使用 capabilities 返回的权限和工具范围。",
+            uiTitle: { key: "agentRuntimeUiErrorAgentCapabilityUnavailable" },
+            ...(!text ? { uiMessage: { key: "agentRuntimeUiErrorAgentCapabilityUnavailableDescription" } } : {}),
+        };
+    }
+    // 渠道、鉴权、配额等业务错误保留真实语义，不能按 message 猜测为服务未部署。
+    return {
+        title: fallback,
+        text: text || fallback,
+        ...(fallback === "Agent 执行失败" ? { uiTitle: { key: "agentRuntimeUiAgentCannotContinue" } } : {}),
+        ...(!text && fallback === "Agent 执行失败" ? { uiMessage: { key: "agentRuntimeUiAgentCannotContinue" } } : {}),
+    };
+}
+
+export function agentErrorContent(text: string, title: string) {
+    // 只拆分服务端公开提示中的诊断尾注，不据此推断错误类型或改变业务语义。
+    const diagnostic = text.trim().match(/^([\s\S]*?)；如反复出现，请把诊断号\s+([a-zA-Z0-9:_-]+)\s+反馈给管理员[。.]?$/);
+    const description = (diagnostic?.[1] ?? text).trim();
+    return { description: description === title.trim() ? "" : description, diagnosticId: diagnostic?.[2] };
+}
+
+export function agentSubmissionErrorTitle(cause: unknown, accepted: boolean, requestSent = true, t?: InterfaceTranslate) {
+    if (accepted) return agentRuntimeText(t, "agentRuntimeUiSubmissionAcceptedCleanupFailed", "运行已接收，但本地提交记录清理失败");
+    if (!requestSent) return agentRuntimeText(t, "agentRuntimeUiSubmissionNotSent", "消息尚未发送，输入已保留");
+    const status = cause instanceof ApiError ? cause.status : undefined;
+    if (status && [400, 401, 403, 404, 422].includes(status)) return agentRuntimeText(t, "agentRuntimeUiSubmissionRejected", "请求已被服务端拒绝");
+    if (status) return agentRuntimeText(t, "agentRuntimeUiSubmissionServerErrorRetry", "服务端已返回错误；重试将核对原请求，不重复创建");
+    return agentRuntimeText(t, "agentRuntimeUiSubmissionNoServerConfirmation", "未收到服务端确认；重试将核对原请求，不重复创建");
+}

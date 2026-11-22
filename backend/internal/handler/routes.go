@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"infinite-canvas/backend/internal/service"
@@ -27,7 +28,14 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, stats)
 	})
-	r.POST("/tasks", func(c *gin.Context) {
+	registerTaskSubmissionRoutes(r, svc)
+	registerTaskReadRoutes(r, svc)
+	registerTaskTextReadRoutes(r, svc)
+	registerPersonalTaskActions(r, svc)
+}
+
+func registerTaskSubmissionRoutes(r *gin.RouterGroup, svc *service.Service) {
+	submit := func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -45,13 +53,29 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		req.TraceID = TraceID(c)
 		req.RequestID = RequestID(c)
+		if teamID := c.Param("teamId"); teamID != "" {
+			result, err := svc.TeamWorkspaceTask(user.ID, teamID, req, strings.HasSuffix(c.FullPath(), "/quote"))
+			if err != nil {
+				failService(c, err)
+				return
+			}
+			ok(c, result)
+			return
+		}
 		task, err := svc.CreateTask(user.ID, req)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
 		ok(c, task)
-	})
+	}
+	r.POST("/tasks", submit)
+	if strings.Contains(r.BasePath(), ":teamId") {
+		r.POST("/tasks/quote", submit)
+	}
+}
+
+func registerTaskReadRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.POST("/timeline/transcriptions", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -99,14 +123,18 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, task)
 	})
 	r.GET("/tasks", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
+		ownerKey, err := currentContentKey(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-		tasks, err := svc.TasksWithOptions(user.ID, service.TaskListOptions{
-			Limit:      limit,
+		pageSize, err := parsePositiveQueryInt(c.Query("pageSize"), 50)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		tasks, err := svc.TasksWithOptions(ownerKey, service.TaskListOptions{
+			Limit:      pageSize,
 			ProjectID:  c.Query("projectId"),
 			ActiveOnly: c.Query("activeOnly") == "true",
 		})
@@ -117,18 +145,21 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, tasks)
 	})
 	r.GET("/tasks/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
+		ownerKey, err := currentContentKey(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		task, err := svc.Task(user.ID, c.Param("id"))
+		task, err := svc.Task(ownerKey, c.Param("id"))
 		if err != nil {
 			fail(c, http.StatusNotFound, err)
 			return
 		}
 		ok(c, task)
 	})
+}
+
+func registerPersonalTaskActions(r *gin.RouterGroup, svc *service.Service) {
 	r.POST("/tasks/:id/text-deltas", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -149,22 +180,12 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, item)
 	})
+	registerPersonalTaskLifecycleRoutes(r, svc)
+}
+
+func registerTaskTextReadRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/tasks/:id/text-deltas", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		after, _ := strconv.ParseInt(c.DefaultQuery("after", "0"), 10, 64)
-		result, err := svc.TaskTextReplay(user.ID, c.Param("id"), after)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/tasks/:id/text-events", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
+		ownerKey, err := currentContentKey(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
@@ -174,13 +195,34 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		initial, err := svc.CachedTaskTextReplay(c.Request.Context(), user.ID, c.Param("id"), after)
+		result, err := svc.TaskTextReplay(ownerKey, c.Param("id"), after)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		streamTaskTextEvents(c, svc, user.ID, c.Param("id"), after, initial)
+		ok(c, result)
 	})
+	r.GET("/tasks/:id/text-events", func(c *gin.Context) {
+		ownerKey, err := currentContentKey(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		after, err := taskTextEventCursor(c)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		initial, err := svc.CachedTaskTextReplay(c.Request.Context(), ownerKey, c.Param("id"), after)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		streamTaskTextEvents(c, svc, ownerKey, c.Param("id"), after, initial)
+	})
+}
+
+func registerPersonalTaskLifecycleRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.POST("/tasks/:id/retry", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -190,6 +232,23 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		task, err := svc.RetryTask(user.ID, c.Param("id"))
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		ok(c, task)
+	})
+	r.POST("/tasks/:id/recover-media", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available || !enforceRateLimit(c, "task-media-recovery:"+user.ID, policy.Request.TaskCreatePerMinute, time.Minute) {
+			return
+		}
+		task, err := svc.RecoverTaskMedia(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
 			return
 		}
 		ok(c, task)
@@ -256,18 +315,27 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 }
 
 func taskTextEventCursor(c *gin.Context) (int64, error) {
-	raw := c.Query("after")
-	if raw == "" {
-		raw = c.GetHeader("Last-Event-ID")
+	queryRaw, headerRaw := c.Query("after"), c.GetHeader("Last-Event-ID")
+	var cursor int64
+	for _, item := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "after", raw: queryRaw},
+		{name: "Last-Event-ID", raw: headerRaw},
+	} {
+		if item.raw == "" {
+			continue
+		}
+		value, err := strconv.ParseInt(item.raw, 10, 64)
+		if err != nil || value < 0 {
+			return 0, errors.New("after 或 Last-Event-ID 必须是非负整数")
+		}
+		if value > cursor {
+			cursor = value
+		}
 	}
-	if raw == "" {
-		return 0, nil
-	}
-	after, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || after < 0 {
-		return 0, errors.New("after 或 Last-Event-ID 必须是非负整数")
-	}
-	return after, nil
+	return cursor, nil
 }
 
 func streamTaskTextEvents(c *gin.Context, svc *service.Service, userID string, taskID string, after int64, replay *service.TextReplayResult) {
@@ -302,6 +370,11 @@ func streamTaskTextEvents(c *gin.Context, svc *service.Service, userID string, t
 		case <-c.Request.Context().Done():
 			return
 		case <-heartbeatTicker.C:
+			if c.Param("teamId") != "" {
+				if _, err := currentContentKey(c, svc); err != nil {
+					return
+				}
+			}
 			if _, err := fmt.Fprint(c.Writer, ": heartbeat\n\n"); err != nil {
 				return
 			}
@@ -332,7 +405,6 @@ func writeTaskTextSSE(c *gin.Context, event string, id int64, value any) {
 	_, _ = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, data)
 	c.Writer.Flush()
 }
-
 func RegisterSessionRoutes(r *gin.RouterGroup, svc *service.Service) {
 	createSession := func(c *gin.Context) {
 		user, err := currentUser(c, svc)

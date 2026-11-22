@@ -1,0 +1,51 @@
+{
+  "name": "陆雪琪 · 天琊",
+  "assetSource": "用户提供的动画画面、竹林场景与人物设定图",
+  "composerPortrait": {
+    "file": "composer-portrait-20261114.webp",
+    "source": "用户本次提供的人物原图，仅裁切并压缩，不重新生成",
+    "sourceSha256": "48b08f1d8f1b3ece8cc526836fe4c54cae01e9df3f970e1237ff3c823f056b8a",
+    "crop": [330, 170, 850, 690]
+  },
+  "gameAssetsUsed": false,
+  "generativeModelUsed": true,
+  "animationMethod": "用户动画面部与服装参考衍生首帧，由视频模型制作实际人物动作。六段按真实动作剪辑，两段将真实半身动作与既有全身待机视频同尺度合成；清理绿幕、去音轨后打包。非Cubism，不使用静态贴图形变生成动作。",
+  "files": [
+    {
+      "name": "c012e7b3-a87d-4042-819d-0412e5b53194.png",
+      "sha256": "cf1cffb962bff1db0f68e68ba6fb84329ce766fa82dbcf902203fc24ba4e0155"
+    },
+    {
+      "name": "c30bd0bf-fb83-4174-9d06-c2fb269ed527.png",
+      "sha256": "77858a5a8eda7704569f9425d55a07b2429792f388b2687533d0c60b305a117b"
+    },
+    {
+      "name": "c6a579c7-067e-4ac8-81ab-1932854d7dca.png",
+      "sha256": "28a74378369acb764e0e3083dec27a2d060c9dc6c30b01c3383c01fdc97394f3"
+    }
+  ],
+  "reference": "https://www.sina.cn/news/detail/5344800485933463.html",
+  "rights": "仅记录用户提供素材的加工来源，不对原著或动画素材追加授权声明。",
+  "motionOriginals": [
+    {
+      "file": "character-motion-source.mp4",
+      "sha256": "25d35ebdc2b2dc813ecaca10068ca618a32cf745722ffb9000b7c6e171a0e132"
+    },
+    {
+      "file": "work-thinking-source.mp4",
+      "sha256": "a78136f4faf223f6c425398e9f4588738902747c900186ab471522939adae704"
+    },
+    {
+      "file": "feedback-source.mp4",
+      "sha256": "1214cffb49fe00b7e96ed9f8f7116d78f7eba7308918ae3c0dab7b63bec75d24"
+    },
+    {
+      "file": "error-rejection-source.mp4",
+      "sha256": "b8aae30a816489fa58767c636e9bcba861cb0d1a9f261c5d05a46599e681bd48"
+    }
+  ],
+  "motionBundleSha256": "26002afbb083f7f0601b1a6751d36b72b18d09734ba46f6324b4618a0d846337",
+  "nativePlaybackAcceptance": "eight_states_passed",
+  "productionActivated": false,
+  "nativeBundleAcceptance": "passed_isolated_backend_upload_save_public_reads_reference_protection"
+}

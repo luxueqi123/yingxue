@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +45,25 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"products": products})
 	})
-	r.POST("/payments/orders", func(c *gin.Context) {
+	r.GET("/payments/topup-orders", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		page, pageSize, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.UserPaymentOrders(user, c.Query("status"), page, pageSize)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	r.POST("/payments/topup-orders", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -68,7 +85,7 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"order": order})
 	})
-	r.GET("/payments/orders/:id", func(c *gin.Context) {
+	r.GET("/payments/topup-orders/:id", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -81,7 +98,7 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"order": order})
 	})
-	r.POST("/payments/orders/:id/query", func(c *gin.Context) {
+	r.POST("/payments/topup-orders/:id/query", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -97,7 +114,7 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"order": order})
 	})
-	r.POST("/payments/orders/:id/close", func(c *gin.Context) {
+	r.POST("/payments/topup-orders/:id/close", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -113,7 +130,7 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"order": order})
 	})
-	r.GET("/payments/orders/:id/checkout", func(c *gin.Context) {
+	r.GET("/payments/topup-orders/:id/checkout", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -126,7 +143,7 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		c.Redirect(http.StatusFound, target)
 	})
-	r.POST("/payments/orders/:id/checkout/refresh", func(c *gin.Context) {
+	r.POST("/payments/topup-orders/:id/checkout/refresh", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -151,6 +168,9 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if err != nil {
 			writePaymentNotificationFailure(c, svc, c.Param("providerId"), http.StatusBadRequest)
 			return
+		}
+		if len(rawBody) == 0 && c.Request.URL.RawQuery != "" {
+			rawBody = []byte(c.Request.URL.RawQuery)
 		}
 		err = svc.AcceptPaymentNotification(c.Request.Context(), c.Param("providerId"), c.Param("configId"), c.Request.Header.Clone(), rawBody)
 		if err != nil {
@@ -180,7 +200,52 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Redirect(http.StatusFound, "/wallet?paymentOrder="+url.QueryEscape(orderID))
 	})
 
+	r.GET("/payments/settings", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		settings, err := svc.PublicPaymentSettings(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"settings": settings})
+	})
 	admin := r.Group("/admin/payments")
+	registerPaymentExportRoutes(admin, svc)
+	admin.GET("/settings", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		settings, err := svc.AdminPaymentSettings(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"settings": settings})
+	})
+	admin.PUT("/settings", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var request service.PaymentSettings
+		if err := c.ShouldBindJSON(&request); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		settings, err := svc.UpdatePaymentSettings(user, request)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"settings": settings})
+	})
 	admin.GET("/providers", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -267,9 +332,12 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
-		result, err := svc.AdminPaymentOrderPage(user, c.Query("status"), c.Query("keyword"), page, limit)
+		page, limit, err := parsePaginationQuery(c, 30)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.AdminPaymentOrderPage(user, paymentOrderQuery(c), page, limit)
 		if err != nil {
 			failService(c, err)
 			return
@@ -326,9 +394,12 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
-		result, err := svc.AdminPaymentReconciliationPage(user, c.Query("providerId"), c.Query("status"), page, limit)
+		page, limit, err := parsePaginationQuery(c, 30)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.AdminPaymentReconciliationPage(user, paymentReconciliationQuery(c), page, limit)
 		if err != nil {
 			failService(c, err)
 			return
@@ -341,8 +412,11 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+		page, limit, err := parsePaginationQuery(c, 50)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
 		result, err := svc.AdminPaymentReconciliationItems(user, c.Param("id"), c.Query("result"), page, limit)
 		if err != nil {
 			failService(c, err)
@@ -354,11 +428,10 @@ func RegisterPaymentRoutes(r *gin.RouterGroup, svc *service.Service) {
 
 func readPaymentNotificationPayload(writer http.ResponseWriter, request *http.Request) ([]byte, error) {
 	if request.Method == http.MethodGet {
-		rawQuery := request.URL.RawQuery
-		if len(rawQuery) > paymentNotificationMaxBytes {
+		if len(request.URL.RawQuery) > paymentNotificationMaxBytes {
 			return nil, errors.New("支付通知超过安全限制")
 		}
-		return []byte(rawQuery), nil
+		return []byte(request.URL.RawQuery), nil
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, paymentNotificationMaxBytes)
 	return io.ReadAll(request.Body)

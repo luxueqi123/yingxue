@@ -1,4 +1,9 @@
-import axios from "axios";
+import axios, { AxiosHeaders, type AxiosRequestConfig, type AxiosResponse, type RawAxiosRequestHeaders } from "axios";
+
+import { translate } from "@/i18n";
+import { assertCurrentUserSession, captureUserSession } from "@/lib/user-scope";
+import { localizedApiErrorMessage } from "@/services/api/error-codes";
+import { workspaceApiPath } from "@/lib/workspace-routes";
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
 
@@ -6,20 +11,31 @@ export type BackendEnvelope<T> = {
     code: number;
     data: T;
     msg: string;
+    reason?: string;
+    details?: Record<string, unknown>;
 };
+
+/**
+ * 业务错误的统一载体：HTTP 200 只代表传输完成，code/reason 才决定业务是否成功。
+ * 调用方应依赖机器可读字段做分支，message 仅用于向用户展示，避免把后端文案当协议解析。
+ */
 
 export class ApiError extends Error {
     readonly status?: number;
     readonly code?: number;
+    readonly reason?: string;
+    readonly details?: Record<string, unknown>;
     readonly retryable: boolean;
     readonly retryAfterMs?: number;
     readonly cause?: unknown;
 
-    constructor(message: string, options: { status?: number; code?: number; retryable?: boolean; retryAfterMs?: number; cause?: unknown } = {}) {
+    constructor(message: string, options: { status?: number; code?: number; reason?: string; details?: Record<string, unknown>; retryable?: boolean; retryAfterMs?: number; cause?: unknown } = {}) {
         super(message);
         this.name = "ApiError";
         this.status = options.status;
         this.code = options.code;
+        this.reason = options.reason;
+        this.details = options.details;
         this.retryable = options.retryable ?? isRetryableStatus(options.status ?? options.code);
         this.retryAfterMs = options.retryAfterMs;
         this.cause = options.cause;
@@ -30,34 +46,68 @@ export class ApiError extends Error {
 export const apiBaseURL = import.meta.env.VITE_CANVAS_BACKEND_URL || "/api";
 export const apiClient = axios.create({ baseURL: apiBaseURL, withCredentials: true });
 
-export async function request<T>(promise: Promise<{ data: BackendEnvelope<T>; status?: number; headers?: unknown }>) {
+/**
+ * 解包后端业务信封的唯一边界。这里把非零业务 code 转成 ApiError，保留 reason、重试语义和 Retry-After；
+ * 取消请求必须继续抛出 AbortError，不能被包装成普通失败，否则页面切换会被误报为错误。
+ */
+
+export async function request<T>(promise: Promise<{ data: BackendEnvelope<T>; status?: number; headers?: unknown }>, options: { allowNotModified?: boolean } = {}) {
     try {
         const response = await promise;
+        if (response.status === 304 && options.allowNotModified) return { notModified: true } as T;
         if (response.data.code !== 0) {
-            throw new ApiError(response.data.msg || "请求失败", {
+            throw new ApiError(localizedApiErrorMessage(response.data.reason, response.data.msg || translate("errors.requestFailed")), {
                 status: response.status,
                 code: response.data.code,
+                reason: response.data.reason,
+                details: response.data.details,
                 retryable: isRetryableStatus(response.status) || isRetryableStatus(response.data.code),
                 retryAfterMs: retryAfterMilliseconds(response.headers),
             });
         }
         return response.data.data;
     } catch (error) {
-        if (axios.isCancel(error) || (axios.isAxiosError(error) && error.code === axios.AxiosError.ERR_CANCELED)) {
-            throw new DOMException("请求已取消", "AbortError");
-        }
-        if (axios.isAxiosError<BackendEnvelope<unknown>>(error)) {
-            const status = error.response?.status;
-            const code = error.response?.data?.code;
-            throw new ApiError(error.response?.data?.msg || error.message || "请求失败", {
-                status,
-                code,
-                retryable: isRetryableStatus(status) || isRetryableStatus(code),
-                retryAfterMs: retryAfterMilliseconds(error.response?.headers),
-                cause: error,
-            });
-        }
+        throw unwrapTransportError(error);
+    }
+}
+
+function unwrapTransportError(error: unknown): never {
+    if (error instanceof ApiError || (error instanceof DOMException && error.name === "AbortError")) {
         throw error;
+    }
+    if (axios.isCancel(error) || (axios.isAxiosError(error) && error.code === axios.AxiosError.ERR_CANCELED)) {
+        throw new DOMException(translate("errors.canceled"), "AbortError");
+    }
+    if (axios.isAxiosError<BackendEnvelope<unknown>>(error)) {
+        const status = error.response?.status;
+        const code = error.response?.data?.code;
+        const timedOut = error.code === axios.AxiosError.ECONNABORTED || error.code === axios.AxiosError.ETIMEDOUT;
+        const reason = error.response?.data?.reason;
+        throw new ApiError(localizedApiErrorMessage(reason, error.response?.data?.msg || (timedOut ? "连接等待超时，请重试" : transportFailureMessage(status, error.message))), {
+            status,
+            code,
+            reason,
+            details: error.response?.data?.details,
+            // 没有 response 的 AxiosError 代表请求没有拿到 HTTP 响应（断网、连接重置、DNS、超时等）。
+            // 这类错误不能靠 status 判断，但对保存来说通常是暂时性的，应交给上层有限退避重试。
+            retryable: status === undefined || isRetryableStatus(status) || isRetryableStatus(code),
+            retryAfterMs: retryAfterMilliseconds(error.response?.headers),
+            cause: error,
+        });
+    }
+    throw error;
+}
+
+function transportFailureMessage(status?: number, fallback?: string) {
+    switch (status) {
+        case 502:
+            return translate("errors.badGateway");
+        case 503:
+            return translate("errors.unavailable");
+        case 504:
+            return translate("errors.timeout");
+        default:
+            return fallback || translate("errors.requestFailed");
     }
 }
 
@@ -79,6 +129,90 @@ function retryAfterMilliseconds(headers: unknown) {
     if (!Number.isFinite(retryAt)) return undefined;
     return Math.max(0, retryAt - Date.now());
 }
+
+export type HttpRequestConfig = Omit<AxiosRequestConfig, "method" | "url" | "data" | "baseURL"> & {
+    allowNotModified?: boolean;
+    /** 仅登录、注册和会话恢复等公开认证接口使用；账户业务接口始终绑定当前身份。 */
+    session?: "public";
+};
+
+async function send<T>(method: string, url: string, data?: unknown, config?: HttpRequestConfig) {
+    const { allowNotModified, session, ...axiosConfig } = config || {};
+    return request<T>(sendWithSession<BackendEnvelope<T>>({ method, url, data, ...axiosConfig }, session), { allowNotModified });
+}
+
+async function sendWithSession<T>(config: AxiosRequestConfig, mode?: "public"): Promise<AxiosResponse<T>> {
+    const snapshot = captureUserSession(mode === "public");
+    const headers = new AxiosHeaders();
+    const methodHeaderNames = new Set(["common", "delete", "get", "head", "post", "put", "patch", "options"]);
+    const headerSources: Array<RawAxiosRequestHeaders | undefined> = [config.headers?.common, config.headers?.[config.method?.toLowerCase() || "get"], config.headers];
+    for (const source of headerSources) {
+        for (const [name, value] of Object.entries(source || {})) {
+            if (value !== undefined && !methodHeaderNames.has(name.toLowerCase())) headers.set(name, value);
+        }
+    }
+    if (mode !== "public") {
+        const expectedUser = headers.get("X-Canvas-Expected-User");
+        if (expectedUser && expectedUser !== snapshot.scope && expectedUser !== snapshot.userId) throw new DOMException("请求所属账号已变化", "AbortError");
+        headers.set("X-Canvas-Expected-User", snapshot.userId, true);
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    snapshot.signal.addEventListener("abort", abort, { once: true });
+    config.signal?.addEventListener?.("abort", abort, { once: true });
+    if (snapshot.signal.aborted || config.signal?.aborted) abort();
+    try {
+        const response = await apiClient.request<T>({ ...config, url: config.url && workspaceApiPath(config.url, undefined, config.method), headers, signal: controller.signal });
+        assertCurrentUserSession(snapshot, mode === "public");
+        return response;
+    } catch (error) {
+        // 即使传输层忽略取消，旧会话的响应和错误也不能进入新账号的缓存或重试路径。
+        assertCurrentUserSession(snapshot, mode === "public");
+        throw error;
+    } finally {
+        snapshot.signal.removeEventListener("abort", abort);
+        config.signal?.removeEventListener?.("abort", abort);
+    }
+}
+
+async function read<T>(url: string, config?: HttpRequestConfig) {
+    const defaultDeadline = config?.timeout === undefined;
+    // The deadline covers the full response body, including large tool catalogs
+    // over slower connections. Do not abort a healthy transfer after six seconds.
+    const readConfig = defaultDeadline ? { ...config, timeout: 15_000 } : config;
+    if (config?.signal?.aborted) throw new DOMException("请求已取消", "AbortError");
+    try {
+        return await send<T>("get", url, undefined, readConfig);
+    } catch (error) {
+        if (config?.signal?.aborted) throw new DOMException("请求已取消", "AbortError");
+        const cause = error instanceof ApiError ? error.cause : undefined;
+        // Retry one stalled idempotent read. Business failures, HTTP responses,
+        // caller deadlines, cancellations and all writes keep their own semantics.
+        if (!defaultDeadline || !axios.isAxiosError(cause) || cause.response
+            || ![axios.AxiosError.ECONNABORTED, axios.AxiosError.ETIMEDOUT, axios.AxiosError.ERR_NETWORK].includes(cause.code || "")) throw error;
+        return send<T>("get", url, undefined, readConfig);
+    }
+}
+
+/**
+ * 业务 JSON 的唯一调用入口。模块不要再写 `request(apiClient.get(...))`，也不要再 `axios.create`。
+ * 拦截器仍挂在 `apiClient` 上；流式 fetch、媒体 blob 和渠道中转走各自边界。
+ */
+export const http = {
+    get: <T>(url: string, config?: HttpRequestConfig) => read<T>(url, config),
+    post: <T>(url: string, data?: unknown, config?: HttpRequestConfig) => send<T>("post", url, data, config),
+    put: <T>(url: string, data?: unknown, config?: HttpRequestConfig) => send<T>("put", url, data, config),
+    patch: <T>(url: string, data?: unknown, config?: HttpRequestConfig) => send<T>("patch", url, data, config),
+    delete: <T>(url: string, config?: HttpRequestConfig) => send<T>("delete", url, undefined, config),
+    deleteWithBody: <T>(url: string, data?: unknown, config?: HttpRequestConfig) => send<T>("delete", url, data, config),
+    async raw<T>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+        try {
+            return await sendWithSession<T>(config);
+        } catch (error) {
+            throw unwrapTransportError(error);
+        }
+    },
+};
 
 export function compactApiParams(params: ApiParams) {
     return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && (!Array.isArray(value) || value.length > 0))) as ApiParams;

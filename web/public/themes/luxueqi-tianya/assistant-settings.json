@@ -1,0 +1,15 @@
+{
+  "agentName": "陆雪琪",
+  "avatarType": "bundle",
+  "avatarHeight": 260,
+  "avatarClipStates": {
+    "idle": "idle",
+    "queued": "sleep_loop",
+    "completed": "wave",
+    "running": "working_loop",
+    "waiting_approval": "think",
+    "cancelled": "lie_down",
+    "failed": "wipe_sweat",
+    "rejected": "rejected"
+  }
+}

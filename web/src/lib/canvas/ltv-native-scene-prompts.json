@@ -1,0 +1,53 @@
+{
+  "sourceSkillId": "pl-f12093599bf2751ac0795952383fb3b3",
+  "templates": {
+    "multi_camera_grid_9": {
+      "prompt": "Produce a single image laid out as a 3x3 grid of nine equally sized cells. Cells must share their edges directly and fill the whole canvas edge to edge: no gutters, no separator lines, no padding, no outer margin or border around the grid. Each cell re-renders the supplied image from a different camera position and shot size: front eye-level medium, three-quarter left, three-quarter right, profile side, back view, high angle looking down, low angle looking up, wide establishing shot, and close-up detail. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep lighting, scene and continuity identical across all nine cells; only the camera moves. Keep perspective and occlusion physically coherent in every cell. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "b43aef7113388cf66b29f5d314b72a5637c450a3d527f638686cd7e9d45015f5"
+    },
+    "story_beat_grid_4": {
+      "prompt": "Produce a single image laid out as a 2x2 grid of four equally sized cells. Cells must share their edges directly and fill the whole canvas edge to edge: no gutters, no separator lines, no padding, no outer margin or border around the grid. The four cells depict four consecutive narrative story beats evolving from the supplied image, read left to right, top to bottom. Each beat advances the action, character pose and emotional progression with physical cause and effect. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep environment, character identity, lighting and color grading consistent across all four cells while clearly showing the progression between moments. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "cea80d30259cc70d4583adf37b078839bf5dc1b9e497477d810d712c8c3bd357"
+    },
+    "continuous_storyboard_grid_25": {
+      "prompt": "Produce a single image laid out as a 5x5 grid of twenty-five equally sized cells. Cells must share their edges directly and fill the whole canvas edge to edge: no gutters, no separator lines, no padding, no outer margin or border around the grid. The twenty-five cells depict a continuous storyboard sequence extending from the supplied image, read left to right, top to bottom. Each cell advances the scene with coherent camera movement, character action and cinematic pacing. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep the visual universe coherent while cutting between angles, shot sizes and beats naturally. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "442147953ff14c0dad55367e23598985910768d8de0a00a8c047db188d1624ff"
+    },
+    "character_turnaround_3view": {
+      "prompt": "Produce a single image of a character turnaround sheet on a plain white background. The sheet contains three full-body views of the character from the supplied image: front view, side profile view, and rear back view, arranged side by side in a neutral standing pose. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep the character's proportions, costume details and accessories strictly consistent across all three views. High key neutral studio lighting, no dramatic shadows. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "55b71f4ec642aad10bbe6facf9f5daacc92d74c256204eb172a903c83e413867"
+    },
+    "character_face_turnaround_3view": {
+      "prompt": "Produce a single image of a facial turnaround study on a plain white background. The sheet contains three close-up head studies of the character from the supplied image: front portrait, three-quarter portrait, and direct side profile, arranged side by side with neutral expression. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Maintain exact facial structure, eye shape and color, skin texture, nose bridge, lip contours and hair styling across all three studies. Clean diffused portrait lighting. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "9d5fd500ed8dcb74d7ed78ade4528750a874c4b954e0f4f06fbffea505d21402"
+    },
+    "product_turnaround_3view": {
+      "prompt": "Produce a single image of an object turnaround presentation on a clean white background. The sheet displays three views of the main object from the supplied image: front view, side view, and an angled three-quarter hero view, arranged side by side with consistent scale. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Preserve all design details, textures, materials, colors and functional elements across all angles. Clean studio product lighting with soft ground contact shadow. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "918f9aa85b26a8a18e3565830ea4d59af7eaf9ac2aad89d05b4fed4263cafd24"
+    },
+    "character_setting_sheet": {
+      "prompt": "Produce a single image styled as a comprehensive character design sheet on a light neutral background. The layout features: a prominent full-body hero pose of the character from the supplied image, two smaller facial expression studies, detail callouts of signature costume elements or accessories, and a thin color palette strip along the bottom. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. High-end concept art portfolio presentation, elegant spacing between elements. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "eab23eacefbce2de4d25d29b48dd73b38917c000ecda6ca6a36edfc7c385a0d5"
+    },
+    "scene_setting_sheet": {
+      "prompt": "Produce a single image styled as an environment design sheet on a dark neutral background. The layout features: a wide establishing hero view of the environment from the supplied image, two inset detail views showing specific architectural or prop elements within the scene, and a mood-and-materials palette along one edge. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Professional production design presentation, cinematic lighting, coherent spatial logic throughout. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "40f548817b93a9c3da488db31209b30e55ffc7c587477a6804b3bcd42b8a4cc0"
+    },
+    "product_setting_sheet": {
+      "prompt": "Produce a single image styled as an industrial design presentation sheet on a light gray background. The layout features: a hero three-quarter rendering of the object from the supplied image, an exploded or disassembled view showing key internal or functional components, and material texture detail studies. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Clean, modern industrial design aesthetic, accurate perspective, balanced negative space. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "61f3ecac883b6719fabeaa65089b555588a3d1455202bc6d3d04b5fbef93865b"
+    },
+    "cinematic_lighting_correction": {
+      "prompt": "Produce a single image that re-renders the supplied image with professional cinematic lighting and film-grade color grading. The subject, composition, pose, environment and all scene elements remain strictly identical to the original image; only the lighting and atmosphere are transformed. Introduce dramatic volumetric light, a clear key-fill-rim light setup, natural falloff, rich shadow tones with preserved detail, and subtle filmic contrast with warm highlights and cool shadows. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. High cinematic dynamic range, elegant photographic depth. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "da2fddcc36e026fc5ad4079f88d14c6d5bb38e0e55b923246be8f9e04b44e09d"
+    },
+    "frame_prediction_plus_3s": {
+      "prompt": "Produce a single image showing what physically happens three seconds after the moment captured in the supplied image. Continue the motion, action and narrative trajectory naturally: characters progress through their current movements, physical reactions resolve (such as falling objects, dispersing smoke, shifting expressions), and the scene evolves logically. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep the environment, lighting style, color palette and characters completely continuous with the original moment, changing only what three seconds of real-world time would change. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "5448538b2407eb61da91f379d353aafea567c2b2c3f2f9bd542cb22e18a637e5"
+    },
+    "frame_prediction_minus_5s": {
+      "prompt": "Produce a single image showing what happened five seconds before the moment captured in the supplied image. Rewind the scene to its preceding state: characters are in their prior positions or poses, actions are in their setup phase rather than their climax, and the environment reflects the moments leading up to the original frame. Preserve the exact identity, facial features, hairstyle, clothing, body proportions, materials, color grading and art style of the supplied image. Keep the environment, lighting style, color palette and characters completely continuous with the original moment, changing only what reversing five seconds of real-world time would restore. Do not add text, captions, watermarks, logos or frame borders.",
+      "sha256": "ee595d840fb7e096111552e00d40a70112e9fd42f07b33ed88ec1d1f804b9699"
+    }
+  }
+}

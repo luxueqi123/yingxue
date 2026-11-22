@@ -1,6 +1,7 @@
 import { resourceFileUrl } from "@/services/api/resources";
 import type { ProjectAsset } from "@/services/api/projects";
 import type { CanvasNodeData } from "@/types/canvas";
+import { applyCharacterOutfitDefinition, characterOutfitCoverUrl, resolveLockedNodeOutfitId } from "@/components/canvas/character-outfits";
 
 export type CharacterBreakdown = {
     name: string;
@@ -18,7 +19,15 @@ export type CharacterBreakdown = {
     voiceTimbre: string;
 };
 
-export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], assets: ProjectAsset[]) {
+export function normalizeCharacterImageMentions(prompt: string, imageCount: number, characterLabels: string[]) {
+    if (imageCount > 0 || !characterLabels.length) return prompt;
+    return prompt.replace(/@图片([1-9]\d*)(?![0-9])/g, (token, index: string) => {
+        const label = characterLabels[Number(index) - 1];
+        return label ? "@" + label : token;
+    });
+}
+
+export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], assets: ProjectAsset[], targetNodeOutfit?: { nodeId?: string; outfitId?: string }) {
     const characters = new Map(assets.filter((asset) => asset.category === "character" && asset.character).map((asset) => [asset.id, asset]));
     let changed = false;
     const next = nodes.map((node) => {
@@ -29,35 +38,48 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
         const card = asset.character;
         const cover = card.representations.find((item) => item.role === "turnaround_sheet") || card.representations.find((item) => item.role === "primary") || card.representations.find((item) => item.role === "front");
         const aliases = Array.isArray(card.definition.aliases) ? card.definition.aliases.filter((value): value is string => typeof value === "string") : [];
+        const selectedOutfitId =
+            targetNodeOutfit?.nodeId && targetNodeOutfit.nodeId === node.id && targetNodeOutfit.outfitId
+                ? targetNodeOutfit.outfitId
+                : resolveLockedNodeOutfitId(metadata.selectedOutfitId, metadata.characterCoverUrl, metadata.characterDefinition, card.definition, card.representations);
+        const effectiveDefinition = applyCharacterOutfitDefinition(card.definition, selectedOutfitId, card.representations);
+        const coverUrl = characterOutfitCoverUrl(card.definition, card.representations, selectedOutfitId, cover ? resourceFileUrl(cover.resourceId) : undefined);
         const patch = {
             characterVersionId: card.versionId,
             characterName: asset.title,
-            characterPrompt: compileCharacterReferencePrompt(asset.title, card.definition),
+            characterPrompt: compileCharacterReferencePrompt(asset.title, effectiveDefinition),
             characterAliases: aliases,
             characterDefinition: card.definition,
-            characterCoverUrl: cover ? resourceFileUrl(cover.resourceId) : undefined,
+            characterCoverUrl: coverUrl,
+            selectedOutfitId,
             characterVisualStatus: card.visualStatus,
             characterVoiceStatus: card.voiceStatus,
             characterVoiceName: card.voice?.profile.name,
-            characterVoiceProfile: card.voice ? {
-                name: card.voice.profile.name,
-                provider: card.voice.profile.provider,
-                language: card.voice.profile.language,
-                timbre: card.voice.profile.timbre,
-            } : undefined,
+            characterVoiceProfile: card.voice
+                ? {
+                      name: card.voice.profile.name,
+                      provider: card.voice.profile.provider,
+                      language: card.voice.profile.language,
+                      timbre: card.voice.profile.timbre,
+                  }
+                : undefined,
             characterVoiceInstructions: card.voice?.instructions,
         };
-        if (node.title === asset.title
-            && metadata.characterVersionId === patch.characterVersionId
-            && metadata.characterPrompt === patch.characterPrompt
-            && metadata.characterCoverUrl === patch.characterCoverUrl
-            && metadata.characterVisualStatus === patch.characterVisualStatus
-            && metadata.characterVoiceStatus === patch.characterVoiceStatus
-            && metadata.characterVoiceName === patch.characterVoiceName
-            && JSON.stringify(metadata.characterDefinition) === JSON.stringify(patch.characterDefinition)
-            && JSON.stringify(metadata.characterVoiceProfile) === JSON.stringify(patch.characterVoiceProfile)
-            && metadata.characterVoiceInstructions === patch.characterVoiceInstructions
-            && (metadata.characterAliases || []).join("\u0000") === aliases.join("\u0000")) return node;
+        if (
+            node.title === asset.title &&
+            metadata.characterVersionId === patch.characterVersionId &&
+            metadata.characterPrompt === patch.characterPrompt &&
+            metadata.characterCoverUrl === patch.characterCoverUrl &&
+            metadata.selectedOutfitId === patch.selectedOutfitId &&
+            metadata.characterVisualStatus === patch.characterVisualStatus &&
+            metadata.characterVoiceStatus === patch.characterVoiceStatus &&
+            metadata.characterVoiceName === patch.characterVoiceName &&
+            JSON.stringify(metadata.characterDefinition) === JSON.stringify(patch.characterDefinition) &&
+            JSON.stringify(metadata.characterVoiceProfile) === JSON.stringify(patch.characterVoiceProfile) &&
+            metadata.characterVoiceInstructions === patch.characterVoiceInstructions &&
+            (metadata.characterAliases || []).join("\u0000") === aliases.join("\u0000")
+        )
+            return node;
         changed = true;
         return { ...node, title: asset.title, metadata: { ...metadata, ...patch } };
     });
@@ -65,14 +87,17 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
 }
 
 export function compileCharacterReferencePrompt(name: string, definition: Record<string, unknown>) {
-    const parts = [definition.role, definition.appearance, definition.physique, definition.clothing, definition.personality, definition.props, definition.consistencyPrompt]
-        .map((value) => typeof value === "string" ? value.trim() : "")
-        .filter(Boolean);
+    const effective = applyCharacterOutfitDefinition(definition);
+    const parts = [effective.role, effective.appearance, effective.physique, effective.clothing, effective.personality, effective.props, effective.consistencyPrompt].map((value) => (typeof value === "string" ? value.trim() : "")).filter(Boolean);
     return [`【角色卡：${name}】`, ...parts].join("\n");
 }
 
 export function normalizeCharacterName(value?: string) {
-    return (value || "").toLocaleLowerCase("zh-CN").replace(/^角色[：:]\s*/, "").replace(/[\s·•・._-]+/g, "").trim();
+    return (value || "")
+        .toLocaleLowerCase("zh-CN")
+        .replace(/^角色[：:]\s*/, "")
+        .replace(/[\s·•・._-]+/g, "")
+        .trim();
 }
 
 function findJsonValueEnd(source: string, start: number) {
@@ -132,7 +157,7 @@ function flattenCharacterCandidates(value: unknown): unknown[] | undefined {
     return undefined;
 }
 
-function extractCharacterBreakdownJson(raw: string) {
+export function extractCharacterBreakdownJson(raw: string, allowEmptyCharacters = false) {
     for (let start = 0; start < raw.length; start += 1) {
         if (raw[start] !== "{" && raw[start] !== "[") continue;
         const end = findJsonValueEnd(raw, start);
@@ -144,6 +169,8 @@ function extractCharacterBreakdownJson(raw: string) {
             // 模型的推理文字可能包含 aliases: [] 等合法 JSON 片段；角色契约只接受带 characters 字段的对象。
             const candidates = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? flattenCharacterCandidates((parsed as { characters?: unknown }).characters) : undefined;
             if (Array.isArray(candidates) && candidates.length) return parsed;
+            // 章节资产允许无人场景；仍交由章节解析器校验三个必填数组。
+            if (allowEmptyCharacters && parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray((parsed as { characters?: unknown }).characters)) return parsed;
         } catch {
             // Ignore unrelated braces in model prose and continue to the next complete JSON value.
         }
@@ -152,7 +179,10 @@ function extractCharacterBreakdownJson(raw: string) {
 }
 
 export function parseCharacterBreakdown(raw: string): CharacterBreakdown[] {
-    const unfenced = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const unfenced = raw
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "");
     const parsed = extractCharacterBreakdownJson(unfenced);
     const candidates = Array.isArray(parsed) ? flattenCharacterCandidates(parsed) : flattenCharacterCandidates((parsed as { characters?: unknown }).characters);
     if (!Array.isArray(candidates)) throw new Error("角色拆解结果缺少 characters 数组");
@@ -168,9 +198,7 @@ export function parseCharacterBreakdown(raw: string): CharacterBreakdown[] {
         const identityKeys = [key, ...aliases.map(normalizeCharacterName)].filter(Boolean);
         if (!name || !key || identityKeys.some((identityKey) => seen.has(identityKey))) return;
         const role = String(value.role || "").trim();
-        const descriptiveFields = [value.appearance, value.clothing, value.physique, value.personality, value.consistencyPrompt, value.multiViewPrompt]
-            .map((field) => String(field || "").trim())
-            .filter(Boolean);
+        const descriptiveFields = [value.appearance, value.clothing, value.physique, value.personality, value.consistencyPrompt, value.multiViewPrompt].map((field) => String(field || "").trim()).filter(Boolean);
         const voiceLanguage = String(value.voiceLanguage || "").trim();
         const voiceAge = String(value.voiceAge || "").trim();
         const voiceTimbre = String(value.voiceTimbre || "").trim();

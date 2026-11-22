@@ -1,4 +1,5 @@
-import type { CanvasNodeData, CanvasNodeTypeId } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId } from "@/types/canvas";
+import type { InterfaceMessageKey, InterfaceTranslate } from "@/lib/interface-locale";
 import type { PluginCanvasNodeContribution } from "@/lib/plugins/plugin-types";
 
 import { canvasNodeDefinitionFromPlugin, type CanvasNodeDefinition } from "./node-definition";
@@ -13,6 +14,12 @@ const FALLBACK_MIN_SIZE = { width: 220, height: 160 } as const;
 
 /** 批量注册节点定义 */
 export function registerNodeDefinitions(defs: CanvasNodeDefinition[], ownerId = "builtin") {
+    const ids = new Set<string>();
+    for (const def of defs) {
+        const owner = ownerByType.get(def.type);
+        if (ids.has(def.type) || (owner && owner !== ownerId)) throw new Error(`节点类型重复或归属冲突：${def.type}`);
+        ids.add(def.type);
+    }
     for (const def of defs) {
         definitions.set(def.type, def);
         ownerByType.set(def.type, ownerId);
@@ -59,9 +66,29 @@ export function getNodeLabel(type: CanvasNodeTypeId) {
 }
 
 /** 列表/搜索标签，缺省派生自 label */
-export function getNodeListLabel(type: CanvasNodeTypeId) {
+export function getNodeListLabel(type: CanvasNodeTypeId, t?: InterfaceTranslate) {
     const def = definitions.get(type);
-    if (!def) return "未知节点";
+    if (!def) return t ? t("imageNodeUi.unknownNode") : "未知节点";
+    if (t && getNodeOwnerId(type) === "builtin") {
+        const keys: Partial<Record<CanvasNodeTypeId, InterfaceMessageKey>> = {
+            [CanvasNodeType.Image]: "contextImage",
+            [CanvasNodeType.Text]: "createText",
+            [CanvasNodeType.Drawing]: "createDrawing",
+            [CanvasNodeType.Script]: "createScript",
+            [CanvasNodeType.Skill]: "navSkills",
+            [CanvasNodeType.Config]: "canvasUi.generationConfig",
+            [CanvasNodeType.Video]: "contextVideo",
+            [CanvasNodeType.Audio]: "createAudio",
+            [CanvasNodeType.Frame]: "contextFrame",
+            [CanvasNodeType.Panorama]: "nodeSearchUi.panorama",
+            [CanvasNodeType.BatchTable]: "createBatchTable",
+            [CanvasNodeType.MediaConversion]: "createMediaConversion",
+            [CanvasNodeType.ColorGrade]: "completeUi.233",
+        };
+        const key = keys[type];
+        const label = key ? t(key) : def.label;
+        return def.listLabel ? label : t("nodeSearchUi.node", { label });
+    }
     return def.listLabel || `${def.label}节点`;
 }
 
@@ -72,6 +99,14 @@ export function getNodeIcon(type: CanvasNodeTypeId) {
 /** 手动拉伸的最小尺寸 */
 export function getNodeMinSize(type: CanvasNodeTypeId) {
     return definitions.get(type)?.minSize ?? FALLBACK_MIN_SIZE;
+}
+
+/** Image previews can be narrower than media composer panels; keep a usable long edge. */
+export function getNodeResizeMinSize(node: CanvasNodeData) {
+    if (node.type !== "image") return getNodeMinSize(node.type);
+    if (node.metadata?.freeResize) return { width: 80, height: 80 };
+    const factor = 160 / Math.max(1, node.width, node.height);
+    return { width: node.width * factor, height: node.height * factor };
 }
 
 /** 拉伸时是否锁定宽高比 */
@@ -99,4 +134,14 @@ export function getNodeInputKind(type: CanvasNodeTypeId) {
 
 export function getNodeAcceptedInputKind(type: CanvasNodeTypeId) {
     return definitions.get(type)?.acceptsInputKind;
+}
+
+export function getNodeAcceptedInputKinds(type: CanvasNodeTypeId) {
+    const accepted = definitions.get(type)?.acceptsInputKind;
+    if (!accepted) return [];
+    return Array.isArray(accepted) ? accepted : [accepted];
+}
+
+export function getNodeMaxInputCount(type: CanvasNodeTypeId) {
+    return definitions.get(type)?.maxInputCount;
 }

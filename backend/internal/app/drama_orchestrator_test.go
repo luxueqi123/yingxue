@@ -1,0 +1,818 @@
+package app
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/production"
+	"infinite-canvas/backend/internal/protocol"
+)
+
+// fakeDramaModels uses a persisted capability contract; only upstream execution is replaced.
+var fakeDramaModels = DramaModels{
+	Text:  DramaModelChoice{ChannelID: "ch", ModelKey: "text"},
+	Image: DramaModelChoice{ChannelID: "ch", ModelKey: "image"},
+	Video: DramaModelChoice{ChannelID: "ch", ModelKey: "video"},
+}
+
+type fakeDramaBackend struct {
+	t        *testing.T
+	db       *gorm.DB
+	seq      atomic.Int64
+	byKind   map[string]int
+	renders  []renderProject
+	requests []CreateTaskRequest
+	fail     func(req CreateTaskRequest) bool
+}
+
+func (f *fakeDramaBackend) resource(userID, kind, mime string) string {
+	return f.resourceSized(userID, kind, mime, 1080, 1920)
+}
+
+// submit 立即生成一条已成功的任务，并按任务类型给出与真实执行器同构的结果。
+func (f *fakeDramaBackend) submit(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error) {
+	if f.fail != nil && f.fail(req) {
+		return nil, fmt.Errorf("上游拒绝")
+	}
+	task := &model.Task{ID: fmt.Sprintf("tsk-%d", f.seq.Add(1)), UserID: userID, Type: req.Type, Status: model.TaskStatusSucceeded, Prompt: req.Prompt}
+	f.requests = append(f.requests, req)
+	var result any
+	switch req.Type {
+	case "canvas_text":
+		system := ""
+		if config, ok := req.Input["config"].(map[string]any); ok {
+			system, _ = config["systemPrompt"].(string)
+		}
+		switch {
+		case strings.Contains(system, "尚未写清外貌的新角色"):
+			f.byKind["cast_extract"]++
+			result = map[string]any{"mode": "text", "text": `{"characters":[],"props":[],"scenes":[]}`}
+		case strings.Contains(system, "作品圣经"):
+			f.byKind["bible"]++
+			result = map[string]any{"mode": "text", "text": `{"logline":"退婚少年逆袭","visualRules":"冷色调","characters":[{"name":"萧炎","aliases":["炎儿"],"appearance":"黑发少年"},{"name":"纳兰嫣然","appearance":"白衣少女"}],"props":[{"name":"退婚书","appearance":"烫金红纸卷轴"}],"scenes":[{"name":"萧家大厅","appearance":"古朴大厅"}]}`}
+		case strings.Contains(system, "整段视频提示词"):
+			f.byKind["segment_prompt"]++
+			result = map[string]any{"mode": "text", "text": "```\n第1段视频《退婚·登门》——纳兰嫣然当众退婚\n3秒｜9:16｜写实电影感｜中文对白｜无字幕｜1个主镜头\n\n【视觉与首帧】\n萧家大厅，纳兰嫣然立于厅中央，面朝萧炎。\n\n【00.00—03.00秒｜镜头一：当众退婚】\n50mm近景。纳兰嫣然抬手：“我今日来，是要退婚。”\n```"}
+		case strings.Contains(system, "分集"):
+			f.byKind["plan"]++
+			result = map[string]any{"mode": "text", "text": `{"episodes":[{"title":"退婚","chapters":[1,2],"synopsis":"纳兰嫣然登门退婚","hook":"登门","cliffhanger":"三年之约"},{"title":"药老","chapters":[3],"synopsis":"戒指里的老者现身"}]}`}
+		default:
+			f.byKind["script"]++
+			result = map[string]any{"mode": "text", "text": "```json\n" + `{"shots":[{"scene":"萧家大厅","characters":["炎儿","纳兰嫣然"],"props":["退婚书"],"speaker":"纳兰嫣然","dialogue":"我今日来，是要退婚。","action":"她抬手","shotSize":"近景","imagePrompt":"白衣少女站在大厅中央","durationSeconds":3},{"scene":"后山","characters":["萧炎","药老"],"action":"少年握拳","imagePrompt":"少年在后山握紧拳头","durationSeconds":8}]}` + "\n```"}
+		}
+	case "canvas_image":
+		f.byKind["image"]++
+		// 按请求的画幅出图（与遵守尺寸参数的真实模型一致）；未声明尺寸时按竖图。
+		width, height := 1080, 1920
+		if config, ok := req.Input["config"].(map[string]any); ok {
+			if ratio, ok := dramaRatioValue(stringValue(config["size"])); ok {
+				width, height = int(1080*ratio), 1080
+			}
+		}
+		result = map[string]any{"mode": "image", "images": []any{map[string]any{"resourceId": f.resourceSized(userID, "image", "image/png", width, height)}}}
+	case "canvas_video":
+		f.byKind["video"]++
+		result = map[string]any{"mode": "video", "video": map[string]any{"resourceId": f.resource(userID, "video", "video/mp4")}}
+	case model.TaskTypeTimelineRender:
+		f.byKind["render"]++
+		f.renders = append(f.renders, *timeline)
+		result = timelineRenderResult{ResourceID: f.resource(userID, "video", "video/mp4"), DurationMs: timeline.DurationMs, SubtitleSRT: buildRenderSubtitleSRT(*timeline)}
+	}
+	raw, _ := json.Marshal(result)
+	task.ResultJSON = string(raw)
+	if err := f.db.Create(task).Error; err != nil {
+		f.t.Fatalf("seed task: %v", err)
+	}
+	return task, nil
+}
+
+func newDramaTestService(t *testing.T) (*Service, *fakeDramaBackend) {
+	t.Helper()
+	svc, db := newTimelineTaskTestService(t)
+	fake := &fakeDramaBackend{t: t, db: db, byKind: map[string]int{}}
+	svc.dramaTaskHook = fake.submit
+	svc.dramaTailFrameHook = func(userID, resourceID string) (string, error) {
+		return fake.resource(userID, "image", "image/png"), nil
+	}
+	// 尾帧抽取在生产里走后台 worker；测试同步执行，固定轮数的调度断言不受 goroutine 时序影响。
+	svc.dramaBackgroundRunner = func(fn func()) bool {
+		fn()
+		return true
+	}
+	video := dramaVideoFixture()
+	raw, _ := json.Marshal(&ModelCapabilityConfig{Version: 1, Video: &video})
+	if err := db.Create(&model.ChannelModel{ID: "drama-video", ChannelID: "ch", ModelKey: "video", Capability: "video", Protocol: model.ChannelInterfaceVolcengineArkVideo, Enabled: true, CapabilityConfigJSON: string(raw)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.dramaVideoProfile(fakeDramaModels.Video); err != nil {
+		t.Fatalf("seed video contract: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "usr-drama", Email: "drama@example.com", Username: "drama"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	return svc, fake
+}
+
+// dramaVideoFixture 是夹具视频模型的能力合同：竖横两种比例、同步出声、三种生成方式。
+func dramaVideoFixture() VideoCapabilityConfig {
+	return VideoCapabilityConfig{
+		Duration:   VideoDurationConfig{Selection: "enum", Values: []int{5, 10}, Default: 5},
+		Operations: []string{"text_to_video", "reference_to_video", "image_to_video"}, DefaultOperation: "image_to_video",
+		References:    VideoReferenceConfig{PromptMaxChars: DefaultVideoPromptMaxChars, MaxImages: 6},
+		GenerateAudio: VideoBooleanConfig{Supported: true, Default: true},
+		Ratios:        []string{"9:16", "16:9"}, DefaultRatio: "9:16",
+	}
+}
+
+func setDramaVideoCapability(t *testing.T, svc *Service, fake *fakeDramaBackend, video VideoCapabilityConfig) {
+	t.Helper()
+	row, err := svc.repo.ChannelModelByKey("ch", "video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(&ModelCapabilityConfig{Version: 1, Video: &video})
+	row.CapabilityConfigJSON = string(raw)
+	if err := fake.db.Save(row).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func dramaVideoRequests(fake *fakeDramaBackend) []CreateTaskRequest {
+	requests := []CreateTaskRequest{}
+	for _, req := range fake.requests {
+		if req.Type == "canvas_video" {
+			requests = append(requests, req)
+		}
+	}
+	return requests
+}
+
+func runDramaTicks(t *testing.T, svc *Service, projectID string, ticks int) {
+	t.Helper()
+	for i := 0; i < ticks; i++ {
+		production, err := svc.repo.DramaProduction(projectID)
+		if err != nil {
+			t.Fatalf("load production: %v", err)
+		}
+		if err := svc.tickDrama(production); err != nil {
+			t.Fatalf("tick %d: %v", i, err)
+		}
+	}
+}
+
+func createTestDrama(t *testing.T, svc *Service, review string) DramaSummary {
+	return createTestDramaWithMedia(t, svc, review, DramaMediaAuto)
+}
+
+func createTestDramaWithMedia(t *testing.T, svc *Service, review string, media string) DramaSummary {
+	t.Helper()
+	settings := DramaSettings{ReviewMode: review, MediaMode: media, Concurrency: 16, Models: fakeDramaModels}
+	settings.EpisodeSeconds = 60
+	// 剧情段固定 5 秒：夹具剧本的两个镜头（3 秒、6 秒）各成一段，覆盖段间首帧衔接。
+	settings.Storyboard.SegmentMode, settings.Storyboard.SegmentSeconds = production.SegmentFixed, 5
+	summary, err := svc.CreateDrama("usr-drama", CreateDramaRequest{Name: "斗破", Start: true, Settings: settings, Chapters: []DramaChapterInput{
+		{Title: "第一章 陨落的天才", Text: "萧炎……"}, {Title: "第二章 退婚", Text: "纳兰嫣然……"}, {Title: "第三章 药老", Text: "戒指……"},
+	}})
+	if err != nil {
+		t.Fatalf("create drama: %v", err)
+	}
+	return summary
+}
+
+func TestDramaPipelineRunsNovelToFinalCutWithSampleGate(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewSample).Project.ID
+	runDramaTicks(t, svc, project, 24)
+	summary, err := svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Episodes) != 2 || summary.Episodes[0].Stage != model.DramaEpisodeDone || summary.Episodes[1].Stage != model.DramaEpisodeReview {
+		t.Fatalf("sample must finish before remaining episodes: %+v", summary.Episodes)
+	}
+	if fake.byKind["video"] != 2 {
+		t.Fatalf("one video per sample segment: %v", fake.byKind)
+	}
+	if _, err := svc.ApproveDramaEpisode("someone", project, summary.Episodes[0].ID); err == nil {
+		t.Fatal("ownership")
+	}
+	if _, err := svc.ApproveDramaEpisode("usr-drama", project, summary.Episodes[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 24)
+	summary, err = svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Production.Status != model.DramaStatusCompleted || fake.byKind["video"] != 4 || fake.byKind["render"] != 2 {
+		t.Fatalf("pipeline not finished: %+v %v", summary, fake.byKind)
+	}
+	for _, timeline := range fake.renders {
+		if len(timeline.Clips) != 2 || len(timeline.Tracks) != 1 || timeline.Tracks[0].Muted {
+			t.Fatalf("must concatenate segment videos with original audio: %+v", timeline)
+		}
+		for _, clip := range timeline.Clips {
+			if clip.Kind != "video" || clip.Volume == nil || *clip.Volume != 1 || clip.DirectMedia == nil {
+				t.Fatalf("invalid clip: %+v", clip)
+			}
+		}
+	}
+	requests := []CreateTaskRequest{}
+	for _, req := range fake.requests {
+		if req.Type == "canvas_video" {
+			requests = append(requests, req)
+		}
+	}
+	if requests[0].Operation != "reference_to_video" || requests[1].Operation != "image_to_video" {
+		t.Fatalf("operations: %s %s", requests[0].Operation, requests[1].Operation)
+	}
+	refs := requests[1].Input["referenceImages"].([]any)
+	if len(refs) == 0 || refs[0].(map[string]any)["role"] != "first_frame" {
+		t.Fatalf("tail must be an actual first-frame reference: %+v", refs)
+	}
+	if requests[1].Input["config"].(map[string]any)["videoGenerateAudio"] != "true" {
+		t.Fatal("native dialogue must stay enabled")
+	}
+	if config := requests[0].Input["config"].(map[string]any); config["size"] != "9:16" || config["vquality"] != nil {
+		t.Fatalf("a model with declared ratios must receive the work ratio as size: %+v", config)
+	}
+	casts, _ := svc.repo.DramaCasts(project)
+	for _, cast := range casts {
+		if cast.Name == "炎儿" {
+			t.Fatal("cast aliases must resolve")
+		}
+	}
+}
+
+func TestDramaManualMediaWaitsForRelease(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDramaWithMedia(t, svc, DramaReviewAuto, "").Project.ID
+	runDramaTicks(t, svc, project, 20)
+	if fake.byKind["image"]+fake.byKind["video"] != 0 || fake.byKind["segment_prompt"] != 4 {
+		t.Fatalf("manual mode should finish text only: %v", fake.byKind)
+	}
+	summary, err := svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ep := range summary.Episodes {
+		if !ep.AwaitingMedia {
+			t.Fatalf("not waiting: %+v", ep)
+		}
+	}
+	first := summary.Episodes[0].ID
+	if _, err := svc.ReleaseDramaMedia("usr-drama", project, ReleaseDramaMediaRequest{Target: "episodes", EpisodeIDs: []string{first}}); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 24)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if summary.Episodes[0].Stage != "done" || !summary.Episodes[1].AwaitingMedia || fake.byKind["video"] != 2 {
+		t.Fatalf("only released episode should run: %+v %v", summary.Episodes, fake.byKind)
+	}
+	if _, err := svc.ReleaseDramaMedia("usr-drama", project, ReleaseDramaMediaRequest{Target: "bogus"}); err == nil {
+		t.Fatal("invalid target")
+	}
+}
+
+func TestDramaEveryEpisodeRequiresPromptApproval(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewEvery).Project.ID
+	runDramaTicks(t, svc, project, 20)
+	summary, _ := svc.DramaSummary("usr-drama", project)
+	if fake.byKind["video"] != 0 {
+		t.Fatal("review must gate videos")
+	}
+	if _, err := svc.ApproveDramaEpisode("usr-drama", project, summary.Episodes[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 20)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if summary.Episodes[0].Stage != "done" || summary.Episodes[1].Stage != "review" {
+		t.Fatalf("approval is per episode: %+v", summary.Episodes)
+	}
+}
+
+// 每集确认模式下，逐段点「生成视频」只生成这一段，不能顺带确认整集把其余段一起排队。
+func TestDramaEveryEpisodeSingleSegmentDoesNotApproveEpisode(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewEvery).Project.ID
+	runDramaTicks(t, svc, project, 20)
+	summary, _ := svc.DramaSummary("usr-drama", project)
+	episode := summary.Episodes[0].ID
+	if summary.Episodes[0].Stage != "review" || fake.byKind["video"] != 0 {
+		t.Fatalf("episode must wait for review before any video: %+v %v", summary.Episodes[0], fake.byKind)
+	}
+	if _, err := svc.GenerateDramaSegments("usr-drama", project, episode, GenerateDramaSegmentsRequest{Segments: []int{0}}); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 20)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if fake.byKind["video"] != 1 {
+		t.Fatalf("single-segment generation must submit only that segment, videos=%d", fake.byKind["video"])
+	}
+	if summary.Episodes[0].Approved || summary.Episodes[0].Stage != "review" {
+		t.Fatalf("single-segment generation must not approve the episode: %+v", summary.Episodes[0])
+	}
+	rows, err := svc.repo.DramaSegments(episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) < 2 || mediaBusyStatus(rows[1].VideoStatus) || rows[1].VideoResourceID != "" {
+		t.Fatalf("other segments must stay ungenerated: %+v", rows)
+	}
+	if _, err := svc.ApproveDramaEpisode("usr-drama", project, episode); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 20)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if summary.Episodes[0].Stage != "done" || fake.byKind["video"] != 2 {
+		t.Fatalf("approving the episode must generate the rest: %+v %v", summary.Episodes[0], fake.byKind)
+	}
+	// 已确认的集重做最后一段：只生成这一段并重新成片，不需要再次确认。
+	if _, err := svc.GenerateDramaSegments("usr-drama", project, episode, GenerateDramaSegmentsRequest{Segments: []int{rows[1].SegmentIndex}}); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 20)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if !summary.Episodes[0].Approved || summary.Episodes[0].Stage != "done" || fake.byKind["video"] != 3 || fake.byKind["render"] != 2 {
+		t.Fatalf("regenerating a segment of an approved episode must keep approval and re-render: %+v %v", summary.Episodes[0], fake.byKind)
+	}
+}
+
+func TestDramaFailedSegmentSurfacesAndRetries(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	fake.fail = func(req CreateTaskRequest) bool { return req.Type == "canvas_video" }
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	runDramaTicks(t, svc, project, 20)
+	summary, err := svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := 0
+	for _, item := range summary.Inbox {
+		if item.Kind == "segment_failed" {
+			failed++
+		}
+	}
+	if failed != 2 || fake.byKind["render"] != 0 {
+		t.Fatalf("failed video must block render, no black placeholder: %+v %v", summary.Inbox, fake.byKind)
+	}
+	fake.fail = nil
+	if _, err := svc.RetryFailedDrama("usr-drama", project); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 24)
+	summary, _ = svc.DramaSummary("usr-drama", project)
+	if summary.Production.Status != "completed" {
+		t.Fatalf("retry did not finish: %+v", summary)
+	}
+}
+
+func TestDramaTailFailureRetriesPaidOutputWithoutNewGeneration(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	svc.dramaTailFrameHook = func(string, string) (string, error) { return "", fmt.Errorf("tail failed") }
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	runDramaTicks(t, svc, project, 20)
+	if fake.byKind["video"] != 2 || fake.byKind["render"] != 0 {
+		t.Fatalf("tail failure must block successor: %v", fake.byKind)
+	}
+	summary, _ := svc.DramaSummary("usr-drama", project)
+	segs, _ := svc.repo.DramaSegments(summary.Episodes[0].ID)
+	if segs[0].VideoResourceID == "" || segs[0].VideoStatus != "failed" {
+		t.Fatalf("paid output must be retained: %+v", segs)
+	}
+	svc.dramaTailFrameHook = func(userID, id string) (string, error) { return fake.resource(userID, "image", "image/png"), nil }
+	if _, err := svc.RetryFailedDrama("usr-drama", project); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 24)
+	if fake.byKind["video"] != 4 || fake.byKind["render"] != 2 {
+		t.Fatalf("only successors should buy videos after retry: %v", fake.byKind)
+	}
+	var takes int64
+	fake.db.Model(&model.DramaTake{}).Where("owner_id = ?", segs[0].ID).Count(&takes)
+	if takes != 1 {
+		t.Fatalf("same task should produce one history take: %d", takes)
+	}
+}
+
+func TestDramaBudgetPausesDispatch(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	// 预算按订单口径判断：冻结中的订单按冻结额计入，不看 spent_microcredits 缓存。
+	seedDramaBillingOrder(t, fake.db, project, "held", model.BillingOrder{AmountMicrocredits: 100, Status: model.BillingStatusReserved})
+	if err := svc.repo.UpdateDramaProduction(project, map[string]any{"budget_microcredits": 100}); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 1)
+	p, _ := svc.repo.DramaProduction(project)
+	if p.Status != "paused" || p.PauseReason != dramaBudgetPauseReason || len(fake.requests) != 0 {
+		t.Fatalf("budget: %+v", p)
+	}
+}
+
+func TestDramaMissingVideoContractFails(t *testing.T) {
+	svc, _ := newDramaTestService(t)
+	if _, err := svc.dramaVideoProfile(DramaModelChoice{ChannelID: "missing", ModelKey: "missing"}); err == nil {
+		t.Fatal("missing model must not synthesize duration/audio settings")
+	}
+}
+
+func TestDramaVideoScreenFollowsCapabilityContract(t *testing.T) {
+	ratios := &VideoCapabilityConfig{Ratios: []string{"adaptive", "16:9", "9:16", "1:1"}}
+	if screen := dramaVideoScreenFor(ratios, "9:16", ""); screen.Size != "9:16" || screen.Resolution != "" || screen.Issue != "" {
+		t.Fatalf("a declared ratio must be sent as size: %+v", screen)
+	}
+	if screen := dramaVideoScreenFor(ratios, "3:4", ""); !strings.Contains(screen.Issue, "3:4") {
+		t.Fatalf("an undeclared ratio must be refused, not sent and ignored: %+v", screen)
+	}
+	if screen := dramaVideoScreenFor(&VideoCapabilityConfig{}, "9:16", ""); screen.Issue == "" {
+		t.Fatal("a model without ratio control cannot promise 9:16")
+	}
+	// AutoDL 一类：横竖写在完整分辨率标签里；默认横屏时，竖屏作品取同档的竖屏标签。
+	labeled := &VideoCapabilityConfig{Resolutions: []string{"480p竖", "768p竖", "480p横", "768p横"}, DefaultResolution: "768p横", FixedScreenSpec: &VideoScreenSpecConfig{}}
+	for ratio, want := range map[string]string{"9:16": "768p竖", "16:9": "768p横"} {
+		if screen := dramaVideoScreenFor(labeled, ratio, ""); screen.Resolution != want || screen.Size != "" || screen.Issue != "" {
+			t.Fatalf("%s: %+v", ratio, screen)
+		}
+	}
+	for _, ratio := range []string{"1:1", "3:4"} {
+		if screen := dramaVideoScreenFor(labeled, ratio, ""); screen.Issue == "" {
+			t.Fatalf("%s has no matching label and must be refused: %+v", ratio, screen)
+		}
+	}
+	pixels := &VideoCapabilityConfig{Resolutions: []string{"480p竖(480*864)", "768p竖(768*1376)", "768p横(1376*768)", "736p(1:1)"}, DefaultResolution: "768p竖(768*1376)", FixedScreenSpec: &VideoScreenSpecConfig{}}
+	if screen := dramaVideoScreenFor(pixels, "16:9", ""); screen.Resolution != "768p横(1376*768)" {
+		t.Fatalf("pixel labels: %+v", screen)
+	}
+	if screen := dramaVideoScreenFor(pixels, "1:1", ""); screen.Resolution != "736p(1:1)" {
+		t.Fatalf("square label: %+v", screen)
+	}
+}
+
+func TestDramaVideoResolutionKeyMatchesCaseAndAliases(t *testing.T) {
+	for _, pair := range [][2]string{{"720P", "720p"}, {"480P", "480p"}, {"1080P", "1080p"}, {"4K", "2160p"}, {"2K", "1440p"}} {
+		if left, right := dramaVideoResolutionKey(pair[0]), dramaVideoResolutionKey(pair[1]); left != right {
+			t.Fatalf("%s and %s must share a resolution key: %q != %q", pair[0], pair[1], left, right)
+		}
+	}
+	if dramaVideoResolutionKey("720p") == dramaVideoResolutionKey("768p") {
+		t.Fatal("720p and 768p must remain different tiers")
+	}
+}
+
+func TestDramaEffectiveResolutionFallsBackToModelDefault(t *testing.T) {
+	profile := dramaVideoProfile{video: &VideoCapabilityConfig{Ratios: []string{"9:16"}, Resolutions: []string{"480p", "720p", "1080p"}}}
+	if got := profile.effectiveResolution("720P"); got != "720P" {
+		t.Fatalf("a supported uppercase resolution must be kept: %q", got)
+	}
+	if got := profile.effectiveResolution("768p"); got != "" {
+		t.Fatalf("an unsupported resolution must fall back to the model default: %q", got)
+	}
+	if got := profile.effectiveResolution(""); got != "" {
+		t.Fatalf("an empty resolution already means the model default: %q", got)
+	}
+	fixed := dramaVideoProfile{video: &VideoCapabilityConfig{Resolutions: []string{"768p横", "768p竖"}, FixedScreenSpec: &VideoScreenSpecConfig{}}}
+	if got := fixed.effectiveResolution("768p"); got != "768p" {
+		t.Fatalf("a fixed-screen model must match by tier: %q", got)
+	}
+	if got := fixed.effectiveResolution("1080p"); got != "" {
+		t.Fatalf("a fixed-screen model without the tier must fall back: %q", got)
+	}
+}
+
+func TestDramaVideoDefaultSelectionIgnoresResolution(t *testing.T) {
+	settings := DramaSettings{Settings: production.Settings{AspectRatio: "9:16"}, VideoResolution: "768p"}
+	option := DramaModelOption{Capability: "video", VideoRatios: []string{"9:16"}, TailFrameChain: true, VideoResolutions: []string{"720p"}}
+	if !dramaVideoOptionFits(option, settings) {
+		t.Fatal("an old resolution must not block a model that fits the aspect and continuity")
+	}
+	option.VideoRatios = []string{"16:9"}
+	if dramaVideoOptionFits(option, settings) {
+		t.Fatal("an unsupported aspect must still block the model")
+	}
+}
+
+func TestDramaSegmentVideoUsesResolutionLabelAndSilentModel(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	video := dramaVideoFixture()
+	// AutoDL 一类：没有独立比例参数，默认分辨率是横屏，且不声明同步出声。
+	video.Ratios, video.DefaultRatio = []string{}, ""
+	video.Resolutions, video.DefaultResolution = []string{"768p横", "768p竖"}, "768p横"
+	video.FixedScreenSpec = &VideoScreenSpecConfig{Ratios: []string{}, Resolutions: []string{"768p横", "768p竖"}, DefaultResolution: "768p横"}
+	video.GenerateAudio = VideoBooleanConfig{}
+	setDramaVideoCapability(t, svc, fake, video)
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	runDramaTicks(t, svc, project, 24)
+	requests := dramaVideoRequests(fake)
+	if len(requests) == 0 {
+		t.Fatal("a model without native audio must still be usable")
+	}
+	for _, req := range requests {
+		config := req.Input["config"].(map[string]any)
+		if config["vquality"] != "768p竖" || config["size"] != nil || config["videoGenerateAudio"] != "false" {
+			t.Fatalf("a vertical work must pick the vertical label and turn audio off: %+v", config)
+		}
+	}
+}
+
+func TestDramaRefusesVideoModelWithoutWorkRatio(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	settings := DramaSettings{ReviewMode: DramaReviewAuto, Models: fakeDramaModels}
+	settings.AspectRatio = "2:1"
+	if _, err := svc.CreateDrama("usr-drama", CreateDramaRequest{Name: "画幅", Settings: settings, Chapters: []DramaChapterInput{{Title: "一", Text: "甲"}}}); err == nil {
+		t.Fatal("an unknown ratio must be rejected instead of becoming 9:16")
+	}
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	video := dramaVideoFixture()
+	video.Ratios, video.DefaultRatio = []string{"16:9"}, "16:9"
+	setDramaVideoCapability(t, svc, fake, video)
+	runDramaTicks(t, svc, project, 24)
+	if got := len(dramaVideoRequests(fake)); got != 0 {
+		t.Fatalf("a model that cannot output 9:16 must not be paid for a landscape clip: %d requests", got)
+	}
+	summary, err := svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments, _ := svc.repo.DramaSegments(summary.Episodes[0].ID)
+	if len(segments) == 0 || segments[0].VideoStatus != model.DramaMediaFailed || !strings.Contains(segments[0].VideoError, "9:16") {
+		t.Fatalf("the segment must fail with the ratio reason: %+v", segments)
+	}
+	p, _ := svc.repo.DramaProduction(project)
+	current := parseDramaSettings(p.SettingsJSON)
+	if _, err := svc.UpdateDramaSettings("usr-drama", project, UpdateDramaSettingsRequest{Settings: &current}); err == nil || !strings.Contains(err.Error(), "9:16") {
+		t.Fatalf("saving settings with an incompatible video model must fail: %v", err)
+	}
+}
+
+func TestDramaVideoOptionsReportRatiosAndAudio(t *testing.T) {
+	svc, _ := newDramaTestService(t)
+	option := svc.dramaModelOption(fakeDramaModels.Video, "video", "视频", "")
+	if !slices.Equal(option.VideoRatios, []string{"9:16", "16:9"}) || option.GenerateAudio == nil || !*option.GenerateAudio || !option.TailFrameChain {
+		t.Fatalf("video options must expose ratios and audio: %+v", option)
+	}
+	wide := DramaModelOption{Capability: "video", Choice: DramaModelChoice{ChannelID: "wide"}, TailFrameChain: true, VideoRatios: []string{"16:9"}}
+	parallelOnly := DramaModelOption{Capability: "video", Choice: DramaModelChoice{ChannelID: "vertical"}, VideoRatios: []string{"9:16"}}
+	vertical := DramaSettings{Settings: production.Settings{AspectRatio: "9:16"}, VideoContinuity: DramaContinuityTailFrame}
+	if picked, ok := preferredDramaOption([]DramaModelOption{wide, parallelOnly}, vertical); ok {
+		t.Fatalf("must not fall back to a model that cannot serve the work: %+v", picked)
+	}
+	vertical.VideoContinuity = DramaContinuityParallel
+	if picked, ok := preferredDramaOption([]DramaModelOption{wide, parallelOnly}, vertical); !ok || picked.Choice.ChannelID != "vertical" {
+		t.Fatalf("a parallel vertical work must pick the vertical model: %+v %v", picked, ok)
+	}
+}
+func (f *fakeDramaBackend) resourceSized(userID, kind, mime string, width, height int) string {
+	id := fmt.Sprintf("res-%d", f.seq.Add(1))
+	if err := f.db.Create(&model.Resource{ID: id, UserID: userID, Kind: kind, Status: model.ResourceStatusReady, MimeType: mime, Size: 10, Width: width, Height: height, CreatedAt: time.Now()}).Error; err != nil {
+		f.t.Fatalf("seed resource: %v", err)
+	}
+	return id
+}
+
+func TestDramaChapterGroupingCreatesEpisodesWithoutPlanning(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	settings := DramaSettings{ReviewMode: DramaReviewAuto, MediaMode: DramaMediaManual, Concurrency: 16, Models: fakeDramaModels, EpisodeMode: DramaEpisodeModeChapter, ChaptersPerEpisode: 2}
+	summary, err := svc.CreateDrama("usr-drama", CreateDramaRequest{Name: "分组", Settings: settings, Chapters: []DramaChapterInput{{Title: "第一章", Text: "甲"}, {Title: "第二章", Text: "乙"}, {Title: "第三章", Text: "丙"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Episodes) != 2 || !summary.Production.PlanDone {
+		t.Fatalf("3 chapters at 2 per episode must give 2 episodes: %+v", summary.Episodes)
+	}
+	first, err := svc.repo.DramaEpisode(summary.Project.ID, summary.Episodes[0].ID)
+	if err != nil || len(decodeStringList(first.ChapterIDsJSON)) != 2 {
+		t.Fatalf("first episode must hold two chapters: %+v %v", first, err)
+	}
+
+	settings.ChaptersPerEpisode = 3
+	if _, err := svc.UpdateDramaSettings("usr-drama", summary.Project.ID, UpdateDramaSettingsRequest{Settings: &settings}); err == nil {
+		t.Fatal("grouping must be locked once planning is done")
+	}
+	if fake.byKind["plan"] != 0 {
+		t.Fatalf("chapter grouping must not call the planner: %v", fake.byKind)
+	}
+}
+
+func TestComposeDramaEpisodeRequeuesFinalRender(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	runDramaTicks(t, svc, project, 40)
+	summary, err := svc.DramaSummary("usr-drama", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episodeID := summary.Episodes[0].ID
+	if summary.Episodes[0].Stage != model.DramaEpisodeDone || summary.Episodes[0].FinalResourceID == "" || summary.Episodes[0].FinalStale {
+		t.Fatalf("sample must finish first: %+v", summary.Episodes[0])
+	}
+	rendersBefore := fake.byKind["render"]
+
+	if _, err := svc.ComposeDramaEpisode("someone", project, episodeID); err == nil {
+		t.Fatal("ownership")
+	}
+	detail, err := svc.ComposeDramaEpisode("usr-drama", project, episodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Episode.Stage != model.DramaEpisodeRender || !detail.Episode.FinalStale || detail.Episode.FinalResourceID == "" {
+		t.Fatalf("compose must mark final stale and enter render: %+v", detail.Episode)
+	}
+	if err := svc.repo.CreateDramaJobs([]model.DramaJob{{ID: newID(), ProjectID: project, EpisodeID: episodeID, Kind: model.DramaJobRender, Status: model.DramaJobQueued}}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := svc.repo.DramaJobsByStatus(project, model.DramaJobQueued)
+	if err != nil || len(jobs) != 1 || jobs[0].Kind != model.DramaJobCompose {
+		t.Fatalf("a concurrent automatic plan must reuse the queued composition: %+v, %v", jobs, err)
+	}
+
+	// 合成中再次点击：幂等，不报错。
+	if _, err := svc.ComposeDramaEpisode("usr-drama", project, episodeID); err != nil {
+		t.Fatal(err)
+	}
+
+	runDramaTicks(t, svc, project, 12)
+	detail, err = svc.DramaEpisodeDetail("usr-drama", project, episodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Episode.Stage != model.DramaEpisodeDone || detail.Episode.FinalStale || detail.Episode.FinalResourceID == "" {
+		t.Fatalf("compose must finish a new final: %+v", detail.Episode)
+	}
+	if fake.byKind["render"] != rendersBefore+1 {
+		t.Fatalf("expected a new render job, before=%d after=%d", rendersBefore, fake.byKind["render"])
+	}
+
+	if err := fake.db.Model(&model.DramaSegment{}).Where("episode_id = ?", episodeID).Update("video_resource_id", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ComposeDramaEpisode("usr-drama", project, episodeID); err == nil || !strings.Contains(err.Error(), "没有可合成") {
+		t.Fatalf("must reject empty composition: %v", err)
+	}
+}
+
+func TestComposeDramaEpisodeWhilePausedDoesNotRegenerateOrCompleteEpisode(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewSample).Project.ID
+	runDramaTicks(t, svc, project, 40)
+	episodes, err := svc.repo.DramaEpisodes(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode := episodes[0]
+	prompt := "修改第一段后保留后续段的视频"
+	if err := svc.UpdateDramaSegment("usr-drama", project, episode.ID, 0, UpdateDramaSegmentRequest{VideoPromptOverride: &prompt}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetDramaRunning("usr-drama", project, false); err != nil {
+		t.Fatal(err)
+	}
+	segments, err := svc.repo.DramaSegments(episode.ID)
+	if err != nil || len(segments) != 2 || segments[1].VideoStatus != model.DramaMediaStale {
+		t.Fatalf("stale segments: %+v, %v", segments, err)
+	}
+	if _, err := svc.repo.UpdateDramaSegmentRevision(segments[0].ID, segments[0].Revision, map[string]any{"video_status": model.DramaMediaQueued, "video_resource_id": ""}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(fake.requests)
+	queued, err := svc.ComposeDramaEpisode("usr-drama", project, episode.ID)
+	if err != nil || queued.ComposeJob == nil || queued.ComposeJob.Status != model.DramaJobQueued || queued.Episode.FinalResourceID != episode.FinalResourceID {
+		t.Fatalf("queued with previous final: %+v, %v", queued.Episode, err)
+	}
+	work, err := svc.repo.RunningDramaProductions(10)
+	if err != nil || !slices.ContainsFunc(work, func(row model.DramaProduction) bool {
+		return row.ProjectID == project && row.Status == model.DramaStatusPaused
+	}) {
+		t.Fatalf("paused composition must be scheduled: %+v, %v", work, err)
+	}
+	runDramaTicks(t, svc, project, 1)
+	if again, err := svc.ComposeDramaEpisode("usr-drama", project, episode.ID); err != nil || again.ComposeJob == nil || again.ComposeJob.ID != queued.ComposeJob.ID {
+		t.Fatalf("in-flight request must be idempotent: %+v, %v", again.ComposeJob, err)
+	}
+	runDramaTicks(t, svc, project, 4)
+	detail, err := svc.DramaEpisodeDetail("usr-drama", project, episode.ID)
+	if err != nil || detail.ComposeJob == nil || detail.ComposeJob.Status != model.DramaJobSucceeded || !detail.Episode.FinalStale || detail.Episode.FinalResourceID == "" || detail.Episode.FinalResourceID == episode.FinalResourceID || detail.Episode.Stage != queued.Episode.Stage || detail.Episode.DurationMs != queued.Episode.DurationMs {
+		t.Fatalf("partial result must preserve episode progress: %+v, %v", detail.Episode, err)
+	}
+	production, err := svc.repo.DramaProduction(project)
+	if err != nil || production.Status != model.DramaStatusPaused || len(fake.requests) != before+1 || fake.requests[before].Type != model.TaskTypeTimelineRender {
+		t.Fatalf("manual composition must only render: %+v, %v", fake.requests[before:], err)
+	}
+	clips := fake.renders[len(fake.renders)-1].Clips
+	if len(clips) != 1 || clips[0].DirectMedia.ID != segments[1].VideoResourceID || clips[0].StartMs != 0 || detail.Segments[1].VideoStatus != model.DramaMediaStale {
+		t.Fatalf("old video must be used without relabeling the segment: %+v", clips)
+	}
+}
+
+func TestComposeDramaEpisodeSnapshotDoesNotInterruptAutomaticFinal(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	project := createTestDrama(t, svc, DramaReviewSample).Project.ID
+	for tick := 0; tick < 40 && fake.byKind["video"] < 2; tick++ {
+		runDramaTicks(t, svc, project, 1)
+	}
+	episodes, err := svc.repo.DramaEpisodes(project)
+	if err != nil || len(episodes) == 0 {
+		t.Fatalf("load sample: %v", err)
+	}
+	episodeID := episodes[0].ID
+	segments, err := svc.repo.DramaSegments(episodeID)
+	if err != nil || len(segments) != 2 || segments[0].VideoStatus != model.DramaMediaReady || segments[1].VideoStatus != model.DramaMediaRunning {
+		t.Fatalf("expected the second video in flight: %+v, %v", segments, err)
+	}
+	if _, err := svc.ComposeDramaEpisode("usr-drama", project, episodeID); err != nil {
+		t.Fatal(err)
+	}
+	runDramaTicks(t, svc, project, 10)
+	if len(fake.renders) != 2 || len(fake.renders[0].Clips) != 1 || len(fake.renders[1].Clips) != 2 || fake.byKind["video"] != 2 {
+		t.Fatalf("expected the requested snapshot then the automatic full cut without regeneration: renders=%+v videos=%d", fake.renders, fake.byKind["video"])
+	}
+	episode, err := svc.repo.DramaEpisode(project, episodeID)
+	if err != nil || episode.FinalStale || episode.Stage != model.DramaEpisodeDone || episode.DurationMs != fake.renders[1].DurationMs {
+		t.Fatalf("automatic full cut did not replace the partial cut: %+v, %v", episode, err)
+	}
+}
+
+func TestDramaPausedKeepsRecoverableCastImageJob(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	svc.dataDir = t.TempDir()
+	settings := DramaSettings{ReviewMode: DramaReviewAuto, MediaMode: DramaMediaAuto, Concurrency: 16, Models: fakeDramaModels, EpisodeMode: DramaEpisodeModeChapter, ChaptersPerEpisode: 1}
+	settings.EpisodeSeconds = 60
+	summary, err := svc.CreateDrama("usr-drama", CreateDramaRequest{Name: "暂停仍下载", Start: true, Settings: settings, Chapters: []DramaChapterInput{{Title: "第一章", Text: "萧炎……"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := summary.Project.ID
+	runDramaTicks(t, svc, project, 12)
+	casts, err := svc.repo.DramaCasts(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var castID string
+	for _, cast := range casts {
+		if cast.Kind == "prop" || (cast.Kind == "character" && cast.ParentID == "") {
+			castID = cast.ID
+			break
+		}
+	}
+	if castID == "" {
+		t.Fatal("no cast")
+	}
+	checkpoint := mediaCheckpoint{Mode: "image", Items: []mediaCheckpointItem{{Reference: protocol.MediaReference{URL: "https://example.invalid/a.png"}}}, StartedAt: time.Now()}
+	encoded, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := svc.encryptSettingSecret(string(encoded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{ID: newID(), UserID: "usr-drama", ProjectID: project, Type: "canvas_image", Status: model.TaskStatusFailed, Error: "作品已生成，但保存未完成：下载结果失败", MediaRecoveryJSON: secret, MediaStage: "download", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := fake.db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	job := model.DramaJob{ID: newID(), ProjectID: project, Kind: model.DramaJobCastImage, CastID: castID, TaskID: task.ID, Status: model.DramaJobRunning, Label: "参考图：测试", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := fake.db.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.repo.UpdateDramaProduction(project, map[string]any{"status": model.DramaStatusPaused}); err != nil {
+		t.Fatal(err)
+	}
+	productions, err := svc.repo.RunningDramaProductions(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range productions {
+		if item.ProjectID == project {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("paused production with running cast-image job must still be scheduled")
+	}
+	if err := svc.tickDrama(&model.DramaProduction{ProjectID: project}); err != nil {
+		t.Fatal(err)
+	}
+	var saved model.DramaJob
+	if err := fake.db.First(&saved, "id = ?", job.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != model.DramaJobRunning {
+		t.Fatalf("recoverable download failure must keep drama job running while paused, got %s err=%q", saved.Status, saved.Error)
+	}
+	var savedTask model.Task
+	if err := fake.db.First(&savedTask, "id = ?", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if savedTask.Status != model.TaskStatusQueued {
+		t.Fatalf("paused sync must requeue media recovery, got %s", savedTask.Status)
+	}
+}

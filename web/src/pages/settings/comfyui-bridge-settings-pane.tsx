@@ -1,3 +1,5 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceTranslate } from "@/lib/interface-locale";
 import { App, Button, Form, Input, Popconfirm, Select } from "antd";
 import { Switch } from "@/components/ui/base/switch";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
@@ -15,6 +17,7 @@ type BridgePlatform = "windows" | "linux";
 type LinuxArchitecture = "amd64" | "arm64";
 
 export function ComfyUIBridgeSettingsPane() {
+    const { t } = useInterfaceTranslation();
     const { message } = App.useApp();
     const userId = useUserStore((state) => state.user?.id);
     const config = useConfigStore((state) => state.config.comfyBridge);
@@ -39,14 +42,14 @@ export function ComfyUIBridgeSettingsPane() {
     const update = (patch: Partial<ComfyBridgeConfig>) => updateConfig("comfyBridge", { ...config, ...patch });
     const bridgeServer = typeof window === "undefined" ? "" : window.location.origin;
     const hasFreshBridgeToken = Boolean(bridgeToken);
-    const commandToken = bridgeToken || "注册 Bridge 后生成一次性 Token";
+    const commandToken = bridgeToken || t("settingsUi.bridgeTokenPlaceholder");
     const bridgeDownloadURL = `${bridgeServer}/OpenAICanvas-ComfyBridge.exe`;
     const linuxBridgeDownloadURL = `${bridgeServer}/OpenAICanvas-ComfyBridge-linux-${linuxArchitecture}`;
     const agentStartCommand =
         bridgePlatform === "linux"
             ? linuxStartCommand(linuxBridgeDownloadURL, bridgeServer, commandToken, config.comfyUrl, config.workflowDir, linuxArchitecture)
             : windowsStartCommand(bridgeDownloadURL, bridgeServer, commandToken, config.comfyUrl, config.workflowDir);
-    const comfyUrlError = comfyURLValidationError(config.comfyUrl);
+    const comfyUrlError = comfyURLValidationError(config.comfyUrl, t);
 
     const reload = async () => {
         if (!userId) return;
@@ -58,7 +61,7 @@ export function ComfyUIBridgeSettingsPane() {
             // Bridge 重连或页面刷新后，只有一个可用设备时自动恢复选择；工作流配置继续保留。
             if (!currentBridgeExists && !config.bridgeId && items.length === 1) update({ bridgeId: items[0].id });
         } catch (error) {
-            message.error(error instanceof Error ? `读取 Bridge 失败：${error.message}` : "读取 Bridge 失败");
+            message.error(error instanceof Error ? t("settingsUi.bridgeLoadError", { error: error.message }) : t("settingsUi.bridgeLoadFailed"));
         } finally {
             setLoading(false);
         }
@@ -96,16 +99,16 @@ export function ComfyUIBridgeSettingsPane() {
     }, [config, discovered, selectedWorkflow, updateConfig]);
 
     const register = async () => {
-        if (!bridgeName.trim()) return message.warning("请填写 Bridge 名称");
+        if (!bridgeName.trim()) return message.warning(t("settingsUi.bridgeNameRequired"));
         setRegistering(true);
         try {
             const result = await createComfyBridge(bridgeName.trim());
             setBridges((items) => [result.bridge, ...items]);
             setBridgeToken(result.token);
             update({ bridgeId: result.bridge.id });
-            message.success("Bridge 已注册，请立即复制启动命令并运行 Bridge");
+            message.success(t("settingsUi.bridgeRegistered"));
         } catch (error) {
-            message.error(error instanceof Error ? `注册 Bridge 失败：${error.message}` : "注册 Bridge 失败");
+            message.error(error instanceof Error ? t("settingsUi.bridgeRegisterError", { error: error.message }) : t("settingsUi.bridgeRegisterFailed"));
         } finally {
             setRegistering(false);
         }
@@ -152,9 +155,9 @@ export function ComfyUIBridgeSettingsPane() {
             setBridges((items) => items.filter((item) => item.id !== selectedBridge.id));
             update({ bridgeId: "", workflowId: "" });
             setBridgeToken("");
-            message.success("Bridge 已撤销，该进程将无法继续领取任务");
+            message.success(t("settingsUi.bridgeRevoked"));
         } catch (error) {
-            message.error(error instanceof Error ? `撤销 Bridge 失败：${error.message}` : "撤销 Bridge 失败");
+            message.error(error instanceof Error ? t("settingsUi.bridgeRevokeError", { error: error.message }) : t("settingsUi.bridgeRevokeFailed"));
         } finally {
             setRevoking(false);
         }
@@ -168,10 +171,10 @@ export function ComfyUIBridgeSettingsPane() {
 
     const saveWorkflow = () => {
         const workflowId = config.workflowId.trim();
-        if (!workflowId) return message.warning("请先选择或填写工作流文件名");
+        if (!workflowId) return message.warning(t("settingsUi.workflowFilenameRequired"));
         try {
             const workflowJson = workflowJsonText.trim() ? (JSON.parse(workflowJsonText) as Record<string, unknown>) : undefined;
-            if (workflowJson && (typeof workflowJson !== "object" || Array.isArray(workflowJson))) throw new Error("工作流 JSON 必须是对象");
+            if (workflowJson && (typeof workflowJson !== "object" || Array.isArray(workflowJson))) throw new Error(t("settingsUi.workflowJsonObject"));
             const current = config.workflows.find((item) => item.workflowId === workflowId);
             const found = discovered.find((item) => item.workflowId === workflowId);
             const next: ComfyBridgeWorkflow = {
@@ -183,9 +186,9 @@ export function ComfyUIBridgeSettingsPane() {
                 ...(current?.workflowGraph || found?.workflowGraph ? { workflowGraph: current?.workflowGraph || found?.workflowGraph } : {}),
             };
             update({ workflows: [...config.workflows.filter((item) => item.workflowId !== workflowId), next] });
-            message.success("ComfyUI 工作流配置已保存");
+            message.success(t("settingsUi.comfyWorkflowSaved"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "工作流配置格式无效");
+            message.error(error instanceof Error ? error.message : t("settingsUi.workflowInvalid"));
         }
     };
 
@@ -199,32 +202,32 @@ export function ComfyUIBridgeSettingsPane() {
             <div className="settings-pane-header">
                 <div className="min-w-0">
                     <h2>ComfyUI Bridge</h2>
-                    <p>Bridge 主动连接云端，并访问运行 Bridge 的机器能够连接到的任意 ComfyUI 服务；每个账号注册并运行自己的 Bridge，其他账号不能调用你的设备。</p>
+                    <p>{t("settingsUi.bridgePrivacyHint")}</p>
                 </div>
-                <Switch checked={config.enabled} checkedChildren="启用" unCheckedChildren="停用" onChange={(enabled) => update({ enabled })} />
+                <Switch checked={config.enabled} checkedChildren={t("settingsUi.enable")} unCheckedChildren={t("settingsUi.disable")} onChange={(enabled) => update({ enabled })} />
             </div>
             {!userId ? (
-                <p className="text-sm text-foreground/60">登录后可注册和管理 Bridge。</p>
+                <p className="text-sm text-foreground/60">{t("settingsUi.bridgeLoginHint")}</p>
             ) : (
                 <>
                     <section className="settings-section">
                         <div className="mb-3 flex items-center justify-between gap-3">
-                            <h3 className="text-sm font-semibold">Bridge 设备</h3>
+                            <h3 className="text-sm font-semibold">{t("settingsUi.bridgeDevice")}</h3>
                             <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={loading} onClick={() => void reload()}>
-                                刷新
+                                {t("storageUi.refresh")}
                             </Button>
                         </div>
                         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                            <Input value={bridgeName} maxLength={80} placeholder="例如：办公室 ComfyUI" onChange={(event) => setBridgeName(event.target.value)} />
+                            <Input value={bridgeName} maxLength={80} placeholder={t("settingsUi.bridgeNameExample")} onChange={(event) => setBridgeName(event.target.value)} />
                             <Button type="primary" icon={<Plus className="size-4" />} loading={registering} onClick={() => void register()}>
-                                注册 Bridge
+                                {t("settingsUi.registerBridge")}
                             </Button>
                         </div>
                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                            <Form.Item label="ComfyUI 服务地址" className="mb-0" validateStatus={comfyUrlError ? "error" : undefined} help={comfyUrlError || "可填写本机、局域网或公网地址；必须能从运行 Bridge 的电脑访问。"}>
+                            <Form.Item label={t("settingsUi.comfyServiceUrl")} className="mb-0" validateStatus={comfyUrlError ? "error" : undefined} help={comfyUrlError || t("settingsUi.comfyUrlHint")}>
                                 <Input value={config.comfyUrl} placeholder="http://127.0.0.1:8188" onChange={(event) => update({ comfyUrl: event.target.value })} onBlur={(event) => update({ comfyUrl: normalizeComfyURL(event.target.value) })} />
                             </Form.Item>
-                            <Form.Item label="工作流目录" className="mb-0" extra="Bridge 从此目录发现 ComfyUI API JSON；也可在下方直接粘贴 JSON。">
+                            <Form.Item label={t("settingsUi.workflowDirectory")} className="mb-0" extra={t("settingsUi.workflowDirectoryHint")}>
                                 <Input
                                     value={config.workflowDir}
                                     placeholder={bridgePlatform === "linux" ? "/opt/ComfyUI/user/default/workflows" : "D:\ComfyUI\workflows"}
@@ -236,8 +239,8 @@ export function ComfyUIBridgeSettingsPane() {
                         <div className="mt-4 rounded-lg border border-border/60 bg-foreground/[0.03] p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div>
-                                    <h4 className="text-sm font-semibold">安装 Bridge</h4>
-                                    <p className="mt-1 text-xs text-foreground/60">在能访问 ComfyUI 的机器上运行；Windows 使用独立程序，Linux 使用对应架构的原生程序，不需要安装 Node.js、npm 或项目源码。</p>
+                                    <h4 className="text-sm font-semibold">{t("settingsUi.installBridge")}</h4>
+                                    <p className="mt-1 text-xs text-foreground/60">{t("settingsUi.installBridgeHint")}</p>
                                 </div>
                                 <SegmentedControl
                                     size="sm"
@@ -251,7 +254,7 @@ export function ComfyUIBridgeSettingsPane() {
                             </div>
                             {bridgePlatform === "linux" ? (
                                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-foreground/65">
-                                    <span>Linux 架构：</span>
+                                    <span>{t("settingsUi.linuxArch")}</span>
                                     <SegmentedControl
                                         size="sm"
                                         value={linuxArchitecture}
@@ -261,7 +264,7 @@ export function ComfyUIBridgeSettingsPane() {
                                         ]}
                                         onChange={(value) => setLinuxArchitecture(value as LinuxArchitecture)}
                                     />
-                                    <span>云服务器通常选择 x64。</span>
+                                    <span>{t("settingsUi.cloudX64")}</span>
                                 </div>
                             ) : null}
                             <div className="mt-3 flex flex-wrap gap-2">
@@ -271,13 +274,13 @@ export function ComfyUIBridgeSettingsPane() {
                                     href={bridgePlatform === "linux" ? linuxBridgeDownloadURL : bridgeDownloadURL}
                                     download={bridgePlatform === "linux" ? `OpenAICanvas-ComfyBridge-linux-${linuxArchitecture}` : "OpenAICanvas-ComfyBridge.exe"}
                                 >
-                                    下载 {bridgePlatform === "linux" ? "Linux Bridge" : "Windows Bridge"}
+                                    {t("exportDownload")} {bridgePlatform === "linux" ? "Linux Bridge" : "Windows Bridge"}
                                 </Button>
                             </div>
                             <div className="mt-3 grid gap-2 text-xs">
                                 <div className="rounded-md bg-black/20 px-3 py-2">
-                                    <span className="mr-2 text-foreground/55">安装并启动（{bridgePlatform === "linux" ? "Linux Shell" : "PowerShell"}）：</span>
-                                    <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-xs leading-5">{hasFreshBridgeToken ? agentStartCommand : "请先点击“注册 Bridge”。一次性 Token 只在注册成功后显示；旧 Token 无法从页面找回。"}</pre>
+                                    <span className="mr-2 text-foreground/55">{t("settingsUi.installStart", { shell: bridgePlatform === "linux" ? "Linux Shell" : "PowerShell" })}</span>
+                                    <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-xs leading-5">{hasFreshBridgeToken ? agentStartCommand : t("settingsUi.registerForToken")}</pre>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <Button
@@ -287,19 +290,19 @@ export function ComfyUIBridgeSettingsPane() {
                                         onClick={() =>
                                             void navigator.clipboard
                                                 .writeText(agentStartCommand)
-                                                .then(() => message.success("安装并启动命令已复制"))
-                                                .catch(() => message.warning("复制失败，请手动复制"))
+                                                .then(() => message.success(t("settingsUi.startCommandCopied")))
+                                                .catch(() => message.warning(t("settingsUi.copyManually")))
                                         }
                                     >
-                                        复制安装并启动命令
+                                        {t("settingsUi.copyStartCommand")}
                                     </Button>
                                 </div>
                             </div>
-                            <p className="mt-2 text-xs text-foreground/55">每位用户都要登录自己的账号、注册自己的 Bridge，再在能访问 ComfyUI 的机器执行命令。不要把 Bridge Token 发给其他人；修改地址或工作流目录后需复制新命令并重启。</p>
+                            <p className="mt-2 text-xs text-foreground/55">{t("settingsUi.bridgeTokenSafety")}</p>
                         </div>
                         {bridgeToken ? (
                             <div className="mt-3 space-y-2">
-                                <p className="text-xs text-foreground/60">令牌只显示一次，建议复制启动命令后关闭页面。令牌不会写入下载链接。</p>
+                                <p className="text-xs text-foreground/60">{t("settingsUi.tokenOneTime")}</p>
                                 <Input.TextArea value={bridgeToken} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
                                 <Button
                                     size="small"
@@ -307,68 +310,68 @@ export function ComfyUIBridgeSettingsPane() {
                                     onClick={() =>
                                         void navigator.clipboard
                                             .writeText(bridgeToken)
-                                            .then(() => message.success("令牌已复制"))
-                                            .catch(() => message.warning("复制失败，请手动复制"))
+                                            .then(() => message.success(t("settingsUi.tokenCopied")))
+                                            .catch(() => message.warning(t("settingsUi.copyManually")))
                                     }
                                 >
-                                    复制令牌
+                                    {t("settingsUi.copyToken")}
                                 </Button>
                             </div>
                         ) : null}
-                        <Form.Item label="当前 Bridge" className="mb-0 mt-3">
+                        <Form.Item label={t("settingsUi.currentBridge")} className="mb-0 mt-3">
                             <Select
                                 className="w-full"
                                 value={config.bridgeId || undefined}
-                                placeholder="选择已注册 Bridge"
-                                options={bridges.map((item) => ({ label: `${item.name} · ${item.online ? "在线" : "离线"}`, value: item.id }))}
+                                placeholder={t("settingsUi.selectRegisteredBridge")}
+                                options={bridges.map((item) => ({ label: `${item.name} · ${item.online ? t("settingsUi.online") : t("settingsUi.offline")}`, value: item.id }))}
                                 onChange={(bridgeId) => update({ bridgeId })}
                             />
                         </Form.Item>
                         {selectedBridge ? (
                             <div className="mt-2 flex items-center justify-between gap-3 text-xs text-foreground/60">
                                 <span>
-                                    Bridge ID：{selectedBridge.id} · {selectedBridge.online ? "在线" : "离线"} · 已发现 {discovered.length} 个工作流
+                                    Bridge ID: {selectedBridge.id} · {selectedBridge.online ? t("settingsUi.online") : t("settingsUi.offline")} · {t("settingsUi.discoveredWorkflows", { count: discovered.length })}
                                 </span>
                                 <Popconfirm
-                                    title="撤销这个 Bridge？"
-                                    description="撤销后令牌立即失效，本机 Bridge 将无法继续领取任务。"
-                                    okText="撤销"
-                                    cancelText="取消"
+                                    title={t("settingsUi.revokeBridge")}
+                                    description={t("settingsUi.revokeBridgeHint")}
+                                    okText={t("canvasToolbarUndo")}
+                                    cancelText={t("timelineCancel")}
                                     okButtonProps={{ danger: true, loading: revoking }}
                                     onConfirm={() => revokeSelectedBridge()}
                                 >
                                     <Button size="small" type="text" danger loading={revoking} icon={<Trash2 className="size-3.5" />}>
-                                        撤销
+                                        {t("canvasToolbarUndo")}
                                     </Button>
                                 </Popconfirm>
                             </div>
                         ) : null}
                     </section>
                     <section className="settings-section mt-4">
-                        <h3 className="mb-3 text-sm font-semibold">工作流配置</h3>
+                        <h3 className="mb-3 text-sm font-semibold">{t("settingsUi.workflowSettings")}</h3>
                         <div className="grid gap-3 lg:grid-cols-12">
-                            <Form.Item label="Bridge 发现的工作流" className="mb-0 lg:col-span-6">
+                            <Form.Item label={t("settingsUi.bridgeDiscovered")} className="mb-0 lg:col-span-6">
                                 <Select
                                     showSearch
                                     className="w-full"
                                     value={config.workflowId || undefined}
-                                    placeholder={selectedBridge?.online ? "选择 workflows 目录中的 JSON" : "Bridge 在线后自动显示"}
+                                    placeholder={selectedBridge?.online ? t("settingsUi.selectWorkflowJson") : t("settingsUi.bridgeOnlineHint")}
                                     options={discovered.map((item) => ({ label: item.title || item.workflowId, value: item.workflowId }))}
                                     onChange={selectWorkflow}
                                 />
                             </Form.Item>
-                            <Form.Item label="工作流用途" className="mb-0 lg:col-span-3">
+                            <Form.Item label={t("settingsUi.workflowPurpose")} className="mb-0 lg:col-span-3">
                                 <Select
                                     value={selectedCapability}
                                     options={[
-                                        { label: "图片", value: "image" },
-                                        { label: "视频", value: "video" },
-                                        { label: "音频", value: "audio" },
+                                        { label: t("contextImage"), value: "image" },
+                                        { label: t("contextVideo"), value: "video" },
+                                        { label: t("previewAssetAudio"), value: "audio" },
                                     ]}
                                     onChange={(capability) => updateWorkflowCapability(capability as ComfyBridgeConfig["capability"])}
                                 />
                             </Form.Item>
-                            <Form.Item label="工作流文件名" className="mb-0 lg:col-span-3">
+                            <Form.Item label={t("settingsUi.workflowFilename")} className="mb-0 lg:col-span-3">
                                 <Input value={config.workflowId} placeholder="workflow.json" onChange={(event) => update({ workflowId: event.target.value })} onBlur={(event) => selectWorkflow(event.target.value.trim())} />
                             </Form.Item>
                             <div className="workflow-workspace-tabs lg:col-span-12">
@@ -376,8 +379,8 @@ export function ComfyUIBridgeSettingsPane() {
                                     block
                                     value={workspaceMode}
                                     options={[
-                                        { label: "字段配置", value: "fields" },
-                                        { label: "测试画布", value: "test" },
+                                        { label: t("settingsUi.fieldSettings"), value: "fields" },
+                                        { label: t("settingsUi.testCanvas"), value: "test" },
                                     ]}
                                     onChange={(value) => setWorkspaceMode(value as "fields" | "test")}
                                 />
@@ -391,23 +394,23 @@ export function ComfyUIBridgeSettingsPane() {
                                             fields={selectedWorkflow?.fields || []}
                                             disabled={!selectedWorkflow}
                                             onChange={updateWorkflowFields}
-                                            emptyDescription="尚未读取到工作流拓扑；请刷新 Bridge 后重新选择工作流"
+                                            emptyDescription={t("settingsUi.topologyMissing")}
                                         />
                                     </div>
                                     <details className="workflow-json-details lg:col-span-12" open={!draftWorkflowJson}>
-                                        <summary>查看或粘贴 ComfyUI API JSON</summary>
-                                        <Form.Item className="mb-0 mt-3" extra="留空时 Bridge 从其 workflows 目录按文件名读取；粘贴后使用同一套工作流拓扑和字段编辑器。">
+                                        <summary>{t("settingsUi.viewPasteComfyJson")}</summary>
+                                        <Form.Item className="mb-0 mt-3" extra={t("settingsUi.bridgeJsonHint")}>
                                             <Input.TextArea rows={10} spellCheck={false} value={workflowJsonText} onChange={(event) => setWorkflowJsonText(event.target.value)} />
                                         </Form.Item>
                                     </details>
                                     <div className="flex justify-end gap-2 lg:col-span-12">
-                                        <Popconfirm title="删除当前工作流配置？" okText="删除" cancelText="取消" onConfirm={() => update({ workflowId: "", workflows: config.workflows.filter((item) => item.workflowId !== config.workflowId) })}>
+                                        <Popconfirm title={t("settingsUi.deleteWorkflowConfirm")} okText={t("canvasLibraryDelete")} cancelText={t("timelineCancel")} onConfirm={() => update({ workflowId: "", workflows: config.workflows.filter((item) => item.workflowId !== config.workflowId) })}>
                                             <Button danger disabled={!selectedWorkflow} icon={<Trash2 className="size-4" />}>
-                                                删除
+                                                {t("canvasLibraryDelete")}
                                             </Button>
                                         </Popconfirm>
                                         <Button type="primary" onClick={saveWorkflow}>
-                                            保存工作流
+                                            {t("settingsUi.saveWorkflow")}
                                         </Button>
                                     </div>
                                 </>
@@ -421,7 +424,7 @@ export function ComfyUIBridgeSettingsPane() {
                                         capability={selectedCapability}
                                         fields={selectedWorkflow?.fields || []}
                                         disabled={!selectedWorkflow || !config.bridgeId || !selectedBridge?.online}
-                                        disabledReason={!selectedWorkflow ? "请先选择并保存一个 ComfyUI 工作流" : !config.bridgeId ? "请先选择 Bridge 设备" : "当前 Bridge 离线，请在可访问 ComfyUI 的电脑上启动 Bridge"}
+                                        disabledReason={!selectedWorkflow ? t("settingsUi.selectSavedComfy") : !config.bridgeId ? t("settingsUi.selectBridgeFirst") : t("settingsUi.bridgeOfflineHint")}
                                     />
                                 </div>
                             )}
@@ -453,14 +456,14 @@ function normalizeComfyURL(value: string) {
     return normalized || "http://127.0.0.1:8188";
 }
 
-function comfyURLValidationError(value: string) {
+function comfyURLValidationError(value: string, t: InterfaceTranslate) {
     try {
         const parsed = new URL(value.trim());
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "ComfyUI 地址只支持 http:// 或 https://";
-        if (!parsed.hostname || parsed.username || parsed.password) return "ComfyUI 地址格式无效，不能在 URL 中携带账号密码";
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return t("settingsUi.comfyUrlProtocol");
+        if (!parsed.hostname || parsed.username || parsed.password) return t("settingsUi.comfyUrlCredentials");
         return "";
     } catch {
-        return "请输入完整的 ComfyUI 地址，例如 http://192.168.1.20:8188";
+        return t("settingsUi.comfyUrlFull");
     }
 }
 

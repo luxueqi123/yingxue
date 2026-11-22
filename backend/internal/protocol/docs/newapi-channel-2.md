@@ -23,6 +23,8 @@ Content-Type: application/json
 
 实际字段为 `model`、`prompt`、`seconds`、`aspect_ratio`、可选 `resolution`、`generate_audio`、`image_urls`、`video_urls`、`audio_urls`。时长默认 6 秒并发送为字符串，比例默认 `16:9`。水印当前不发送。
 
+针对ArtBox文档明确的 `Artdance 2.5-480p`、`Artdance 2.5-720p`、`Artdance 2.5-1080p`，适配器按模型名固定分辨率，不再提交resolution；传入不同档位则拒绝。显式first_frame/last_frame分别映射start_image_url/end_image_url，其余图片保持Order顺序进入image_urls。首尾帧各限一张，总图片不超过30、视频和音频各不超过10。显式关闭生成音频保留false。其他NewAPI模型仍使用原URL数组合同。这些字段不证明具有LTV联网搜索、独立textList及素材校验能力。
+
 ## 完整多模态请求
 
 ```bash
@@ -53,7 +55,7 @@ curl "{channel_base_url}/v1/video/generations/task_xxx" \
   -H "Authorization: Bearer <CHANNEL_API_KEY>"
 ```
 
-状态会归一为等待、处理中、成功或失败。成功结果可来自视频数组或常见顶层 URL；当前没有取消路径。任务失败后的退款、额度释放和结果保留期属于部署方账务合同，宿主不会在没有接口证据时承诺。
+状态会归一为等待、处理中、成功或失败。成功结果可来自视频数组或常见顶层 URL；当前没有取消路径。任务失败后的退款、额度释放和结果保留期属于部署方账务合同，映雪不会在没有接口证据时承诺。
 
 ## 官方资料与边界
 

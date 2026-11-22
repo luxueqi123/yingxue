@@ -1,4 +1,4 @@
-// 资产 → 时间线片段 的纯转换（M3.4 asset-ingest）。
+// 资产到时间线片段的纯转换：只做类型映射和结构组装，不读取网络或修改编辑器状态。
 // 资产是"仅时间线作用域"的直连媒体：nodeId 用 `asset:<id>` 前缀（不指向画布节点），
 // 预览/导出从 directMedia 解析媒体，不回画布查节点。
 
@@ -38,6 +38,7 @@ export function makeClipFromAsset(asset: ProjectAsset, options: MakeClipFromAsse
         trackId: options.trackId,
         startMs: options.startMs,
         durationMs: asset.durationMs && asset.durationMs > 0 ? asset.durationMs : (options.defaultDurationMs ?? 3_000),
+        sourceDurationMs: asset.durationMs && asset.durationMs > 0 ? asset.durationMs : undefined,
         title: asset.title,
         directMedia: {
             id: asset.id,

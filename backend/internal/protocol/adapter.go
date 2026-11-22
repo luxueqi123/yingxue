@@ -13,6 +13,30 @@ type Adapter interface {
 	BuildCancel(context.Context, PollContext) (RequestSpec, error)
 }
 
+// UploadAdapter describes signed uploads required after creation, before polling.
+// The host persists and performs uploads; adapters never receive channel credentials.
+type UploadAdapter interface {
+	BuildUploads(context.Context, RequestContext, []byte) ([]VideoUpload, error)
+	// ParseUploadedVideos must confirm the accepted prefix from provider status.
+	// Unknown status is an error, never permission to replay an upload.
+	ParseUploadedVideos(context.Context, PollContext, []byte) (int, error)
+}
+
+type VideoUpload struct {
+	URL        string `json:"url"`
+	VideoIndex int    `json:"videoIndex"`
+}
+
+// UploadRecoveryAdapter can recover a missing create checkpoint from the
+// provider's status endpoint without submitting another generation request.
+type UploadRecoveryAdapter interface {
+	RecoverUploads(context.Context, PollContext, []byte) ([]VideoUpload, error)
+}
+
+type RequestAwareCreateParser interface {
+	ParseCreateWithRequest(context.Context, GenerationRequest, []byte) (CreateResult, error)
+}
+
 // AgentAdapter is the optional protocol surface for tool-capable text calls.
 // The host still owns credentials, outbound policy and billing; a plugin only
 // maps the platform's agent request into the provider payload and parses the
@@ -37,6 +61,22 @@ type ResultAdapter interface {
 
 type ResultCapability interface {
 	ResultAvailable() bool
+}
+
+// MediaUploadAdapter 是可选的素材前置上传面：上游要求先上传文件拿到素材 ID，
+// create 再按 ID 引用。UploadKinds 为空表示该适配器未声明上传步骤。
+type MediaUploadAdapter interface {
+	UploadKinds() []string
+	BuildUpload(context.Context, RequestContext, MediaReference) (RequestSpec, error)
+	ParseUpload(context.Context, []byte) (string, error)
+}
+
+// ResultResponseAdapter parses an explicitly declared JSON result lookup.
+// Binary result endpoints remain on ResultAdapter; credentials and media
+// downloads remain owned by the host.
+type ResultResponseAdapter interface {
+	ResultResponseAvailable() bool
+	ParseResult(context.Context, PollContext, []byte) (*Result, error)
 }
 
 type AgentRequestContext struct {

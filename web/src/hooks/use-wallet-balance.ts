@@ -1,12 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { getWallet } from "@/services/api/wallet";
+import { getWallet, type WalletSummary } from "@/services/api/wallet";
+import { getTeamWallet } from "@/services/api/teams";
+import { workspaceTeamId } from "@/lib/workspace-routes";
 
 // 余额不是页面心跳数据。工作区内多个位置共享同一个 Query，只在首次进入、显式
 // wallet:updated 事件或用户主动刷新时访问服务端，避免常驻布局产生永久轮询。
 const WALLET_STALE_TIME_MS = 5 * 60_000;
-const walletBalanceQueryKey = (userId: string) => ["wallet-balance", userId] as const;
+const walletBalanceQueryKey = (userId: string) => (workspaceTeamId ? (["wallet-balance", userId, workspaceTeamId] as const) : (["wallet-balance", userId] as const));
+
+export type WalletSnapshot = {
+    availableMicrocredits: number;
+    reservedMicrocredits: number;
+    policy: WalletSummary["policy"] | null;
+};
 
 export function useWalletBalance(userId?: string, enabled = true) {
     const activeUserId = enabled ? userId || "" : "";
@@ -15,10 +23,14 @@ export function useWalletBalance(userId?: string, enabled = true) {
     const query = useQuery({
         queryKey,
         enabled: Boolean(activeUserId),
-        queryFn: async () => {
-            const wallet = await getWallet(1, 1);
+        queryFn: async ({ signal }): Promise<WalletSnapshot> => {
+            if (workspaceTeamId) {
+                const { myAccount } = await getTeamWallet(workspaceTeamId, signal);
+                return { availableMicrocredits: myAccount.availableMicrocredits, reservedMicrocredits: myAccount.reservedMicrocredits, policy: null };
+            }
+            const wallet = await getWallet(1, 1, "all", signal);
             if (wallet.account.userId !== activeUserId) throw new Error("积分账户与当前用户不一致");
-            return wallet.account.availableMicrocredits;
+            return { availableMicrocredits: wallet.account.availableMicrocredits, reservedMicrocredits: wallet.account.reservedMicrocredits, policy: wallet.policy };
         },
         staleTime: WALLET_STALE_TIME_MS,
         refetchOnWindowFocus: false,
@@ -38,7 +50,9 @@ export function useWalletBalance(userId?: string, enabled = true) {
     }, [query.error]);
 
     return {
-        availableMicrocredits: query.data ?? null,
+        availableMicrocredits: query.data?.availableMicrocredits ?? null,
+        reservedMicrocredits: query.data?.reservedMicrocredits ?? null,
+        policy: query.data?.policy ?? null,
         refreshing: query.isFetching,
         refresh: query.refetch,
     };

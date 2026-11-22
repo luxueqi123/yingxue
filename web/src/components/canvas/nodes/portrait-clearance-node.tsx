@@ -1,7 +1,9 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { ArrowRight, CircleAlert, Image as ImageIcon, ShieldAlert, ShieldCheck } from "lucide-react";
 
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { PORTRAIT_CLEARANCE_PLUGIN_ID, PORTRAIT_RISK_LABELS, type PortraitClearanceInputRole, type PortraitRiskLevel } from "@/lib/portrait-clearance/contracts";
+import { PORTRAIT_CLEARANCE_PLUGIN_ID, type PortraitClearanceInputRole, type PortraitClearanceTaskStage, type PortraitRiskLevel } from "@/lib/portrait-clearance/contracts";
 import { isPortraitImageInput } from "@/lib/portrait-clearance/input-bindings";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -15,13 +17,36 @@ type PortraitClearanceNodeProps = {
     node: CanvasNodeData;
 };
 
-const roleLabels: Record<PortraitClearanceInputRole, string> = {
-    query: "查询图",
-    reference: "参考图",
-    candidate: "手动候选",
+const roleLabelKeys: Record<PortraitClearanceInputRole, InterfaceMessageKey> = {
+    query: "canvasPortraitUi001",
+    reference: "canvasPortraitUi002",
+    candidate: "canvasPortraitUi003",
+};
+
+const riskLabelKeys: Record<PortraitRiskLevel, InterfaceMessageKey> = {
+    high: "canvasPortraitUi012",
+    medium: "canvasPortraitUi013",
+    low_to_medium: "canvasPortraitUi014",
+    low: "canvasPortraitUi015",
+    unable_to_determine: "canvasPortraitUi016",
+};
+
+const taskStageLabelKeys: Record<PortraitClearanceTaskStage, InterfaceMessageKey> = {
+    "validating-inputs": "canvasPortraitUi017",
+    "checking-model-resources": "canvasPortraitUi018",
+    "preparing-query": "canvasPortraitUi019",
+    searching: "canvasPortraitUi020",
+    "downloading-candidates": "canvasPortraitUi021",
+    deduplicating: "canvasPortraitUi022",
+    "local-comparing": "canvasPortraitUi023",
+    "waiting-for-model": "canvasPortraitUi024",
+    "model-comparing": "canvasPortraitUi025",
+    "building-report": "canvasPortraitUi026",
+    done: "canvasPortraitUi027",
 };
 
 export function PortraitClearanceNodeContent({ node }: PortraitClearanceNodeProps) {
+    const { t } = useInterfaceTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const enabled = usePluginStore((state) => state.pluginStates[PORTRAIT_CLEARANCE_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PORTRAIT_CLEARANCE_PLUGIN_ID)?.enabled));
     const { openPortraitClearance } = useCanvasNodeActions();
@@ -35,7 +60,10 @@ export function PortraitClearanceNodeContent({ node }: PortraitClearanceNodeProp
     const task = state?.task;
     const lastResult = state?.lastResult;
     const risk = lastResult?.highestRisk;
-    const title = state?.mode === "network-search" ? "网络排查" : "直接比对";
+    const title = state?.mode === "network-search" ? t("canvasPortraitUi004") : t("canvasPortraitUi005");
+    const queryLabel = t(roleLabelKeys.query);
+    const referenceLabel = t(roleLabelKeys.reference);
+    const candidateLabel = t(roleLabelKeys.candidate);
 
     return (
         <div
@@ -49,17 +77,17 @@ export function PortraitClearanceNodeContent({ node }: PortraitClearanceNodeProp
                 </span>
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[var(--fs-label)] font-semibold">{title}</div>
-                    <div className="truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{enabled ? "本地预检 · 结果保存在本机" : "插件已停用 · 历史结果只读"}</div>
+                    <div className="truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{enabled ? t("canvasPortraitUi006") : t("canvasPortraitUi007")}</div>
                 </div>
-                {risk ? <RiskBadge risk={risk} /> : null}
+                {risk ? <RiskBadge risk={risk} label={t(riskLabelKeys[risk])} /> : null}
             </div>
 
             <div className="grid min-h-0 flex-1 grid-cols-2 gap-2">
-                <InputSlot label={roleLabels.query} node={query} />
+                <InputSlot label={queryLabel} node={query} />
                 {state?.mode === "network-search" ? (
-                    <InputSlot label={`${roleLabels.candidate} ${candidates.length ? `· ${candidates.length}` : ""}`} node={candidates[0]} count={candidates.length} />
+                    <InputSlot label={candidateLabel} node={candidates[0]} count={candidates.length} />
                 ) : (
-                    <InputSlot label={roleLabels.reference} node={reference} />
+                    <InputSlot label={referenceLabel} node={reference} />
                 )}
             </div>
 
@@ -74,7 +102,7 @@ export function PortraitClearanceNodeContent({ node }: PortraitClearanceNodeProp
                     disabled={!enabled && !lastResult}
                     onClick={(event) => { event.stopPropagation(); openPortraitClearance?.(node); }}
                 >
-                    {lastResult ? "查看完整结果" : "打开排查工作台"}
+                    {lastResult ? t("canvasPortraitUi008") : t("canvasPortraitUi009")}
                     <ArrowRight className="size-4" aria-hidden="true" />
                 </button>
             </div>
@@ -96,19 +124,21 @@ function InputSlot({ label, node, count = 0 }: { label: string; node?: CanvasNod
     );
 }
 
-function RiskBadge({ risk }: { risk: PortraitRiskLevel }) {
+function RiskBadge({ risk, label }: { risk: PortraitRiskLevel; label: string }) {
     const tone = risk === "high" ? "var(--status-error)" : risk === "unable_to_determine" ? "var(--status-warning)" : "var(--status-success)";
     const Icon = risk === "high" ? ShieldAlert : risk === "unable_to_determine" ? CircleAlert : ShieldCheck;
-    return <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: tone, background: `color-mix(in oklch, ${tone} 15%, transparent)` }}><Icon className="size-3" aria-hidden="true" />{PORTRAIT_RISK_LABELS[risk]}</span>;
+    return <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ color: tone, background: "color-mix(in oklch, " + tone + " 15%, transparent)" }}><Icon className="size-3" aria-hidden="true" />{label}</span>;
 }
 
-function TaskSummary({ stage, progress, processed }: { stage: string; progress: number; processed: number }) {
+function TaskSummary({ stage, progress, processed }: { stage: PortraitClearanceTaskStage; progress: number; processed: number }) {
+    const { t } = useInterfaceTranslation();
     const percent = progress >= 1 ? 100 : Math.min(99, Math.round(Math.max(0, Math.min(1, progress)) * 100));
-    return <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2 text-[var(--fs-micro)]"><span className="truncate">{stage}</span><span className="shrink-0 tabular-nums">{percent}% · {processed} 张</span></div><div className="mt-1 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"><div className="h-full rounded-full bg-[var(--workspace-accent)] transition-[width]" style={{ width: `${percent}%` }} /></div></div>;
+    return <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2 text-[var(--fs-micro)]"><span className="truncate">{t(taskStageLabelKeys[stage])}</span><span className="shrink-0 tabular-nums">{percent}% · {processed} {t("createUiImageUnit")}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"><div className="h-full rounded-full bg-[var(--workspace-accent)] transition-[width]" style={{ width: t("projectUi.percentComplete", { percent: percent }) }} /></div></div>;
 }
 
 function EmptySummary({ mode }: { mode: "direct-compare" | "network-search" }) {
-    return <div className="flex min-w-0 flex-1 items-center gap-2 text-[var(--fs-micro)] text-[var(--foreground-muted)]"><PortraitClearanceIcon className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{mode === "network-search" ? "连接查询图后可开始百度识图排查" : "连接查询图和参考图后可开始直接比对"}</span></div>;
+    const { t } = useInterfaceTranslation();
+    return <div className="flex min-w-0 flex-1 items-center gap-2 text-[var(--fs-micro)] text-[var(--foreground-muted)]"><PortraitClearanceIcon className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{mode === "network-search" ? t("canvasPortraitUi010") : t("canvasPortraitUi011")}</span></div>;
 }
 
 function isTerminal(status: string) {

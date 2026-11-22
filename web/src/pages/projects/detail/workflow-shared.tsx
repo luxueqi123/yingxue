@@ -3,19 +3,21 @@ import { Check, CircleAlert } from "lucide-react";
 import { Link } from "react-router";
 
 import { StatusBadge } from "@/components/ui/base/badges";
-import { assetCategoryLabel as sharedAssetCategoryLabel } from "@/lib/asset-category";
+import { normalizeAssetCategory, type AssetCategory } from "@/lib/asset-category";
+import type { InterfaceMessageKey, InterfaceTranslate } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import type { ProjectDetail, ProjectShot, ShotArtifact, ShotRevision, WorkflowStep } from "@/services/api/projects";
 import type { TaskStatus } from "@/services/api/task-center";
 
 export type ShortDramaWorkflowStage = "story" | "assets" | "storyboard" | "previz" | "video" | "delivery";
 
-export const workflowStages: Array<{ key: ShortDramaWorkflowStage; label: string; shortLabel: string }> = [
-    { key: "story", label: "剧情与章节", shortLabel: "剧情" },
-    { key: "assets", label: "资产拆分", shortLabel: "资产" },
-    { key: "storyboard", label: "分镜脚本", shortLabel: "分镜" },
-    { key: "previz", label: "黑白动作预演", shortLabel: "预演" },
-    { key: "video", label: "视频生成", shortLabel: "视频" },
-    { key: "delivery", label: "交付与打包", shortLabel: "交付" },
+export const workflowStages: Array<{ key: ShortDramaWorkflowStage; labelKey: InterfaceMessageKey; shortLabelKey: InterfaceMessageKey }> = [
+    { key: "story", labelKey: "projectUi.workflowStageStory" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStageStoryShort" as InterfaceMessageKey },
+    { key: "assets", labelKey: "projectUi.workflowStageAssets" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStageAssetsShort" as InterfaceMessageKey },
+    { key: "storyboard", labelKey: "projectUi.workflowStageStoryboard" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStageStoryboardShort" as InterfaceMessageKey },
+    { key: "previz", labelKey: "projectUi.workflowStagePreviz" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStagePrevizShort" as InterfaceMessageKey },
+    { key: "video", labelKey: "projectUi.workflowStageVideo" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStageVideoShort" as InterfaceMessageKey },
+    { key: "delivery", labelKey: "projectUi.workflowStageDelivery" as InterfaceMessageKey, shortLabelKey: "projectUi.workflowStageDeliveryShort" as InterfaceMessageKey },
 ];
 
 export function WorkflowStageLink({ href, active, step, index, label, shortLabel }: { href: string; active: boolean; step?: WorkflowStep; index: number; label: string; shortLabel: string }) {
@@ -41,13 +43,14 @@ export function MetricCard({ icon, label, value }: { icon: ReactNode; label: str
 }
 
 export function ArtifactStatus({ artifact, taskStatus }: { artifact?: ShotArtifact; taskStatus?: TaskStatus; compact?: boolean }) {
+    const { t } = useInterfaceTranslation();
     if (taskStatus === "queued" || taskStatus === "running" || (taskStatus === "succeeded" && !artifact)) {
-        return <StatusBadge variant="filled" tone="loading" label="生成中" />;
+        return <StatusBadge variant="filled" tone="loading" label={t("projectUi.statusGenerating" as InterfaceMessageKey)} />;
     }
-    if (taskStatus === "failed") return <StatusBadge variant="filled" tone="error" label="生成失败" />;
-    if (!artifact) return <StatusBadge variant="filled" tone="neutral" label="待生成" />;
+    if (taskStatus === "failed") return <StatusBadge variant="filled" tone="error" label={t("projectUi.statusGenerationFailed" as InterfaceMessageKey)} />;
+    if (!artifact) return <StatusBadge variant="filled" tone="neutral" label={t("projectUi.statusNotGenerated" as InterfaceMessageKey)} />;
     const tone = artifact.status === "ready" ? "success" : artifact.status === "failed" ? "error" : artifact.status === "stale" ? "warning" : "loading";
-    const label = artifact.status === "ready" ? "已生成" : artifact.status === "failed" ? "生成失败" : artifact.status === "stale" ? "已过期" : "生成中";
+    const label = artifact.status === "ready" ? t("projectUi.statusGenerated" as InterfaceMessageKey) : artifact.status === "failed" ? t("projectUi.statusGenerationFailed" as InterfaceMessageKey) : artifact.status === "stale" ? t("projectUi.statusExpired" as InterfaceMessageKey) : t("projectUi.statusGenerating" as InterfaceMessageKey);
     return <StatusBadge variant="filled" tone={tone} label={label} />;
 }
 
@@ -69,8 +72,16 @@ export function artifactTypeForStage(stage: ShortDramaWorkflowStage) {
     return "storyboard";
 }
 
-export function assetCategoryLabel(category: string) {
-    return sharedAssetCategoryLabel(category);
+export function assetCategoryLabel(category: string, t: InterfaceTranslate) {
+    const categoryKeys: Record<AssetCategory, string> = {
+        ark: "library.ark.title",
+        character: "projectUi.assetCategoryCharacter" as InterfaceMessageKey,
+        environment: "projectUi.assetCategoryEnvironment" as InterfaceMessageKey,
+        prop: "projectUi.assetCategoryProp" as InterfaceMessageKey,
+        material: "projectUi.assetCategoryMaterial" as InterfaceMessageKey,
+        other: "projectUi.assetCategoryOther" as InterfaceMessageKey,
+    };
+    return t(categoryKeys[normalizeAssetCategory(category)]);
 }
 
 export function formatDuration(durationMs: number) {
@@ -80,10 +91,10 @@ export function formatDuration(durationMs: number) {
     return `${minutes}m ${seconds}s`;
 }
 
-export function stageActionLabel(step?: WorkflowStep) {
-    if (!step || step.status === "pending") return "等待上一步";
-    if (step.status === "running" || step.status === "review") return "完成阶段";
-    if (step.status === "completed") return "重新打开";
-    if (step.status === "failed") return "重新开始";
-    return "开始阶段";
+export function stageActionLabel(step: WorkflowStep | undefined, t: InterfaceTranslate) {
+    if (!step || step.status === "pending") return t("projectUi.workflowActionWaiting" as InterfaceMessageKey);
+    if (step.status === "running" || step.status === "review") return t("projectUi.workflowActionComplete" as InterfaceMessageKey);
+    if (step.status === "completed") return t("projectUi.workflowActionReopen" as InterfaceMessageKey);
+    if (step.status === "failed") return t("projectUi.workflowActionRestart" as InterfaceMessageKey);
+    return t("projectUi.workflowActionStart" as InterfaceMessageKey);
 }

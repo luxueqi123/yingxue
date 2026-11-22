@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 async function loadPageWiring(modulePath, ownerExport, fieldsExport, switchExport) {
     const previousVersion = globalThis.__APP_VERSION__;
@@ -12,7 +14,7 @@ async function loadPageWiring(modulePath, ownerExport, fieldsExport, switchExpor
         const FieldsComponent = module[fieldsExport];
         const SwitchComponent = module[switchExport];
         assert.equal(typeof owner, "function", `${ownerExport} must be exported by ${modulePath}`);
-        assert.equal(typeof FieldsComponent, "function", `${fieldsExport} must be the hook-free fields view actually rendered by ${modulePath}`);
+        assert.equal(typeof FieldsComponent, "function", `${fieldsExport} must be the fields view actually rendered by ${modulePath}`);
         assert.equal(typeof SwitchComponent, "function", `${switchExport} must be the real page Switch component`);
         return { module, owner, FieldsComponent, SwitchComponent };
     } finally {
@@ -38,6 +40,15 @@ function findAntdSwitchElement(node, SwitchComponent) {
     return findAntdSwitchElement(children, SwitchComponent);
 }
 
+function inspectFields(page, props) {
+    let control;
+    renderToStaticMarkup(createElement(function FieldsInspection() {
+        control = findAntdSwitchElement(page.FieldsComponent(props), page.SwitchComponent);
+        return null;
+    }));
+    return control;
+}
+
 function adminValues(allowLocalChannel) {
     return { name: "Local", baseUrl: "http://127.0.0.1:8000", allowLocalChannel, apiKey: "key" };
 }
@@ -54,13 +65,11 @@ test("administrator default editor fields render the real Switch and feed the re
         },
     };
     const hiddenOwner = page.owner(false, "127.0.0.1", true);
-    const hiddenTree = page.FieldsComponent({ visible: hiddenOwner.visible, checked: hiddenOwner.checked, form });
-    assert.equal(findAntdSwitchElement(hiddenTree, page.SwitchComponent), null);
+    assert.equal(inspectFields(page, { visible: hiddenOwner.visible, checked: hiddenOwner.checked, form }), null);
     assert.equal(page.module.adminChannelSavePayload(adminValues(true), false, "127.0.0.1").allowLocalChannel, false);
 
     const initialOwner = page.owner(true, "127.0.0.1", undefined);
-    const initialTree = page.FieldsComponent({ visible: initialOwner.visible, checked: initialOwner.checked, form });
-    const initialSwitch = findAntdSwitchElement(initialTree, page.SwitchComponent);
+    const initialSwitch = inspectFields(page, { visible: initialOwner.visible, checked: initialOwner.checked, form });
     assert.ok(initialSwitch, "default admin editor fields must contain the real AntD Switch");
     assert.equal(initialSwitch.props.checked, false);
     initialSwitch.props.onChange(true);
@@ -68,8 +77,7 @@ test("administrator default editor fields render the real Switch and feed the re
     assert.equal(page.module.adminChannelSavePayload(values, true, "127.0.0.1").allowLocalChannel, true);
 
     const persistedOwner = page.owner(true, "localhost", true);
-    const persistedTree = page.FieldsComponent({ visible: persistedOwner.visible, checked: persistedOwner.checked, form });
-    const persistedSwitch = findAntdSwitchElement(persistedTree, page.SwitchComponent);
+    const persistedSwitch = inspectFields(page, { visible: persistedOwner.visible, checked: persistedOwner.checked, form });
     assert.ok(persistedSwitch);
     assert.equal(persistedSwitch.props.checked, true);
     persistedSwitch.props.onChange(false);
@@ -77,12 +85,12 @@ test("administrator default editor fields render the real Switch and feed the re
     assert.equal(page.module.adminChannelSavePayload(values, true, "localhost").allowLocalChannel, false);
 
     const nonLoopbackOwner = page.owner(true, "canvas.example.com", true);
-    assert.equal(findAntdSwitchElement(page.FieldsComponent({ visible: nonLoopbackOwner.visible, checked: nonLoopbackOwner.checked, form }), page.SwitchComponent), null);
+    assert.equal(inspectFields(page, { visible: nonLoopbackOwner.visible, checked: nonLoopbackOwner.checked, form }), null);
     assert.equal(page.module.adminChannelSavePayload(adminValues(true), true, "canvas.example.com").allowLocalChannel, false);
 });
 
 test("user default channel fields render the real Switch and feed the real update patch", { timeout: 30_000 }, async () => {
-    const page = await loadPageWiring("../src/pages/settings/index.tsx", "userLocalChannelFormOwner", "UserLocalChannelFields", "UserLocalChannelSwitch");
+    const page = await loadPageWiring("../src/pages/settings/channel-settings-pane.tsx", "userLocalChannelFormOwner", "UserLocalChannelFields", "UserLocalChannelSwitch");
     assert.equal(typeof page.module.userLocalChannelChangePatch, "function");
     const channel = { id: "local", name: "Local", baseUrl: "http://127.0.0.1:8000", apiKey: "key", apiFormat: "openai", models: ["model"], allowLocalChannel: true };
 
@@ -91,27 +99,24 @@ test("user default channel fields render the real Switch and feed the real updat
         update = { id, patch };
     };
     const hiddenOwner = page.owner(false, "127.0.0.1", true);
-    const hiddenTree = page.FieldsComponent({ channel, visible: hiddenOwner.visible, checked: hiddenOwner.checked, desktopLocalChannelsEnabled: false, hostname: "127.0.0.1", updateChannel });
-    assert.equal(findAntdSwitchElement(hiddenTree, page.SwitchComponent), null);
+    assert.equal(inspectFields(page, { channel, visible: hiddenOwner.visible, checked: hiddenOwner.checked, desktopLocalChannelsEnabled: false, hostname: "127.0.0.1", updateChannel }), null);
     assert.equal(page.module.userLocalChannelChangePatch(false, "127.0.0.1", true).allowLocalChannel, false);
 
     const initialOwner = page.owner(true, "127.0.0.1", false);
-    const initialTree = page.FieldsComponent({ channel: { ...channel, allowLocalChannel: false }, visible: initialOwner.visible, checked: initialOwner.checked, desktopLocalChannelsEnabled: true, hostname: "127.0.0.1", updateChannel });
-    const initialSwitch = findAntdSwitchElement(initialTree, page.SwitchComponent);
+    const initialSwitch = inspectFields(page, { channel: { ...channel, allowLocalChannel: false }, visible: initialOwner.visible, checked: initialOwner.checked, desktopLocalChannelsEnabled: true, hostname: "127.0.0.1", updateChannel });
     assert.ok(initialSwitch, "default user channel fields must contain the real AntD Switch");
     assert.equal(initialSwitch.props.checked, false);
     initialSwitch.props.onChange(true);
     assert.deepEqual(update, { id: "local", patch: { allowLocalChannel: true } }, "real user Switch must call updateChannel with the projected patch");
 
     const persistedOwner = page.owner(true, "localhost", true);
-    const persistedTree = page.FieldsComponent({ channel, visible: persistedOwner.visible, checked: persistedOwner.checked, desktopLocalChannelsEnabled: true, hostname: "localhost", updateChannel });
-    const persistedSwitch = findAntdSwitchElement(persistedTree, page.SwitchComponent);
+    const persistedSwitch = inspectFields(page, { channel, visible: persistedOwner.visible, checked: persistedOwner.checked, desktopLocalChannelsEnabled: true, hostname: "localhost", updateChannel });
     assert.ok(persistedSwitch);
     assert.equal(persistedSwitch.props.checked, true);
     persistedSwitch.props.onChange(false);
     assert.deepEqual(update, { id: "local", patch: { allowLocalChannel: false } });
 
     const nonLoopbackOwner = page.owner(true, "canvas.example.com", true);
-    assert.equal(findAntdSwitchElement(page.FieldsComponent({ channel, visible: nonLoopbackOwner.visible, checked: nonLoopbackOwner.checked, desktopLocalChannelsEnabled: true, hostname: "canvas.example.com", updateChannel }), page.SwitchComponent), null);
+    assert.equal(inspectFields(page, { channel, visible: nonLoopbackOwner.visible, checked: nonLoopbackOwner.checked, desktopLocalChannelsEnabled: true, hostname: "canvas.example.com", updateChannel }), null);
     assert.deepEqual(page.module.userLocalChannelChangePatch(true, "canvas.example.com", true), { allowLocalChannel: false });
 });

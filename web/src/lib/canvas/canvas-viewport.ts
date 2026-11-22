@@ -12,6 +12,47 @@ export type CanvasViewportSize = {
     height: number;
 };
 
+export function initialCanvasViewport(nodes: CanvasNodeData[], size: CanvasViewportSize, saved?: ViewportTransform): ViewportTransform {
+    if (saved) return saved;
+    // Viewports are device-local. A fresh device has cloud nodes but no prior camera position.
+    const bounds = getCanvasNodesBounds(nodes);
+    return bounds ? viewportForBounds(bounds, size, { padding: 100, maxScale: 1 }) : { x: 0, y: 0, k: 1 };
+}
+
+export function initialCasePreviewViewport(nodes: CanvasNodeData[], size: CanvasViewportSize): ViewportTransform {
+    const bounds = getCanvasNodesBounds(nodes);
+    if (!bounds) return { x: 0, y: 0, k: 1 };
+    const overview = viewportForBounds(bounds, size, { padding: 72, minScale: 0.001, maxScale: 1 });
+    if (overview.k >= 0.5) return overview;
+    const first = nodes.find(node => node.type !== "frame") ?? nodes[0];
+    return viewportForBounds(getCanvasNodesBounds([first])!, size, { padding: 48, minScale: 0.5, maxScale: 1 });
+}
+
+// 在浮窗四周选择最大的完整矩形；坐标均相对画布容器。
+export function unobscuredCanvasArea(size: CanvasViewportSize, overlay?: CanvasBounds): CanvasBounds {
+    const full = { left: 0, top: 0, right: size.width, bottom: size.height };
+    if (!overlay || overlay.right <= 0 || overlay.bottom <= 0 || overlay.left >= size.width || overlay.top >= size.height) return full;
+    const left = Math.max(0, overlay.left);
+    const top = Math.max(0, overlay.top);
+    const right = Math.min(size.width, overlay.right);
+    const bottom = Math.min(size.height, overlay.bottom);
+    const candidates = [
+        { ...full, right: left }, { ...full, left: right },
+        { ...full, bottom: top }, { ...full, top: bottom },
+    ].filter((area) => area.right - area.left >= 160 && area.bottom - area.top >= 160);
+    return candidates.sort((a, b) => (b.right - b.left) * (b.bottom - b.top) - (a.right - a.left) * (a.bottom - a.top))[0] ?? full;
+}
+
+// 镜头跟随不主动放大用户的视图；只有缩得太小、节点几乎看不清时才推近到可读尺寸。
+const AGENT_FOCUS_READABLE_SCALE = 0.5;
+
+export function viewportForAgentNodes(nodes: CanvasNodeData[], current: ViewportTransform, area: CanvasBounds): ViewportTransform | null {
+    const bounds = getCanvasNodesBounds(nodes);
+    if (!bounds) return null;
+    const next = viewportForBounds(bounds, { width: area.right - area.left, height: area.bottom - area.top }, { padding: 56, maxScale: Math.max(current.k, AGENT_FOCUS_READABLE_SCALE) });
+    return { ...next, x: next.x + area.left, y: next.y + area.top };
+}
+
 export function getCanvasNodesBounds(nodes: CanvasNodeData[]): CanvasBounds | null {
     if (!nodes.length) return null;
     let left = Number.POSITIVE_INFINITY;
@@ -48,8 +89,8 @@ export function viewportForBounds(bounds: CanvasBounds, viewportSize: CanvasView
     };
 }
 
-export function viewportAtScale(viewport: ViewportTransform, viewportSize: CanvasViewportSize, scale: number): ViewportTransform {
-    const k = Math.min(2, Math.max(0.05, scale));
+export function viewportAtScale(viewport: ViewportTransform, viewportSize: CanvasViewportSize, scale: number, minScale = 0.05): ViewportTransform {
+    const k = Math.min(2, Math.max(minScale, scale));
     const centerWorldX = (viewportSize.width / 2 - viewport.x) / viewport.k;
     const centerWorldY = (viewportSize.height / 2 - viewport.y) / viewport.k;
     return {

@@ -1,3 +1,4 @@
+import { translate } from "@/i18n";
 import { buildSkillMentionReferences } from "@/services/skill-runtime";
 import { canvasResourceMentionToken, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { Skill } from "@/services/api/skills";
@@ -5,6 +6,12 @@ import { creationAttachmentKind, type CreationAttachment } from "./creation-asse
 
 export type CreationReference = CanvasResourceReference & {
     attachmentId?: string;
+};
+
+export type CreationReferenceLimits = {
+    maxImages: number;
+    maxVideos: number;
+    maxAudios: number;
 };
 
 export function buildCreationMentionReferences(skills: Skill[], attachments: CreationAttachment[] = [], snapshots: CreationReference[] = []) {
@@ -34,18 +41,37 @@ export function reconcileCreationAttachmentLimit(attachments: CreationAttachment
     return { attachments: nextAttachments, removedReferences };
 }
 
+export function reconcileCreationAttachmentLimits(attachments: CreationAttachment[], references: CreationReference[], limits: CreationReferenceLimits) {
+    const remaining = {
+        image: Math.max(0, Math.floor(limits.maxImages)),
+        video: Math.max(0, Math.floor(limits.maxVideos)),
+        audio: Math.max(0, Math.floor(limits.maxAudios)),
+    };
+    const nextAttachments = attachments.filter((attachment) => {
+        const kind = creationAttachmentKind(attachment);
+        if (kind === "file" || remaining[kind] <= 0) return false;
+        remaining[kind] -= 1;
+        return true;
+    });
+    if (nextAttachments.length === attachments.length) return { attachments, removedReferences: [] as CreationReference[] };
+
+    const retainedIds = new Set(nextAttachments.map((attachment) => attachment.id));
+    const removedReferences = references.filter((reference) => reference.attachmentId && !retainedIds.has(reference.attachmentId));
+    return { attachments: nextAttachments, removedReferences };
+}
+
 export function removeCreationReferenceTokens(value: string, references: CreationReference[]) {
     return references.reduce((current, reference) => current.split(canvasResourceMentionToken(reference)).join("").split(`@${reference.label}`).join(""), value);
 }
 
 export function replaceCreationAttachmentReference(prompt: string, attachments: CreationAttachment[], targetAttachmentId: string, replacement: CreationAttachment) {
     const targetIndex = attachments.findIndex((attachment) => attachment.id === targetAttachmentId);
-    if (targetIndex < 0) throw new Error("要替换的参考内容不存在");
+    if (targetIndex < 0) throw new Error(translate("create.references.targetMissing"));
     if (replacement.id === targetAttachmentId) return { prompt, attachments };
 
     const currentReferences = buildCreationMentionReferences([], attachments);
     const targetReference = currentReferences.find((reference) => reference.attachmentId === targetAttachmentId);
-    if (!targetReference) throw new Error("要替换的提示词引用不存在");
+    if (!targetReference) throw new Error(translate("create.references.mentionMissing"));
 
     const remainingAttachments = attachments.filter((attachment) => attachment.id !== targetAttachmentId && attachment.id !== replacement.id);
     const insertionIndex = Math.min(targetIndex, remainingAttachments.length);
@@ -55,7 +81,7 @@ export function replaceCreationAttachmentReference(prompt: string, attachments: 
         ...remainingAttachments.slice(insertionIndex),
     ];
     const replacementReference = buildCreationMentionReferences([], nextAttachments).find((reference) => reference.attachmentId === replacement.id);
-    if (!replacementReference) throw new Error("替换后的提示词引用无效");
+    if (!replacementReference) throw new Error(translate("create.references.replacementInvalid"));
 
     const targetToken = canvasResourceMentionToken(targetReference);
     const replacementToken = canvasResourceMentionToken(replacementReference);
@@ -90,6 +116,12 @@ export function expandCreationPrompt(prompt: string, references: CreationReferen
     return [...contexts, `【创作要求】\n${visiblePrompt}`].filter(Boolean).join("\n\n");
 }
 
+export function creationReferenceMetadata(references: CreationReference[]) {
+    return {
+        skillIds: references.flatMap((reference) => (reference.skill?.skillId ? [reference.skill.skillId] : [])),
+    };
+}
+
 function attachmentReference(attachment: CreationAttachment, index: number): CreationReference {
     const kind = creationAttachmentKind(attachment);
     const label = kind === "video" ? "视频" : kind === "audio" ? "音频" : kind === "file" ? "文件" : "图片";
@@ -98,7 +130,7 @@ function attachmentReference(attachment: CreationAttachment, index: number): Cre
         nodeId: `upload:${attachment.id}`,
         kind: kind === "file" ? "text" : kind,
         label: `${label}${index + 1}`,
-        title: "当前参考内容",
+        title: translate("create.references.currentTitle"),
         previewUrl: attachment.previewUrl || ("dataUrl" in attachment ? attachment.dataUrl : attachment.url),
         storageKey: attachment.storageKey,
         active: true,
