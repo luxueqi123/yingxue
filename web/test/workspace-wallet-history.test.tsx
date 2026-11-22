@@ -96,6 +96,6 @@ test("the real wallet modal separates income and expense histories", () => {
     const result = Bun.spawnSync([process.execPath, "test", "./test/fixtures/workspace-wallet-modal.harness.tsx"], { cwd: resolve(import.meta.dir, ".."), timeout: 30000 });
     const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
     expect(result.exitCode, output).toBe(0);
-    expect(output).toContain("2 pass");
+    expect(output).toContain("(pass) income sits before expenses");
     expect(output).toContain("0 fail");
 }, 30000);

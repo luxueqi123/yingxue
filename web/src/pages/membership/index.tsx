@@ -17,7 +17,7 @@ export default function MembershipPage() {
     const userId = useUserStore((state) => state.user?.id);
     const client = useQueryClient();
     const member = useQuery({ queryKey: ["membership", userId], queryFn: ({ signal }) => getMembership(signal) });
-    const providers = useQuery({ queryKey: ["membership-payment-providers", userId], queryFn: listPaymentProviders });
+    const providers = useQuery({ queryKey: ["membership-payment-providers", userId], queryFn: ({ signal }) => listPaymentProviders(signal), enabled: Boolean(member.data?.plans.length) });
     const [annual, setAnnual] = useState(false);
     const [selected, setSelected] = useState("");
     const [search, setSearch] = useSearchParams();

@@ -1,7 +1,27 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 
 import { apiClient } from "@/services/api/request";
-import { addSkill, invalidateAddedSkillsCache, likeSkill, listAddedSkills, listSkills, removeSkill, unlikeSkill, type Skill } from "@/services/api/skills";
+import { addSkill, invalidateAddedSkillsCache, likeSkill, listAddedSkills, listSkillPickerPage, listSkills, removeSkill, unlikeSkill, type Skill } from "@/services/api/skills";
+
+test("the chooser asks for one server page even when more catalog pages exist", async () => {
+    const original = apiClient.request;
+    const reads: URLSearchParams[] = [];
+    apiClient.request = (async (config) => {
+        reads.push(new URLSearchParams(config.url?.split("?")[1]));
+        return { data: { code: 0, data: {
+            skills: [{ skillId: "upstream-example", skillName: "分镜" }],
+            totalCount: 685, page: 2, pageSize: 24, hasMore: true, categories: [],
+        } } };
+    }) as typeof original;
+    try {
+        const result = await listSkillPickerPage({ scope: "favorites", search: "分镜", page: 2 });
+        expect(reads.map(params => Object.fromEntries(params))).toEqual([{ scope: "favorites", search: "分镜", page: "2", pageSize: "24" }]);
+        expect(result.skills.map(skill => skill.skillId)).toEqual(["upstream-example"]);
+        expect(result.hasMore).toBe(true);
+    } finally {
+        apiClient.request = original;
+    }
+});
 
 test("cached skill library preserves category and uncategorized filters", async () => {
     const original = apiClient.request;

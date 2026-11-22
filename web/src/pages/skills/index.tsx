@@ -1,6 +1,7 @@
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { App, Button, Dropdown, Input } from "antd";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
 import { Tooltip } from "@/components/ui/base/tooltip";
 
 import {
@@ -23,7 +24,6 @@ import {
     Pencil,
     Plus,
     Puzzle,
-    Search,
     ShoppingBag,
     Sparkles,
     Trash2,
@@ -627,15 +627,13 @@ export default function SkillsPage() {
                                     </>
                                 }
                             >
-                                <Input
+                                <ListSearchInput
                                     className="min-w-0 sm:!w-56"
-                                    prefix={<Search />}
                                     value={search}
-                                    allowClear
                                     placeholder={t("skillsUi.searchPlaceholder")}
                                     aria-label={t("skillsUi.searchPlaceholder")}
-                                    onChange={(event) => {
-                                        setSearch(event.target.value);
+                                    onValueChange={(value) => {
+                                        setSearch(value);
                                         setPage(1);
                                     }}
                                 />

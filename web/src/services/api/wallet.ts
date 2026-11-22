@@ -128,6 +128,7 @@ export type ChannelModel = {
     icon: string;
     capability: "text" | "image" | "video" | "audio" | "";
     protocol?: import("@/lib/model-protocols").ModelProtocol;
+    protocolRelease?: string;
     billingMode: "fixed_request" | "per_second" | "token" | "image_usage";
     unitPriceMicrocredits: number;
     inputTokenPriceMicrocredits: number;
@@ -230,6 +231,7 @@ export type ChannelModelMutation = {
     icon?: string;
     capability: ChannelModel["capability"];
     protocol?: ChannelModel["protocol"];
+    protocolRelease?: string;
     enabled?: boolean;
     priceCurrency?: ChannelModel["priceCurrency"];
     referenceVideoBilling?: boolean;
@@ -389,8 +391,8 @@ export type BillingOrder = {
     updatedAt: string;
 };
 
-export function getWallet(page = 1, pageSize = 30, type: WalletHistoryType = "all") {
-    return http.get<WalletSummary>("/wallet", { params: { type, page, pageSize } });
+export function getWallet(page = 1, pageSize = 30, type: WalletHistoryType = "all", signal?: AbortSignal) {
+    return http.get<WalletSummary>("/wallet", { params: { type, page, pageSize }, signal });
 }
 export function redeemCredits(code: string) {
     return http.post<{ account: CreditAccount }>("/wallet/redeem", { code });
@@ -510,7 +512,8 @@ export function fetchAdminChannelModels(channelId: string) {
 export function importAdminChannelModels(channelId: string, models: string[]) {
     return http.post<{ models: string[]; added: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models });
 }
-export function testAdminChannelModel(channelId: string, input: Pick<ChannelModel, "modelKey" | "providerModelKey" | "capability" | "protocol"> & { capabilityConfig?: ChannelModel["capabilityConfig"] }) {
+
+export function testAdminChannelModel(channelId: string, input: Pick<ChannelModel, "modelKey" | "providerModelKey" | "capability" | "protocol" | "protocolRelease"> & { capabilityConfig?: ChannelModel["capabilityConfig"] }) {
     return http.post<{ durationMs: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/test`, input, { timeout: 10 * 60 * 1000 });
 }
 export function createAdminChannelModel(channelId: string, input: ChannelModelMutation) {

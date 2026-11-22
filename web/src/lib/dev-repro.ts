@@ -1,3 +1,3 @@
-export function isIsolatedPrevisRepro(dev: boolean, pathname: string): boolean {
-    return dev && pathname === "/dev/previs-repro";
+export function isIsolatedDevRepro(dev: boolean, pathname: string): boolean {
+    return dev && (pathname === "/dev/previs-repro" || pathname === "/dev/membership");
 }

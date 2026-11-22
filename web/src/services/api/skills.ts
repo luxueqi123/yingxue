@@ -2,6 +2,7 @@ import { publishedSkills } from "@/lib/published-production-assets";
 import { isVerifiedProductionSkill } from "@/lib/verified-production-assets";
 import { ApiError, http, apiBaseURL, compactApiParams, serializeApiParams, type ApiParams } from "@/services/api/request";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { appQueryClient } from "@/lib/query-client";
 import { captureSkillLibraryAccess, hasSkillAdministrationAccess, hasSkillLibraryAccess, isSkillLibraryAccessCurrent } from "@/lib/skill-access";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -181,6 +182,16 @@ export type ListSkillsInput = {
     libraryUncategorized?: boolean;
 };
 
+export const skillPickerQueryKey = ["skill-picker"] as const;
+
+export function listSkillPickerPage(input: { scope: SkillScope; search: string; page: number }, signal?: AbortSignal) {
+    return withSkillLibraryAccess(async () => {
+        const params = serializeApiParams(compactApiParams({ ...input, pageSize: 24 }));
+        const result = await http.get<SkillList>(`/skills?${params}`, { signal });
+        return { ...result, skills: catalogSkills(result.skills, input.scope) };
+    });
+}
+
 export type SkillMutationInput = {
     skillName: string;
     description: string;
@@ -263,7 +274,7 @@ export async function listSkills(input: ListSkillsInput = {}) {
         }
         return {
           ...first,
-          skills: all.filter(skill => isCatalogSkillAvailable(skill) || scope !== "public" && skill.isOwner).map(adaptPublishedSkill)
+          skills: catalogSkills(all, scope)
         };
       })();
       cached = {
@@ -368,7 +379,7 @@ async function readAddedSkillsWithRetry(access: ReturnType<typeof captureSkillLi
         try {
             const response = await http.get<{ skills: AddedSkillReference[] }>("/skills/added", { signal });
             if (!isSkillLibraryAccessCurrent(access)) return { skills: [] as Skill[] };
-            return { skills: response.skills.map(normalizeAddedSkillReference) };
+            return { skills: catalogSkills(response.skills.map(normalizeAddedSkillReference), "mine") };
         } catch (cause) {
             if (!(cause instanceof ApiError) || !cause.retryable || attempt >= retryDelays.length) throw cause;
             await new Promise<void>((resolve) => globalThis.setTimeout(resolve, retryDelays[attempt]));
@@ -423,6 +434,7 @@ function normalizeAddedSkillReference(skill: AddedSkillReference): Skill {
 /** 技能写入后清空已加入技能缓存并通知页面刷新；后台技能管理同样需要调用。 */
 export function invalidateAddedSkillsCache() {
     skillListCache.clear();
+    void appQueryClient.invalidateQueries({ queryKey: skillPickerQueryKey });
     addedSkillsAbort?.abort();
     addedSkillsAbort = null;
     addedSkillsCacheVersion += 1;
@@ -552,11 +564,11 @@ export function removeSkill(id: string) {
 }
 
 export function likeSkill(id: string) {
-    return withSkillLibraryAccess(() => http.post<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}/like`));
+    return withSkillLibraryAccess(() => http.post<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}/like`).finally(invalidateAddedSkillsCache));
 }
 
 export function unlikeSkill(id: string) {
-    return withSkillLibraryAccess(() => http.delete<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}/like`));
+    return withSkillLibraryAccess(() => http.delete<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}/like`).finally(invalidateAddedSkillsCache));
 }
 
 /** 设置已安装技能是否允许 Agent 自动发现。 */
@@ -581,6 +593,10 @@ const skillListCache = new Map<string, {
 function isCatalogSkillAvailable(skill: Skill): boolean {
   // 发布映射只约束融合素材，不能隐藏服务端已授权返回的上游与用户技能。
   return !skill.skillId.startsWith("pl-") || Boolean(publishedSkills[skill.skillId]) && isVerifiedProductionSkill(skill.skillId);
+}
+
+function catalogSkills(skills: Skill[], scope: SkillScope) {
+    return skills.filter(skill => isCatalogSkillAvailable(skill) || scope !== "public" && skill.isOwner).map(adaptPublishedSkill);
 }
 
 function adaptPublishedSkill(skill: Skill): Skill {

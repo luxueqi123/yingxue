@@ -1,6 +1,6 @@
 
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
-import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type CanvasWorkspaceMode, type ContextMenuState, type Position } from "@/types/canvas";
+import { CanvasNodeType, type CanvasFrameColor, type CanvasNodeData, type CanvasNodeTypeId, type CanvasWorkspaceMode, type ContextMenuState, type Position } from "@/types/canvas";
 
 type CanvasAssetCategory = NonNullable<NonNullable<CanvasNodeData["metadata"]>["assetCategory"]>;
 
@@ -44,6 +44,7 @@ type CanvasProjectContextMenuProps = {
     onUploadToArkPrivateAsset: (node: CanvasNodeData) => void;
     onSetAssetCategory: (nodeId: string, category: CanvasAssetCategory) => void;
     onToggleFrame: (node: CanvasNodeData) => void;
+    onSetFrameColor: (nodeId: string, color?: CanvasFrameColor) => void;
     onSpreadSelection: () => void;
     onCopySelection: () => void;
     onDeleteSelection: () => void;
@@ -56,7 +57,7 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
 const { onAdoptToDrama, onCreateDramaFromStoryboard } = props;
 
     if (!menu) return null;
-    const menuPosition = () => menu.type === "canvas" ? menu.position : screenToCanvas(menu.x, menu.y);
+    const menuPosition = () => (menu.type === "canvas" ? menu.position : screenToCanvas(menu.x, menu.y));
     return (
         <CanvasNodeContextMenu onAdoptToDrama={onAdoptToDrama && node && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? () => onAdoptToDrama(node) : undefined} onCreateDramaFromStoryboard={onCreateDramaFromStoryboard && node?.type === CanvasNodeType.Script ? () => onCreateDramaFromStoryboard(node) : undefined}
             menu={menu}
@@ -124,6 +125,9 @@ const { onAdoptToDrama, onCreateDramaFromStoryboard } = props;
             }}
             onToggleFrame={() => {
                 if (node?.type === CanvasNodeType.Frame) props.onToggleFrame(node);
+            }}
+            onSetFrameColor={(color) => {
+                if (menu.type === "node" && node?.type === CanvasNodeType.Frame && !node.metadata?.folder) props.onSetFrameColor(menu.nodeId, color);
             }}
             onSpreadSelection={props.onSpreadSelection}
             onCopySelection={props.onCopySelection}

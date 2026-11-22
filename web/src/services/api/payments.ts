@@ -118,8 +118,8 @@ export type AdminPaymentProvider = PaymentProvider & {
     updatedAt?: string;
 };
 
-export async function listPaymentProviders() {
-    const result = await http.get<{ providers: Array<Omit<PaymentProvider, "paymentMethods"> & { paymentMethods?: PaymentProvider["paymentMethods"] | null }> }>("/payments/providers");
+export async function listPaymentProviders(signal?: AbortSignal) {
+    const result = await http.get<{ providers: Array<Omit<PaymentProvider, "paymentMethods"> & { paymentMethods?: PaymentProvider["paymentMethods"] | null }> }>("/payments/providers", { signal });
     // 原生单一方式渠道未返回扩展列表；在 API 边界补齐，调用方始终接收数组。
     return {
         providers: result.providers.map((provider): PaymentProvider => ({
@@ -129,8 +129,8 @@ export async function listPaymentProviders() {
     };
 }
 
-export function listTopupProducts() {
-    return http.get<{ products: TopupProduct[] }>("/payments/products");
+export function listTopupProducts(signal?: AbortSignal) {
+    return http.get<{ products: TopupProduct[] }>("/payments/products", { signal });
 }
 
 export function createPaymentOrder(input: { productId: string; providerId: string; method?: string; paymentMethod?: string; idempotencyKey: string }) {
@@ -169,8 +169,8 @@ export type PaymentCurrency = "CNY" | "USD";
 /** usdCnyRate 是 1 USD 兑换的 CNY（十进制字符串），为空表示未配置，跨币种渠道不可下单。 */
 export type PaymentSettings = { defaultCurrency: PaymentCurrency; usdCnyRate: string };
 
-export function getPaymentSettings() {
-    return http.get<{ settings: PaymentSettings }>("/payments/settings");
+export function getPaymentSettings(signal?: AbortSignal) {
+    return http.get<{ settings: PaymentSettings }>("/payments/settings", { signal });
 }
 export function getAdminPaymentSettings() {
     return http.get<{ settings: PaymentSettings }>("/admin/payments/settings");

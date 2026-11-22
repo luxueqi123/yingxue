@@ -302,9 +302,10 @@ jobs:
             fi
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
           else
-            if [[ "$YINGXUE_RELEASE" == true ]]; then
-              git push origin HEAD:refs/heads/main
-            fi
+            # A verified release may be built from an isolated candidate ref.
+            # Do not rewrite or implicitly fast-forward the repository's main
+            # branch from a detached tag. Upstream synchronization promotes a
+            # merge through its own branch flow.
             gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
               --verify-tag \
               --title "$GITHUB_REF_NAME" \

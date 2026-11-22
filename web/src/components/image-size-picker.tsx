@@ -268,7 +268,7 @@ export function ImageSizePicker({
             </div>
             {!choices.length ? <p className="image-size-hint">{imageSizePickerT(t, profile.size.allowCustom ? "imageSizePickerUiNoPresetsCustomAllowed" : "imageSizePickerUiNoPresets")}</p> : null}
             <output aria-live="polite" className="image-size-output">
-                {size === "auto" ? imageSizePickerT(t, "imageSizePickerUiModelDecidesSize") : active ? active.ratio + " · " + active.width + " × " + active.height + " px" : size.replace("x", " × ")}
+                {size === "auto" || !size ? imageSizePickerT(t, "imageSizePickerUiModelDecidesSize") : active ? active.ratio + " · " + active.width + " × " + active.height + " px" : size.replace("x", " × ")}
             </output>
             {profile.size.parameter === "aspect_ratio" ? (
                 <p className="image-size-hint">{imageSizePickerT(t, "imageSizePickerUiPixelEstimate") + (!imageResolutionUsesQuality(profile) && visibleTiers.length <= 1 ? " " + imageSizePickerT(t, "imageSizePickerUiNoSeparateResolution") : "")}</p>

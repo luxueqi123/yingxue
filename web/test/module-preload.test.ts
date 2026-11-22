@@ -64,6 +64,7 @@ test("真实 Vite helper 的预热失败沿用可取消的恢复事件，不执�
     const preload = runInNewContext(`${transformed}; preload`, {
         Event,
         URL,
+        document: { createElement: () => ({ relList: { supports: () => false } }) },
         importMeta: { url: "https://assets.example/entry.js" },
         assetsURL: (dep: string) => dep,
         warmPreloadResources: async () => {

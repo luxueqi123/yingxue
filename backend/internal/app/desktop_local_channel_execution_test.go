@@ -78,11 +78,11 @@ func TestLocalExecutionPathsApplyLoopbackPolicyBeyondConfigResolution(t *testing
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := closed.resolveProviderConfig(test.config); err == nil {
+			if _, err := closed.resolveProviderConfig(test.config, nil); err == nil {
 				t.Fatal("capability=false must reject local execution before any outbound request")
 			}
 			before := requests[test.path]
-			resolved, err := open.resolveProviderConfig(test.config)
+			resolved, err := open.resolveProviderConfig(test.config, nil)
 			if err != nil {
 				t.Fatalf("resolveProviderConfig() error = %v", err)
 			}

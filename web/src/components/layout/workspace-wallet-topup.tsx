@@ -1,6 +1,6 @@
 import { Button, Skeleton } from "antd";
 import { Check, CircleAlert, Coins, FolderOpen, HardDrive } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { PaymentBrandIcon } from "@/components/payment-brand-icons";
@@ -15,8 +15,6 @@ import { storageGrantActive, type UserStorageGrant } from "@/services/api/storag
 
 import "./workspace-wallet-topup.css";
 import "@/components/payment/payment-method-colors.css";
-
-export type TopupCategory = "all" | TopupProductKind;
 
 /** 文案保存为 account.wallet.topup.kinds 下的键前缀，渲染时翻译。 */
 const KIND_META: Record<TopupProductKind, { key: string; icon: typeof Coins }> = {
@@ -154,54 +152,46 @@ function StorageSummary({ usage, grants, onCleanAssets }: { usage?: AccountFileS
 
 export function WalletTopupPanel({
     loading,
+    kind,
     products,
     paymentOptions,
     usdCnyRate,
-    focusKind,
-    focusToken,
+    previewDescription,
     selectedProduct,
     onSelectProduct,
     selectedOptionKey,
     onSelectOption,
     creating,
+    checkoutLoading,
+    checkoutError,
+    onRetryCheckout,
     onPay,
     storageUsage,
     storageGrants,
     onCleanAssets,
 }: {
     loading: boolean;
+    kind: TopupProductKind;
     products: TopupProduct[];
     /** 渠道展开后的支付入口，易支付等聚合渠道的每种支付方式各一个。 */
     paymentOptions: PaymentOption[];
     /** 1 USD 兑换的 CNY，用于预估跨币种渠道的实付金额。 */
     usdCnyRate?: string;
-    /** 从容量入口进入时滚动到对应分组；focusToken 变化时重新定位。 */
-    focusKind?: TopupProductKind;
-    focusToken?: number;
+    previewDescription?: string;
     selectedProduct?: TopupProduct;
     onSelectProduct: (id: string) => void;
     selectedOptionKey: string;
     onSelectOption: (key: string) => void;
     creating: boolean;
+    checkoutLoading: boolean;
+    checkoutError?: string;
+    onRetryCheckout: () => void;
     onPay: () => void;
     storageUsage?: AccountFileStorageUsage;
     storageGrants: UserStorageGrant[];
     onCleanAssets: () => void;
 }) {
     const { t } = useTranslation();
-    const groupsRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (loading || !focusKind) return;
-        const container = groupsRef.current;
-        const target = container?.querySelector<HTMLElement>(`[data-topup-kind="${focusKind}"]`);
-        if (!container || !target) return;
-        // 只滚动分组列表本身。scrollIntoView 会连带滚动 overflow: hidden 的祖先（弹窗外壳、内容区），
-        // 把页头和页签推出可视区且无法滚回。
-        const top = target.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
-        container.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    }, [loading, focusKind, focusToken]);
-
     if (loading) {
         return (
             <div className="workspace-wallet-content wallet-topup">
@@ -210,12 +200,6 @@ export function WalletTopupPanel({
         );
     }
 
-    const byKind: Record<TopupProductKind, TopupProduct[]> = {
-        credits: products.filter((item) => item.kind !== "storage"),
-        storage: products.filter((item) => item.kind === "storage"),
-    };
-    // 只展示有商品的分类；存储分类即使没有商品也展示容量信息，便于用户先清理。
-    const kinds = (["credits", "storage"] as const).filter((kind) => byKind[kind].length || kind === "storage");
     const selectedKind = selectedProduct ? KIND_META[selectedProduct.kind] : null;
     const SelectedIcon = selectedKind?.icon;
     const selectedOption = paymentOptions.find((option) => option.key === selectedOptionKey);
@@ -226,15 +210,14 @@ export function WalletTopupPanel({
 
     return (
         <div className="workspace-wallet-content wallet-topup">
-            <div ref={groupsRef} className="wallet-topup-groups">
-                {kinds.map((kind) => (
-                    <TopupGroup key={kind} kind={kind} products={byKind[kind]} selectedProductId={selectedProduct?.id || ""} onSelectProduct={onSelectProduct}>
-                        {kind === "storage" ? <StorageSummary usage={storageUsage} grants={storageGrants} onCleanAssets={onCleanAssets} /> : null}
-                    </TopupGroup>
-                ))}
+            <div className="wallet-topup-groups">
+                <TopupGroup kind={kind} products={products} selectedProductId={selectedProduct?.id || ""} onSelectProduct={onSelectProduct}
+                    aside={kind === "credits" && previewDescription ? <small className="wallet-shop-description">{previewDescription}</small> : null}>
+                    {kind === "storage" ? <StorageSummary usage={storageUsage} grants={storageGrants} onCleanAssets={onCleanAssets} /> : null}
+                </TopupGroup>
             </div>
 
-            {products.length ? (
+            {products.length > 0 && !previewDescription ? (
                 <footer className="wallet-topup-checkout">
                     <div className={cn("wallet-topup-checkout-summary", selectedProduct && `is-${selectedProduct.kind}`)}>
                         {selectedProduct && SelectedIcon ? (
@@ -260,7 +243,12 @@ export function WalletTopupPanel({
                             <span className="wallet-topup-checkout-hint">{t("account.wallet.topup.selectPlan")}</span>
                         )}
                     </div>
-                    {paymentOptions.length ? (
+                    {checkoutLoading ? <Skeleton.Input active size="small" /> : checkoutError ? (
+                        <div className="wallet-topup-checkout-hint" role="alert">
+                            <span>{checkoutError}</span>
+                            <Button size="small" onClick={onRetryCheckout}>{t("common.refresh")}</Button>
+                        </div>
+                    ) : paymentOptions.length ? (
                         <div className="workspace-wallet-providers" role="radiogroup" aria-label={t("account.wallet.topup.paymentMethod")}>
                             {paymentOptions.map((option) => {
                                 // 渠道结算货币与商品不同且未配置汇率时无法换算，入口禁用并说明原因。
@@ -285,19 +273,11 @@ export function WalletTopupPanel({
                     ) : (
                         <span className="wallet-topup-checkout-hint">{t("account.wallet.topup.noProvider")}</span>
                     )}
-                    <Button type="primary" size="large" loading={creating} disabled={!selectedProduct || !selectedProduct.canPurchase || !selectedOptionPayable} onClick={onPay}>
+                    <Button type="primary" size="large" loading={creating} disabled={checkoutLoading || Boolean(checkoutError) || !selectedProduct || !selectedProduct.canPurchase || !selectedOptionPayable} onClick={onPay}>
                         {t("account.wallet.topup.payNow")}
                     </Button>
                 </footer>
-            ) : (
-                <div className="workspace-wallet-inline-state">
-                    <CircleAlert />
-                    <div>
-                        <strong>{t("account.wallet.topup.unavailableTitle")}</strong>
-                        <span>{t("account.wallet.topup.unavailableDescription")}</span>
-                    </div>
-                </div>
-            )}
+            ) : null}
         </div>
     );
 }

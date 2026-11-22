@@ -95,6 +95,7 @@ import {
     type PersistedCreationTask,
 } from "./creation-conversations";
 import { CreationComposer, CreationEmptySuggest, CreationHistoryDrawer, CreationMessageView, CreationWorkspaceToolbar, creationAssetCategoryLabels } from "./creation-workspace";
+import { appendCreationReference, creationAttachmentFromResult, type CreationReferenceDrop } from "./creation-reference-drop";
 import { declaredInspirationSources } from "@/lib/inspirations/catalog";
 import { fillablePrompt } from "@/lib/inspirations/resolve";
 import { CreationRecentCanvases } from "./creation-recent-canvases";
@@ -225,6 +226,8 @@ export default function CreatePage({ embedded = false, focused = false, seed }: 
     const [uploadFailures, setUploadFailures] = useState<{ file: File; error: string }[]>([]);
     const uploadingRef = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [referenceDropBusy, setReferenceDropBusy] = useState(false);
+    const referenceDropLock = useRef(false);
     const [historyOpen, setHistoryOpen] = useState(false);
     const { openAuth } = useAuthEntry();
     const [libraryOpen, setLibraryOpen] = useState(false);
@@ -1024,6 +1027,41 @@ export default function CreatePage({ embedded = false, focused = false, seed }: 
         setLibraryOpen(false);
     };
 
+    const addDroppedReferences = async (drop: CreationReferenceDrop) => {
+        if (!requireCreationLogin() || busy || referenceReplacementBusy || referenceDropLock.current) return;
+        if (drop.kind === "files") {
+            await addComposerFiles(drop.files);
+            return;
+        }
+        const maxImages = mode === "video" ? videoReferenceLimits?.maxImages || 0 : maxReferences;
+        const maxAttachments = mode === "video" ? Infinity : maxReferences;
+        if (maxImages <= 0) {
+            toast.warning("当前模型或模式不支持参考图");
+            return;
+        }
+        const scope = getActiveUserScope();
+        const conversationId = activeId;
+        const active = () => scope === getActiveUserScope() && conversationId === activeIdRef.current;
+        referenceDropLock.current = true;
+        setReferenceDropBusy(true);
+        try {
+            const attachment = await creationAttachmentFromResult(
+                drop.image,
+                conversationsRef.current.flatMap((conversation) => conversation.messages),
+                useAssetStore.getState().assets,
+            );
+            if (!active()) return;
+            const next = appendCreationReference(attachmentsRef.current, attachment, maxImages, maxAttachments);
+            attachmentsRef.current = next;
+            setAttachments(next);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "添加参考图失败");
+        } finally {
+            referenceDropLock.current = false;
+            setReferenceDropBusy(false);
+        }
+    };
+
     const removeAttachment = (id: string) => {
         const reference = mentionReferences.find((item) => item.attachmentId === id);
         setAttachments((current) => removeCreationAttachment(current, id));
@@ -1131,7 +1169,7 @@ export default function CreatePage({ embedded = false, focused = false, seed }: 
         }
 
         const text = prompt.trim();
-        if (!text || busy || !activeConversation) {
+        if (!text || busy || referenceReplacementBusy || referenceDropLock.current || !activeConversation) {
             releaseRetryLock();
             releaseSubmitGate();
             return;
@@ -1736,6 +1774,8 @@ export default function CreatePage({ embedded = false, focused = false, seed }: 
         onDismissUploadFailure: (file: File) => setUploadFailures(current => current.filter(item => item.file !== file)),
         fileInputRef,
         onFileChange: handleFileChange,
+        referenceDropBusy,
+        onReferenceDrop: addDroppedReferences,
         attachments,
         referenceImageSize,
         maxReferences,

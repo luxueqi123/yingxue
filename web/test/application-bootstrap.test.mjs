@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { runInNewContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 
-import { isIsolatedPrevisRepro } from "../src/lib/dev-repro";
+import { isIsolatedDevRepro } from "../src/lib/dev-repro";
 
 // Execute the real entry point; replace only its font, network and UI side effects.
 async function prepareEntry(dev, pathname) {
@@ -54,14 +54,17 @@ async function prepareEntry(dev, pathname) {
     return { events, resolveAppearance, loaded, replacedPaths };
 }
 
-test("DEV previs lab loads without calling the appearance backend", async () => {
-    const entry = await prepareEntry(true, "/dev/previs-repro");
-    await entry.loaded;
-    expect(entry.events).toEqual(["./application"]);
-});
+for (const pathname of ["/dev/previs-repro", "/dev/membership"]) {
+    test(`DEV preview loads without calling the appearance backend: ${pathname}`, async () => {
+        const entry = await prepareEntry(true, pathname);
+        await entry.loaded;
+        expect(entry.events).toEqual(["./application"]);
+    });
+}
 
 for (const [dev, pathname] of [
     [false, "/dev/previs-repro"],
+    [false, "/dev/membership"],
     [true, "/login"],
     [false, "/login"],
     [true, "/dev/previs-repro/"],
@@ -85,10 +88,12 @@ for (const pathname of ["/welcome", "/welcome/"]) {
 }
 
 test("provider isolation shares the exact DEV-only route boundary", () => {
-    expect(isIsolatedPrevisRepro(true, "/dev/previs-repro")).toBe(true);
-    expect(isIsolatedPrevisRepro(false, "/dev/previs-repro")).toBe(false);
-    for (const path of ["/", "/login", "/dev/previs-repro/", "/dev/previs-repro-other"]) {
-        expect(isIsolatedPrevisRepro(true, path)).toBe(false);
+    for (const path of ["/dev/previs-repro", "/dev/membership"]) {
+        expect(isIsolatedDevRepro(true, path)).toBe(true);
+        expect(isIsolatedDevRepro(false, path)).toBe(false);
+    }
+    for (const path of ["/", "/login", "/dev/previs-repro/", "/dev/previs-repro-other", "/dev/membership/", "/membership"]) {
+        expect(isIsolatedDevRepro(true, path)).toBe(false);
     }
 });
 

@@ -83,6 +83,17 @@ for (const component of ["picker", "composer"] as const) {
             busy: false,
             generationActive: false,
             referenceReplacementBusy: false,
+            referenceDropBusy: false,
+            onReferenceDrop: noop,
+            uploading: false,
+            uploadFailures: [],
+            inputIssues: [],
+            submissionBlocked: false,
+            onAddFiles: noop,
+            onRetryUploads: noop,
+            onDismissUploadFailure: noop,
+            fileInputRef: createRef<HTMLInputElement>(),
+            onFileChange: noop,
             attachments: [],
             maxReferences: 0,
             references: [],
@@ -138,7 +149,7 @@ for (const component of ["picker", "composer"] as const) {
             );
             expect(host.textContent).toContain("游客可见视频模型");
             expect(requests).toEqual([]);
-            if (component === "composer") expect(host.querySelector('button[aria-label^="预估"]')).not.toBeNull();
+            if (component === "composer") expect(host.querySelector('button[aria-label^="预计消耗"]')).not.toBeNull();
             await act(async () => useUserStore.setState({ user: { id: "member", username: "member", displayName: "会员", role: "user", status: "active" } }));
             expect(requests.length).toBeGreaterThan(0);
             expect(requests.every((url) => url === "/model-catalog/quote")).toBe(true);
@@ -146,7 +157,7 @@ for (const component of ["picker", "composer"] as const) {
             await act(async () => useUserStore.setState({ user: null }));
             expect(requests).toHaveLength(count);
             expect(host.textContent).toContain("游客可见视频模型");
-            if (component === "composer") expect(host.querySelector('button[aria-label^="预估"]')).not.toBeNull();
+            if (component === "composer") expect(host.querySelector('button[aria-label^="预计消耗"]')).not.toBeNull();
         } finally {
             await act(async () => root.unmount());
             apiClient.defaults.adapter = originalAdapter;

@@ -18,6 +18,7 @@ export const JOB_KIND_LABEL: Record<DramaJob["kind"], InterfaceMessageKey> = {
     script: "dramaUi.scriptStoryboard",
     segment_prompt: "dramaUi.segmentPrompt",
     segment_video: "dramaUi.segmentVideo",
+    compose: "drama.create.stepAssembleFinal",
     render: "drama.create.stepAssembleFinal",
 };
 

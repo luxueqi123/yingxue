@@ -40,6 +40,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { useGenerationBatchLimit, batchQuoteTotal } from "@/lib/generation-batch-limit";
 import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { type CreationReference } from "./creation-references";
+import { hasCreationReferenceDrop, readCreationReferenceDrop, type CreationReferenceDrop } from "./creation-reference-drop";
 import { creationAttachmentKind, creationUploadAccept, type CreationAttachment, type CreationMode } from "./creation-assets";
 import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { countOptions, resolutionOptions, type CreationShotRailEntry } from "./creation-types";
@@ -171,6 +172,8 @@ type ComposerProps = {
     onDismissUploadFailure: (file: File) => void;
     fileInputRef: RefObject<HTMLInputElement | null>;
     onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+    referenceDropBusy: boolean;
+    onReferenceDrop: (drop: CreationReferenceDrop) => void;
     attachments: CreationAttachment[];
     referenceImageSize?: { width: number; height: number };
     maxReferences: number;
@@ -233,11 +236,20 @@ export function partitionReferenceImageDropFiles(files: readonly File[], targetR
     return { replacementFile: files[replacementIndex], attachmentFiles: files.filter((_, index) => index !== replacementIndex) };
 }
 
+const CREATION_PROMPT_MIN_HEIGHT = 48;
+const CREATION_PROMPT_MAX_HEIGHT = 300;
+
+function clampCreationPromptHeight(height: number) {
+    return Math.min(CREATION_PROMPT_MAX_HEIGHT, Math.max(CREATION_PROMPT_MIN_HEIGHT, Math.ceil(height)));
+}
+
 export function CreationComposer(props: ComposerProps) {
     const { t, locale } = useInterfaceTranslation();
+    const [referenceDragOver, setReferenceDragOver] = useState(false);
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
     const [promptOptimizerOpen, setPromptOptimizerOpen] = useState(false);
+    const [promptHeight, setPromptHeight] = useState(CREATION_PROMPT_MIN_HEIGHT);
     const [referenceFilter, setReferenceFilter] = useState<CreationReferenceFilter>("all");
     const [canDragReferences, setCanDragReferences] = useState(false);
     const [dropTargetReferenceId, setDropTargetReferenceId] = useState<string | null>(null);
@@ -246,7 +258,8 @@ export function CreationComposer(props: ComposerProps) {
     const suppressAttachmentClickRef = useRef(false);
     const [trackState, setTrackState] = useState({ canScrollLeft: false, canScrollRight: false, isExpanded: true, isDragging: false });
     const previousAttachmentCountRef = useRef(0);
-    const interactionBusy = props.busy || props.referenceReplacementBusy || props.uploading;
+    const interactionBusy = props.busy || props.referenceReplacementBusy || props.uploading || props.referenceDropBusy;
+    // 创作页张数等于拆单数，上限按账号同时任务数，硬上限仍为 15。
     const imageBatchLimit = Math.min(15, useGenerationBatchLimit());
     const settingsError = mediaSettingIssues(props.config, props.mode, props.model)
         .map((item) => item.message)
@@ -302,6 +315,10 @@ export function CreationComposer(props: ComposerProps) {
     const referencesSupported = props.mode === "image" ? imageReferencesSupported : props.mode !== "video" || props.maxReferences > 0;
     const canAddMoreReferences = referencesSupported && props.attachments.length < props.maxReferences;
     const addReferenceLabel = interactionBusy ? t(props.uploading ? "nativeControls.composerUploadingReferences" : props.referenceReplacementBusy ? "nativeControls.composerReplacingReferences" : props.generationActive ? "nativeControls.composerGeneratingReferences" : "nativeControls.composerProcessingReferences") : canAddMoreReferences ? t("composerAddReferences") : t("create.page.referenceLimitExceeded");
+    const handlePromptContentSizeChange = useCallback((naturalHeight: number) => {
+        const nextHeight = clampCreationPromptHeight(naturalHeight);
+        setPromptHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+    }, []);
     const referenceCounts = useMemo(
         () =>
             props.attachments.reduce(
@@ -410,17 +427,42 @@ export function CreationComposer(props: ComposerProps) {
     };
     const embedded = props.variant === "empty";
     const surface = (
-        <SpotlightSurface className={`creation-chat-composer is-${props.variant}`} contentClassName="contents" spotlightColor="var(--creation-composer-spotlight, color-mix(in srgb, var(--user-ink) 12%, transparent))" spotlightRadius={280}
-            onDragOver={(event) => { if (!interactionBusy && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
-            onDrop={(event) => {
-                if (!event.dataTransfer.files.length || interactionBusy) return;
+        <SpotlightSurface
+            className={`creation-chat-composer is-${props.variant}${referenceDragOver ? " is-reference-drag-over" : ""}`}
+            contentClassName="contents"
+            spotlightColor={"var(--creation-composer-spotlight, color-mix(in srgb, var(--user-ink) 12%, transparent))"}
+            spotlightRadius={280}
+            onDragOver={(event) => {
+                if (!hasCreationReferenceDrop(event.dataTransfer)) return;
+                if (event.defaultPrevented) {
+                    setReferenceDragOver(false);
+                    return;
+                }
                 event.preventDefault();
-                const files = Array.from(event.dataTransfer.files);
-                const target = imageReferenceAtPoint(event.clientX, event.clientY);
-                const partition = partitionReferenceImageDropFiles(files, target?.id, props.references);
-                if (partition && target?.attachmentId) {
-                    void props.onReplaceReferenceFiles(target.attachmentId, [partition.replacementFile, ...partition.attachmentFiles]);
-                } else props.onAddFiles(files);
+                event.dataTransfer.dropEffect = interactionBusy ? "none" : "copy";
+                setReferenceDragOver(!interactionBusy);
+            }}
+            onDragLeave={(event) => {
+                if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setReferenceDragOver(false);
+            }}
+            onDrop={(event) => {
+                setReferenceDragOver(false);
+                // 引用标签已处理的文件替换不能再追加一遍。
+                if (event.defaultPrevented || !hasCreationReferenceDrop(event.dataTransfer)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (interactionBusy) return;
+                const drop = readCreationReferenceDrop(event.dataTransfer);
+                if (!drop) return;
+                if (drop.kind === "files") {
+                    const target = imageReferenceAtPoint(event.clientX, event.clientY);
+                    const partition = partitionReferenceImageDropFiles(drop.files, target?.id, props.references);
+                    if (partition && target?.attachmentId) {
+                        void props.onReplaceReferenceFiles(target.attachmentId, [partition.replacementFile, ...partition.attachmentFiles]);
+                        return;
+                    }
+                }
+                props.onReferenceDrop(drop);
             }}
             onPaste={(event) => {
                 const files = Array.from(event.clipboardData.files);
@@ -429,31 +471,40 @@ export function CreationComposer(props: ComposerProps) {
                 props.onAddFiles(files);
             }}
         >
+
+            {referenceDragOver || props.referenceDropBusy ? (
+                <div className="creation-reference-drop-hint" role="status">
+                    {props.referenceDropBusy ? "正在添加参考图…" : "松开添加参考图"}
+                </div>
+            ) : null}
             <div className="creation-chat-writing-surface">
                 <div className="creation-chat-editor">
                     <input ref={props.fileInputRef} type="file" hidden accept={creationUploadAccept(props.mode)} multiple onChange={props.onFileChange} />
-                    <CanvasResourceMentionTextarea
-                        ref={props.composerFocusRef}
-                        value={props.prompt}
-                        references={props.references}
-                        mentionMenuWidth={400}
-                        sendOnEnter
-                        onFocus={props.onPromptFocus}
-                        onChange={props.setPrompt}
-                        onSubmit={() => { if (canSubmit) props.onSubmit(); }}
-                        containerClassName="creation-chat-mention-container"
-                        className="creation-chat-mention-editor creation-scrollbar"
-                        style={{ color: "var(--creation-text)" }}
-                        placeholder={props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)}
-                        aria-label={t("composerPromptLabel")}
-                        spellCheck
-                        disabled={interactionBusy}
-                        activeDropReferenceId={dropTargetReferenceId}
-                        onReferenceFilesDrop={(reference, files) => {
-                            const target = props.references.find((item) => item.id === reference.id);
-                            if (target?.attachmentId) props.onReplaceReferenceFiles(target.attachmentId, files);
-                        }}
-                    />
+                    <div className="creation-chat-editor-input" style={props.variant === "empty" ? { height: promptHeight } : undefined}>
+                        <CanvasResourceMentionTextarea
+                            ref={props.composerFocusRef}
+                            value={props.prompt}
+                            references={props.references}
+                            mentionMenuWidth={400}
+                            sendOnEnter
+                            onFocus={props.onPromptFocus}
+                            onChange={props.setPrompt}
+                            onSubmit={() => { if (canSubmit) props.onSubmit(); }}
+                            onContentSizeChange={props.variant === "empty" ? handlePromptContentSizeChange : undefined}
+                            containerClassName={`creation-chat-mention-container${props.variant === "empty" ? " h-full" : ""}`}
+                            className="creation-chat-mention-editor creation-scrollbar"
+                            style={{ color: "var(--creation-text)" }}
+                            placeholder={props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)}
+                            aria-label={t("composerPromptLabel")}
+                            spellCheck
+                            disabled={interactionBusy}
+                            activeDropReferenceId={dropTargetReferenceId}
+                            onReferenceFilesDrop={(reference, files) => {
+                                const target = props.references.find((item) => item.id === reference.id);
+                                if (target?.attachmentId) props.onReplaceReferenceFiles(target.attachmentId, files);
+                            }}
+                        />
+                    </div>
                     {props.attachments.length ? (
                         <div className={`creation-reference-panel${trackState.isExpanded ? " is-expanded" : ""}`} aria-busy={interactionBusy}>
                             {trackState.isExpanded ? (
@@ -869,7 +920,7 @@ function GenerationSettingsMenu(props: ComposerProps) {
                 <ImageParameterFields
                     profile={props.imageProfile}
                     countLimit={imageBatchLimit}
-                    config={{ ...props.config, model: props.model, size: props.ratio, quality: props.quality, imageResolution: props.imageResolution, imageParameters: props.imageParameters, count: props.count }}
+                    config={{ size: props.ratio, quality: props.quality, imageResolution: props.imageResolution, imageParameters: props.imageParameters, count: props.count, transparentBackground: props.config.transparentBackground }}
                     onChange={(key, value) => {
                         const setters = {
                             size: props.setRatio,

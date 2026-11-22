@@ -1,8 +1,8 @@
 import {
     AudioLines,
     Captions,
-    Clapperboard,
     CircleCheckBig,
+    Clapperboard,
     Download,
     FolderPlus,
     History,
@@ -38,6 +38,7 @@ import { CanvasNodeType } from "@/types/canvas";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
 import { canRotateCanvasImage, currentImageRotation } from "@/lib/canvas/canvas-image-rotation";
 import { hasMediaVersionHistory, listMediaVersions } from "@/lib/canvas/canvas-media-versions";
+import { canRemakeCanvasVideo } from "@/lib/canvas/canvas-video-regeneration";
 
 const toolText = (ctx: ToolContext, key: string, values?: InterfaceValues) => translateInterface(ctx.locale ?? "zh-CN", key, values);
 
@@ -204,6 +205,19 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         run: (ctx) => ctx.handlers.onNodeExtractAudioFromVideo(ctx.node!),
     },
     {
+        id: "remakeVideo",
+        toolbar: "node-hover",
+        category: "node-state",
+        label: "用参考图片复刻原视频的动作与运镜",
+        displayLabel: "视频复刻",
+        icon: <Clapperboard className="size-3.5" />,
+        defaultVisible: true,
+        defaultOrder: 43,
+        nodeToolbar: { group: "primary", order: 9, description: "连接原视频和参考图片，创建复刻草稿" },
+        applicable: (ctx) => !simpleMode(ctx) && Boolean(ctx.handlers.onNodeRemakeVideo) && canRemakeCanvasVideo(ctx.node),
+        run: (ctx) => ctx.handlers.onNodeRemakeVideo?.(ctx.node!),
+    },
+    {
         id: "trimRegenerate",
         toolbar: "node-hover",
         category: "node-state",
@@ -266,7 +280,7 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         icon: <Download className="size-3.5" />,
         defaultVisible: true,
         defaultOrder: 60,
-        nodeToolbar: { group: "utility", order: 20 },
+        nodeToolbar: { group: "utility", order: 20, section: "素材", description: "将当前媒体文件下载到设备" },
         applicable: (ctx) => hasImage(ctx) || hasVideo(ctx) || hasAudio(ctx),
         run: (ctx) => ctx.handlers.onNodeDownload(ctx.node!),
     },

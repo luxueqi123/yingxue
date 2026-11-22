@@ -55,9 +55,11 @@ const income: WalletHistoryEntry = {
     createdAt,
 };
 
-async function renderWallet(initialTab: "income" | "history" = "history") {
+async function renderWallet(initialTab: "income" | "history" | "membership" = "history", productResponseGate?: Promise<void>) {
     const requests: WalletRequest[] = [];
+    const reads: string[] = [];
     apiClient.defaults.adapter = async (request) => {
+        reads.push(request.url ?? "");
         const response = (data: unknown) => ({ status: 200, statusText: "OK", headers: {}, config: request, data: { code: 0, data } });
         if (request.url === "/wallet") {
             return new Promise((resolve, reject) => {
@@ -80,7 +82,10 @@ async function renderWallet(initialTab: "income" | "history" = "history") {
             });
         }
         switch (request.url) {
+            case "/membership":
+                return response({ plans: [], active: null, subscriptions: [], lots: [] });
             case "/payments/products":
+                await productResponseGate;
                 return response({ products: [] });
             case "/payments/providers":
                 return response({ providers: [] });
@@ -111,6 +116,7 @@ async function renderWallet(initialTab: "income" | "history" = "history") {
     });
     return {
         requests,
+        reads,
         close: async () => {
             await act(async () => root.unmount());
             queryClient.clear();
@@ -126,10 +132,31 @@ async function clickButton(label: string) {
     await act(async () => button!.click());
 }
 
+test("shop loads products and payment settings together only on the recharge tab", async () => {
+    const products = Promise.withResolvers<void>();
+    const modal = await renderWallet("membership", products.promise);
+    try {
+        expect(modal.reads).toEqual(["/membership"]);
+        await clickButton("无限卡限时套餐");
+        expect(modal.reads).toEqual(["/membership"]);
+        await clickButton("积分充值");
+        expect(modal.reads).toHaveLength(4);
+        expect(modal.reads).toEqual(expect.arrayContaining([
+            "/membership", "/payments/products", "/payments/providers", "/payments/settings",
+        ]));
+        expect(modal.requests).toHaveLength(0);
+    } finally {
+        await act(async () => products.resolve());
+        await modal.close();
+    }
+});
+
 test("income sits before expenses, paginates separately and ignores late responses from the other tab", async () => {
     const modal = await renderWallet();
     try {
-        const labels = [...document.querySelectorAll('[role="tab"]')].map((item) => item.textContent);
+        const categories = [...document.querySelectorAll(".workspace-wallet-tabs button")].map((item) => item.textContent);
+        expect(categories).toEqual(["会员方案", "无限卡限时套餐", "积分充值"]);
+        const labels = [...document.querySelectorAll(".workspace-wallet-actions button")].map((item) => item.textContent);
         expect(labels.indexOf("充值记录") + 1).toBe(labels.indexOf("积分消耗历史"));
         expect(modal.requests[0]).toMatchObject({ type: "expenses", page: 1 });
         await act(async () => modal.requests[0]!.reply([billing], 21));
@@ -168,7 +195,7 @@ test("opening income directly uses its own empty state and retry filter", async 
     const modal = await renderWallet("income");
     try {
         expect(modal.requests[0]).toMatchObject({ type: "income", page: 1 });
-        expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("充值记录");
+        expect(document.querySelector('.workspace-wallet-actions button[aria-pressed="true"]')?.textContent).toBe("充值记录");
         await act(async () => modal.requests[0]!.fail("充值历史暂时无法读取"));
         expect(document.body.textContent).toContain("充值历史暂时无法读取");
         expect(document.body.textContent).not.toContain("还没有充值记录");

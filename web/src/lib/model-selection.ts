@@ -1,5 +1,5 @@
 import { imageParameterRequest, imageParameterDefaults, imageParameterAccepts } from "./image-parameters";
-import { defaultImageCapabilityConfig, modelCapabilityConfigFor, STANDARD_IMAGE_SIZE_VALUES, videoDurationAllowed, type ImageCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultImageCapabilityConfig, modelCapabilityConfigFor, STANDARD_IMAGE_SIZE_VALUES, videoDurationAllowed, videoProfileForOperation, type ImageCapabilityConfig } from "@/lib/model-capabilities";
 import { preserveImageSettings, preserveVideoSettings, preserveVideoBoolean, resolvedMediaConfig } from "@/lib/media-settings";
 import { videoResolutionComparisonKey } from "@/lib/video-generation-options";
 import { imageSizePresets } from "@/lib/image-size-presets";
@@ -126,6 +126,16 @@ export function modelCompatibilityError(config: AiConfig, model: string, require
         if (input && (input.videoCount !== 1 || visualInputCount || input.audioCount || input.textCount)) return "视频增强需要一段原片，不接受额外文字、图片或音频";
         if (requirements.videoOperation && requirements.videoOperation !== "edit") return "视频增强不支持当前生成模式";
         return "";
+    }
+    if (capability === "video" && requirements.videoOperation) {
+        const video = modelCapabilityConfigFor(config, model).video;
+        const limit = video?.modeLimits?.[requirements.videoOperation];
+        if (video && limit) {
+            const profile = videoProfileForOperation(video, requirements.videoOperation);
+            if (visualInputCount > profile.references.maxImages) return `${videoOperationLabel(requirements.videoOperation)}最多支持 ${profile.references.maxImages} 张图片`;
+            const ratio = requirements.options?.size;
+            if (typeof ratio === "string" && ratio && limit.ratios.length && !profile.ratios.includes(ratio)) return `${videoOperationLabel(requirements.videoOperation)}不支持 ${ratio} 画幅`;
+        }
     }
     const logicalSpecs = logicalCost?.logicalCapabilityProfiles?.length ? logicalCost.logicalCapabilityProfiles : logicalCost?.logicalCapabilitySpec ? [logicalCost.logicalCapabilitySpec] : [];
     if (logicalSpecs.length) {

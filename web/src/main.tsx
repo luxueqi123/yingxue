@@ -3,7 +3,7 @@ import "@fontsource-variable/jetbrains-mono";
 import { handleEntryLoadError, installChunkRecovery } from "@/lib/chunk-recovery";
 import "./styles/bootstrap-error.css";
 import { runLocalRuntimeBootstrap } from "@/services/local-runtime-bootstrap";
-import { isIsolatedPrevisRepro } from "@/lib/dev-repro";
+import { isIsolatedDevRepro } from "@/lib/dev-repro";
 
 installChunkRecovery();
 
@@ -21,7 +21,7 @@ runLocalRuntimeBootstrap(
     },
     () => {
         // Appearance updates the shared store independently; a slow backend must not block either entry.
-        if (!isIsolatedPrevisRepro(import.meta.env.DEV, window.location.pathname)) {
+        if (!isIsolatedDevRepro(import.meta.env.DEV, window.location.pathname)) {
             void import("@/services/appearance-bootstrap").then(module => module.bootstrapAppearance()).catch(console.warn);
         }
         if (/^\/welcome\/?$/.test(window.location.pathname)) window.history.replaceState(window.history.state, "", "/home");
@@ -33,7 +33,7 @@ runLocalRuntimeBootstrap(
                 void import("@/pages/create").catch(console.warn);
             }
             const applicationReady = import("./application");
-            void applicationReady.then(module => module.mountApplication()).catch(handleEntryLoadError);
+            void applicationReady.then(module => module?.mountApplication()).catch(handleEntryLoadError);
         }
     },
 );

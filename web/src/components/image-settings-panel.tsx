@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/base/switch";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { buildImageResolutionOptions, formatImageResolutionSize } from "@/lib/image-resolution-tiers";
 import { modelCapabilityConfigFor, type ImageCapabilityConfig } from "@/lib/model-capabilities";
-import { preserveImageSettings as normalizeImageValue } from "@/lib/media-settings";
+import { preserveImageSettings as normalizeImageValue, type ImageSettings } from "@/lib/media-settings";
 import { MediaSettingsNotice } from "./media-settings-notice";
 import { mergedImageCapabilityConfig } from "@/lib/model-selection";
 import { modelOptionName, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
@@ -76,16 +76,21 @@ type ImageSettingsPanelProps = {
 };
 
 export function ImageSettingsPanel(props: ImageSettingsPanelProps) {
+    const { config } = props;
+    const model = config.model || config.imageModel;
     return (
         <>
             <MediaSettingsNotice config={props.config} capability="image" onChange={(field, value) => props.onConfigChange(field as Parameters<ImageSettingsPanelProps["onConfigChange"]>[0], value)} />
-            <ImageSettingsControls {...props} />
+            <ImageProfileControls {...props} profile={mergedImageCapabilityConfig(config, model)} protocol={resolveModelRequestConfig(config, model).interfaceType} priceTiers={imageModelPriceTiers(config)} />
         </>
     );
 }
 
-function ImageSettingsControls({
+export function ImageProfileControls({
     config,
+    profile,
+    protocol,
+    priceTiers = [],
     onConfigChange,
     theme,
     showTitle = true,
@@ -98,13 +103,9 @@ function ImageSettingsControls({
     quickCount = 3,
     countLimit,
     bypassPriceGuard = false,
-}: ImageSettingsPanelProps) {
+}: Omit<ImageSettingsPanelProps, "config"> & { profile: ImageCapabilityConfig; protocol?: string; config: ImageSettings; priceTiers?: ReturnType<typeof imageModelPriceTiers> }) {
     const { t } = useInterfaceTranslation();
-
-    const profile = mergedImageCapabilityConfig(config, config.model || config.imageModel);
-
-    const normalized = normalizeImageValue(profile, config, resolveModelRequestConfig(config, config.model || config.imageModel).interfaceType);
-
+    const normalized = normalizeImageValue(profile, config, protocol);
     const quality = normalized.quality;
 
     const transparentBackground = normalized.transparentBackground === "true";
@@ -114,10 +115,7 @@ function ImageSettingsControls({
     const count = countLimit === undefined ? Math.max(1, Math.min(effectiveMaxCount, Number(normalized.count))) : Math.max(1, Math.min(effectiveMaxCount, Math.floor(Number(config.count)) || 1));
 
     const activeSize = normalized.size;
-
     const activeQualityOptions = profile.quality.values.map((value) => ({ value, label: imageQualityLabel(value, t) }));
-
-    const priceTiers = imageModelPriceTiers(config);
     if (profile.parameters)
         return (
             <ImageSettingsTheme theme={theme}>

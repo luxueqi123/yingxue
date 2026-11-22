@@ -7,7 +7,7 @@ import { Button } from "antd";
 import { preserveVideoSettings } from "@/lib/media-settings";
 import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { modelCapabilityConfigFor, resolveVideoRatioValue, resolveVideoResolutionValue } from "@/lib/model-capabilities";
+import { modelCapabilityConfigFor, videoProfileForOperation } from "@/lib/model-capabilities";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasNodeMetadata } from "@/types/canvas";
@@ -16,6 +16,7 @@ import { CanvasKlingStoryboardSettings } from "./canvas-kling-storyboard-setting
 
 type CanvasVideoSettingsPopoverProps = {
     config: AiConfig;
+    operation?: string;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     webSearch?: boolean;
     onWebSearchChange?: (enabled: boolean) => void;
@@ -26,14 +27,15 @@ type CanvasVideoSettingsPopoverProps = {
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
 };
 
-export function CanvasVideoSettingsPopover({ config, onConfigChange, webSearch, onWebSearchChange, searchUsage, kling, onKlingChange, buttonClassName, placement = "topLeft" }: CanvasVideoSettingsPopoverProps) {
+export function CanvasVideoSettingsPopover({ config, operation, onConfigChange, webSearch, onWebSearchChange, searchUsage, kling, onKlingChange, buttonClassName, placement = "topLeft" }: CanvasVideoSettingsPopoverProps) {
     const { t } = useInterfaceTranslation();
     const theme = canvasThemes[useActiveTheme()];
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
-    const videoProfile = modelCapabilityConfigFor(config, config.model).video;
+    const modelProfile = modelCapabilityConfigFor(config, config.model).video;
+    const videoProfile = modelProfile && operation ? videoProfileForOperation(modelProfile, operation) : modelProfile;
     const resolutionSupported = Boolean(videoProfile?.resolutions.length);
     const sizeSupported = Boolean(videoProfile?.ratios.length);
     const preserved = videoProfile ? preserveVideoSettings(videoProfile, { seconds: config.videoSeconds, resolution: config.vquality, ratio: config.size }, resolveModelRequestConfig(config, config.model).interfaceType) : null;
@@ -70,6 +72,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, webSearch, 
                 placement={placement}
                 theme={theme}
                 config={config}
+                operation={operation}
                 onConfigChange={onConfigChange}
                 webSearch={webSearch}
                 onWebSearchChange={onWebSearchChange}
@@ -107,6 +110,7 @@ function VideoSettingsPortal({
     placement,
     theme,
     config,
+    operation,
     onConfigChange,
     webSearch,
     onWebSearchChange,
@@ -119,6 +123,7 @@ function VideoSettingsPortal({
     placement: CanvasVideoSettingsPopoverProps["placement"];
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
+    operation?: string;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     webSearch?: boolean;
     onWebSearchChange?: (enabled: boolean) => void;
@@ -163,6 +168,7 @@ function VideoSettingsPortal({
             onClick={(event) => event.stopPropagation()}
         >
             <VideoSettingsPanel
+                operation={operation}
                 config={config}
                 onConfigChange={(key, value) => {
                     const mode = ({ "720": "std", "1080": "pro", "2160": "4k" } as const)[normalizeVideoResolution(value) as "720" | "1080" | "2160"];

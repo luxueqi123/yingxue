@@ -467,9 +467,18 @@
         width: 100%;
     }
 
+    .workspace-wallet-shell[data-preview] .workspace-wallet-stats {
+        width: auto;
+    }
+
     .workspace-wallet-stats .workspace-wallet-balance {
         flex: 1;
         min-width: 0;
+    }
+
+    .workspace-wallet-balance strong {
+        font-size: var(--fs-heading-lg);
+        overflow-wrap: anywhere;
     }
 
     .wallet-topup-checkout .ant-btn {
