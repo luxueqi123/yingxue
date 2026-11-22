@@ -223,14 +223,18 @@ export function useCanvasNodeOperations({
         const top = Math.min(...selected.map((node) => node.position.y)) - FRAME_HEADER_HEIGHT - padding;
         const right = Math.max(...selected.map((node) => node.position.x + node.width)) + padding;
         const bottom = Math.max(...selected.map((node) => node.position.y + node.height)) + padding;
-        const frame = createCanvasNode(CanvasNodeType.Frame, { x: left, y: top }, {
-            frame: { collapsed: false, expandedWidth: right - left, expandedHeight: bottom - top },
-        });
+        const frame = createCanvasNode(
+            CanvasNodeType.Frame,
+            { x: left, y: top },
+            {
+                frame: { collapsed: false, expandedWidth: right - left, expandedHeight: bottom - top },
+            },
+        );
         frame.position = { x: left, y: top };
         frame.width = right - left;
         frame.height = bottom - top;
         const selectedIds = new Set(selected.map((node) => node.id));
-        commitNodes([...currentNodes.map((node) => selectedIds.has(node.id) ? { ...node, parentId: frame.id } : node), frame]);
+        commitNodes([...currentNodes.map((node) => (selectedIds.has(node.id) ? { ...node, parentId: frame.id } : node)), frame]);
         selectNodes(new Set([frame.id]));
         message.success("已创建背板");
     }, [commitNodes, message, nodesRef, selectNodes, selectedNodeIdsRef]);

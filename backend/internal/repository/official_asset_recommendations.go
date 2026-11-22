@@ -5,8 +5,8 @@ import (
 	"errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"strings"
 	"infinite-canvas/backend/internal/model"
+	"strings"
 )
 
 var ErrOfficialResourceReferenced = errors.New("resource is referenced by official assets")

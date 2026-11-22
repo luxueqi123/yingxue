@@ -3,10 +3,10 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"infinite-canvas/backend/internal/kernel"
 	"strings"
 	"testing"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"

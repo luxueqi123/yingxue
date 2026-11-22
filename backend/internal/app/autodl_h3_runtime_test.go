@@ -74,7 +74,7 @@ func TestAutoDLH3RuntimeHydratesOwnedReferencesToPublicURL(t *testing.T) {
 			ctx := withProtocolRegistry(context.Background(), runtime.registrySnapshot())
 			input := canvasGenerationInput{
 				Mode: "video", Prompt: "character raises her hand",
-				Config: providerConfig{InterfaceType: string(model.ChannelInterfaceAutoDLH3Video), Model: "minimax_h3_image_audio_to_video_v2_15s", VideoSeconds: "15", Size: "9:16", VQuality: "480p"},
+				Config:          providerConfig{InterfaceType: string(model.ChannelInterfaceAutoDLH3Video), Model: "minimax_h3_image_audio_to_video_v2_15s", VideoSeconds: "15", Size: "9:16", VQuality: "480p"},
 				ReferenceImages: []providerMedia{{ID: resource.ID, StorageKey: "resource:" + resource.ID, Role: "first_frame"}},
 			}
 			policy := providerMediaHydrationPolicyFor(ctx, input)

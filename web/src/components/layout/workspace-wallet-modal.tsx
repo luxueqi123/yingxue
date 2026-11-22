@@ -52,7 +52,7 @@ export function WorkspaceWalletModal({
     const { message } = App.useApp();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const userId = useUserStore(state => state.user?.id);
+    const userId = useUserStore((state) => state.user?.id);
     const redeemPurchaseUrl = useAppearanceStore((state) => state.appearance.redeemPurchaseUrl);
     const [tab, setTab] = useState<WalletModalTab>(initialTab ?? "membership");
     const [walletResult, setWalletResult] = useState<{ type: WalletHistoryType; data: WalletSummary } | null>(null);
@@ -80,13 +80,13 @@ export function WorkspaceWalletModal({
     const catalog = preview?.creditProducts ?? productQuery.data?.products ?? emptyProducts;
     const categoryProducts = useMemo(() => catalog.filter((item) => item.enabled && item.kind === productKind), [catalog, productKind]);
     const selectedProduct = categoryProducts.find((item) => item.id === selectedProductId) ?? categoryProducts.find((item) => item.canPurchase);
-    const checkoutEnabled = productsView && (!productQuery.data || categoryProducts.some(item => item.canPurchase));
+    const checkoutEnabled = productsView && (!productQuery.data || categoryProducts.some((item) => item.canPurchase));
     const checkout = useQuery({
         queryKey: ["wallet-shop-checkout", userId],
         enabled: checkoutEnabled,
         queryFn: async ({ signal }) => {
             const [providers, settings] = await Promise.all([listPaymentProviders(signal), getPaymentSettings(signal)]);
-            const usable = providers.providers.filter(item => item.enabled && item.pluginEnabled && item.configured);
+            const usable = providers.providers.filter((item) => item.enabled && item.pluginEnabled && item.configured);
             return { options: paymentOptionsFromProviders(usable), usdCnyRate: settings.settings.usdCnyRate };
         },
     });
@@ -126,7 +126,10 @@ export function WorkspaceWalletModal({
         setPage(1);
         if (!open) return;
         if (initialTab === "income" || initialTab === "history") void reloadWallet(1, initialTab === "income" ? "income" : "expenses");
-        return () => { requestSequence.current += 1; historyAbort.current?.abort(); };
+        return () => {
+            requestSequence.current += 1;
+            historyAbort.current?.abort();
+        };
     }, [open]);
 
     useEffect(() => {
@@ -213,9 +216,16 @@ export function WorkspaceWalletModal({
     return (
         <>
             <AppModal
-                flush open={open} title={<span className="sr-only">{title}</span>} footer={null} centered
-                width="min(920px, calc(100vw - 28px))" onCancel={onClose} rootClassName="workspace-wallet-modal"
-                classNames={{ header: "workspace-wallet-modal-label" }} getContainer={() => document.body}
+                flush
+                open={open}
+                title={<span className="sr-only">{title}</span>}
+                footer={null}
+                centered
+                width="min(920px, calc(100vw - 28px))"
+                onCancel={onClose}
+                rootClassName="workspace-wallet-modal"
+                classNames={{ header: "workspace-wallet-modal-label" }}
+                getContainer={() => document.body}
             >
                 <div className="workspace-wallet-shell" data-section={activeTab} data-preview={preview ? "" : undefined}>
                     <header className="workspace-wallet-header">
@@ -287,7 +297,14 @@ export function WorkspaceWalletModal({
                     </div>
 
                     {activeTab === "membership" ? (
-                        preview?.membership ?? <WalletMembershipPanel onManage={() => { onClose(); navigate("/membership"); }} />
+                        (preview?.membership ?? (
+                            <WalletMembershipPanel
+                                onManage={() => {
+                                    onClose();
+                                    navigate("/membership");
+                                }}
+                            />
+                        ))
                     ) : activeTab === "unlimited" ? (
                         <div className="workspace-wallet-content">
                             <div className="workspace-wallet-shop-empty">
@@ -298,32 +315,33 @@ export function WorkspaceWalletModal({
                     ) : activeTab === "topup" || activeTab === "storage" ? (
                         productQuery.isError && !preview ? (
                             <div className="workspace-wallet-content wallet-shop-membership">
-                                <Alert type="error" title={t("account.wallet.configLoadFailed")} description={productQuery.error.message}
-                                    action={<Button onClick={() => void productQuery.refetch()}>{t("common.refresh")}</Button>} />
+                                <Alert type="error" title={t("account.wallet.configLoadFailed")} description={productQuery.error.message} action={<Button onClick={() => void productQuery.refetch()}>{t("common.refresh")}</Button>} />
                             </div>
-                        ) : <WalletTopupPanel
-                            loading={!preview && productQuery.isPending}
-                            kind={productKind}
-                            products={categoryProducts}
-                            paymentOptions={paymentOptions}
-                            usdCnyRate={usdCnyRate}
-                            previewDescription={preview && t("account.wallet.shop.previewTopup", { credits: preview.creditsPerYuan })}
-                            selectedProduct={selectedProduct}
-                            onSelectProduct={setSelectedProductId}
-                            selectedOptionKey={selectedOptionKey}
-                            onSelectOption={setSelectedOptionKey}
-                            creating={payment.creating}
-                            checkoutLoading={checkoutEnabled && checkout.isPending}
-                            checkoutError={checkoutEnabled && checkout.isError ? checkout.error.message : undefined}
-                            onRetryCheckout={() => void checkout.refetch()}
-                            onPay={() => void startPayment()}
-                            storageUsage={storageQuery.data}
-                            storageGrants={grantsQuery.data?.grants || []}
-                            onCleanAssets={() => {
-                                onClose();
-                                navigate("/assets");
-                            }}
-                        />
+                        ) : (
+                            <WalletTopupPanel
+                                loading={!preview && productQuery.isPending}
+                                kind={productKind}
+                                products={categoryProducts}
+                                paymentOptions={paymentOptions}
+                                usdCnyRate={usdCnyRate}
+                                previewDescription={preview && t("account.wallet.shop.previewTopup", { credits: preview.creditsPerYuan })}
+                                selectedProduct={selectedProduct}
+                                onSelectProduct={setSelectedProductId}
+                                selectedOptionKey={selectedOptionKey}
+                                onSelectOption={setSelectedOptionKey}
+                                creating={payment.creating}
+                                checkoutLoading={checkoutEnabled && checkout.isPending}
+                                checkoutError={checkoutEnabled && checkout.isError ? checkout.error.message : undefined}
+                                onRetryCheckout={() => void checkout.refetch()}
+                                onPay={() => void startPayment()}
+                                storageUsage={storageQuery.data}
+                                storageGrants={grantsQuery.data?.grants || []}
+                                onCleanAssets={() => {
+                                    onClose();
+                                    navigate("/assets");
+                                }}
+                            />
+                        )
                     ) : preview ? (
                         <div className="workspace-wallet-content">
                             <div className="workspace-wallet-shop-empty">

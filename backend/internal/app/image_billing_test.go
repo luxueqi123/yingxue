@@ -7,10 +7,10 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	_ "modernc.org/sqlite"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/protocol"
 	"infinite-canvas/backend/internal/repository"
+	_ "modernc.org/sqlite"
 )
 
 func imageBillingService(t *testing.T) (*Service, *gorm.DB) {

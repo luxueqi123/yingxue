@@ -14,9 +14,9 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	agenttool "infinite-canvas/backend/internal/agent/tool"
 	"strings"
 	"time"
-	agenttool "infinite-canvas/backend/internal/agent/tool"
 
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"

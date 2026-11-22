@@ -2,15 +2,15 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/service"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
 )
 
 func TestTaskMediaRecoveryHTTPAuthenticationAndOwnership(t *testing.T) {

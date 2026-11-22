@@ -65,7 +65,7 @@ func TestArkPrivateAssetBindingMigration(t *testing.T) {
 							t.Fatal(err)
 						}
 						if err := database.RequireSchemaVersion(db); err == nil {
-								t.Fatal("previous schema must require the new migration")
+							t.Fatal("previous schema must require the new migration")
 						}
 						if scenario == "missing-index" {
 							probe := original

@@ -211,8 +211,13 @@ export function WalletTopupPanel({
     return (
         <div className="workspace-wallet-content wallet-topup">
             <div className="wallet-topup-groups">
-                <TopupGroup kind={kind} products={products} selectedProductId={selectedProduct?.id || ""} onSelectProduct={onSelectProduct}
-                    aside={kind === "credits" && previewDescription ? <small className="wallet-shop-description">{previewDescription}</small> : null}>
+                <TopupGroup
+                    kind={kind}
+                    products={products}
+                    selectedProductId={selectedProduct?.id || ""}
+                    onSelectProduct={onSelectProduct}
+                    aside={kind === "credits" && previewDescription ? <small className="wallet-shop-description">{previewDescription}</small> : null}
+                >
                     {kind === "storage" ? <StorageSummary usage={storageUsage} grants={storageGrants} onCleanAssets={onCleanAssets} /> : null}
                 </TopupGroup>
             </div>
@@ -243,10 +248,14 @@ export function WalletTopupPanel({
                             <span className="wallet-topup-checkout-hint">{t("account.wallet.topup.selectPlan")}</span>
                         )}
                     </div>
-                    {checkoutLoading ? <Skeleton.Input active size="small" /> : checkoutError ? (
+                    {checkoutLoading ? (
+                        <Skeleton.Input active size="small" />
+                    ) : checkoutError ? (
                         <div className="wallet-topup-checkout-hint" role="alert">
                             <span>{checkoutError}</span>
-                            <Button size="small" onClick={onRetryCheckout}>{t("common.refresh")}</Button>
+                            <Button size="small" onClick={onRetryCheckout}>
+                                {t("common.refresh")}
+                            </Button>
                         </div>
                     ) : paymentOptions.length ? (
                         <div className="workspace-wallet-providers" role="radiogroup" aria-label={t("account.wallet.topup.paymentMethod")}>

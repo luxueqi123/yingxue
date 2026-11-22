@@ -1,8 +1,8 @@
 package database
 
 import (
-	"testing"
 	"infinite-canvas/backend/internal/model"
+	"testing"
 )
 
 func TestTaskMediaRecoveryMigrationPreservesHistoricalTasks(t *testing.T) {

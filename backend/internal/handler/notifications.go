@@ -2,10 +2,10 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"time"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/service"
+	"net/http"
+	"time"
 )
 
 func registerNotificationRoutes(r *gin.RouterGroup, svc *service.Service) {

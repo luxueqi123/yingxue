@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"math/big"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/sms"
+	"math/big"
 )
 
 type SMSChannelRequest = sms.ChannelRequest

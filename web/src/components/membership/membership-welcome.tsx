@@ -2,9 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, Checkbox, ConfigProvider } from "antd";
 import { ArrowUpRight, Check, Pause, Play, X } from "lucide-react";
 import { AppModal } from "@/components/ui/product/app-modal";
-import {
-    MembershipCreditSummary, MembershipModelAccess, type MembershipCreditEstimate, type MembershipModelGroup,
-} from "./membership-offer-details";
+import { MembershipCreditSummary, MembershipModelAccess, type MembershipCreditEstimate, type MembershipModelGroup } from "./membership-offer-details";
 import "./membership-welcome.css";
 
 export type MembershipWelcomePlan = {
@@ -80,7 +78,7 @@ function trialClock(trial: MembershipWelcomeTrial) {
 }
 
 function TrialCard({ trial, onTrialFeature }: Pick<WelcomeProps, "trial" | "onTrialFeature">) {
-    const [clock] = useState(() => trial ? trialClock(trial) : null);
+    const [clock] = useState(() => (trial ? trialClock(trial) : null));
     const [elapsed, setElapsed] = useState(0);
     const remainingMinutes = clock ? Math.max(0, Math.ceil((clock.endsAt - clock.serverNow - elapsed) / 60_000)) : 0;
     const active = remainingMinutes > 0;
@@ -103,11 +101,12 @@ function TrialCard({ trial, onTrialFeature }: Pick<WelcomeProps, "trial" | "onTr
                 <h3 id="membership-trial-title">24 小时体验卡</h3>
                 {active ? (
                     <time dateTime={trial?.endsAt}>
-                        剩余 {Math.floor(remainingMinutes / 60)} 小时 {remainingMinutes % 60} 分
-                        <span aria-hidden="true"> · </span>
+                        剩余 {Math.floor(remainingMinutes / 60)} 小时 {remainingMinutes % 60} 分<span aria-hidden="true"> · </span>
                         {shanghaiTime.format(clock.endsAt)} 到期
                     </time>
-                ) : <span>体验已到期</span>}
+                ) : (
+                    <span>体验已到期</span>
+                )}
             </div>
             {active && (
                 <div className="membership-welcome-trial-actions">
@@ -183,8 +182,14 @@ function PlanOffer({ plan, onViewPlan }: PlanOfferProps) {
                 <MembershipCreditSummary estimate={plan.monthlyBundle} />
             </div>
             <ul className="membership-welcome-benefits">
-                <li><Check size={14} aria-hidden /> 解锁电商 Agent</li>
-                {plan.teams && <li><Check size={14} aria-hidden /> 解锁公司与团队</li>}
+                <li>
+                    <Check size={14} aria-hidden /> 解锁电商 Agent
+                </li>
+                {plan.teams && (
+                    <li>
+                        <Check size={14} aria-hidden /> 解锁公司与团队
+                    </li>
+                )}
             </ul>
             <button type="button" className="membership-welcome-plan-action" onClick={() => onViewPlan(plan)}>
                 查看{plan.name}
@@ -251,14 +256,7 @@ function AccountMembershipWelcome({ accountId, plans, trial, modelGroups, onTria
                     <h2>映雪会员</h2>
                     <div className="membership-welcome-header-actions">
                         {!reduceMotion && (
-                            <button
-                                type="button"
-                                className="membership-welcome-close"
-                                aria-label="背景动效"
-                                aria-pressed={playBackground}
-                                title={playBackground ? "暂停背景动效" : "播放背景动效"}
-                                onClick={() => setPlayBackground((playing) => !playing)}
-                            >
+                            <button type="button" className="membership-welcome-close" aria-label="背景动效" aria-pressed={playBackground} title={playBackground ? "暂停背景动效" : "播放背景动效"} onClick={() => setPlayBackground((playing) => !playing)}>
                                 {playBackground ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
                             </button>
                         )}
@@ -268,10 +266,14 @@ function AccountMembershipWelcome({ accountId, plans, trial, modelGroups, onTria
                     </div>
                 </header>
                 <div className="membership-welcome-content">
-                    <TrialCard key={trial?.endsAt} trial={trial} onTrialFeature={(feature) => {
-                        close();
-                        onTrialFeature(feature);
-                    }} />
+                    <TrialCard
+                        key={trial?.endsAt}
+                        trial={trial}
+                        onTrialFeature={(feature) => {
+                            close();
+                            onTrialFeature(feature);
+                        }}
+                    />
                     <div className="membership-welcome-plans">
                         {plans.map((plan) => (
                             <PlanOffer
@@ -290,7 +292,9 @@ function AccountMembershipWelcome({ accountId, plans, trial, modelGroups, onTria
                     </section>
                 </div>
                 <footer className="membership-welcome-footer">
-                    <Checkbox checked={hideToday} onChange={(event) => setHideToday(event.target.checked)}>本日不再提醒</Checkbox>
+                    <Checkbox checked={hideToday} onChange={(event) => setHideToday(event.target.checked)}>
+                        本日不再提醒
+                    </Checkbox>
                     <Button onClick={close}>稍后再看</Button>
                 </footer>
             </div>

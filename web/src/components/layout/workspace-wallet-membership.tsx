@@ -12,13 +12,16 @@ export function WalletMembershipPanel({ onManage }: { onManage: () => void }) {
     const userId = useUserStore((state) => state.user?.id);
     const membership = useQuery({ queryKey: ["membership", userId], queryFn: ({ signal }) => getMembership(signal) });
     if (membership.isPending) {
-        return <div className="workspace-wallet-content"><Skeleton active paragraph={{ rows: 5 }} /></div>;
+        return (
+            <div className="workspace-wallet-content">
+                <Skeleton active paragraph={{ rows: 5 }} />
+            </div>
+        );
     }
     if (membership.isError) {
         return (
             <div className="workspace-wallet-content wallet-shop-membership">
-                <Alert type="error" title={t("account.wallet.shop.membershipLoadFailed")} description={membership.error.message}
-                    action={<Button onClick={() => void membership.refetch()}>{t("common.refresh")}</Button>} />
+                <Alert type="error" title={t("account.wallet.shop.membershipLoadFailed")} description={membership.error.message} action={<Button onClick={() => void membership.refetch()}>{t("common.refresh")}</Button>} />
             </div>
         );
     }
@@ -43,7 +46,9 @@ export function WalletMembershipPanel({ onManage }: { onManage: () => void }) {
                         );
                     })}
                 </div>
-            ) : <p className="workspace-wallet-inline-state">{t("account.wallet.shop.noMembership")}</p>}
+            ) : (
+                <p className="workspace-wallet-inline-state">{t("account.wallet.shop.noMembership")}</p>
+            )}
             <div>
                 <Button onClick={onManage}>{t(plans.length ? "account.wallet.shop.membershipDetails" : "account.wallet.shop.myMembership")}</Button>
             </div>

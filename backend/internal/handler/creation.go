@@ -2,8 +2,8 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"net/http"
 	"infinite-canvas/backend/internal/service"
+	"net/http"
 )
 
 func RegisterCreationRoutes(r *gin.RouterGroup, svc *service.Service) {

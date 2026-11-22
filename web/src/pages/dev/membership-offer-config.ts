@@ -9,39 +9,67 @@ export const modelCampaign = { days: 7 } as const;
 
 export const membershipOffers = [
     {
-        key: "creator", name: "创作会员", monthlyFen: 3000, annualFen: 29900,
-        topupPayBasisPoints: 9500, modelPayBasisPoints: 9500,
-        monthlyBundleCredits: 3300, monthlyGiftCredits: 100, teamSeats: 0, campaignMaxJobs: 20,
+        key: "creator",
+        name: "创作会员",
+        monthlyFen: 3000,
+        annualFen: 29900,
+        topupPayBasisPoints: 9500,
+        modelPayBasisPoints: 9500,
+        monthlyBundleCredits: 3300,
+        monthlyGiftCredits: 100,
+        teamSeats: 0,
+        campaignMaxJobs: 20,
         benefits: ["解锁电商 Agent · 商品分析、文案与商品图"],
     },
     {
-        key: "team", name: "团队会员", monthlyFen: 6000, annualFen: 49900,
-        topupPayBasisPoints: 9000, modelPayBasisPoints: 9000,
-        monthlyBundleCredits: 7000, monthlyGiftCredits: 100, teamSeats: 3, campaignMaxJobs: 50,
+        key: "team",
+        name: "团队会员",
+        monthlyFen: 6000,
+        annualFen: 49900,
+        topupPayBasisPoints: 9000,
+        modelPayBasisPoints: 9000,
+        monthlyBundleCredits: 7000,
+        monthlyGiftCredits: 100,
+        teamSeats: 3,
+        campaignMaxJobs: 50,
         benefits: ["解锁电商 Agent · 商品分析、文案与商品图", "解锁公司与团队 · 共享画布、素材和团队钱包"],
     },
     {
-        key: "production", name: "制作会员", monthlyFen: 8900, annualFen: 89900,
-        topupPayBasisPoints: 9000, modelPayBasisPoints: 9000,
-        monthlyBundleCredits: 0, monthlyGiftCredits: 200, teamSeats: 5, campaignMaxJobs: 100,
+        key: "production",
+        name: "制作会员",
+        monthlyFen: 8900,
+        annualFen: 89900,
+        topupPayBasisPoints: 9000,
+        modelPayBasisPoints: 9000,
+        monthlyBundleCredits: 0,
+        monthlyGiftCredits: 200,
+        teamSeats: 5,
+        campaignMaxJobs: 100,
         benefits: ["含团队会员功能", "短剧工作台 · 分集、分镜与素材协作"],
     },
     {
-        key: "studio", name: "工作室会员", monthlyFen: 19900, annualFen: 199900,
-        topupPayBasisPoints: 9000, modelPayBasisPoints: 9000,
-        monthlyBundleCredits: 0, monthlyGiftCredits: 300, teamSeats: 20, campaignMaxJobs: 200,
+        key: "studio",
+        name: "工作室会员",
+        monthlyFen: 19900,
+        annualFen: 199900,
+        topupPayBasisPoints: 9000,
+        modelPayBasisPoints: 9000,
+        monthlyBundleCredits: 0,
+        monthlyGiftCredits: 300,
+        teamSeats: 20,
+        campaignMaxJobs: 200,
         benefits: ["含制作会员功能", "团队额度分配与资金流水"],
     },
 ] as const;
 
-export type MembershipOffer = typeof membershipOffers[number];
+export type MembershipOffer = (typeof membershipOffers)[number];
 export type BillingPeriod = "month" | "year";
 
 type PointsPurchase = { amountFen: number; credits: number };
 type TopupPack = PointsPurchase & { id: string; name: string };
 
 function standardTopup(id: string, name: string, amountFen: number): TopupPack {
-    return { id, name, amountFen, credits: amountFen * creditsPerYuan / 100 };
+    return { id, name, amountFen, credits: (amountFen * creditsPerYuan) / 100 };
 }
 
 export const entryTopup = standardTopup("flex", "随用包", 1000);
@@ -79,23 +107,22 @@ export const modelSpecs = {
 } as const satisfies Record<string, ModelSpec>;
 
 export const membershipModelGroups: readonly MembershipModelGroup[] = [
-    { label: "AI 生图", models: [
-        { name: "GPT-Image-2.6 Sunburst", id: "gpt-image-2.6-sunburst" },
-        { name: "Gemini Nano Banana 2.1", id: "gemini-nano-banana-2.1" },
-    ] },
-    { label: "语言理解", models: [
-        { name: "GPT-6.2 Astra", id: "gpt-6.2-astra" },
-    ] },
-    { label: "视频生成", models: [
-        { name: "Seedance 2.0" }, { name: "Seedance 2.5" }, { name: modelSpecs.wan3Pool1080.model }, { name: "MiniMax H3" },
-    ] },
+    {
+        label: "AI 生图",
+        models: [
+            { name: "GPT-Image-2.6 Sunburst", id: "gpt-image-2.6-sunburst" },
+            { name: "Gemini Nano Banana 2.1", id: "gemini-nano-banana-2.1" },
+        ],
+    },
+    { label: "语言理解", models: [{ name: "GPT-6.2 Astra", id: "gpt-6.2-astra" }] },
+    { label: "视频生成", models: [{ name: "Seedance 2.0" }, { name: "Seedance 2.5" }, { name: modelSpecs.wan3Pool1080.model }, { name: "MiniMax H3" }] },
 ];
 
 export function estimateMonthlyBundle(plan: Pick<MembershipOffer, "monthlyFen" | "monthlyBundleCredits">): MembershipCreditEstimate {
     const spec = modelSpecs.wan3Pool1080;
     const seconds = 2;
     const credits = plan.monthlyBundleCredits;
-    const creditsPerVideo = standardCreditsPerClip(spec) * seconds / spec.seconds;
+    const creditsPerVideo = (standardCreditsPerClip(spec) * seconds) / spec.seconds;
 
     return {
         credits,
@@ -105,14 +132,7 @@ export function estimateMonthlyBundle(plan: Pick<MembershipOffer, "monthlyFen" |
     };
 }
 
-export const campaignSpecs = [
-    modelSpecs.h3Base480,
-    modelSpecs.h3Base768,
-    modelSpecs.h3Origin480,
-    modelSpecs.h3Origin768,
-    modelSpecs.seedance480,
-    modelSpecs.seedance720,
-] as const;
+export const campaignSpecs = [modelSpecs.h3Base480, modelSpecs.h3Base768, modelSpecs.h3Origin480, modelSpecs.h3Origin768, modelSpecs.seedance480, modelSpecs.seedance720] as const;
 
 export const videoPasses = [
     { id: "h3-base", name: "H3 试镜次卡", spec: modelSpecs.h3Base480, amountFen: 790, uses: 100, days: 7 },
@@ -150,7 +170,7 @@ export function discountLabel(payBasisPoints: number) {
 }
 
 function discountedAmount(amount: number, payBasisPoints: number) {
-    return Math.ceil(amount * payBasisPoints / BASIS_POINTS);
+    return Math.ceil((amount * payBasisPoints) / BASIS_POINTS);
 }
 
 // Round the last displayed decimal up. Intermediate values represent integral fen or microcredits.
@@ -173,12 +193,9 @@ export function topupQuote(pack: PointsPurchase, plan?: Pick<MembershipOffer, "t
     };
 }
 
-export function subscriptionQuote(
-    pack: { creditsPerMonth: number; months: number },
-    plan?: Pick<MembershipOffer, "topupPayBasisPoints">,
-) {
+export function subscriptionQuote(pack: { creditsPerMonth: number; months: number }, plan?: Pick<MembershipOffer, "topupPayBasisPoints">) {
     const credits = pack.creditsPerMonth * pack.months;
-    const amountFen = Math.ceil(credits * 100 / creditsPerYuan);
+    const amountFen = Math.ceil((credits * 100) / creditsPerYuan);
     return topupQuote({ amountFen, credits }, plan);
 }
 
@@ -190,11 +207,7 @@ export function standardCreditsPerClip(spec: ModelSpec) {
     return spec.unitCredits * (spec.mode === "per_second" ? spec.seconds : 1);
 }
 
-export function modelQuote(
-    spec: ModelSpec,
-    purchase: PointsPurchase,
-    campaign?: { payBasisPoints: number; maxJobs: number },
-) {
+export function modelQuote(spec: ModelSpec, purchase: PointsPurchase, campaign?: { payBasisPoints: number; maxJobs: number }) {
     const baseCredits = standardCreditsPerClip(spec);
     const baseMicrocredits = baseCredits * MICRO;
     const activityMicrocredits = discountedAmount(baseMicrocredits, campaign?.payBasisPoints ?? BASIS_POINTS);
@@ -216,11 +229,7 @@ export function modelQuote(
     };
 }
 
-export function modelPrices(
-    purchase: PointsPurchase,
-    payBasisPoints: number,
-    maxJobs: number,
-) {
+export function modelPrices(purchase: PointsPurchase, payBasisPoints: number, maxJobs: number) {
     return campaignSpecs.map((spec) => ({
         ...spec,
         ...modelQuote(spec, purchase, { payBasisPoints, maxJobs }),
@@ -229,7 +238,7 @@ export function modelPrices(
 
 export function membershipBreakEvenFen(plan: MembershipOffer, period: BillingPeriod) {
     const periodPrice = period === "month" ? plan.monthlyFen : plan.annualFen;
-    return Math.ceil(periodPrice * BASIS_POINTS / (BASIS_POINTS - plan.topupPayBasisPoints));
+    return Math.ceil((periodPrice * BASIS_POINTS) / (BASIS_POINTS - plan.topupPayBasisPoints));
 }
 
 export const welcomePlans = [membershipOffers[0], membershipOffers[1]].map((plan): MembershipWelcomePlan => ({

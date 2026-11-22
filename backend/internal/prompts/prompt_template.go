@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/kernel"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 

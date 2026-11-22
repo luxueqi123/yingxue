@@ -3,9 +3,9 @@ package database
 import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
 	_ "modernc.org/sqlite"
 	"testing"
-	"infinite-canvas/backend/internal/model"
 )
 
 func TestImageBillingMigrationAddsOnlyNewColumns(t *testing.T) {

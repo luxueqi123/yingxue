@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/kernel"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 )
@@ -223,7 +223,7 @@ func selfUseRuntimePolicy() RuntimePolicySetting {
 	value := DefaultRuntimePolicy()
 	value.Resource = RuntimeResourcePolicy{
 		AgentHistoryQuota: model.AgentHistoryQuota{AgentHistoryMB: model.MaxAgentHistoryMB},
-		ResourceUploadMB: maxRuntimeUploadMB, SessionUploadMB: maxRuntimeUploadMB, GeneratedFileMB: maxRuntimeUploadMB,
+		ResourceUploadMB:  maxRuntimeUploadMB, SessionUploadMB: maxRuntimeUploadMB, GeneratedFileMB: maxRuntimeUploadMB,
 		DailyUploadMB: maxRuntimeDataMB, StoredFileGB: maxRuntimeStorageGB, StructuredDataMB: maxRuntimeDataMB,
 		TaskDataGB: maxRuntimeStorageGB, AssetCount: maxRuntimeCount, CanvasCount: maxRuntimeCount,
 		SessionCount: maxRuntimeCount, TaskCount: maxRuntimeCount, APICallLogCount: maxRuntimeCount,

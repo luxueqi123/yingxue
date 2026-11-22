@@ -9,7 +9,7 @@
 
 .catalog-preview .app-page-header-title {
     font-size: var(--typ-display-md);
-    letter-spacing: -.03em;
+    letter-spacing: -0.03em;
     line-height: 1.15;
 }
 
@@ -63,10 +63,7 @@
     border: 1px solid var(--catalog-line);
     border-block-start-color: var(--catalog-plate-edge);
     border-radius: var(--radius-2xl);
-    background:
-        linear-gradient(var(--catalog-plate-finish), var(--catalog-plate-finish)),
-        url("/showcase/membership/brushed-metal.webp"),
-        linear-gradient(126deg, var(--catalog-plate), var(--catalog-plate-light) 37%, var(--catalog-plate));
+    background: linear-gradient(var(--catalog-plate-finish), var(--catalog-plate-finish)), url("/showcase/membership/brushed-metal.webp"), linear-gradient(126deg, var(--catalog-plate), var(--catalog-plate-light) 37%, var(--catalog-plate));
     box-shadow: inset 0 1px var(--catalog-plate-edge);
 }
 
@@ -149,7 +146,7 @@
     font-size: var(--typ-display-lg);
     font-weight: 600;
     line-height: 1.05;
-    letter-spacing: -.052em;
+    letter-spacing: -0.052em;
 }
 
 .catalog-preview-price span,
@@ -202,7 +199,7 @@
 
 .catalog-preview-quote-button:hover {
     text-decoration: underline;
-    text-underline-offset: .2em;
+    text-underline-offset: 0.2em;
 }
 
 .catalog-preview-quote-button:focus-visible {

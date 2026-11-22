@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"log"
 	"infinite-canvas/backend/internal/service"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )

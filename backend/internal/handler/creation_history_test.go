@@ -6,16 +6,16 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/service"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
 )
 
 func TestCreationHistoryHTTPAccountsAndExpectedUser(t *testing.T) {

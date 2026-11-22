@@ -1,8 +1,8 @@
 package ecommerceagent
 
 import (
-	"strings"
 	"infinite-canvas/backend/internal/ecommercecatalog"
+	"strings"
 )
 
 func init() { StyleLibrary = append(StyleLibrary, productStylePresets()...) }

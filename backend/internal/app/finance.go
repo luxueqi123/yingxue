@@ -812,7 +812,7 @@ func (s *Service) newBillingOrderWithPriceTierAt(pricedAt time.Time, userID stri
 	}
 	order := &model.BillingOrder{
 		TokenPricingPolicy: tokenPolicy,
-		ID: newID(), UserID: userID, IdempotencyKey: idempotencyKey, TaskID: taskID,
+		ID:                 newID(), UserID: userID, IdempotencyKey: idempotencyKey, TaskID: taskID,
 		ImagePricing: imagePricing, ImageInputImages: imageInputs, ImageMaxOutputImages: imageOutputs,
 		ChannelID: channelID, ChannelModelID: item.ID, PriceTierID: tier.ID, PriceTierVersion: tier.PriceVersion, PriceSelectorJSON: tier.SelectorJSON, Model: modelKey, Capability: capability,
 		Scene: truncateRunes(scene, 80), BillingMode: tier.BillingMode, PriceVersion: item.PriceVersion,

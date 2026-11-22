@@ -295,28 +295,32 @@ export function CanvasNodeToolbar({
         }
         copyText(prompt, t("creationPagePromptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, {
-        onUpload,
-        onToggleFreeResize,
-        onAnnotate,
-        onAnnotationEdit,
-        onTextEdit,
-        onRegionEdit,
-        onRemoveBackground,
-        onLayerDecomposition,
-        onEmotion,
-        onPortraitTexture,
-        onCrop,
-        onUpscale,
-        onSuperResolve,
-        onAngle,
-        onLighting,
-        onPanorama,
-        onPrevis,
-        onViewImage,
-        onCopyPrompt: copyImagePrompt,
-        onReversePrompt,
-    }, t);
+    const imageTools = buildImageToolbarTools(
+        node,
+        {
+            onUpload,
+            onToggleFreeResize,
+            onAnnotate,
+            onAnnotationEdit,
+            onTextEdit,
+            onRegionEdit,
+            onRemoveBackground,
+            onLayerDecomposition,
+            onEmotion,
+            onPortraitTexture,
+            onCrop,
+            onUpscale,
+            onSuperResolve,
+            onAngle,
+            onLighting,
+            onPanorama,
+            onPrevis,
+            onViewImage,
+            onCopyPrompt: copyImagePrompt,
+            onReversePrompt,
+        },
+        t,
+    );
 
     // 构建 ToolContext——供注册表解析工具
     const nodeHoverHandlers = {
@@ -477,7 +481,17 @@ export function CanvasNodeToolbar({
                     <NodeDockToolButton key={tool.id} tool={tool} iconOnly />
                 ))}
                 {moreTools.length ? (
-                    <NodeDockMenuButton mediaMenu={isImage || isVideo} menuId="more" label={t("timelineMore")} icon={<Ellipsis className="size-3.5" />} tools={moreTools} openMenuId={openMenuId} onOpenChange={handleMenuOpenChange} placement="topRight" iconOnly />
+                    <NodeDockMenuButton
+                        mediaMenu={isImage || isVideo}
+                        menuId="more"
+                        label={t("timelineMore")}
+                        icon={<Ellipsis className="size-3.5" />}
+                        tools={moreTools}
+                        openMenuId={openMenuId}
+                        onOpenChange={handleMenuOpenChange}
+                        placement="topRight"
+                        iconOnly
+                    />
                 ) : null}
             </div>
         </div>

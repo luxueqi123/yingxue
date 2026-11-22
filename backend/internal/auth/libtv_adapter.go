@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/kernel"
 	"math"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
 
 	"github.com/google/uuid"
 )

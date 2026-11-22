@@ -1,10 +1,10 @@
 package app
 
 import (
-	"os"
-	"testing"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/providercatalog"
+	"os"
+	"testing"
 )
 
 func TestMetasoCatalogBuild(t *testing.T) {

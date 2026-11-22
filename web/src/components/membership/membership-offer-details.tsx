@@ -32,11 +32,7 @@ export function MembershipCreditSummary({ estimate }: { estimate: MembershipCred
                 <span>1 积分 ≈ ¥{yuanPerCredit}</span>
                 <span className="membership-credit-summary-count">
                     约 {countFormat.format(videoCount)} 条视频
-                    <Tooltip
-                        placement="top"
-                        trigger={["hover", "focus", "click"]}
-                        title={`参考 ${reference.model} ${reference.resolution}，按成片时长每 ${reference.seconds} 秒折合 1 条、${reference.creditsPerVideo} 积分。实际扣分以生成页为准。`}
-                    >
+                    <Tooltip placement="top" trigger={["hover", "focus", "click"]} title={`参考 ${reference.model} ${reference.resolution}，按成片时长每 ${reference.seconds} 秒折合 1 条、${reference.creditsPerVideo} 积分。实际扣分以生成页为准。`}>
                         <button type="button" className="membership-credit-summary-note" aria-label="积分与视频条数换算说明">
                             <CircleAlert size={14} aria-hidden />
                         </button>

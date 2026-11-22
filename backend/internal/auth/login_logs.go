@@ -2,11 +2,11 @@ package auth
 
 import (
 	"errors"
+	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/model"
 	"strings"
 	"time"
 	"unicode"
-	"infinite-canvas/backend/internal/kernel"
-	"infinite-canvas/backend/internal/model"
 )
 
 type LoginContext struct {

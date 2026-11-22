@@ -3,9 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"infinite-canvas/backend/internal/service"
 	"io"
 	"net/http"
-	"infinite-canvas/backend/internal/service"
 )
 
 func registerSkillCurationRoutes(r, admin *gin.RouterGroup, svc *service.Service) {

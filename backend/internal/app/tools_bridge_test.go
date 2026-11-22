@@ -1,9 +1,9 @@
 package app
 
 import (
+	"infinite-canvas/backend/internal/model"
 	"strings"
 	"testing"
-	"infinite-canvas/backend/internal/model"
 )
 
 func TestToolPreviewOwnershipAndResourceDeletionGuard(t *testing.T) {

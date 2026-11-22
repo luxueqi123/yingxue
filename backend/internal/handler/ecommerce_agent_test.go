@@ -10,11 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	_ "modernc.org/sqlite"
 	"infinite-canvas/backend/internal/auth"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/service"
+	_ "modernc.org/sqlite"
 )
 
 func TestEcommerceAgentHTTPMockSSEAndTaskRecovery(t *testing.T) {

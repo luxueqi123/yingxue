@@ -3,8 +3,8 @@ package repository
 import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"testing"
 	"infinite-canvas/backend/internal/model"
+	"testing"
 )
 
 func TestUserCharacterReferencesResource(t *testing.T) {

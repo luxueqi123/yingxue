@@ -11,4 +11,3 @@ func migrateCanvasCollaboration(tx *gorm.DB) error {
 	}
 	return migrateCanvasAgentActivityIndexes(tx)
 }
-

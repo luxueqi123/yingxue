@@ -3,9 +3,9 @@ package repository
 import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
 	"reflect"
 	"testing"
-	"infinite-canvas/backend/internal/model"
 )
 
 func TestOfficialAssetResourceIDsIncludesAllCharacterMedia(t *testing.T) {

@@ -16,9 +16,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	_ "modernc.org/sqlite"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
+	_ "modernc.org/sqlite"
 )
 
 // textModelTestNoisyPNG 造一张无法被 PNG 压掉的大图：随机像素接近熵上限，

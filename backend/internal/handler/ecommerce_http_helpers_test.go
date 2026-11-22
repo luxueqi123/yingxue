@@ -4,16 +4,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/auth"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/repository"
+	"infinite-canvas/backend/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-	"infinite-canvas/backend/internal/auth"
-	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/repository"
-	"infinite-canvas/backend/internal/service"
 )
 
 func newGitHubSkillHTTPTest(t *testing.T) (*gin.Engine, *gorm.DB, string) {

@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"infinite-canvas/backend/internal/ecommercecatalog"
 	"sort"
 	"strings"
 	"sync"
-	"infinite-canvas/backend/internal/ecommercecatalog"
 )
 
 //go:embed catalog.json packages/*/SKILL.md licenses/*.txt

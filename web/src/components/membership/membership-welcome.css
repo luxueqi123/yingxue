@@ -10,8 +10,8 @@
     --steel-high: var(--color-neutral-50);
     --steel-edge: var(--color-neutral-400);
     --steel-rim: var(--color-neutral-0);
-    --steel-grain-opacity: .14;
-    --steel-video-opacity: .54;
+    --steel-grain-opacity: 0.14;
+    --steel-video-opacity: 0.54;
     --welcome-text: var(--color-neutral-950);
     --welcome-muted: var(--color-neutral-700);
     --welcome-line: color-mix(in srgb, var(--welcome-text) 18%, transparent);
@@ -25,17 +25,7 @@
     overflow: hidden;
     border: 1px solid var(--steel-edge);
     border-radius: var(--radius-2xl);
-    background:
-        linear-gradient(180deg, transparent 70%, var(--welcome-inset)),
-        linear-gradient(
-            112deg,
-            var(--steel-low),
-            var(--steel-face) 15%,
-            var(--steel-high) 38%,
-            var(--steel-face) 62%,
-            var(--steel-low) 89%,
-            var(--steel-face)
-        );
+    background: linear-gradient(180deg, transparent 70%, var(--welcome-inset)), linear-gradient(112deg, var(--steel-low), var(--steel-face) 15%, var(--steel-high) 38%, var(--steel-face) 62%, var(--steel-low) 89%, var(--steel-face));
     color: var(--welcome-text);
     font-family: var(--font-sans, "Inter Variable", "Microsoft YaHei", system-ui, sans-serif);
     box-shadow:
@@ -49,8 +39,8 @@
     --steel-high: color-mix(in oklab, var(--color-neutral-800) 54%, var(--color-neutral-700));
     --steel-edge: color-mix(in oklab, var(--color-neutral-600) 67%, var(--color-neutral-800));
     --steel-rim: color-mix(in srgb, var(--color-neutral-0) 44%, var(--steel-face));
-    --steel-grain-opacity: .20;
-    --steel-video-opacity: .50;
+    --steel-grain-opacity: 0.2;
+    --steel-video-opacity: 0.5;
     --welcome-text: var(--color-neutral-50);
     --welcome-muted: var(--color-neutral-300);
     --welcome-line: color-mix(in srgb, var(--welcome-text) 20%, transparent);
@@ -96,7 +86,9 @@
     padding: 1px;
     border-radius: inherit;
     background: linear-gradient(104deg, var(--steel-rim), transparent 24%, transparent 62%, var(--steel-rim) 88%, transparent);
-    mask: linear-gradient(var(--color-neutral-0) 0 0) content-box, linear-gradient(var(--color-neutral-0) 0 0);
+    mask:
+        linear-gradient(var(--color-neutral-0) 0 0) content-box,
+        linear-gradient(var(--color-neutral-0) 0 0);
     mask-composite: exclude;
 }
 
@@ -118,7 +110,7 @@
     margin: 0;
     font-size: var(--typ-display-sm);
     font-weight: 700;
-    letter-spacing: .06em;
+    letter-spacing: 0.06em;
     line-height: 1.25;
 }
 
@@ -210,7 +202,7 @@
 
 .membership-welcome-trial-actions button:hover {
     text-decoration: underline;
-    text-underline-offset: .2em;
+    text-underline-offset: 0.2em;
 }
 
 .membership-welcome-plans {
@@ -264,7 +256,7 @@
     color: var(--welcome-text);
     font-size: var(--typ-display-lg);
     font-weight: 670;
-    letter-spacing: -.065em;
+    letter-spacing: -0.065em;
     line-height: 1;
 }
 
@@ -282,7 +274,7 @@
 .membership-welcome-plan-numbers .membership-credit-summary-amount strong {
     font-size: var(--typ-display-sm);
     font-weight: 670;
-    letter-spacing: -.035em;
+    letter-spacing: -0.035em;
 }
 
 .membership-welcome-plan-numbers .membership-credit-summary-meta {

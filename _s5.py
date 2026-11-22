@@ -1,8 +1,0 @@
-h=open('_p_head.txt',encoding='utf-8').read().replace('\r\n','\n').split('\n')
-o=open('_p_orig.txt',encoding='utf-8').read().replace('\r\n','\n').split('\n')
-w=open('web/src/pages/canvas/project.tsx',encoding='utf-8').read().replace('\r\n','\n').split('\n')
-print('HEAD total',len(h),'ORIG',len(o),'WORK',len(w))
-print('=== HEAD 3125-3175')
-for i in range(3124,3175): print(i+1,len(h[i])-len(h[i].lstrip()),h[i].strip()[:80])
-print('=== ORIG 3110-3160')
-for i in range(3109,3160): print(i+1,len(o[i])-len(o[i].lstrip()),o[i].strip()[:80])

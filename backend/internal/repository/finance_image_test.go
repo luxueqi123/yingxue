@@ -5,8 +5,8 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	_ "modernc.org/sqlite"
 	"infinite-canvas/backend/internal/model"
+	_ "modernc.org/sqlite"
 )
 
 func imageBillingTestRepo(t *testing.T) (*Repository, *gorm.DB) {

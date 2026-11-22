@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"log"
-	"os"
-	"time"
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/service"
+	"log"
+	"os"
+	"time"
 )
 
 func main() {

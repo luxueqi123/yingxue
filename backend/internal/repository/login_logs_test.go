@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
-	"infinite-canvas/backend/internal/model"
 )
 
 func TestRevokeAuthSessionConcurrentWritesSingleLogout(t *testing.T) {

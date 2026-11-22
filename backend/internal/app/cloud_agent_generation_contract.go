@@ -2,8 +2,8 @@ package app
 
 import (
 	"fmt"
-	"strings"
 	"infinite-canvas/backend/internal/canvas/contract"
+	"strings"
 )
 
 // cloudAgentGenerationSpec 将 Agent 参数和已解析素材转换为画布生成合同。

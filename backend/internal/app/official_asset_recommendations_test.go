@@ -1,8 +1,8 @@
 package app
 
 import (
-	"testing"
 	"infinite-canvas/backend/internal/model"
+	"testing"
 )
 
 func TestRecommendationRequiresConsent(t *testing.T) {

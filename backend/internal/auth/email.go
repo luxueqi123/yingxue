@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/emailtpl"
+	"infinite-canvas/backend/internal/kernel"
 	"log"
 	"log/slog"
 	"math/big"
@@ -22,8 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/emailtpl"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 

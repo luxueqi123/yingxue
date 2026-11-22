@@ -3,9 +3,9 @@ package prompts
 import (
 	"encoding/json"
 	"errors"
+	"infinite-canvas/backend/internal/kernel"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 )

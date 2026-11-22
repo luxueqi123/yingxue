@@ -141,9 +141,7 @@ test("shop loads products and payment settings together only on the recharge tab
         expect(modal.reads).toEqual(["/membership"]);
         await clickButton("积分充值");
         expect(modal.reads).toHaveLength(4);
-        expect(modal.reads).toEqual(expect.arrayContaining([
-            "/membership", "/payments/products", "/payments/providers", "/payments/settings",
-        ]));
+        expect(modal.reads).toEqual(expect.arrayContaining(["/membership", "/payments/products", "/payments/providers", "/payments/settings"]));
         expect(modal.requests).toHaveLength(0);
     } finally {
         await act(async () => products.resolve());

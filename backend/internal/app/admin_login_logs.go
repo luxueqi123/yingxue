@@ -2,12 +2,12 @@ package app
 
 import (
 	"errors"
-	"net"
-	"strings"
-	"time"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
+	"net"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )

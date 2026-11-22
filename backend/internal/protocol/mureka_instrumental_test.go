@@ -61,18 +61,18 @@ func TestMurekaExactInstrumentalRequest(t *testing.T) {
 func TestMurekaRejectsUnrepresentedInput(t *testing.T) {
 	changes := map[string]func(*GenerationRequest){
 		"fractional-count": func(r *GenerationRequest) { r.Extra["count"] = 1.5 },
-		"version":      func(r *GenerationRequest) { r.Model = "mureka-9" },
-		"auto":         func(r *GenerationRequest) { r.Model = "auto" },
-		"vendor":       func(r *GenerationRequest) { r.Model = "music_v2_5" },
-		"empty":        func(r *GenerationRequest) { r.Prompt = "  " },
-		"long":         func(r *GenerationRequest) { r.Prompt = strings.Repeat("文", 1025) },
-		"count":        func(r *GenerationRequest) { r.Extra["count"] = "2" },
-		"song":         func(r *GenerationRequest) { r.ProviderOptions["mureka-instrumental"]["forceInstrumental"] = false },
-		"missing-mode": func(r *GenerationRequest) { delete(r.ProviderOptions, "mureka-instrumental") },
-		"audio":        func(r *GenerationRequest) { r.Audios = []MediaReference{{URL: "https://example.com/ref.mp3"}} },
-		"image":        func(r *GenerationRequest) { r.Images = []MediaReference{{URL: "https://example.com/ref.png"}} },
-		"video":        func(r *GenerationRequest) { r.Videos = []MediaReference{{URL: "https://example.com/ref.mp4"}} },
-		"duration":     func(r *GenerationRequest) { r.ProviderOptions["mureka-instrumental"]["durationMs"] = 60000 },
+		"version":          func(r *GenerationRequest) { r.Model = "mureka-9" },
+		"auto":             func(r *GenerationRequest) { r.Model = "auto" },
+		"vendor":           func(r *GenerationRequest) { r.Model = "music_v2_5" },
+		"empty":            func(r *GenerationRequest) { r.Prompt = "  " },
+		"long":             func(r *GenerationRequest) { r.Prompt = strings.Repeat("文", 1025) },
+		"count":            func(r *GenerationRequest) { r.Extra["count"] = "2" },
+		"song":             func(r *GenerationRequest) { r.ProviderOptions["mureka-instrumental"]["forceInstrumental"] = false },
+		"missing-mode":     func(r *GenerationRequest) { delete(r.ProviderOptions, "mureka-instrumental") },
+		"audio":            func(r *GenerationRequest) { r.Audios = []MediaReference{{URL: "https://example.com/ref.mp3"}} },
+		"image":            func(r *GenerationRequest) { r.Images = []MediaReference{{URL: "https://example.com/ref.png"}} },
+		"video":            func(r *GenerationRequest) { r.Videos = []MediaReference{{URL: "https://example.com/ref.mp4"}} },
+		"duration":         func(r *GenerationRequest) { r.ProviderOptions["mureka-instrumental"]["durationMs"] = 60000 },
 	}
 	for name, a := range murekaAdapters(t) {
 		for change, mutate := range changes {

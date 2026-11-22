@@ -3,9 +3,9 @@ package database
 import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
 	"path/filepath"
 	"testing"
-	"infinite-canvas/backend/internal/model"
 )
 
 func TestSkillCurationRootsMigration(t *testing.T) {

@@ -45,7 +45,7 @@ func TestPersonalAssetQuotaExcludesCaseReferencesAndKeepsTheirStorage(t *testing
 		bytes += int64(len(row.PayloadJSON))
 	}
 	for name, read := range map[string]func(string) (UserStorageUsage, error){
-		"full": repo.UserStorageUsage,
+		"full":       repo.UserStorageUsage,
 		"structured": repo.UserStructuredStorageUsage,
 	} {
 		t.Run(name, func(t *testing.T) {

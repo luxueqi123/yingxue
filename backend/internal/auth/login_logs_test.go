@@ -2,11 +2,11 @@ package auth
 
 import (
 	"encoding/json"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/repository"
 	"strings"
 	"testing"
 	"time"
-	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/repository"
 )
 
 func TestLoginLogMasksAttemptedContacts(t *testing.T) {

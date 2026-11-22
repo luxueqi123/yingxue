@@ -13,6 +13,8 @@ import (
 	qiniuAuth "github.com/qiniu/go-sdk/v7/auth"
 	qiniuStorage "github.com/qiniu/go-sdk/v7/storage"
 	cos "github.com/tencentyun/cos-go-sdk-v5"
+	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/outbound"
 	"io"
 	"mime"
 	"net"
@@ -22,8 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/kernel"
-	"infinite-canvas/backend/internal/outbound"
 )
 
 func transferTimeout(setting Settings) time.Duration {

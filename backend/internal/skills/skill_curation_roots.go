@@ -1,11 +1,11 @@
 package skills
 
 import (
-	"strings"
-	"unicode/utf8"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
+	"strings"
+	"unicode/utf8"
 )
 
 func activeCurationRoot(state *SkillCuration, id string) bool {

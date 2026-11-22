@@ -3,12 +3,12 @@ package canvas
 import (
 	"encoding/json"
 	"errors"
+	"infinite-canvas/backend/internal/assets"
+	"infinite-canvas/backend/internal/repository"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-	"infinite-canvas/backend/internal/assets"
-	"infinite-canvas/backend/internal/repository"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

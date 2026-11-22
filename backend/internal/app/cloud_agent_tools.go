@@ -4,8 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"strings"
 	agenttool "infinite-canvas/backend/internal/agent/tool"
+	"strings"
 )
 
 func cloudAgentCanonical(system string, history []providerTextMessage, prompt string, req CloudAgentRequest) canonicalAgentRequest {

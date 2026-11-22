@@ -83,8 +83,8 @@ type PublicAuthSettings struct {
 	GitHubEnabled                          bool   `json:"githubEnabled"`
 	GitHubRegistrationEnabled              bool   `json:"githubRegistrationEnabled"`
 	RegistrationWithoutVerificationAllowed bool   `json:"registrationWithoutVerificationAllowed"`
-	TurnstileEnabled bool   `json:"turnstileEnabled"`
-	TurnstileSiteKey string `json:"turnstileSiteKey,omitempty"`
+	TurnstileEnabled                       bool   `json:"turnstileEnabled"`
+	TurnstileSiteKey                       string `json:"turnstileSiteKey,omitempty"`
 }
 
 type AuthSessionResult struct {
@@ -174,9 +174,9 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 		GitHubEnabled:                          githubEnabled,
 		GitHubRegistrationEnabled:              githubRegistrationEnabled,
 		RegistrationWithoutVerificationAllowed: registrationWithoutVerificationAllowed,
-		WechatEnabled:             s.WechatEnabled(),
-		TurnstileEnabled:          turnstile.Enabled,
-		TurnstileSiteKey:          turnstile.SiteKey,
+		WechatEnabled:                          s.WechatEnabled(),
+		TurnstileEnabled:                       turnstile.Enabled,
+		TurnstileSiteKey:                       turnstile.SiteKey,
 	}, nil
 }
 

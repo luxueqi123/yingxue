@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"infinite-canvas/backend/internal/assets"
+	"infinite-canvas/backend/internal/kernel"
 	"io"
 	"strings"
 	"time"
-	"infinite-canvas/backend/internal/assets"
-	"infinite-canvas/backend/internal/kernel"
 
 	"infinite-canvas/backend/internal/model"
 

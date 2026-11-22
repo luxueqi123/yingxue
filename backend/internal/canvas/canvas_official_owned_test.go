@@ -2,8 +2,8 @@ package canvas
 
 import (
 	"encoding/json"
-	"testing"
 	"infinite-canvas/backend/internal/model"
+	"testing"
 )
 
 func TestOwnedOfficialResourceRequiresPublishedOrRetainedReference(t *testing.T) {
