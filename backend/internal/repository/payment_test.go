@@ -17,7 +17,7 @@ func TestCompletePaymentOrderGrantsCreditsExactlyOnce(t *testing.T) {
 	order := model.PaymentOrder{
 		ID: "payment-order-1", UserID: "user-1", IdempotencyKey: "idem-1", MerchantOrderNo: "merchant-order-1",
 		ProductID: "product-1", ProductName: "100 积分", ProviderID: "wechat-native", PluginID: "plugin-1",
-		ProviderConfigID: "config-1", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+		ProviderConfigID: "config-1", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 		CreditsMicrocredits: 100_000_000, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&order).Error; err != nil {
@@ -88,7 +88,7 @@ func TestCompletePaymentOrderRejectsAmountMismatchWithoutGrant(t *testing.T) {
 	order := model.PaymentOrder{
 		ID: "payment-order-2", UserID: "user-2", IdempotencyKey: "idem-2", MerchantOrderNo: "merchant-order-2",
 		ProductID: "product-2", ProductName: "200 积分", ProviderID: "alipay-page-pay", PluginID: "plugin-2",
-		ProviderConfigID: "config-2", ProviderConfigVersion: 1, AmountFen: 200, Currency: "CNY",
+		ProviderConfigID: "config-2", ProviderConfigVersion: 1, AmountFen: 200, Currency: "CNY", ChargeAmountFen: 200, ChargeCurrency: "CNY",
 		CreditsMicrocredits: 200_000_000, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&order).Error; err != nil {
@@ -116,19 +116,19 @@ func TestCompletePaymentOrderScopesTradeNumberUniquenessByProvider(t *testing.T)
 		{
 			ID: "wechat-order-a", UserID: "wechat-user-a", IdempotencyKey: "wechat-idem-a", MerchantOrderNo: "wechat-merchant-order-a",
 			ProductID: "product", ProductName: "积分", ProviderID: "wechat-native", PluginID: "wechat-plugin",
-			ProviderConfigID: "wechat-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+			ProviderConfigID: "wechat-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 			CreditsMicrocredits: 100, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 		},
 		{
 			ID: "wechat-order-b", UserID: "wechat-user-b", IdempotencyKey: "wechat-idem-b", MerchantOrderNo: "wechat-merchant-order-b",
 			ProductID: "product", ProductName: "积分", ProviderID: "wechat-native", PluginID: "wechat-plugin",
-			ProviderConfigID: "wechat-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+			ProviderConfigID: "wechat-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 			CreditsMicrocredits: 100, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 		},
 		{
 			ID: "alipay-order", UserID: "alipay-user", IdempotencyKey: "alipay-idem", MerchantOrderNo: "alipay-merchant-order",
 			ProductID: "product", ProductName: "积分", ProviderID: "alipay-page-pay", PluginID: "alipay-plugin",
-			ProviderConfigID: "alipay-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+			ProviderConfigID: "alipay-config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 			CreditsMicrocredits: 100, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 		},
 	}
@@ -156,7 +156,7 @@ func TestCompletePaymentOrderRejectsInconsistentExistingLedger(t *testing.T) {
 	order := model.PaymentOrder{
 		ID: "payment-order-inconsistent", UserID: "user-inconsistent", IdempotencyKey: "idem-inconsistent", MerchantOrderNo: "merchant-order-inconsistent",
 		ProductID: "product", ProductName: "100 积分", ProviderID: "wechat-native", PluginID: "plugin",
-		ProviderConfigID: "config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+		ProviderConfigID: "config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 		CreditsMicrocredits: 100_000_000, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&order).Error; err != nil {
@@ -194,7 +194,7 @@ func TestCompletePaymentOrderRejectsCreditBalanceOverflow(t *testing.T) {
 	order := model.PaymentOrder{
 		ID: "payment-order-overflow", UserID: "user-overflow", IdempotencyKey: "idem-overflow", MerchantOrderNo: "merchant-order-overflow",
 		ProductID: "product", ProductName: "积分", ProviderID: "wechat-native", PluginID: "plugin",
-		ProviderConfigID: "config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY",
+		ProviderConfigID: "config", ProviderConfigVersion: 1, AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY",
 		CreditsMicrocredits: 100, Status: model.PaymentOrderPending, ExpiresAt: time.Now().Add(time.Hour),
 	}
 	if err := db.Create(&order).Error; err != nil {
@@ -260,7 +260,7 @@ func TestClaimExpiredPaymentOrdersIncludesAmbiguousAndStaleClosingStates(t *test
 			ID: "expired-order-" + string(rune('a'+index)), UserID: "expired-user", IdempotencyKey: "expired-idem-" + string(rune('a'+index)),
 			MerchantOrderNo: "expired-merchant-order-0000000" + string(rune('a'+index)), ProductID: "product", ProductName: "积分",
 			ProviderID: "wechat-native", PluginID: "plugin", ProviderConfigID: "config", ProviderConfigVersion: 1,
-			AmountFen: 100, Currency: "CNY", CreditsMicrocredits: 1_000_000, Status: status,
+			AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY", CreditsMicrocredits: 1_000_000, Status: status,
 			ExpiresAt: now.Add(-time.Minute), UpdatedAt: now.Add(-3 * time.Minute),
 		}
 		if err := db.Create(&order).Error; err != nil {
@@ -270,7 +270,7 @@ func TestClaimExpiredPaymentOrdersIncludesAmbiguousAndStaleClosingStates(t *test
 	freshClosing := model.PaymentOrder{
 		ID: "fresh-closing", UserID: "expired-user", IdempotencyKey: "fresh-closing", MerchantOrderNo: "fresh-closing-merchant-000000000",
 		ProductID: "product", ProductName: "积分", ProviderID: "wechat-native", PluginID: "plugin", ProviderConfigID: "config", ProviderConfigVersion: 1,
-		AmountFen: 100, Currency: "CNY", CreditsMicrocredits: 1_000_000, Status: model.PaymentOrderClosing,
+		AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY", CreditsMicrocredits: 1_000_000, Status: model.PaymentOrderClosing,
 		ExpiresAt: now.Add(-time.Minute), UpdatedAt: now,
 	}
 	if err := db.Create(&freshClosing).Error; err != nil {
@@ -308,7 +308,7 @@ func TestPaymentOrdersNeedingQueryIncludesAmbiguousCreationStates(t *testing.T) 
 			ID: "query-order-" + suffix, UserID: "query-user", IdempotencyKey: "query-idem-" + suffix,
 			MerchantOrderNo: "query-merchant-order-000000000" + suffix, ProductID: "product", ProductName: "积分",
 			ProviderID: "wechat-native", PluginID: "plugin", ProviderConfigID: "config", ProviderConfigVersion: 1,
-			AmountFen: 100, Currency: "CNY", CreditsMicrocredits: 1_000_000, Status: status,
+			AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY", CreditsMicrocredits: 1_000_000, Status: status,
 			ExpiresAt: time.Now().Add(time.Hour),
 		}
 		if err := db.Create(&order).Error; err != nil {
@@ -340,7 +340,7 @@ func TestUnresolvedPaymentOrderCandidateCountOverlapping(t *testing.T) {
 	closedOrder := model.PaymentOrder{
 		ID: "candidate-order", UserID: "candidate-user", IdempotencyKey: "candidate-idem", MerchantOrderNo: "candidate-merchant-order-0000000",
 		ProductID: "product", ProductName: "积分", ProviderID: "alipay-page-pay", PluginID: "plugin", ProviderConfigID: "config", ProviderConfigVersion: 1,
-		AmountFen: 100, Currency: "CNY", CreditsMicrocredits: 1_000_000, Status: model.PaymentOrderClosed,
+		AmountFen: 100, Currency: "CNY", ChargeAmountFen: 100, ChargeCurrency: "CNY", CreditsMicrocredits: 1_000_000, Status: model.PaymentOrderClosed,
 		ExpiresAt: start.Add(time.Hour), CreatedAt: start.Add(-time.Hour),
 	}
 	pendingOrder := closedOrder
@@ -360,6 +360,50 @@ func TestUnresolvedPaymentOrderCandidateCountOverlapping(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("unresolved candidate count = %d", count)
+	}
+}
+
+func TestAdminPaymentOrdersSearchUserIdentity(t *testing.T) {
+	db := openPaymentTestDB(t)
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatal(err)
+	}
+	users := []model.User{
+		{ID: "user-alice", Username: "alice", DisplayName: "小林", Email: "alice@example.com"},
+		{ID: "user-bob", Username: "bob", DisplayName: "小林", Email: "bob@example.com"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	orders := []model.PaymentOrder{
+		{ID: "a", UserID: "user-alice", MerchantOrderNo: "merchant-a", IdempotencyKey: "a", Status: model.PaymentOrderPending},
+		{ID: "b", UserID: "user-bob", MerchantOrderNo: "merchant-b", IdempotencyKey: "b", Status: model.PaymentOrderClosed},
+		{ID: "c", UserID: "missing-user", MerchantOrderNo: "merchant-c", IdempotencyKey: "c", Status: model.PaymentOrderClosed},
+	}
+	tradeNo := "trade-c"
+	orders[2].ProviderTradeNo = &tradeNo
+	if err := db.Create(&orders).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := New(db)
+	for _, tc := range []struct {
+		keyword, status string
+		total           int64
+	}{
+		{"ALICE@EXAMPLE.COM", "", 1}, {"alice", "", 1}, {"小林", "", 2},
+		{"小林", "pending", 1}, {"alice", "closed", 0}, {"user-bob", "", 1},
+		{"merchant-c", "", 1}, {"trade-c", "", 1}, {"missing-user", "", 1}, {"", "", 3},
+	} {
+		t.Run(tc.keyword+"/"+tc.status, func(t *testing.T) {
+			items, total, err := repo.AdminPaymentOrders(PaymentOrderFilter{Status: tc.status, Keyword: tc.keyword}, 1, 0)
+			if err != nil || total != tc.total || len(items) > 1 {
+				t.Fatalf("got items=%d total=%d err=%v; want total=%d", len(items), total, err, tc.total)
+			}
+		})
+	}
+	identities, err := repo.UsersByIDs([]string{"user-alice", "missing-user"})
+	if err != nil || len(identities) != 1 || identities["user-alice"].Email != "alice@example.com" {
+		t.Fatalf("identities=%v err=%v", identities, err)
 	}
 }
 

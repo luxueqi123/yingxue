@@ -1,27 +1,21 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey, InterfaceTranslate } from "@/lib/interface-locale";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock3, Copy, Eye, Palette, Pencil, Plus, Search, SlidersHorizontal, Star, Trash2, UserRound } from "lucide-react";
-import { App, Button, Input, Modal } from "antd";
+import { App, Button, Input } from "antd";
+import { AppModal } from "@/components/ui/product/app-modal";
 import { nanoid } from "nanoid";
-
 import { StyleProfileEditorModal } from "@/components/canvas/style-profile-editor-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { createStyleProfileSnapshot, parseStyleProfile, serializeStyleProfile, type StyleProfileSnapshot } from "@/lib/canvas/style-profile";
-import {
-    compileCanvasStylePreset,
-    customCanvasStylePreset,
-    recommendedCanvasStylePresets,
-    type CanvasStylePreset,
-    type ProjectStyleSelection,
-} from "@/lib/canvas/canvas-style-system";
+import { compileCanvasStylePreset, customCanvasStylePreset, recommendedCanvasStylePresets, type CanvasStylePreset, type ProjectStyleSelection } from "@/lib/canvas/canvas-style-system";
 import { createStyleProfile, deleteStyleProfile, listStyleProfiles, setStyleProfileFavorite, touchStyleProfile, updateStyleProfile, type UserStyleProfile } from "@/services/api/style-profiles";
-import { useThemeStore } from "@/stores/use-theme-store";
-
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 export type { CanvasStylePreset } from "@/lib/canvas/canvas-style-system";
-
 // 分类按短剧制作语境组织：先看媒介，再看题材与视觉气质，避免用品牌名称代替画风。
-const PROJECT_STYLE_SCOPE = "【使用边界】本规范是全项目美术与影像风格基线，用于统一角色资产、服装材质、建筑世界观、色彩语言和成片质感；它不是某张图片或某个镜头的提示词。具体场景内容、构图、景别、机位、运镜、动作、光源位置、天气和单场情绪由剧情与分镜节点决定，不得从本规范机械复制。";
-
+const PROJECT_STYLE_SCOPE =
+    "【使用边界】本规范是全项目美术与影像风格基线，用于统一角色资产、服装材质、建筑世界观、色彩语言和成片质感；它不是某张图片或某个镜头的提示词。具体场景内容、构图、景别、机位、运镜、动作、光源位置、天气和单场情绪由剧情与分镜节点决定，不得从本规范机械复制。";
 const legacyCanvasStylePresets: CanvasStylePreset[] = [
     {
         id: "urban-live-action",
@@ -366,7 +360,6 @@ const legacyCanvasStylePresets: CanvasStylePreset[] = [
         imageUrl: "/short-drama-styles/real-life.jpg",
     },
 ];
-
 const legacyStyleUpgrades: Partial<Record<string, ProjectStyleSelection>> = {
     "urban-live-action": { world: "urban", tone: "romantic", medium: "live-action", character: "realistic" },
     "period-live-action": { world: "historical", tone: "epic", medium: "live-action", character: "realistic" },
@@ -381,7 +374,6 @@ const legacyStyleUpgrades: Partial<Record<string, ProjectStyleSelection>> = {
     "nature-healing": { world: "pastoral", tone: "healing", medium: "live-action", character: "realistic" },
     "real-life-documentary": { world: "urban", tone: "healing", medium: "live-action", character: "realistic" },
 };
-
 const resolvedLegacyCanvasStylePresets = legacyCanvasStylePresets.map((preset) => {
     const upgrade = legacyStyleUpgrades[preset.id];
     if (!upgrade) return preset;
@@ -389,16 +381,12 @@ const resolvedLegacyCanvasStylePresets = legacyCanvasStylePresets.map((preset) =
     const upgraded = { ...compiled, id: preset.id, imageUrl: preset.imageUrl };
     return { ...upgraded, profile: createStyleProfileSnapshot({ ...compiled.profile!, presetId: preset.id }) };
 });
-
 const resolvableCanvasStylePresets: CanvasStylePreset[] = [...recommendedCanvasStylePresets, ...resolvedLegacyCanvasStylePresets];
-
 // 风格中心不靠重复卡片虚增数量；旧 ID 仍留在解析集合中，保证历史项目可以恢复。
 export const canvasStylePresets: CanvasStylePreset[] = resolvableCanvasStylePresets.filter((preset, index, presets) => presets.findIndex((candidate) => candidate.prompt === preset.prompt) === index);
-
 export function resolveCanvasStylePreset(id?: string) {
     return resolvableCanvasStylePresets.find((preset) => preset.id === id) || customCanvasStylePreset(id);
 }
-
 export function resolveProjectCanvasStyle(presetId?: string, profileJson?: string | null): CanvasStylePreset | undefined {
     const preset = resolveCanvasStylePreset(presetId);
     const profile = parseStyleProfile(profileJson);
@@ -415,17 +403,22 @@ export function resolveProjectCanvasStyle(presetId?: string, profileJson?: strin
         profile,
     };
 }
-
 const STYLE_FAVORITES_KEY = "canvas:style-library:favorites";
 const STYLE_RECENT_KEY = "canvas:style-library:recent";
-
 type StyleCenterTab = "system" | "mine" | "favorites" | "recent";
 type SystemStyleLibraryItem = { kind: "system"; preset: CanvasStylePreset };
 type UserStyleLibraryItem = { kind: "user"; preset: CanvasStylePreset; entity: UserStyleProfile };
 type StyleLibraryItem = SystemStyleLibraryItem | UserStyleLibraryItem;
 type StyleEditorState = { profile: StyleProfileSnapshot; entityId?: string };
-
-export function CanvasStylePickerModal({ open, value, currentProfile, startInEditor = false, applying = false, onClose, onSelect }: {
+export function CanvasStylePickerModal({
+    open,
+    value,
+    currentProfile,
+    startInEditor = false,
+    applying = false,
+    onClose,
+    onSelect,
+}: {
     open: boolean;
     value?: string;
     currentProfile?: StyleProfileSnapshot | null;
@@ -434,35 +427,37 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
     onClose: () => void;
     onSelect: (preset: CanvasStylePreset) => void;
 }) {
+    const { t } = useInterfaceTranslation();
     const { message, modal } = App.useApp();
     const queryClient = useQueryClient();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = canvasThemes[useActiveTheme()];
     const [detailPreset, setDetailPreset] = useState<CanvasStylePreset | null>(null);
     const [tab, setTab] = useState<StyleCenterTab>("system");
     const [query, setQuery] = useState("");
-    const [category, setCategory] = useState("全部");
+    const [category, setCategory] = useState("all");
     const [systemFavoriteIds, setSystemFavoriteIds] = useState<string[]>([]);
     const [recentIds, setRecentIds] = useState<string[]>([]);
     const [editor, setEditor] = useState<StyleEditorState | null>(null);
     const profilesQuery = useQuery({ queryKey: ["style-profiles"], queryFn: listStyleProfiles, enabled: open });
-
     useEffect(() => {
         if (!open) return;
         setTab("system");
         setQuery("");
-        setCategory("全部");
+        setCategory("all");
         setSystemFavoriteIds(readStyleIds(STYLE_FAVORITES_KEY));
         setRecentIds(readStyleIds(STYLE_RECENT_KEY));
         setEditor(startInEditor && currentProfile?.source !== "user" && currentProfile ? { profile: editableCopy(currentProfile) } : null);
     }, [currentProfile, open, startInEditor]);
-
-    const userItems = useMemo<UserStyleLibraryItem[]>(() => (profilesQuery.data?.profiles || []).flatMap((entity) => {
-        const preset = userStylePreset(entity);
-        return preset ? [{ kind: "user" as const, preset, entity }] : [];
-    }), [profilesQuery.data?.profiles]);
+    const userItems = useMemo<UserStyleLibraryItem[]>(
+        () =>
+            (profilesQuery.data?.profiles || []).flatMap((entity) => {
+                const preset = userStylePreset(entity);
+                return preset ? [{ kind: "user" as const, preset, entity }] : [];
+            }),
+        [profilesQuery.data?.profiles],
+    );
     const systemItems = useMemo<SystemStyleLibraryItem[]>(() => canvasStylePresets.map((preset) => ({ kind: "system", preset })), []);
-    const categories = useMemo(() => ["全部", ...Array.from(new Set(canvasStylePresets.map((preset) => preset.category)))], []);
-
+    const categories = useMemo(() => ["all", ...Array.from(new Set(canvasStylePresets.map((preset) => preset.category)))], []);
     useEffect(() => {
         if (!open || !startInEditor || !currentProfile || currentProfile.source !== "user" || editor || profilesQuery.isFetching || profilesQuery.isError) return;
         const sourceId = currentProfile.sourceProfileId || currentProfile.presetId;
@@ -474,49 +469,59 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
         }
         if (profilesQuery.isFetched) setEditor({ profile: editableCopy(currentProfile) });
     }, [currentProfile, editor, open, profilesQuery.data?.profiles, profilesQuery.isError, profilesQuery.isFetched, profilesQuery.isFetching, startInEditor]);
-
     const visibleItems = useMemo(() => {
         const keyword = query.trim().toLocaleLowerCase("zh-CN");
-        let source: StyleLibraryItem[] = tab === "system" ? systemItems : tab === "mine" ? userItems : tab === "favorites"
-            ? [...systemItems.filter((item) => systemFavoriteIds.includes(item.preset.id)), ...userItems.filter((item) => item.kind === "user" && item.entity.favorite)]
-            : [...userItems.filter((item) => item.kind === "user" && item.entity.lastUsedAt).sort((a, b) => String(b.entity.lastUsedAt).localeCompare(String(a.entity.lastUsedAt))), ...recentIds.flatMap((id) => systemItems.filter((item) => item.preset.id === id))];
-        if (tab === "system" && category !== "全部") source = source.filter((item) => item.preset.category === category);
+        let source: StyleLibraryItem[] =
+            tab === "system"
+                ? systemItems
+                : tab === "mine"
+                  ? userItems
+                  : tab === "favorites"
+                    ? [...systemItems.filter((item) => systemFavoriteIds.includes(item.preset.id)), ...userItems.filter((item) => item.kind === "user" && item.entity.favorite)]
+                    : [
+                          ...userItems.filter((item) => item.kind === "user" && item.entity.lastUsedAt).sort((a, b) => String(b.entity.lastUsedAt).localeCompare(String(a.entity.lastUsedAt))),
+                          ...recentIds.flatMap((id) => systemItems.filter((item) => item.preset.id === id)),
+                      ];
+        if (tab === "system" && category !== "all") source = source.filter((item) => item.preset.category === category);
         if (keyword) source = source.filter((item) => `${item.preset.title} ${item.preset.category} ${item.preset.description} ${item.preset.tags.join(" ")}`.toLocaleLowerCase("zh-CN").includes(keyword));
         return source;
     }, [category, query, recentIds, systemFavoriteIds, systemItems, tab, userItems]);
-
     const saveMutation = useMutation({
-        mutationFn: ({ profile, apply }: { profile: StyleProfileSnapshot; apply: boolean }) => editor?.entityId
-            ? updateStyleProfile(editor.entityId, serializeStyleProfile(profile)).then((result) => ({ ...result, apply }))
-            : createStyleProfile(serializeStyleProfile(profile)).then((result) => ({ ...result, apply })),
+        mutationFn: ({ profile, apply }: { profile: StyleProfileSnapshot; apply: boolean }) =>
+            editor?.entityId ? updateStyleProfile(editor.entityId, serializeStyleProfile(profile)).then((result) => ({ ...result, apply })) : createStyleProfile(serializeStyleProfile(profile)).then((result) => ({ ...result, apply })),
         onSuccess: async ({ profile, apply }) => {
             await queryClient.invalidateQueries({ queryKey: ["style-profiles"] });
             const preset = userStylePreset(profile);
             setEditor(null);
             setTab("mine");
-            message.success("风格已保存到“我的风格”");
+            message.success(t("styleCenterUi.styleSaved"));
             if (apply && preset) selectItem({ kind: "user", preset, entity: profile });
         },
-        onError: (error) => message.error(error instanceof Error ? error.message : "风格保存失败"),
+        onError: (error) => message.error(error instanceof Error ? error.message : t("styleCenterUi.styleSaveFailed")),
     });
     const favoriteMutation = useMutation({
         mutationFn: ({ id, favorite }: { id: string; favorite: boolean }) => setStyleProfileFavorite(id, favorite),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["style-profiles"] }),
-        onError: (error) => message.error(error instanceof Error ? error.message : "收藏状态更新失败"),
+        onError: (error) => message.error(error instanceof Error ? error.message : t("skillsUi.updateFavoriteFailed")),
     });
     const deleteMutation = useMutation({
         mutationFn: deleteStyleProfile,
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["style-profiles"] }); message.success("风格已删除"); },
-        onError: (error) => message.error(error instanceof Error ? error.message : "风格删除失败"),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["style-profiles"] });
+            message.success(t("styleCenterUi.styleDeleted"));
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : t("styleCenterUi.styleDeleteFailed")),
     });
-
     function selectItem(item: StyleLibraryItem) {
         if (applying) return;
         const { preset } = item;
         const next = [preset.id, ...recentIds.filter((id) => id !== preset.id)].slice(0, 12);
         setRecentIds(next);
         localStorage.setItem(STYLE_RECENT_KEY, JSON.stringify(next));
-        if (item.kind === "user") void touchStyleProfile(item.entity.id).then(() => queryClient.invalidateQueries({ queryKey: ["style-profiles"] })).catch((error) => message.warning(error instanceof Error ? error.message : "最近使用记录更新失败"));
+        if (item.kind === "user")
+            void touchStyleProfile(item.entity.id)
+                .then(() => queryClient.invalidateQueries({ queryKey: ["style-profiles"] }))
+                .catch((error) => message.warning(error instanceof Error ? error.message : t("styleCenterUi.recentUpdateFailed")));
         onSelect(preset);
     }
     function toggleSystemFavorite(presetId: string) {
@@ -528,77 +533,129 @@ export function CanvasStylePickerModal({ open, value, currentProfile, startInEdi
         setEditor({ profile: blankUserStyle() });
     }
     function copyPreset(preset: CanvasStylePreset) {
-        setEditor({ profile: editableCopy(preset.profile || createStyleProfileSnapshot(preset), undefined, `${preset.title} 副本`, preset.imageUrl) });
+        setEditor({ profile: editableCopy(preset.profile || createStyleProfileSnapshot(preset), undefined, t("styleCenterUi.copyName", { name: preset.title }), preset.imageUrl) });
     }
     function confirmDelete(entity: UserStyleProfile) {
-        modal.confirm({ title: `删除“${entity.name}”？`, content: "项目中已经保存的快照不会被删除，但该风格将从“我的风格”中移除。", okText: "删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: () => deleteMutation.mutateAsync(entity.id) });
+        modal.confirm({
+            title: t("styleCenterUi.deleteStyle", { name: entity.name }),
+            content: t("styleCenterUi.deleteStyleWarning"),
+            okText: t("canvasLibraryDelete"),
+            cancelText: t("timelineCancel"),
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutateAsync(entity.id),
+        });
     }
-
     return (
         <>
-            <Modal rootClassName="canvas-style-picker-modal" open={open} title={null} footer={null} centered width="min(1240px, calc(100vw - 24px))" onCancel={onClose} styles={{ container: { padding: 0 }, body: { padding: 0 } }}>
+            <AppModal rootClassName="canvas-style-picker-modal" open={open} title={null} footer={null} centered width="min(1240px, calc(100vw - 24px))" onCancel={onClose} flush>
                 <div className="canvas-style-center-shell flex min-h-0 flex-col overflow-hidden" style={{ color: theme.node.text, background: theme.node.panel }}>
                     <header className="flex min-h-16 flex-col gap-3 border-b px-4 py-3 pr-12 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:pr-14" style={{ borderColor: theme.node.stroke }}>
                         <div className="min-w-0">
-                            <h2 className="text-base font-semibold">风格中心</h2>
-                            <p className="mt-0.5 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>系统规范 · 个人风格 · 项目快照</p>
+                            <h2 className="text-base font-semibold">{t("styleCenterUi.centerTitle")}</h2>
+                            <p className="mt-0.5 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                                {t("styleCenterUi.centerSubtitle")}
+                            </p>
                         </div>
                         <div className="flex min-w-0 gap-2 sm:items-center">
-                            <Input allowClear className="style-center-search min-w-0 flex-1" prefix={<Search className="size-3.5 text-foreground/35" />} value={query} placeholder="搜索风格、题材或媒介" onChange={(event) => setQuery(event.target.value)} />
-                            <Button type="primary" className="shrink-0" icon={<Plus className="size-3.5" />} onClick={createNewStyle}>新建风格</Button>
+                            <Input
+                                allowClear
+                                className="style-center-search min-w-0 flex-1"
+                                prefix={<Search className="size-3.5 text-foreground/35" />}
+                                value={query}
+                                placeholder={t("styleCenterUi.searchStyles")}
+                                onChange={(event) => setQuery(event.target.value)}
+                            />
+                            <Button type="primary" className="shrink-0" icon={<Plus className="size-3.5" />} onClick={createNewStyle}>
+                                {t("styleCenterUi.createStyle")}
+                            </Button>
                         </div>
                     </header>
                     <div className="style-center-workspace grid min-h-0 flex-1">
                         <aside className="style-center-sidebar thin-scrollbar min-h-0 overflow-auto border-b p-2 sm:p-3 lg:border-b-0 lg:border-r" style={{ borderColor: theme.node.stroke }}>
-                            <nav className="style-center-primary-nav flex gap-1 lg:flex-col" aria-label="风格中心视图">
-                                <StyleCenterNavItem active={tab === "system"} icon={<Palette className="size-3.5" />} label="系统风格" count={systemItems.length} onClick={() => setTab("system")} />
-                                <StyleCenterNavItem active={tab === "mine"} icon={<UserRound className="size-3.5" />} label="我的风格" count={userItems.length} onClick={() => setTab("mine")} />
-                                <StyleCenterNavItem active={tab === "favorites"} icon={<Star className="size-3.5" />} label="收藏" onClick={() => setTab("favorites")} />
-                                <StyleCenterNavItem active={tab === "recent"} icon={<Clock3 className="size-3.5" />} label="最近使用" onClick={() => setTab("recent")} />
+                            <nav className="style-center-primary-nav flex gap-1 lg:flex-col" aria-label={t("styleCenterUi.centerViews")}>
+                                <StyleCenterNavItem active={tab === "system"} icon={<Palette className="size-3.5" />} label={t("styleCenterUi.systemStyles")} count={systemItems.length} onClick={() => setTab("system")} />
+                                <StyleCenterNavItem active={tab === "mine"} icon={<UserRound className="size-3.5" />} label={t("styleToolsUi.myStyles")} count={userItems.length} onClick={() => setTab("mine")} />
+                                <StyleCenterNavItem active={tab === "favorites"} icon={<Star className="size-3.5" />} label={t("skillsUi.favorite")} onClick={() => setTab("favorites")} />
+                                <StyleCenterNavItem active={tab === "recent"} icon={<Clock3 className="size-3.5" />} label={t("styleCenterUi.recentStyles")} onClick={() => setTab("recent")} />
                             </nav>
                             {tab === "system" ? (
                                 <div className="style-center-category-panel mt-2 border-t pt-2 lg:mt-4 lg:pt-3" style={{ borderColor: theme.node.stroke }}>
-                                    <div className="hidden px-2 pb-1.5 text-[var(--fs-tiny)] font-medium lg:block" style={{ color: theme.node.muted }}>分类</div>
-                                    <nav className="style-center-category-nav flex gap-1 lg:flex-col" aria-label="系统风格分类">
-                                        {categories.map((item) => <button key={item} type="button" aria-current={category === item ? "page" : undefined} className={`style-center-category-item h-9 shrink-0 rounded-md px-2.5 text-left text-xs outline-none transition-colors focus-visible:ring-2 ${category === item ? "is-active font-medium" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}
+                                    <div className="hidden px-2 pb-2 text-[var(--fs-tiny)] font-medium lg:block" style={{ color: theme.node.muted }}>
+                                        {t("galleryCategory")}
+                                    </div>
+                                    <nav className="style-center-category-nav flex gap-1 lg:flex-col" aria-label={t("styleCenterUi.systemCategories")}>
+                                        {categories.map((item) => (
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                aria-current={category === item ? "page" : undefined}
+                                                className={`style-center-category-item h-9 shrink-0 rounded-md px-2 text-left text-xs outline-none transition-colors focus-visible:ring-2 ${category === item ? "is-active font-medium" : ""}`}
+                                                onClick={() => setCategory(item)}
+                                            >
+                                                {styleCategoryLabel(item, t)}
+                                            </button>
+                                        ))}
                                     </nav>
                                 </div>
                             ) : null}
                         </aside>
                         <main className="flex min-h-0 min-w-0 flex-col">
                             <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b px-3 sm:px-4" style={{ borderColor: theme.node.stroke }}>
-                                <div className="min-w-0 truncate text-xs font-medium">{styleCenterViewTitle(tab, category)}</div>
-                                <div className="shrink-0 text-[var(--fs-tiny)] tabular-nums" style={{ color: theme.node.muted }}>{visibleItems.length} 个风格</div>
+                                <div className="min-w-0 truncate text-xs font-medium">{styleCenterViewTitle(tab, category, t)}</div>
+                                <div className="shrink-0 text-[var(--fs-tiny)] tabular-nums" style={{ color: theme.node.muted }}>
+                                    {t("styleCenterUi.styleCount", { count: visibleItems.length })}
+                                </div>
                             </div>
                             <div className="style-center-grid thin-scrollbar min-h-0 flex-1 content-start overflow-y-auto p-3 sm:p-4">
-                            {visibleItems.map((item) => (
-                                <StyleCenterCard
-                                    key={`${item.kind}-${item.preset.id}`}
-                                    item={item}
-                                    active={item.preset.id === value}
-                                    applying={applying}
-                                    favorite={item.kind === "user" ? item.entity.favorite : systemFavoriteIds.includes(item.preset.id)}
-                                    theme={theme}
-                                    onApply={() => selectItem(item)}
-                                    onDetail={() => setDetailPreset(item.preset)}
-                                    onFavorite={() => item.kind === "user" ? favoriteMutation.mutate({ id: item.entity.id, favorite: !item.entity.favorite }) : toggleSystemFavorite(item.preset.id)}
-                                    onCopy={() => copyPreset(item.preset)}
-                                    onEdit={item.kind === "user" ? () => setEditor({ profile: editableCopy(item.preset.profile!, item.entity.id), entityId: item.entity.id }) : undefined}
-                                    onDelete={item.kind === "user" ? () => confirmDelete(item.entity) : undefined}
-                                />
-                            ))}
-                            {!visibleItems.length ? <EmptyStyleCenter tab={tab} loading={profilesQuery.isLoading} failed={profilesQuery.isError} color={theme.node.muted} onCreate={createNewStyle} onBrowse={() => { setTab("system"); setQuery(""); }} /> : null}
+                                {visibleItems.map((item) => (
+                                    <StyleCenterCard
+                                        key={`${item.kind}-${item.preset.id}`}
+                                        item={item}
+                                        active={item.preset.id === value}
+                                        applying={applying}
+                                        favorite={item.kind === "user" ? item.entity.favorite : systemFavoriteIds.includes(item.preset.id)}
+                                        theme={theme}
+                                        onApply={() => selectItem(item)}
+                                        onDetail={() => setDetailPreset(item.preset)}
+                                        onFavorite={() => (item.kind === "user" ? favoriteMutation.mutate({ id: item.entity.id, favorite: !item.entity.favorite }) : toggleSystemFavorite(item.preset.id))}
+                                        onCopy={() => copyPreset(item.preset)}
+                                        onEdit={item.kind === "user" ? () => setEditor({ profile: editableCopy(item.preset.profile!, item.entity.id), entityId: item.entity.id }) : undefined}
+                                        onDelete={item.kind === "user" ? () => confirmDelete(item.entity) : undefined}
+                                    />
+                                ))}
+                                {!visibleItems.length ? (
+                                    <EmptyStyleCenter
+                                        tab={tab}
+                                        loading={profilesQuery.isLoading}
+                                        failed={profilesQuery.isError}
+                                        color={theme.node.muted}
+                                        onCreate={createNewStyle}
+                                        onBrowse={() => {
+                                            setTab("system");
+                                            setQuery("");
+                                        }}
+                                    />
+                                ) : null}
                             </div>
                         </main>
                     </div>
                 </div>
-            </Modal>
-            <CanvasStyleDetailModal open={Boolean(detailPreset)} preset={detailPreset} selected={detailPreset?.id === value} onClose={() => setDetailPreset(null)} onSelect={(preset) => { setDetailPreset(null); const item = [...systemItems, ...userItems].find((candidate) => candidate.preset.id === preset.id); if (item) selectItem(item); }} />
+            </AppModal>
+            <CanvasStyleDetailModal
+                open={Boolean(detailPreset)}
+                preset={detailPreset}
+                selected={detailPreset?.id === value}
+                onClose={() => setDetailPreset(null)}
+                onSelect={(preset) => {
+                    setDetailPreset(null);
+                    const item = [...systemItems, ...userItems].find((candidate) => candidate.preset.id === preset.id);
+                    if (item) selectItem(item);
+                }}
+            />
             <StyleProfileEditorModal open={Boolean(editor)} initialProfile={editor?.profile || null} saving={saveMutation.isPending} onClose={() => setEditor(null)} onSave={(profile, apply) => saveMutation.mutate({ profile, apply })} />
         </>
     );
 }
-
 function readStyleIds(key: string) {
     try {
         const parsed = JSON.parse(localStorage.getItem(key) || "[]");
@@ -607,108 +664,314 @@ function readStyleIds(key: string) {
         return [];
     }
 }
-
-function StyleCenterCard({ item, active, applying, favorite, theme, onApply, onDetail, onFavorite, onCopy, onEdit, onDelete }: { item: StyleLibraryItem; active: boolean; applying: boolean; favorite: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onApply: () => void; onDetail: () => void; onFavorite: () => void; onCopy: () => void; onEdit?: () => void; onDelete?: () => void }) {
+function StyleCenterCard({
+    item,
+    active,
+    applying,
+    favorite,
+    theme,
+    onApply,
+    onDetail,
+    onFavorite,
+    onCopy,
+    onEdit,
+    onDelete,
+}: {
+    item: StyleLibraryItem;
+    active: boolean;
+    applying: boolean;
+    favorite: boolean;
+    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    onApply: () => void;
+    onDetail: () => void;
+    onFavorite: () => void;
+    onCopy: () => void;
+    onEdit?: () => void;
+    onDelete?: () => void;
+}) {
+    const { t } = useInterfaceTranslation();
     const { preset } = item;
     return (
-        <article className={`style-center-card group flex min-w-0 flex-col overflow-hidden rounded-md border ${active ? "is-active" : ""}`} style={{ background: theme.canvas.background, borderColor: active ? theme.node.activeStroke : theme.node.stroke, boxShadow: active ? `inset 0 0 0 1px ${theme.node.activeStroke}` : undefined }}>
+        <article
+            className={`style-center-card group flex min-w-0 flex-col overflow-hidden rounded-md border ${active ? "is-active" : ""}`}
+            style={{ background: theme.canvas.background, borderColor: active ? theme.node.activeStroke : theme.node.stroke, boxShadow: active ? `inset 0 0 0 1px ${theme.node.activeStroke}` : undefined }}
+        >
             <div className="relative overflow-hidden border-b" style={{ borderColor: theme.node.stroke }}>
-                <button type="button" className="style-center-card-cover block w-full overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset" style={{ "--tw-ring-color": theme.node.activeStroke } as CSSProperties} onClick={onDetail} aria-label={`查看${preset.title}规范`}>
-                    <img src={preset.imageUrl} width="640" height="360" alt={`${preset.title}画风示意`} className="h-full w-full object-cover transition-transform" />
+                <button
+                    type="button"
+                    className="style-center-card-cover block w-full overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset"
+                    style={{ "--tw-ring-color": theme.node.activeStroke } as CSSProperties}
+                    onClick={onDetail}
+                    aria-label={t("canvasCompleteUi.viewStyleGuide", { value0: preset.title })}
+                >
+                    <img src={preset.imageUrl} width="640" height="360" alt={t("canvasCompleteUi.styleExample", { value0: preset.title })} className="h-full w-full object-cover transition-transform" />
                 </button>
-                <button type="button" className={`style-center-favorite-action absolute right-2 top-2 grid size-8 place-items-center rounded-md outline-none focus-visible:ring-2 ${favorite ? "is-active" : ""}`} onClick={onFavorite} aria-label={favorite ? "取消收藏" : "收藏"} title={favorite ? "取消收藏" : "收藏"}><Star className="size-3.5" fill={favorite ? "currentColor" : "none"} /></button>
+                <button
+                    type="button"
+                    className={`style-center-favorite-action absolute right-2 top-2 grid size-8 place-items-center rounded-md outline-none focus-visible:ring-2 ${favorite ? "is-active" : ""}`}
+                    onClick={onFavorite}
+                    aria-label={favorite ? t("skillsUi.unfavorite") : t("skillsUi.favorite")}
+                    title={favorite ? t("skillsUi.unfavorite") : t("skillsUi.favorite")}
+                >
+                    <Star className="size-3.5" fill={favorite ? "currentColor" : "none"} />
+                </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col px-3 pt-3">
-                <div className="flex min-w-0 items-center gap-2 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}><span className="truncate">{item.kind === "user" ? "我的风格" : preset.category}</span>{active ? <span className="ml-auto flex shrink-0 items-center gap-1 font-medium" style={{ color: theme.node.activeStroke }}><Check className="size-3" />当前</span> : null}</div>
-                <h3 className="mt-1.5 truncate text-sm font-semibold">{preset.title}</h3>
-                <p className="mt-1.5 line-clamp-2 text-xs leading-5" style={{ color: theme.node.muted }}>{preset.description}</p>
-                <div className="mt-2 flex min-h-6 flex-wrap gap-1">{preset.tags.slice(0, 3).map((tag) => <span key={tag} className="rounded bg-foreground/5 px-1.5 py-0.5 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{tag}</span>)}</div>
+                <div className="flex min-w-0 items-center gap-2 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                    <span className="truncate">{item.kind === "user" ? t("styleToolsUi.myStyles") : styleCategoryLabel(preset.category, t)}</span>
+                    {active ? (
+                        <span className="ml-auto flex shrink-0 items-center gap-1 font-medium" style={{ color: theme.node.activeStroke }}>
+                            <Check className="size-3" />
+                            {t("canvasUi.current")}
+                        </span>
+                    ) : null}
+                </div>
+                <h3 className="mt-2 truncate text-sm font-semibold">{preset.title}</h3>
+                <p className="mt-2 line-clamp-2 text-xs leading-5" style={{ color: theme.node.muted }}>
+                    {preset.description}
+                </p>
+                <div className="mt-2 flex min-h-6 flex-wrap gap-1">
+                    {preset.tags.slice(0, 3).map((tag) => (
+                        <span key={tag} className="rounded bg-foreground/5 px-2 py-0.5 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                            {tag}
+                        </span>
+                    ))}
+                </div>
             </div>
             <footer className="mt-2 flex min-h-11 items-center gap-1 border-t px-2" style={{ borderColor: theme.node.stroke }}>
-                <IconAction label="查看规范" onClick={onDetail}><Eye className="size-3.5" /></IconAction>
-                <IconAction label="复制并编辑" onClick={onCopy}><Copy className="size-3.5" /></IconAction>
-                {onEdit ? <IconAction label="编辑风格" onClick={onEdit}><Pencil className="size-3.5" /></IconAction> : null}
-                {onDelete ? <IconAction label="删除风格" danger onClick={onDelete}><Trash2 className="size-3.5" /></IconAction> : null}
-                <Button type="default" size="small" className={`style-center-apply-button ml-auto ${active ? "is-current" : ""}`} disabled={active || applying} icon={active ? <Check className="size-3.5" /> : <Palette className="size-3.5" />} onClick={onApply}>{active ? "当前" : "应用"}</Button>
+                <IconAction label={t("canvasCompleteUi.viewGuide")} onClick={onDetail}>
+                    <Eye className="size-3.5" />
+                </IconAction>
+                <IconAction label={t("canvasCompleteUi.copyAndEdit")} onClick={onCopy}>
+                    <Copy className="size-3.5" />
+                </IconAction>
+                {onEdit ? (
+                    <IconAction label={t("canvasCompleteUi.editStyle")} onClick={onEdit}>
+                        <Pencil className="size-3.5" />
+                    </IconAction>
+                ) : null}
+                {onDelete ? (
+                    <IconAction label={t("canvasCompleteUi.deleteStyle")} danger onClick={onDelete}>
+                        <Trash2 className="size-3.5" />
+                    </IconAction>
+                ) : null}
+                <Button
+                    type="default"
+                    size="small"
+                    className={`style-center-apply-button ml-auto ${active ? "is-current" : ""}`}
+                    disabled={active || applying}
+                    icon={active ? <Check className="size-3.5" /> : <Palette className="size-3.5" />}
+                    onClick={onApply}
+                >
+                    {active ? t("canvasUi.current") : t("imageSizePickerUiApply")}
+                </Button>
             </footer>
         </article>
     );
 }
-
 function IconAction({ label, danger = false, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: ReactNode }) {
-    return <button type="button" className={`style-center-icon-action grid size-8 place-items-center rounded-md outline-none focus-visible:ring-2 ${danger ? "is-danger" : ""}`} onClick={onClick} aria-label={label} title={label}>{children}</button>;
+    return (
+        <button type="button" className={`style-center-icon-action grid size-8 place-items-center rounded-md outline-none focus-visible:ring-2 ${danger ? "is-danger" : ""}`} onClick={onClick} aria-label={label} title={label}>
+            {children}
+        </button>
+    );
 }
-
 function StyleCenterNavItem({ active, icon, label, count, onClick }: { active: boolean; icon: ReactNode; label: string; count?: number; onClick: () => void }) {
-    return <button type="button" aria-current={active ? "page" : undefined} className={`style-center-nav-item flex h-11 min-w-fit items-center gap-2 rounded-md px-2.5 text-xs outline-none transition-colors focus-visible:ring-2 lg:w-full ${active ? "is-active font-medium" : ""}`} onClick={onClick}>{icon}<span className="whitespace-nowrap">{label}</span>{count !== undefined ? <span className="ml-auto tabular-nums opacity-55">{count}</span> : null}</button>;
+    return (
+        <button
+            type="button"
+            aria-current={active ? "page" : undefined}
+            className={`style-center-nav-item flex h-11 min-w-fit items-center gap-2 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-2 lg:w-full ${active ? "is-active font-medium" : ""}`}
+            onClick={onClick}
+        >
+            {icon}
+            <span className="whitespace-nowrap">{label}</span>
+            {count !== undefined ? <span className="ml-auto tabular-nums opacity-55">{count}</span> : null}
+        </button>
+    );
 }
-
-function styleCenterViewTitle(tab: StyleCenterTab, category: string) {
-    if (tab === "mine") return "我的风格";
-    if (tab === "favorites") return "收藏风格";
-    if (tab === "recent") return "最近使用";
-    return category === "全部" ? "全部系统风格" : category;
+function styleCategoryLabel(category: string, t: InterfaceTranslate) {
+    const keys: Readonly<Partial<Record<string, InterfaceMessageKey>>> = {
+        all: "previewAll",
+        三维动画: "styleCenterUi.category3d",
+        二维动画: "styleCenterUi.category2d",
+        定格动画: "styleCenterUi.categoryStopMotion",
+        年代实拍: "styleCenterUi.categoryPeriod",
+        插画动画: "styleCenterUi.categoryIllustrated",
+        真人实拍: "styleCenterUi.categoryLiveAction",
+        科幻动画: "styleCenterUi.categorySciFiAnimation",
+        科幻实拍: "styleCenterUi.categorySciFiLiveAction",
+        风格化动画: "styleCenterUi.categoryStylizedAnimation",
+        风格化实拍: "styleCenterUi.categoryStylizedLiveAction",
+    };
+    const key = keys[category];
+    return key ? t(key) : category;
 }
-
+function styleCenterViewTitle(tab: StyleCenterTab, category: string, t: InterfaceTranslate) {
+    if (tab === "mine") return t("styleToolsUi.myStyles");
+    if (tab === "favorites") return t("styleCenterUi.favoriteStyles");
+    if (tab === "recent") return t("styleCenterUi.recentStyles");
+    return category === "all" ? t("styleCenterUi.allSystemStyles") : styleCategoryLabel(category, t);
+}
 function EmptyStyleCenter({ tab, loading, failed, color, onCreate, onBrowse }: { tab: StyleCenterTab; loading: boolean; failed: boolean; color: string; onCreate: () => void; onBrowse: () => void }) {
-    return <div className="col-span-full grid min-h-64 place-items-center text-center"><div><Search className="mx-auto size-5" style={{ color }} /><p className="mt-2 text-xs font-medium">{loading ? "正在加载风格库" : failed && tab !== "system" ? "我的风格加载失败，请检查登录状态或后端服务" : tab === "mine" ? "还没有自己的风格" : tab === "favorites" ? "还没有收藏风格" : tab === "recent" ? "还没有使用记录" : "没有匹配的系统风格"}</p><div className="mt-3 flex justify-center gap-2">{tab === "mine" && !failed ? <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreate}>新建风格</Button> : null}<Button size="small" onClick={onBrowse}>浏览系统风格</Button></div></div></div>;
+    const { t } = useInterfaceTranslation();
+    return (
+        <div className="col-span-full grid min-h-64 place-items-center text-center">
+            <div>
+                <Search className="mx-auto size-5" style={{ color }} />
+                <p className="mt-2 text-xs font-medium">
+                    {loading
+                        ? t("styleCenterUi.loadingStyles")
+                        : failed && tab !== "system"
+                          ? t("styleCenterUi.stylesLoadFailed")
+                          : tab === "mine"
+                            ? t("styleCenterUi.noOwnStyles")
+                            : tab === "favorites"
+                              ? t("styleCenterUi.noFavoriteStyles")
+                              : tab === "recent"
+                                ? t("styleCenterUi.noRecentStyles")
+                                : t("styleCenterUi.noMatchingSystemStyles")}
+                </p>
+                <div className="mt-3 flex justify-center gap-2">
+                    {tab === "mine" && !failed ? (
+                        <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreate}>
+                            {t("styleCenterUi.createStyle")}
+                        </Button>
+                    ) : null}
+                    <Button size="small" onClick={onBrowse}>
+                        {t("styleCenterUi.browseSystemStyles")}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
 }
-
-function userStylePreset(entity: UserStyleProfile): CanvasStylePreset | null {
+export function userStylePreset(entity: UserStyleProfile): CanvasStylePreset | null {
     const profile = parseStyleProfile(entity.profileJson);
     if (!profile) return null;
-    return { id: profile.presetId, title: profile.title, category: "我的风格", description: profile.description, tags: [...profile.tags], prompt: profile.prompt, imageUrl: profile.coverUrl || entity.coverUrl || "/short-drama-styles/real-life.jpg", profile };
+    return {
+        id: profile.presetId,
+        title: profile.title,
+        category: "我的风格",
+        description: profile.description,
+        tags: [...profile.tags],
+        prompt: profile.prompt,
+        imageUrl: profile.coverUrl || entity.coverUrl || "/short-drama-styles/real-life.jpg",
+        profile,
+    };
 }
-
 function blankUserStyle(): StyleProfileSnapshot {
     return createStyleProfileSnapshot({ presetId: `draft-${nanoid()}`, title: "未命名风格", description: "", tags: [], prompt: "", assets: [], source: "user", revision: 1 });
 }
-
 function editableCopy(profile: StyleProfileSnapshot, entityId?: string, title?: string, coverUrl?: string): StyleProfileSnapshot {
     return createStyleProfileSnapshot({ ...profile, presetId: entityId || `draft-${nanoid()}`, sourceProfileId: entityId, title: title || profile.title, coverUrl: profile.coverUrl || coverUrl, source: "user", revision: entityId ? profile.revision : 1 });
 }
-
 export function CanvasStyleDetailModal({ open, preset, selected = false, onClose, onSelect }: { open: boolean; preset: CanvasStylePreset | null; selected?: boolean; onClose: () => void; onSelect?: (preset: CanvasStylePreset) => void }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useInterfaceTranslation();
+    const theme = canvasThemes[useActiveTheme()];
     const sections = preset ? parseStyleSections(preset.prompt) : [];
     return (
-        <Modal rootClassName="canvas-style-detail-modal" open={open} title={null} footer={null} centered destroyOnHidden width="min(820px, calc(100vw - 24px))" onCancel={onClose} styles={{ container: { padding: 0 }, body: { padding: 0 } }}>
-            {preset ? <div className="canvas-style-detail-shell flex flex-col overflow-hidden" style={{ color: theme.node.text, background: theme.node.panel }}>
-                <div className="flex h-44 shrink-0 items-center justify-center overflow-hidden border-b sm:h-52" style={{ borderColor: theme.node.stroke, background: theme.canvas.background }}>
-                    <img src={preset.imageUrl} width="960" height="540" alt={`${preset.title}画风示意`} className="h-full w-full object-contain" style={preset.id === "black-white-noir" ? { filter: "grayscale(1) contrast(1.08)" } : undefined} />
+        <AppModal rootClassName="canvas-style-detail-modal" open={open} title={null} footer={null} centered destroyOnHidden width="min(820px, calc(100vw - 24px))" onCancel={onClose} flush>
+            {preset ? (
+                <div className="canvas-style-detail-shell flex flex-col overflow-hidden" style={{ color: theme.node.text, background: theme.node.panel }}>
+                    <div className="flex h-44 shrink-0 items-center justify-center overflow-hidden border-b sm:h-52" style={{ borderColor: theme.node.stroke, background: theme.canvas.background }}>
+                        <img
+                            src={preset.imageUrl}
+                            width="960"
+                            height="540"
+                            alt={t("canvasCompleteUi.styleExample", { value0: preset.title })}
+                            className="h-full w-full object-contain"
+                            style={preset.id === "black-white-noir" ? { filter: "grayscale(1) contrast(1.08)" } : undefined}
+                        />
+                    </div>
+                    <header className="border-b px-4 py-3 pr-12 sm:px-5 sm:pr-12" style={{ borderColor: theme.node.stroke }}>
+                        <div className="flex items-center gap-2 text-[var(--fs-tiny)] font-medium" style={{ color: theme.node.activeStroke }}>
+                            <span>{preset.category}</span>
+                            <span className="flex items-center gap-1" style={{ color: theme.node.muted }}>
+                                <SlidersHorizontal className="size-3" />
+                                {preset.profile?.assets.length ? t("canvasCompleteUi.executionAssetCount", { value0: preset.profile.assets.length }) : t("coverageUi.474")}
+                            </span>
+                        </div>
+                        <h2 className="mt-1 text-base font-semibold">{preset.title}</h2>
+                        <p className="mt-2 text-xs leading-5" style={{ color: theme.node.muted }}>
+                            {preset.description}
+                        </p>
+                    </header>
+                    <div className="grid shrink-0 grid-cols-3 divide-x border-b text-[var(--fs-tiny)]" style={{ borderColor: theme.node.stroke }}>
+                        <StyleDetailMetric label={t("canvasCompleteUi.executionMode")} value={t(preset.profile?.assets.length ? "coverageUi.475" : "coverageUi.474")} muted={theme.node.muted} />
+                        <StyleDetailMetric label={t("styleToolsUi.executionPolicy")} value={preset.profile?.executionPolicy === "strict-assets" ? t("completeUi.040") : t("styleToolsUi.compatibleFallback")} muted={theme.node.muted} />
+                        <StyleDetailMetric label={t("canvasCompleteUi.snapshotVersion")} value={`r${preset.profile?.revision || 1}`} muted={theme.node.muted} />
+                    </div>
+                    <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-5">
+                        {preset.profile?.assets.length ? (
+                            <section className="border-b py-3" style={{ borderColor: theme.node.stroke }}>
+                                <h3 className="text-xs font-semibold">{t("styleToolsUi.executionAssetLabel")}</h3>
+                                <div className="mt-2 divide-y" style={{ borderColor: theme.node.stroke }}>
+                                    {preset.profile.assets.map((asset) => (
+                                        <div key={asset.id} className="flex items-center justify-between gap-3 py-2 text-xs">
+                                            <span className="min-w-0">
+                                                <span className="block truncate font-medium">{asset.title}</span>
+                                                <span className="mt-0.5 block text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                                                    {kindOptionsLabel(asset.kind, t)} · {asset.provider}
+                                                </span>
+                                            </span>
+                                            <span className="shrink-0 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
+                                                {asset.status === "validated" ? t("styleToolsUi.validated") : asset.status === "unavailable" ? t("modelUi.unavailable") : t("styleToolsUi.pendingValidation")}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        ) : null}
+                        {sections.map((section) => (
+                            <section key={section.title} className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}>
+                                <h3 className="text-xs font-semibold">{section.title}</h3>
+                                <p className="mt-2 text-xs leading-5" style={{ color: theme.node.muted }}>
+                                    {section.content}
+                                </p>
+                            </section>
+                        ))}
+                        {preset.profile?.negativePrompt ? (
+                            <section className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}>
+                                <h3 className="text-xs font-semibold">{t("canvasCompleteUi.globalNegative")}</h3>
+                                <p className="mt-2 whitespace-pre-wrap text-xs leading-5" style={{ color: theme.node.muted }}>
+                                    {preset.profile.negativePrompt}
+                                </p>
+                            </section>
+                        ) : null}
+                    </div>
+                    <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t px-4 py-3 sm:px-5" style={{ borderColor: theme.node.stroke }}>
+                        <Button onClick={onClose}>{t("canvasImportClose")}</Button>
+                        {onSelect ? (
+                            <Button type="primary" disabled={selected} icon={selected ? <Check className="size-3.5" /> : <Palette className="size-3.5" />} onClick={() => onSelect(preset)}>
+                                {selected ? t("coverageUi.476") : t("coverageUi.477")}
+                            </Button>
+                        ) : null}
+                    </footer>
                 </div>
-                <header className="border-b px-4 py-3 pr-12 sm:px-5 sm:pr-12" style={{ borderColor: theme.node.stroke }}>
-                    <div className="flex items-center gap-2 text-[var(--fs-tiny)] font-medium" style={{ color: theme.node.activeStroke }}><span>{preset.category}</span><span className="flex items-center gap-1" style={{ color: theme.node.muted }}><SlidersHorizontal className="size-3" />{preset.profile?.assets.length ? `${preset.profile.assets.length} 个执行资产` : "Prompt 通用"}</span></div>
-                    <h2 className="mt-1 text-base font-semibold">{preset.title}</h2>
-                    <p className="mt-1.5 text-xs leading-5" style={{ color: theme.node.muted }}>{preset.description}</p>
-                </header>
-                <div className="grid shrink-0 grid-cols-3 divide-x border-b text-[var(--fs-tiny)]" style={{ borderColor: theme.node.stroke }}>
-                    <StyleDetailMetric label="执行方式" value={preset.profile?.assets.length ? "组合资产" : "Prompt 通用"} muted={theme.node.muted} />
-                    <StyleDetailMetric label="执行策略" value={preset.profile?.executionPolicy === "strict-assets" ? "严格校验" : "兼容降级"} muted={theme.node.muted} />
-                    <StyleDetailMetric label="快照版本" value={`r${preset.profile?.revision || 1}`} muted={theme.node.muted} />
-                </div>
-                <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-5">
-                    {preset.profile?.assets.length ? <section className="border-b py-3" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">执行资产</h3><div className="mt-2 divide-y" style={{ borderColor: theme.node.stroke }}>{preset.profile.assets.map((asset) => <div key={asset.id} className="flex items-center justify-between gap-3 py-2 text-xs"><span className="min-w-0"><span className="block truncate font-medium">{asset.title}</span><span className="mt-0.5 block text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{kindOptionsLabel(asset.kind)} · {asset.provider}</span></span><span className="shrink-0 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>{asset.status === "validated" ? "已验证" : asset.status === "unavailable" ? "不可用" : "待验证"}</span></div>)}</div></section> : null}
-                    {sections.map((section) => <section key={section.title} className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">{section.title}</h3><p className="mt-1.5 text-xs leading-5" style={{ color: theme.node.muted }}>{section.content}</p></section>)}
-                    {preset.profile?.negativePrompt ? <section className="border-b py-3 last:border-b-0" style={{ borderColor: theme.node.stroke }}><h3 className="text-xs font-semibold">全局负面 Prompt</h3><p className="mt-1.5 whitespace-pre-wrap text-xs leading-5" style={{ color: theme.node.muted }}>{preset.profile.negativePrompt}</p></section> : null}
-                </div>
-                <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t px-4 py-3 sm:px-5" style={{ borderColor: theme.node.stroke }}><Button onClick={onClose}>关闭</Button>{onSelect ? <Button type="primary" disabled={selected} icon={selected ? <Check className="size-3.5" /> : <Palette className="size-3.5" />} onClick={() => onSelect(preset)}>{selected ? "当前画风" : "选择该画风"}</Button> : null}</footer>
-            </div> : null}
-        </Modal>
+            ) : null}
+        </AppModal>
     );
 }
-
 function StyleDetailMetric({ label, value, muted }: { label: string; value: string; muted: string }) {
-    return <div className="min-w-0 px-3 py-2.5 text-center"><span className="block" style={{ color: muted }}>{label}</span><span className="mt-0.5 block truncate font-medium">{value}</span></div>;
+    return (
+        <div className="min-w-0 px-3 py-2 text-center">
+            <span className="block" style={{ color: muted }}>
+                {label}
+            </span>
+            <span className="mt-0.5 block truncate font-medium">{value}</span>
+        </div>
+    );
 }
-
-function kindOptionsLabel(kind: string) {
-    return kind === "lora" ? "LoRA" : kind === "template" ? "图片模板" : kind === "reference" ? "参考图组" : "提示词模块";
+function kindOptionsLabel(kind: string, t: InterfaceTranslate) {
+    return kind === "lora" ? "LoRA" : t(kind === "template" ? "styleToolsUi.imageTemplate" : kind === "reference" ? "styleToolsUi.referenceGroup" : "styleToolsUi.promptModule");
 }
-
 function parseStyleSections(prompt: string) {
-    return prompt.split("\n").map((line) => {
-        const match = line.match(/^【([^】]+)】(.*)$/);
-        return match ? { title: match[1], content: match[2] } : { title: "补充规范", content: line };
-    }).filter((section) => section.content);
+    return prompt
+        .split("\n")
+        .map((line) => {
+            const match = line.match(/^【([^】]+)】(.*)$/);
+            return match ? { title: match[1], content: match[2] } : { title: "补充规范", content: line };
+        })
+        .filter((section) => section.content);
 }

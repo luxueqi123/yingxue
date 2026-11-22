@@ -1,0 +1,169 @@
+bun test v1.4.0 (34cbb9a40)
+
+test\user-scoped-generation-persistence.test.ts:
+(pass) creation recovery observes streaming text tasks after reload [34.31ms]
+(pass) creation recovery restores completed text and terminal status [0.76ms]
+(pass) localforage catalog adapter propagates IndexedDB failures without touching localStorage [0.87ms]
+(pass) Canvas flush rejects a failed catalog write and retries the retained C1 snapshot [14.31ms]
+(pass) ordinary Asset add update and remove survive a failed catalog flush and retry [8.18ms]
+(pass) generation Asset catalog failure stays retryable by the same effect key without losing tombstones [9.01ms]
+(pass) account switching rejects a failed old-scope flush and retries it before changing scope [5.01ms]
+(pass) Create pending conversations stay in their account and cannot be consumed after login switches [1.02ms]
+(pass) asset writes freeze account scope and user switching drains the previous account queue [8.16ms]
+(pass) late asset snapshots rebase field deltas and preserve explicit deletion through IndexedDB [4.04ms]
+(pass) generation asset insertion preserves a durable deletion and schedules no trailing snapshot [3.84ms]
+(pass) generation Asset publication preserves an ordinary edit queued behind its stale durable read [4.49ms]
+(pass) concurrent Canvas generation effects retain both results without crossing project or user scope [14.37ms]
+(pass) queued regular Canvas writes cannot overwrite a completed generation effect [13.28ms]
+(pass) Canvas generation final read preserves an ordinary edit queued after the queue drain [4.67ms]
+(pass) late Canvas snapshots rebase field deltas and preserve explicit deletions through IndexedDB [4.94ms]
+(pass) Canvas generation commits only its delta and rejects a concurrently deleted target [6.68ms]
+(pass) concurrent Canvas effects that change the same node field fail closed instead of merging both effect stamps [1.75ms]
+(pass) Canvas storage rebase reports concurrent field conflicts for every non-node entity [2.59ms]
+(pass) ordinary Canvas queue flush cannot publish a losing generation stamp before the dedicated conflict check [6.24ms]
+(pass) dedicated Canvas conflict reconciles the mounted live page generation state without rolling back newer ordinary edits [4.71ms]
+(pass) failed Canvas generation rolls back its fields without losing a concurrent edit on the same node [2.72ms]
+(pass) cinematic continuation durable ack failure restores mounted pending sessions across all production entry modes [32.39ms]
+(pass) cinematic continuation rollback reverts only unacknowledged canvas entities and preserves later ordinary edits [36.03ms]
+(pass) cinematic active rollback restores previous only while live still equals attempted [8.18ms]
+(pass) cinematic shared boundary derives attempted active chat from the completed live session state [0.47ms]
+(pass) resume cinematic continuation preserves a non-current active chat across failure switches [10.00ms]
+(pass) resume cinematic continuation persists the real completed active chat on success [6.11ms]
+(pass) cinematic generation commit point survives an abort fired after the durable setItem resolves [12.23ms]
+(pass) cinematic committed generation survives later ordinary persistence and final-read errors [6.23ms]
+(pass) ordinary persistence never publishes generation stamps for a newly imported Canvas project [1.88ms]
+(pass) Canvas generation persistence preserves an explicit null previous active chat id [2.23ms]
+(pass) Canvas generation persistence fails closed before durable writes when Web Locks are unavailable [1.59ms]
+(pass) an aborted Canvas generation fence prevents the durable write [1.02ms]
+(pass) account switching aborts and drains generation consumers before activating the next account [2.15ms]
+(pass) account switching keeps new generation consumers closed while old persistence is flushing [2.57ms]
+(pass) an in-flight provider request is aborted and drained before the account changes [1.37ms]
+(pass) StrictMode cleanup replaces only an already-aborted generation consumer controller [0.19ms]
+(pass) account scope transition can hold remote user-data sync paused for its full critical section [0.42ms]
+(pass) account scope transition drains an active remote deletion before entering its critical section [14.96ms]
+(pass) canvas deletion removes the remote project before updating local state [13.49ms]
+(pass) login replaces stale local entities instead of resurrecting remote deletions [6.36ms]
+(pass) remote resource preparation never overwrites an edit made while upload is in flight [18.47ms]
+(pass) failed remote baseline cannot upload stale local cache [5.70ms]
+2757 |                 self._wrapLibraryMethodsWithReady();
+2758 |                 self._initDriver = initDriver(supportedDrivers);
+2759 |             });
+2760 |         })["catch"](function () {
+2761 |             setDriverToConfig();
+2762 |             var error = new Error('No available storage method found.');
+                                   ^
+error: No available storage method found.
+      at D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\node_modules\localforage\dist\localforage.js:2762:29
+(fail) incremental sessions leave cached entities untouched and fetch only the opened canvas [11.38ms]
+4475 |         const secondError = await second;
+4476 |         expect(firstError).toBeInstanceOf(Error);
+4477 |         expect(secondError).toBeInstanceOf(Error);
+4478 |         expect((firstError as Error).message).toContain("detail unavailable");
+4479 |         expect((secondError as Error).message).toContain("detail unavailable");
+4480 |         expect(requests).toEqual(["get /canvas-projects/concurrent-open"]);
+                                ^
+error: expect(received).toEqual(expected)
+
+  [
+    "get /canvas-projects/concurrent-open",
++   "get /canvas-projects/concurrent-open",
+  ]
+
+- Expected  - 0
++ Received  + 1
+
+      at <anonymous> (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4480:26)
+(fail) concurrent canvas opens share one remote detail request [5.45ms]
+4506 |     try {
+4507 |         resetRemoteUserDataSync();
+4508 |         useCanvasStore.setState({ projects: [cached] });
+4509 |         await initializeRemoteUserDataSession("latched-conflict-owner");
+4510 |         useCanvasStore.getState().renameProject(cached.id, "Edited locally");
+4511 |         await expect(saveRemoteUserDataNow()).resolves.toBeUndefined();
+                                                              ^
+error: expect(received).resolves.toBeUndefined()
+
+Expected promise that resolves
+Received promise that rejected: Promise { <rejected> }
+
+      at <anonymous> (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4511:56)
+(fail) remote canvas conflict refreshes the baseline and overwrites once without repeating detail reads [8.93ms]
+(pass) a remote asset page rejects incomplete records instead of patching them into the store [4.73ms]
+(pass) an asset page arriving after account switch cannot populate the new account [2.80ms]
+94 | function modelCatalogChannels(catalog: ModelCatalogResponse): ModelChannel[] {
+95 |     if (catalog.source === "system") {
+96 |         if (!Array.isArray(catalog.channels)) throw new Error("模型目录响应缺少系统渠道列表");
+97 |         return systemChannelModelChannels(catalog.channels);
+98 |     }
+99 |     throw new Error("模型目录响应来源无效");
+                   ^
+error: 模型目录响应来源无效
+      at modelCatalogChannels (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\src\lib\user-session.ts:99:15)
+      at applyUserSession (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\src\lib\user-session.ts:68:27)
+      at async <anonymous> (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4652:15)
+(fail) user session initializes without downloading the full remote snapshot [13.34ms]
+(pass) deleted canvas history rehydrates from the active account scope only [2.19ms]
+(pass) canvas asset repair backfills node and timeline media with one shared asset [4.46ms]
+4836 |         if (failAsset) {
+4837 |             await expect(syncRemoteUserData("account-repair-order")).rejects.toThrow("asset save rejected");
+4838 |             expect(writes.some(item => item.kind === "canvas")).toBe(false);
+4839 |         } else {
+4840 |             await syncRemoteUserData("account-repair-order");
+4841 |             expect(writes.map(item => item.kind)).toEqual([...Array(17).fill("asset"), "canvas"]);
+                                                         ^
+error: expect(received).toEqual(expected)
+
+- [
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "canvas",
+- ]
++ []
+
+- Expected  - 20
++ Received  + 1
+
+      at <anonymous> (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4841:51)
+(fail) login repair persists assets before canvas with bounded concurrency (failure=%s) [10.59ms]
+4832 |     };
+4833 | 
+4834 |     try {
+4835 |         resetRemoteUserDataSync();
+4836 |         if (failAsset) {
+4837 |             await expect(syncRemoteUserData("account-repair-order")).rejects.toThrow("asset save rejected");
+                                                                                    ^
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+
+      at <anonymous> (D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4837:78)
+(fail) login repair persists assets before canvas with bounded concurrency (failure=%s) [8.08ms]
+
+6 tests failed:
+(fail) incremental sessions leave cached entities untouched and fetch only the opened canvas [11.38ms]
+(fail) concurrent canvas opens share one remote detail request [5.45ms]
+(fail) remote canvas conflict refreshes the baseline and overwrites once without repeating detail reads [8.93ms]
+(fail) user session initializes without downloading the full remote snapshot [13.34ms]
+(fail) login repair persists assets before canvas with bounded concurrency (failure=%s) [10.59ms]
+(fail) login repair persists assets before canvas with bounded concurrency (failure=%s) [8.08ms]
+
+ 48 pass
+ 6 fail
+ 585 expect() calls
+Ran 54 tests across 1 file. [4.12s]

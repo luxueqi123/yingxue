@@ -31,6 +31,8 @@ export type PluginManifestV2 = Omit<PluginManifest, "apiVersion" | "contributes"
     contributes: PluginContributionsV2;
 };
 
+export type AnyPluginManifest = PluginManifest | PluginManifestV2;
+
 export type PluginContributionKind = "provider" | "payment-provider" | "workflow" | "canvas-node" | "transform" | "command" | "asset-source" | "usage-observer" | "ai-capability" | "agent" | "import-export";
 export type PluginSurface = "node" | "fullscreen" | "hybrid" | "asset-source" | "settings" | "wallet";
 export type ProtocolCapability = "text" | "image" | "video" | "audio";
@@ -63,6 +65,8 @@ export type PluginProviderContribution = {
     id: string;
     label: string;
     capabilities: ProtocolCapability[];
+    /** Processing providers operate on existing media rather than generating new media. */
+    kind?: "processing";
     scopes: ProtocolScope[];
     baseUrl?: string;
     auth?: { type: "bearer" | "api-key" | "custom"; field: string; header?: string };
@@ -103,8 +107,10 @@ export type PluginCanvasNodeContribution = {
     defaultSize: { width: number; height: number };
     schema: Record<string, unknown>;
     renderer: "declarative" | "sandbox";
-    /** Optional input contract for nodes that consume one media kind. */
-    acceptsInputKind?: "image" | "video" | "audio" | "text";
+    /** Optional input contract for nodes that consume one or more media kinds. */
+    acceptsInputKind?: "image" | "video" | "audio" | "text" | Array<"image" | "video" | "audio" | "text">;
+    /** Optional maximum number of direct inputs. */
+    maxInputCount?: number;
     /** Analysis/sink nodes can hide the right-side output connection. */
     showOutputConnection?: boolean;
 };
@@ -315,7 +321,18 @@ export type AssetSourceProvider = {
     openAsset?: (item: ExternalAssetItem) => Promise<void>;
 };
 
+export type PluginAgentAction = {
+    id: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    /** Pure planner: validate input and return operations, never perform side effects here. */
+    buildOperations: (input: Record<string, unknown>, snapshot: import("@/lib/canvas/canvas-operation-contract").CanvasSnapshot) => import("@/lib/canvas/canvas-operation-contract").CanvasOperation[];
+};
+
 export type RegisteredPlugin = {
+    agentActions?: PluginAgentAction[];
+    /** Pure, bounded projection: never return embedded media or provider credentials. */
+    readAgentNode?: (node: import("@/types/canvas").CanvasNodeData, snapshot: import("@/lib/canvas/canvas-operation-contract").CanvasSnapshot) => Record<string, unknown>;
     /** v1 或 v2 插件清单；v2 清单结构为 v1 超集（含 editorSlots 声明）。 */
     manifest: PluginManifest | PluginManifestV2;
     source?: "bundled" | "uploaded" | string;

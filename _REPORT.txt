@@ -1,0 +1,260 @@
+文件数=28 丢失映雪行=203
+
+===== web/src/components/layout/workspace-sidebar-nav.tsx  (丢失 88 / 映雪改动 113)
+  - import { ChevronDown, ChevronRight, Compass, Home, Layers3, LogOut, Plus, Search, ShieldCheck } from "lucide-react";
+  - import { YingxueBrandMark } from "@/components/brand/yingxue-brand-mark";
+  -                 ...(features.taskCenterEnabled ? [{ ...toolItem("tasks", "/tasks"), title: "任务记录" }] : []),
+  -     return { groups: groups.filter(group => group.items.length > 0), footer };
+  -                     className="app-workspace-sidebar-rail-button"
+  -                     aria-label="展开侧栏菜单"
+  -                     title="展开侧栏菜单"
+  -                     onClick={onExpand}
+  -                     <YingxueBrandMark variant="adaptive" className="size-8" />
+  -                     <YingxueBrandLockup variant="adaptive" className="h-20 w-20" />
+  -                     <span className="truncate text-[var(--fs-label)] leading-none text-foreground/48">创作平台</span>
+  -                             <div className="truncate text-[var(--fs-body)] font-semibold">映雪</div>
+  -                             { label: "映雪首页", to: "/" },
+  -                             { label: "创作大厅", to: "/home" },
+  -                             <button
+  -                                 key={entry.to}
+  -                                 type="button"
+  -                                 onClick={() => go(entry.to)}
+  -                                 className="flex w-full items-center gap-2 px-3 py-2 text-[var(--fs-body)] text-foreground/80 transition-colors hover:bg-surface-hover hover:text-foreground"
+  -                             >
+  -                         <button
+  -                             type="button"
+  -                             onClick={() => go("/canvas?mode=new")}
+  -                             className="flex w-full items-center gap-2 px-3 py-2 text-[var(--fs-body)] text-foreground/45 transition-colors hover:bg-surface-hover hover:text-foreground"
+  -                         >
+  - function NavItem({ item, activeId, onSelect, onOpenSearch, onLogout, level = 0, collapsed = false }: {
+  -     const rowStyle: CSSProperties = {
+  -         ...(!collapsed ? { paddingLeft: `${level * 12 + 10}px` } : {}),
+  -         color: isActive ? "var(--nt-text-default)" : "color-mix(in srgb, var(--nt-text-default) 92%, transparent)",
+  -                     <Icon className="size-4 shrink-0 text-current" strokeWidth={1.6} />
+  -                     <kbd className="hidden h-5 items-center justify-center rounded-sm border border-[var(--workspace-border)] bg-background/50 px-1.5 font-mono text-[var(--fs-tiny)] font-medium text-foreground/55 group-h
+  -                         {item.shortcut}
+  -                 {item.badge !== undefined ? (
+  -                     <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[var(--fs-tiny)] font-medium tabular-nums text-primary">
+  -                         {item.badge}
+  -                 {hasChildren ? (
+  -                     <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/40 transition-transform duration-200", isOpen && "rotate-90")} strokeWidth={2} />
+  -         isActive ? "is-active font-medium" : "text-foreground/90 hover:bg-surface-hover hover:text-foreground",
+  -                     aria-expanded={hasChildren ? isOpen : undefined}
+  -                             <NavItem
+  -                                 key={child.id}
+  -                                 item={child}
+  -                                 activeId={activeId}
+  -                                 onSelect={onSelect}
+  -                                 onOpenSearch={onOpenSearch}
+  -                                 onLogout={onLogout}
+  -                                 level={level + 1}
+  -                                 collapsed={false}
+  -                             />
+  - function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collapsed }: {
+  -     group: WorkspaceNavGroup;
+  -     onNavigate: () => void;
+  -     collapsed: boolean;
+  -                 <NavItem
+  -                     key={item.id}
+  -                     item={item}
+  -                     activeId={activeId}
+  -                     onSelect={onNavigate}
+  -                     onOpenSearch={onOpenSearch}
+  -                     onLogout={onLogout}
+  -                     collapsed={collapsed}
+  -                 />
+  -             {group.heading && !collapsed ? <p className="app-workspace-nav-group-label px-2.5 py-2">{group.heading}</p> : null}
+  -             {content}
+  -     const slug = pathname.split("/").filter(Boolean)[0] || "create";
+  -                 className={cn(
+  -                     "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-3 pt-2",
+  -                     collapsed && "is-collapsed",
+  -                     scrollState.hasTopFade && "has-top-fade",
+  -                     scrollState.hasBottomFade && "has-bottom-fade",
+  -                     <NavGroup
+  -                         key={index}
+  -                         group={group}
+  -                         activeId={activeId}
+  -                         onNavigate={onNavigate}
+  -                         onOpenSearch={onOpenSearch}
+  -                         onLogout={() => void handleLogout()}
+  -                         collapsed={collapsed}
+  -                     />
+  -                         <NavItem
+  -                             key={item.id}
+  -                             item={item}
+  -                             activeId={activeId}
+  -                             onSelect={onNavigate}
+  -                             onOpenSearch={onOpenSearch}
+  -                             onLogout={() => void handleLogout()}
+  -                             collapsed={collapsed}
+  -                         />
+
+===== web/src/pages/create/index.tsx  (丢失 29 / 映雪改动 1281)
+  - import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
+  - import { Reorder } from "motion/react";
+  - import { buildCreationMentionReferences, creationReferenceMetadata, displayCreationPrompt, expandCreationPrompt, removeCreationReferenceTokens, selectedCreationReferences, type CreationReference } from "./creation-refere
+  - import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFro
+  - const modeLabels: Record<CreationMode, string> = { text: "文本", image: "图片", video: "视频" };
+  - const shotScriptLabels: Record<CreationMode, string> = { text: "创作思路", image: "画面指令", video: "镜头脚本" };
+  - const ratioOptions = [
+  -     { value: "1:1", label: "方形" },
+  -     { value: "16:9", label: "横屏" },
+  -     { value: "9:16", label: "竖屏" },
+  -     { value: "4:3", label: "标准横屏" },
+  -     { value: "3:4", label: "标准竖屏" },
+  -     { value: "21:9", label: "宽银幕" },
+  - const qualityOptions = [
+  -     { value: "auto", label: "自动", description: "由模型决定" },
+  -     { value: "low", label: "低", description: "更快生成" },
+  -     { value: "medium", label: "中", description: "均衡模式" },
+  -     { value: "high", label: "高", description: "优先细节" },
+  -     // grok2api / xAI Imagine：quality 映射 resolution
+  -     { value: "1k", label: "1K", description: "标准清晰度" },
+  -     { value: "2k", label: "2K", description: "更高清晰度" },
+  - const resolutionOptions = VIDEO_RESOLUTION_OPTIONS.map((value) => ({ value: String(value), label: videoResolutionLabel(value) }));
+  - const countOptions = ["1", "2", "3", "4"];
+  - const conversationTimeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  - const messageTimeFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  -     const [mode, setMode] = useState<CreationMode>("video");
+  -         if (agentIntent || mode !== "image") return;
+  -         // 前台逻辑模型的默认参数优先于旧的全局创作参数；否则旧的合法值会一直覆盖后台刚配置的默认值。
+  -         const referenceMetadata = creationReferenceMetadata(references);
+
+===== README.md  (丢失 12 / 映雪改动 74)
+  - ## 数据与安全
+  - - 公开注册默认关闭。请先在受控网络完成首个管理员账号注册，再开放公网入口。
+  - - 生产环境必须使用 HTTPS，并为 `CANVAS_CORS_ORIGINS` 设置准确域名。
+  - - 用户的 API Key 不应出现在 URL、日志、错误上报或公开配置中，只应发送到可信后端。
+  - - 后端默认拒绝访问本机、私网和链路本地上游；开发环境只对白名单中的可信主机放行。
+  - - PostgreSQL、Redis、上传文件、对象存储、技能案例媒体和备份都应使用持久化数据目录，并限制访问权限。
+  - - 浏览器本地缓存是服务不可用时的降级手段，不等同于服务端已经保存。
+  - 安全问题请按[安全策略](SECURITY.md)处理，不要在公开 Issue 中提交密钥、Cookie、数据库或生产日志。
+  - - [功能说明](docs/content/docs/overview/features.mdx)
+  - - [更新日志](CHANGELOG.md)
+  - - [贡献指南](CONTRIBUTING.md)
+  - ## 开源来源与许可
+
+===== web/src/pages/canvas/project.tsx  (丢失 10 / 映雪改动 111)
+  -         [configInputsById, handleBindCaseReferences, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, handleRemoveNodeReference, handleReorderNodeReferences, handleReplaceNodeReference, handleReplaceNo
+  -                                         initialDraft={currentProject?.agentDraft}
+  -                                         onDraftChange={(draft) => {
+  -                                             if (draft.scope !== getActiveUserScope() || draft.scope !== useUserStore.getState().user?.id) return;
+  -                                             const saved = useCanvasStore.getState().projects.find(project => project.id === projectId)?.agentDraft;
+  -                                             if (JSON.stringify(saved) !== JSON.stringify(draft)) updateProject(projectId, { agentDraft: draft });
+  -                                         creationBrief={creationBrief?.projectId === projectId && searchParams.get("brief") === creationBrief.id ? creationBrief : null}
+  -                                         onCreationBriefConsumed={handleCreationBriefConsumed}
+  -                         onViewsChange={(storyboardViews,storyboardActiveViewId)=>activeScriptNode&&handleConfigNodeChange(activeScriptNode.id,{storyboardViews,storyboardActiveViewId})}
+  -                                         ? { ...node, metadata: { ...node.metadata, storyboardViews:node.metadata?.storyboardViews?.map(view=>view.id===(node.metadata?.storyboardActiveViewId||"default")?{...view,visibleCo
+
+===== web/src/services/api/video-provider-seedance.ts  (丢失 10 / 映雪改动 19)
+  -     const nativeLimits = isVolcengineArk ? arkSearchModelLimits(modelOptionName(model)) : null;
+  -     const limits = nativeLimits || SEEDANCE_REFERENCE_LIMITS;
+  -     if (references.length > limits.images || videoReferences.length > limits.videos || audioReferences.length > limits.audios) {
+  -         throw new Error(`当前模型最多支持 ${limits.images} 张图片、${limits.videos} 个视频和 ${limits.audios} 个音频，请调整参考素材。`);
+  -     assertSeedanceVideoReferences(videoReferences, nativeLimits?.maxDuration || 15, nativeLimits ? 200 * 1024 * 1024 : SEEDANCE_REFERENCE_LIMITS.videoMaxBytes);
+  -     assertSeedanceAudioReferences(audioReferences, nativeLimits?.maxDuration || 15);
+  -     if (options?.videoWebSearch !== undefined && typeof options.videoWebSearch !== 'boolean') throw new Error('视频联网参数必须是布尔值');
+  -     if (options?.videoWebSearch && !nativeLimits) throw new Error('视频联网搜索需要火山方舟 Seedance 2.0系列或2.5模型');
+  -     const expanded = config.interfaceType === 'volcengine-ark-video' && modelOptionName(model).startsWith('doubao-seedance-2-5-');
+  -     if (!expanded && audioReferences.length && !references.length && !videoReferences.length) {
+
+===== web/src/components/layout/workspace-top-bar.tsx  (丢失 9 / 映雪改动 19)
+  - import { cn } from "@/lib/utils";
+  -     // 项目详情等工作台页面通过 WorkspaceTopBarExtensionProvider 注册自己的顶栏内容；
+  -     // 注册成功后顶栏主体让位给扩展内容，当前位置面包屑收进 2xl 断点保留。
+  -         <header className={cn("app-workspace-topbar flex shrink-0 items-center justify-between gap-3 px-3 sm:px-4", extension && "has-extension")}>
+  -             <div className="flex min-w-0 flex-1 items-center gap-1.5">
+  -                 <nav className={cn("min-w-0 items-center gap-2 text-[var(--fs-caption)] text-foreground/50", extension ? "hidden 2xl:flex" : "flex")} aria-label="当前位置">
+  -                     <Link to="/" aria-label="映雪首页" className="shrink-0 font-medium text-foreground/70 transition-colors hover:text-foreground"><YingxueBrandLettering className="h-5 w-12" /></Link>
+  -                 {extension ? <div className="flex min-w-0 flex-1 items-center gap-2">{extension}</div> : null}
+  -                 {user ? <SystemAnnouncementCenter userId={user.id} className="app-workspace-topbar-icon-button" /> : null}
+
+===== web/src/components/layout/app-top-nav.tsx  (丢失 5 / 映雪改动 39)
+  -     const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  -         if (ltvHome) setHomeSidebarCollapsed((current) => !current);
+  -         else setDesktopSidebarCollapsed((current) => !current);
+  -                                 onExpand={() => ltvHome ? setHomeSidebarCollapsed(false) : setDesktopSidebarCollapsed(false)}
+  -                     <WorkspaceCommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+===== web/src/pages/canvas/use-canvas-generation.ts  (丢失 5 / 映雪改动 8)
+  -                 const originalRows = JSON.stringify(input.nodesRef.current.find(node => node.id === input.node.id)?.metadata?.storyboard?.rows || []);
+  -                 const result = await restoreStoryboardTaskResult(input.completed, () => {
+  -                     if (!isCurrentProject()) throw new Error("画布已切换，停止恢复分镜参考帧");
+  -                     const current = input.nodesRef.current.find(node => node.id === input.node.id);
+  -                     if (!current || JSON.stringify(current.metadata?.storyboard?.rows || []) !== originalRows || (current.metadata?.taskId && current.metadata.taskId !== input.completed.id)) throw new DOMException("分镜已编辑
+
+===== backend/internal/app/admin.go  (丢失 3 / 映雪改动 18)
+  - 	ModelCount        int                       `json:"modelCount"`
+  - 	EnabledModelCount int                       `json:"enabledModelCount"`
+  - 	Description                  string                     `json:"description,omitempty"`
+
+===== backend/internal/app/analytics.go  (丢失 3 / 映雪改动 18)
+  - 		if details, ok := usage["prompt_tokens_details"].(map[string]any); ok && usage["input_tokens_details"] == nil {
+  - 			_, validInput := strictUsageInteger(usage["prompt_tokens"])
+  - 			_, validOutput := strictUsageInteger(usage["completion_tokens"])
+
+===== backend/internal/model/models_finance.go  (丢失 3 / 映雪改动 26)
+  - 	TokenPricingPolicy           string        `json:"tokenPricingPolicy" gorm:"size:80;default:''"`
+  - 	CacheWriteTokens             int64         `json:"cacheWriteTokens" gorm:"default:0"`
+  - 	CacheWriteTokensAvailable    bool          `json:"cacheWriteTokensAvailable" gorm:"default:false"`
+
+===== backend/internal/app/payment_plugins_test.go  (丢失 2 / 映雪改动 3)
+  - 	for _, providerID := range []string{PaymentProviderAlipay, PaymentProviderWeChat, PaymentProviderCloudCatEPay} {
+  - 	for _, providerID := range []string{PaymentProviderAlipay, PaymentProviderWeChat, PaymentProviderCloudCatEPay} {
+
+===== backend/internal/database/migrations.go  (丢失 2 / 映雪改动 15)
+  - const CurrentSchemaVersion int64 = 11
+  - 	{version: 11, name: "yingxue_payment_isolation_and_billing", checksum: "sha256:yingxue-payment-isolation-gpt6-v11-20260912-r1", apply: migrateSchemaV11},
+
+===== backend/internal/database/migrations_test.go  (丢失 2 / 映雪改动 2)
+  - 	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.BillingOrder{}, &model.ApiCallLog{}); err != nil {
+  - 	if err := db.AutoMigrate(&model.Resource{}, &model.Asset{}, &model.AssetFolder{}, &model.ModelChannel{}, &model.ChannelModel{}, &model.BillingOrder{}, &model.ApiCallLog{}); err != nil {
+
+===== backend/internal/model/models.go  (丢失 2 / 映雪改动 8)
+  - 	ChannelInterfaceDashScopeWanxVideo    ChannelInterfaceType = "dashscope-wanx-video"
+  - 	ChannelInterfaceAutoDLH3Video         ChannelInterfaceType = "autodl-h3-video"
+
+===== plugin-packages/build-packages.sh  (丢失 2 / 映雪改动 2)
+  - payment_plugins="official-payment-wechat-native official-payment-alipay-page yingxue-payment-cloudcat-epay"
+  - build_payment_provider yingxue-payment-cloudcat-epay ./cmd/payment-cloudcat
+
+===== web/src/lib/canvas/canvas-generation-task-sync.ts  (丢失 2 / 映雪改动 31)
+  -             metadata: { ...node.metadata, ...workflowMetadataForResultNode(), ...imageMetadata(normalizedImage), groundingMetadata: result.groundingMetadata, prompt, ...completedTaskMetadata(task), outpaintEdit: isOutpai
+  -             metadata: { ...node.metadata, ...workflowMetadataForResultNode(), ...videoMetadata(video), videoSearchUsage: Number.isInteger(result.usage?.tool_usage?.web_search) && Number(result.usage?.tool_usage?.web_sear
+
+===== web/src/pages/admin/index.tsx  (丢失 2 / 映雪改动 3)
+  -         // 普通用户直接访问后台链接时，自动送回创作主页，避免卡死在"无权限"死胡同
+  -         return <Navigate to="/create" replace />;
+
+===== web/test/canvas-angle-dialog.test.ts  (丢失 2 / 映雪改动 2)
+  -         // 工作台弹窗已统一走 AppModal 外壳（默认 destroyOnHidden，居中可关闭），仍是居中弹窗而非节点锚定浮层。
+  -         expect(dialog).toContain("<AppModal");
+
+===== web/vite.config.ts  (丢失 2 / 映雪改动 10)
+  -                 // 动画库的共享初始化不能被分进画布路由，否则大厅也会下载整个编辑器。
+  -                     groups: [{ name: "motion-runtime", test: /node_modules[\\/](?:motion|framer-motion|motion-dom|motion-utils)[\\/]/ }],
+
+===== backend/internal/app/logical_model_quote.go  (丢失 1 / 映雪改动 6)
+  - 			Estimated:          order.BillingMode == "token" || (routed.ChannelModel.Protocol == "wan968-video" && order.BillingMode == "per_second" && intent.Inputs["video"] > 0),
+
+===== backend/internal/assets/references.go  (丢失 1 / 映雪改动 1)
+  - 	case "storageKey", "content", "url", "dataUrl", "coverUrl", "imageUrl", "videoUrl", "audioUrl", "referenceUrl", "referenceUrls", "referenceFrameImage", "artifactRef", "providerArtifactRef":
+
+===== docs/content/docs/backend/backend-database.mdx  (丢失 1 / 映雪改动 20)
+  - 当前整合结构版本为 11；上游前 10 次基础迁移如下。版本 2 为 `schema_migrations.applied_at` 增加 `idx_schema_migrations_applied_at` 索引；版本 3 `asset_taxonomy_candidate_identity` 为资产候选增加规范化名称和来源，收敛资产分类，并为待确认候选建立项目内部分唯一索引；版本 4 `resource_upload_key` 为资源
+
+===== plugin-packages/newapi-video-generations-v1/manifest.json  (丢失 1 / 映雪改动 320)
+  -   "documentation": "# NewAPI Video Generations Channel 2\n\n该目录是独立官方协议插件源码。后端从生成的 `newapi-video-generations-v1.yingce-plugin` 包加载，不依赖系统内置 `host:` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# NewAPI V
+
+===== plugin-packages/verify-payment-packages.sh  (丢失 1 / 映雪改动 1)
+  - for package_id in official-payment-wechat-native official-payment-alipay-page yingxue-payment-cloudcat-epay; do
+
+===== web/src/components/canvas/canvas-node-prompt-panel.tsx  (丢失 1 / 映雪改动 89)
+  - export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onRemoveReference, onReorderReferences, onReplaceReference, onReplaceReferenceFiles,
+
+===== web/src/components/conversation/README.md  (丢失 1 / 映雪改动 1)
+  - - 仅开发环境测试页：`web/src/pages/test-voice-recording.tsx`（路由 `/test-voice-recording` 不进入生产构建路由表）
+
+===== web/src/components/model-picker.tsx  (丢失 1 / 映雪改动 12)
+  -     const resolvedCurrent = preserveSelection ? storedCurrent : resolveCompatibleModel(config, storedCurrent, selectionRequirements) || storedCurrent;

@@ -9,11 +9,12 @@ import { CANVAS_GENERATION_CONTINUATION_TIMEOUT_MS } from "./canvas-tool-timeout
 import { AGENT_PROMPT, CONFIG_DIR, VERSION } from "./config.js";
 import { assertCodexThreadWorkspace, codexThreadInWorkspace, resolveCodexThread } from "./codex-thread.js";
 import type { AgentAttachment, AgentEmit } from "./types.js";
+import { parseSkillResourceFiles, type AgentSkillFile as TextSkillFile } from "./skill-resources.js";
 
 type Json = Record<string, unknown>;
 type AgentEvent = Json & { type: string; usage?: unknown };
 type PendingRequest = { resolve: (value: unknown) => void; reject: (error: Error) => void };
-export type AgentSkillFile = { path: string; mimeType?: string; contentBase64: string };
+export type AgentSkillFile = { path: string; mimeType?: string; contentBase64: string } | TextSkillFile;
 export type AgentSkillReference = { skillId?: string; name: string; description?: string; version?: string; files?: AgentSkillFile[]; instruction?: string };
 export type CodexSkillInput = { type: "skill"; name: string; path: string };
 type CodexRunOptions = { threadId?: string; cwd?: string; skills?: AgentSkillReference[]; onThreadId?: (threadId: string) => void };
@@ -472,6 +473,10 @@ export async function writeSkillFiles(skills: AgentSkillReference[]) {
     const usedNames = new Set<string>();
     try {
         for (const skill of skills.slice(0, 8)) {
+            const instruction = String(skill.instruction || "").trim();
+            if (Array.from(instruction).length > 100_000) throw new Error("技能正文过大，无法完整加载");
+            const textResources = skill.files?.some(item => "content" in item) ? parseSkillResourceFiles(skill.files) : [];
+            if (!instruction && (!skill.files?.length || textResources.length)) continue;
             const baseName = `canvas-${safeSkillSegment(skill.skillId || skill.name)}`;
             const name = uniqueSkillName(baseName, usedNames);
             usedNames.add(name);
@@ -479,7 +484,9 @@ export async function writeSkillFiles(skills: AgentSkillReference[]) {
             directories.push(temporaryRoot);
             const directory = path.join(temporaryRoot, name);
             await fs.mkdir(directory, { recursive: true });
-            const packageFiles = Array.isArray(skill.files) ? skill.files : [];
+            const packageFiles = textResources.length
+                ? [{ path: "SKILL.md", contentBase64: Buffer.from(skillMarkdown(name, skill.name, skill.description, instruction)).toString("base64") }, ...textResources.map(item => ({ path: item.path, contentBase64: Buffer.from(item.content).toString("base64") }))]
+                : (skill.files || []).filter((item): item is { path: string; mimeType?: string; contentBase64: string } => "contentBase64" in item);
             if (packageFiles.length) {
                 for (const item of packageFiles) {
                     const relativePath = safeSkillFilePath(item.path);
@@ -488,7 +495,6 @@ export async function writeSkillFiles(skills: AgentSkillReference[]) {
                     await fs.writeFile(target, Buffer.from(item.contentBase64, "base64"));
                 }
             } else {
-                const instruction = String(skill.instruction || "").trim().slice(0, 24_000);
                 if (!instruction) continue;
                 await fs.writeFile(path.join(directory, "SKILL.md"), skillMarkdown(name, skill.name, skill.description, instruction), "utf8");
             }

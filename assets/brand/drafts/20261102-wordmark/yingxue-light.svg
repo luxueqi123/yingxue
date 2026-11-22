@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="56" viewBox="0 0 160 76" role="img" aria-label="映雪">
+  <g transform="translate(14 5) skewX(-9)" fill="#171c24">
+    <path fill-rule="evenodd" d="M5 10h21v46H5V10Zm6 7v12h8V17h-8Zm0 19v13h8V36h-8Z"/>
+    <path d="M32 16h28v21h-7V23H39v14h-7V16Z"/>
+    <path d="M43 5h7v29l-6 15-15 14-5-6 14-13 5-12V5Z"/>
+    <path d="M28 33h39l-4 7H28v-7Z"/>
+    <path d="m47 38 6-3 15 22-6 6-15-25Z"/>
+    <g transform="translate(77)">
+      <path d="M7 6h55l-5 7H7V6Z"/>
+      <path d="M3 18h60v19h-7V25H10v12H3V18Z"/>
+      <path d="M29 10h7v28h-7V10Z"/>
+      <path d="M15 28h9v4h-9v-4Zm0 7h9v4h-9v-4Zm26-7h9v4h-9v-4Zm0 7h9v4h-9v-4Z"/>
+      <path d="M10 42h49v22H5l5-7h42v-3H15v-5h37v-2H10v-5Z"/>
+      <path d="M45 57h14v7H40l5-7Z" fill="#147ba6"/>
+    </g>
+  </g>
+</svg>

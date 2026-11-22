@@ -27,6 +27,22 @@ describe("editor command registry (golden file)", () => {
 });
 
 describe("editor command registry (immutability)", () => {
+    test("split after moving the left segment keeps clip identities unique and replayable", () => {
+        const registry = createEditorCommandRegistry();
+        const split = { op: "splitClip", payload: { id: "clip-a", splitAtMs: 2000 } };
+        const first = registry.apply(golden.base, split);
+        const originalRight = first.clips.find((clip) => clip.id === "clip-a:split:2000")!;
+        const moved = registry.apply(first, { op: "moveClip", payload: { id: "clip-a", startMs: 1000 } });
+        const before = JSON.stringify(moved);
+        const result = registry.apply(moved, split);
+        expect(new Set(result.clips.map((clip) => clip.id)).size).toBe(result.clips.length);
+        expect(result.clips.find((clip) => clip.id === originalRight.id)).toEqual(originalRight);
+        expect(registry.apply(JSON.parse(before), split)).toEqual(result);
+        expect(JSON.stringify(moved)).toBe(before);
+        const edited = registry.apply(result, { op: "setClipProperty", payload: { id: originalRight.id, patch: { title: "edited" } } });
+        expect(edited.clips.filter((clip) => clip.title === "edited")).toHaveLength(1);
+    });
+
     test("apply returns a new state and never mutates the input", () => {
         const registry = createEditorCommandRegistry();
         const before = JSON.stringify(golden.base);
@@ -45,6 +61,30 @@ describe("editor command registry (immutability)", () => {
 });
 
 describe("editor command registry (fail-closed payload validation)", () => {
+    test("adding clips and subtitles rejects occupied IDs without changing the project", () => {
+        const before = JSON.stringify(golden.base);
+        for (const op of ["addClip", "addSubtitle"]) {
+            const source = golden.base.clips.find((clip) => (clip.kind === "subtitle") === (op === "addSubtitle"))!;
+            for (const occupied of golden.base.clips) {
+                expect(() => registry.apply(golden.base, { op, payload: { clip: { ...source, id: occupied.id } } })).toThrow(/already exists/);
+            }
+        }
+        expect(JSON.stringify(golden.base)).toBe(before);
+    });
+
+    test("subtitle rebuild rejects collisions with retained clips but replaces its own snapshots", () => {
+        const command = { op: "rebuildSubtitleClips", payload: { nodeId: "node-a", entries: [{ index: 0, startMs: 0, endMs: 1000, text: "new" }] } };
+        const first = registry.apply(golden.base, command);
+        expect(registry.apply(first, command)).toEqual(first);
+        for (const kind of ["video", "subtitle"] as const) {
+            const retained = { ...golden.base.clips[0], id: "node-a:subtitle:0", kind, nodeId: "other-node" };
+            const state = { ...golden.base, clips: [...golden.base.clips, retained] };
+            const before = JSON.stringify(state);
+            expect(() => registry.apply(state, command)).toThrow(/already exists/);
+            expect(JSON.stringify(state)).toBe(before);
+        }
+    });
+
     const registry = createEditorCommandRegistry();
 
     test("unknown op throws", () => {

@@ -1,17 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import type { AxiosRequestConfig } from "axios";
+import { createServer } from "node:http";
+import { once } from "node:events";
 
-import { ApiError, request } from "../src/services/api/request";
+import { ApiError, apiClient, compactApiParams, http, request, serializeApiParams } from "../src/services/api/request";
 
 describe("backend API request error semantics", () => {
     test("unwraps a successful backend envelope", async () => {
         await expect(request(Promise.resolve({ data: { code: 0, data: { id: "task-1" }, msg: "ok" }, status: 200 }))).resolves.toEqual({ id: "task-1" });
     });
 
-    test("preserves business code from a non-zero envelope", async () => {
-        const thrown = await request(Promise.resolve({ data: { code: 40901, data: null, msg: "任务状态已变化" }, status: 200 })).catch((error) => error);
+    test("preserves business code and reason from a non-zero envelope", async () => {
+        const thrown = await request(Promise.resolve({ data: { code: 40901, data: null, msg: "任务状态已变化", reason: "conflict" }, status: 200 })).catch((error) => error);
 
         expect(thrown).toBeInstanceOf(ApiError);
-        expect(thrown).toMatchObject({ name: "ApiError", status: 200, code: 40901, message: "任务状态已变化", retryable: false });
+        expect(thrown).toMatchObject({ name: "ApiError", status: 200, code: 40901, reason: "conflict", message: "任务状态已变化", retryable: false });
     });
 
     test("preserves HTTP status, backend code and retryability", async () => {
@@ -20,20 +23,204 @@ describe("backend API request error semantics", () => {
             message: "Request failed with status code 429",
             response: {
                 status: 429,
-                data: { code: 42901, data: null, msg: "请求过于频繁，请稍后重试" },
+                data: { code: 42901, data: null, msg: "请求过于频繁，请稍后重试", reason: "rate_limited" },
                 headers: { "retry-after": "60" },
             },
         };
         const thrown = await request(Promise.reject(axiosError)).catch((error) => error);
 
         expect(thrown).toBeInstanceOf(ApiError);
-        expect(thrown).toMatchObject({ status: 429, code: 42901, message: "请求过于频繁，请稍后重试", retryable: true, retryAfterMs: 60_000 });
+        expect(thrown).toMatchObject({ status: 429, code: 42901, reason: "rate_limited", message: "请求过于频繁，请稍后重试", retryable: true, retryAfterMs: 60_000 });
         expect(thrown.cause).toBe(axiosError);
+    });
+
+    test("replaces a bare proxy 502 with a user-facing retry message", async () => {
+        const axiosError = {
+            isAxiosError: true,
+            message: "Request failed with status code 502",
+            response: { status: 502, data: "Bad Gateway", headers: {} },
+        };
+        const thrown = await request(Promise.reject(axiosError)).catch((error) => error);
+
+        expect(thrown).toBeInstanceOf(ApiError);
+        expect(thrown).toMatchObject({ status: 502, message: "后端服务暂时不可用，请稍后重试", retryable: true });
+    });
+
+    test("marks transport failures without an HTTP response as retryable", async () => {
+        const axiosError = {
+            isAxiosError: true,
+            code: "ERR_NETWORK",
+            message: "Network Error",
+        };
+        const thrown = await request(Promise.reject(axiosError)).catch((error) => error);
+
+        expect(thrown).toBeInstanceOf(ApiError);
+        expect(thrown).toMatchObject({ message: "Network Error", retryable: true });
+        expect(thrown.cause).toBe(axiosError);
+    });
+
+    test("http.get unwraps the same backend envelope", async () => {
+        const original = apiClient.request;
+        apiClient.request = (async () => ({
+            data: { code: 0, data: { id: "via-http" }, msg: "ok" },
+            status: 200,
+            headers: {},
+        })) as typeof apiClient.request;
+        try {
+            await expect(http.get<{ id: string }>("/probe")).resolves.toEqual({ id: "via-http" });
+        } finally {
+            apiClient.request = original;
+        }
+    });
+
+    test("http.get preserves a non-zero envelope as ApiError", async () => {
+        const original = apiClient.request;
+        apiClient.request = (async () => ({
+            data: { code: 40901, data: null, msg: "任务状态已变化" },
+            status: 200,
+            headers: {},
+        })) as typeof apiClient.request;
+        try {
+            const thrown = await http.get("/probe").catch((error) => error);
+            expect(thrown).toBeInstanceOf(ApiError);
+            expect(thrown).toMatchObject({ status: 200, code: 40901, message: "任务状态已变化" });
+        } finally {
+            apiClient.request = original;
+        }
+    });
+
+    test("quota exceeded is not retryable", async () => {
+        const thrown = await request(Promise.resolve({
+            data: { code: 40301, data: null, msg: "账号素材数量已达到 100 个上限", reason: "quota_exceeded" },
+            status: 403,
+        })).catch((error) => error);
+
+        expect(thrown).toBeInstanceOf(ApiError);
+        expect(thrown).toMatchObject({ status: 403, code: 40301, reason: "quota_exceeded", retryable: false });
     });
 
     test("converts Axios cancellation to AbortError", async () => {
         const thrown = await request(Promise.reject({ __CANCEL__: true, code: "ERR_CANCELED" })).catch((error) => error);
 
         expect(thrown).toMatchObject({ name: "AbortError", message: "请求已取消" });
+    });
+});
+
+describe("bounded idempotent reads", () => {
+    const success = { data: { code: 0, data: { restored: true }, msg: "ok" }, status: 200, headers: {} };
+    const stalled = { isAxiosError: true, code: "ECONNABORTED", message: "timeout of 6000ms exceeded" };
+
+    test("a healthy slow response body finishes without cancelling and downloading it twice", async () => {
+        let requests = 0;
+        let finish: ReturnType<typeof setTimeout> | undefined;
+        const server = createServer((_request, response) => {
+            requests++;
+            response.writeHead(200, { "Content-Type": "application/json" });
+            response.write('{"code":0,"data":');
+            finish = setTimeout(() => response.end('{"complete":true},"msg":"ok"}'), 6_200);
+        });
+        server.listen(0, "127.0.0.1");
+        await once(server, "listening");
+        try {
+            const address = server.address();
+            if (!address || typeof address === "string") throw new Error("Test server has no TCP address");
+            await expect(http.get(`http://127.0.0.1:${address.port}/tools`)).resolves.toEqual({ complete: true });
+            expect(requests).toBe(1);
+        } finally {
+            clearTimeout(finish);
+            const closed = once(server, "close");
+            server.close();
+            server.closeAllConnections();
+            await closed;
+        }
+    }, 12_000);
+
+    test("retries one stalled read and returns the actual second response", async () => {
+        const original = apiClient.request;
+        const calls: AxiosRequestConfig[] = [];
+        apiClient.request = (async (config: AxiosRequestConfig) => {
+            calls.push(config);
+            if (calls.length === 1) throw stalled;
+            return success;
+        }) as typeof apiClient.request;
+        try {
+            await expect(http.get("/characters")).resolves.toEqual({ restored: true });
+            expect(calls).toHaveLength(2);
+            expect(calls.every(call => call.method === "get" && Number(call.timeout) > 0 && Number(call.timeout) <= 15_000)).toBe(true);
+        } finally { apiClient.request = original; }
+    });
+
+    test("stops after two transport failures and reports the failure", async () => {
+        const original = apiClient.request;
+        let calls = 0;
+        apiClient.request = (async () => { calls++; throw stalled; }) as typeof apiClient.request;
+        try {
+            await expect(http.get("/characters")).rejects.toMatchObject({ name: "ApiError", message: "连接等待超时，请重试" });
+            expect(calls).toBe(2);
+        } finally { apiClient.request = original; }
+    });
+
+    test("never replays writes or overrides caller deadlines", async () => {
+        const original = apiClient.request;
+        const calls: AxiosRequestConfig[] = [];
+        apiClient.request = (async (config: AxiosRequestConfig) => { calls.push(config); throw stalled; }) as typeof apiClient.request;
+        try {
+            await expect(http.post("/tasks", { prompt: "test" })).rejects.toBeInstanceOf(ApiError);
+            expect(calls).toHaveLength(1);
+            expect(calls[0].timeout).toBeUndefined();
+            await expect(http.get("/agent/memories/export", { timeout: 30_000 })).rejects.toBeInstanceOf(ApiError);
+            expect(calls).toHaveLength(2);
+            expect(calls[1].timeout).toBe(30_000);
+        } finally { apiClient.request = original; }
+    });
+
+    test("does not retry HTTP denial or business errors", async () => {
+        const original = apiClient.request;
+        let calls = 0;
+        apiClient.request = (async () => {
+            calls++;
+            throw { isAxiosError: true, response: { status: 403, data: { code: 40301, msg: "无权访问" } } };
+        }) as typeof apiClient.request;
+        try {
+            await expect(http.get("/characters")).rejects.toMatchObject({ status: 403, code: 40301 });
+            expect(calls).toBe(1);
+        } finally { apiClient.request = original; }
+    });
+
+    test("an aborted caller cannot start a recovery request", async () => {
+        const original = apiClient.request;
+        const controller = new AbortController();
+        let calls = 0;
+        apiClient.request = (async () => { calls++; controller.abort(); throw stalled; }) as typeof apiClient.request;
+        try {
+            await expect(http.get("/characters", { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+            expect(calls).toBe(1);
+        } finally { apiClient.request = original; }
+    });
+});
+
+describe("backend API list query params", () => {
+    test("serializes pagination filters as camelCase pageSize keys", () => {
+        const query = serializeApiParams(compactApiParams({
+            page: 2,
+            pageSize: 40,
+            projectId: "project-1",
+            folderId: "folder-1",
+            mediaType: "image",
+            unitId: "unit-1",
+            q: "夜戏",
+        }));
+
+        expect(query.get("page")).toBe("2");
+        expect(query.get("pageSize")).toBe("40");
+        expect(query.get("projectId")).toBe("project-1");
+        expect(query.get("folderId")).toBe("folder-1");
+        expect(query.get("mediaType")).toBe("image");
+        expect(query.get("unitId")).toBe("unit-1");
+        expect(query.get("q")).toBe("夜戏");
+        expect(query.has("page_size")).toBe(false);
+        expect(query.has("project_id")).toBe(false);
+        expect(query.has("folder_id")).toBe(false);
+        expect(query.has("limit")).toBe(false);
     });
 });

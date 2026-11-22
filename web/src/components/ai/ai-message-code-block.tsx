@@ -1,3 +1,5 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 
@@ -108,6 +110,7 @@ function detectLanguage(children: ReactNode, ownClassName?: string): string {
  * 由 .dark 类切换），流式期间保持单色避免逐帧闪烁。
  */
 export function AiMessageCodeBlock({ children, className, isStreaming = false, ...props }: AiMessageCodeBlockProps) {
+    const { t } = useInterfaceTranslation();
     const [copied, setCopied] = useState(false);
     const [highlightHtml, setHighlightHtml] = useState<string | null>(null);
     const timerRef = useRef<number | undefined>(undefined);
@@ -154,9 +157,9 @@ export function AiMessageCodeBlock({ children, className, isStreaming = false, .
         <div className="ai-message-codeblock">
             <div className="ai-message-codeblock-header">
                 <span className="ai-message-codeblock-lang">{language || "code"}</span>
-                <button type="button" className="ai-message-codeblock-copy" aria-label={copied ? "已复制" : "复制代码"} onClick={handleCopy}>
+                <button type="button" className="ai-message-codeblock-copy" aria-label={copied ? t("studioUi.copySuccess") : t("aiUi.copyCode" as InterfaceMessageKey)} onClick={handleCopy}>
                     {copied ? <Check /> : <Copy />}
-                    <span>{copied ? "已复制" : "复制"}</span>
+                    <span>{copied ? t("studioUi.copySuccess") : t("agentLocalUiCopy")}</span>
                 </button>
             </div>
             {highlightHtml ? (

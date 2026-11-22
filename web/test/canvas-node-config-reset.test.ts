@@ -14,8 +14,23 @@ function imageNode(metadata: Record<string, unknown> = {}): CanvasNodeData {
     };
 }
 
-describe("applyNodeConfigPatch 模型切换清理生成参数", () => {
-    test("切换模型标识时清理旧模型的能力档位参数，回落全局配置", () => {
+describe("applyNodeConfigPatch 模型切换保留媒体参数", () => {
+    test("导入工程切换模型保留制作要求，用户同时修改的参数正常生效", () => {
+        const node = imageNode({ model: "", size: "1:1", quality: "high", count: 2,
+            seconds: "10", vquality: "1080p", generateAudio: "false", audioVoice: "source-voice", audioSpeed: "1.25",
+            ltvReferencePlan: { prompt: "原始要求", references: [] }, strictGenerationOptions: ["model", "quality", "count"] });
+        const next = applyNodeConfigPatch(node, { model: "native::image", size: "16:9" });
+        expect(next.metadata).toMatchObject({ ...node.metadata, model: "native::image", size: "16:9" });
+        expect(next.metadata?.generationSpec).toMatchObject({
+            mode: "image",
+            modelSelection: { kind: "channel", channelId: "native", modelKey: "image" },
+            options: { quality: "high", count: 2, size: "16:9" },
+        });
+        expect(node.metadata?.model).toBe("");
+        expect(node.metadata?.size).toBe("1:1");
+    });
+
+    test("切换图片模型保留已选参数，由新模型校验兼容性", () => {
         const node = imageNode({
             model: "default::gpt-image-2",
             size: "1:1",
@@ -25,13 +40,13 @@ describe("applyNodeConfigPatch 模型切换清理生成参数", () => {
         });
         const next = applyNodeConfigPatch(node, { model: "default::grok-imagine-video" });
         expect(next.metadata?.model).toBe("default::grok-imagine-video");
-        expect(next.metadata?.size).toBeUndefined();
-        expect(next.metadata?.quality).toBeUndefined();
-        expect(next.metadata?.count).toBeUndefined();
-        expect(next.metadata?.transparentBackground).toBeUndefined();
+        expect(next.metadata?.size).toBe("1:1");
+        expect(next.metadata?.quality).toBe("high");
+        expect(next.metadata?.count).toBe(2);
+        expect(next.metadata?.transparentBackground).toBe("true");
     });
 
-    test("视频参数随模型切换一并清理", () => {
+    test("视频参数随模型切换保留", () => {
         const node = imageNode({
             model: "default::seedance-video",
             seconds: "10",
@@ -39,11 +54,12 @@ describe("applyNodeConfigPatch 模型切换清理生成参数", () => {
             generateAudio: "true",
             watermark: "false",
         });
+        node.type = CanvasNodeType.Video;
         const next = applyNodeConfigPatch(node, { model: "default::veo-3" });
-        expect(next.metadata?.seconds).toBeUndefined();
-        expect(next.metadata?.vquality).toBeUndefined();
-        expect(next.metadata?.generateAudio).toBeUndefined();
-        expect(next.metadata?.watermark).toBeUndefined();
+        expect(next.metadata?.seconds).toBe("10");
+        expect(next.metadata?.vquality).toBe("1080p");
+        expect(next.metadata?.generateAudio).toBe("true");
+        expect(next.metadata?.watermark).toBe("false");
     });
 
     test("音频参数随模型切换一并清理", () => {
@@ -54,6 +70,7 @@ describe("applyNodeConfigPatch 模型切换清理生成参数", () => {
             audioSpeed: "1.25",
             audioInstructions: "温暖、自然",
         });
+        node.type = CanvasNodeType.Audio;
         const next = applyNodeConfigPatch(node, { model: "default::gpt-4o-mini-tts" });
         expect(next.metadata?.audioVoice).toBeUndefined();
         expect(next.metadata?.audioFormat).toBeUndefined();
@@ -81,7 +98,7 @@ describe("applyNodeConfigPatch 模型切换清理生成参数", () => {
         const next = applyNodeConfigPatch(node, { model: "default::grok-imagine-video", size: "16:9" });
         expect(next.metadata?.model).toBe("default::grok-imagine-video");
         expect(next.metadata?.size).toBe("16:9");
-        expect(next.metadata?.quality).toBeUndefined();
+        expect(next.metadata?.quality).toBe("high");
     });
 
     test("内容型字段不随模型切换清理", () => {

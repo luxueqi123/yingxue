@@ -2,7 +2,8 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { appearanceLogoURL, useAppearanceStore } from "@/stores/use-appearance-store";
-import { useThemeStore, type ThemeName } from "@/stores/use-theme-store";
+import type { ThemeName } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 
 type BrandLogoProps = {
     className?: string;
@@ -13,11 +14,25 @@ type BrandLogoProps = {
 
 export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: BrandLogoProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
-    const currentTheme = useThemeStore((state) => state.theme);
-    const [failedLogoURL, setFailedLogoURL] = useState<string | null>(null);
-    const logoURL = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
-    if (!appearance.logoConfigured || failedLogoURL === logoURL) return <>{fallback}</>;
-    return <img src={logoURL} alt={alt} className={cn("block object-contain", className)} draggable={false} onError={() => setFailedLogoURL(logoURL)} />;
+    const currentTheme = useActiveTheme();
+    const source = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
+    const [failedSource, setFailedSource] = useState<string | null>(null);
+    if (!appearance.logoConfigured) return <>{fallback}</>;
+    // A configured custom logo must never fall through to the built-in brand
+    // when its file becomes unavailable. Keep its footprint neutral instead.
+    if (failedSource === source) return <span className={cn("block", className)} aria-hidden="true" />;
+    return (
+        <img
+            src={source}
+            alt={alt}
+            className={cn("block object-contain", className)}
+            draggable={false}
+            onError={(event) => {
+                event.currentTarget.style.visibility = "hidden";
+                setFailedSource(source);
+            }}
+        />
+    );
 }
 
 export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto" }: BrandLogoProps & { logoClassName?: string }) {

@@ -7,9 +7,12 @@ import { CheckCircle2, Copy, ExternalLink, FolderOpen, History, LoaderCircle, Pl
 import { motion } from "motion/react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { type InterfaceMessageKey } from "@/lib/interface-locale";
+import { canvasAgentToolLabel as toolName } from "@/lib/canvas/canvas-agent-tool-label";
 import { consumeLocalRuntimeEventStream, postCanvasRuntimeState, prepareCanvasRuntimeConnection, waitForCanvasRuntimeReconnect, type LocalRuntimeEvent } from "@/lib/canvas/local-runtime-connection";
 import { createClientId } from "@/lib/client-id";
 import { getLocalRuntimeSessionClient, useLocalRuntimeStore } from "@/stores/use-local-runtime-store";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import {
@@ -24,8 +27,9 @@ import {
     type AgentPendingToolCall,
     type AgentThreadSummary,
 } from "@/stores/canvas/use-canvas-agent-store";
-import { canvasAgentPostconditionMessage, hashCanvasAgentSnapshot, previewCanvasAgentOps, summarizeCanvasAgentOps, verifyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
-import { buildCanvasAgentContext, findCanvasAgentNodes, getCanvasAgentConnection, getCanvasAgentGenerationTasks, getCanvasAgentNode, getCanvasAgentResources, validateCanvasAgentOps } from "@/lib/canvas/canvas-agent-context";
+import { canvasOperationPostconditionMessage, hashCanvasSnapshot, previewCanvasOperations, summarizeCanvasOperations, verifyCanvasOperations, type CanvasOperation, type CanvasSnapshot } from "@/lib/canvas/canvas-operation-contract";
+import { buildCanvasContext, findCanvasNodes, getCanvasConnection, getCanvasGenerationTasks, getCanvasNode, getCanvasResources, validateCanvasOperations } from "@/lib/canvas/canvas-context-discovery";
+import { isCanvasReadTool } from "@/lib/canvas/canvas-agent-protocol";
 import { buildCanvasResourceReferences } from "@/lib/canvas/canvas-resource-references";
 import { buildLocalAgentSetupCommands, detectLocalAgentSetupPlatform, type LocalAgentSetupPlatform } from "@/lib/canvas/local-agent-setup";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
@@ -39,6 +43,7 @@ const PANEL_MOTION_SECONDS = 0.5;
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MAX_AGENT_TURN_PAYLOAD_BYTES = 56 * 1024 * 1024;
+type InterfaceT = ReturnType<typeof useInterfaceTranslation>["t"];
 type AgentEventPayload = {
     agent?: string;
     type?: string;
@@ -74,17 +79,19 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
     onApplyOps,
     onUndoOps,
 }: {
-    snapshot: CanvasAgentSnapshot;
+    snapshot: CanvasSnapshot;
     canUndoOps: boolean;
     undoOpsCount?: number;
     collapsed?: boolean;
     embedded?: boolean;
     headless?: boolean;
     autoConnect?: boolean;
-    onApplyOps: (ops: CanvasAgentOp[], context?: { conversationId?: string; messageId?: string; source?: "online" | "local" }) => Promise<CanvasAgentSnapshot>;
-    onUndoOps: () => CanvasAgentSnapshot | null;
+    onApplyOps: (ops: CanvasOperation[], context?: { conversationId?: string; messageId?: string; source?: "online" | "local" }) => Promise<CanvasSnapshot>;
+    onUndoOps: () => CanvasSnapshot | null;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useInterfaceTranslation();
+    const tRef = useRef(t);
     const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
     const {
@@ -149,8 +156,8 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
     const recoveredToolResultIdsRef = useRef(new Set<string>());
     const activeTurnRef = useRef<AgentTurnPayload | null>(null);
     const syncState = useCallback(
-        (clientId: string, nextSnapshot: CanvasAgentSnapshot) => {
-            const stateHash = hashCanvasAgentSnapshot(nextSnapshot);
+        (clientId: string, nextSnapshot: CanvasSnapshot) => {
+            const stateHash = hashCanvasSnapshot(nextSnapshot);
             if (runtimeStateHashRef.current !== stateHash) {
                 runtimeRevisionRef.current = runtimeStateHashRef.current ? runtimeRevisionRef.current + 1 : nextSnapshot.revision ?? 0;
                 runtimeStateHashRef.current = stateHash;
@@ -170,8 +177,8 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                     pushEventLog({
                         id: `${Date.now()}-${Math.random()}`,
                         time: new Date().toLocaleTimeString(),
-                        title: "状态同步失败",
-                        text: "本机 Runtime 暂未接收画布状态",
+                        title: tRef.current("agentLocalUiStatusSyncFailed" as InterfaceMessageKey),
+                        text: tRef.current("agentLocalUiRuntimeNotReceivedCanvasState" as InterfaceMessageKey),
                     });
                     return undefined;
                 });
@@ -198,7 +205,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                 setAgentState({ messages: normalizeHistoryMessages(thread.messages || []) });
             }
         } catch (error) {
-            addEventLog("读取历史失败", error);
+            addEventLog(tRef.current("agentLocalUiReadHistoryFailed" as InterfaceMessageKey), error);
         } finally {
             setAgentState({ loadingThreads: false });
         }
@@ -207,6 +214,9 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
     useEffect(() => {
         snapshotRef.current = snapshot;
     }, [snapshot]);
+    useEffect(() => {
+        tRef.current = t;
+    }, [t]);
     useEffect(() => {
         runtimeRevisionRef.current = 0;
         runtimeStateHashRef.current = "";
@@ -259,8 +269,8 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             if (event.type === "hello") {
                 errorLoggedRef.current = false;
                 connectedRef.current = true;
-                setAgentState({ connected: true, activity: "已连接", connectError: "", messages: useCanvasAgentStore.getState().messages.filter((item) => !isConnectionErrorMessage(item)) });
-                if (!headless) message.success("本地 Agent 已连接");
+                setAgentState({ connected: true, activity: "已连接", connectError: "", messages: useCanvasAgentStore.getState().messages.filter((item) => !isConnectionErrorMessage(item, tRef.current)) });
+                if (!headless) message.success(tRef.current("agentLocalUiLocalAgentConnected" as InterfaceMessageKey));
                 syncState(clientId, snapshotRef.current);
                 return;
             }
@@ -276,18 +286,18 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             }
             if (event.type === "agent_log") {
                 const text = parseEventJson<{ text?: unknown }>(event.data)?.text;
-                addEventLog("日志", text, text);
+                addEventLog(tRef.current("agentLocalUiLog" as InterfaceMessageKey), text, text);
                 return;
             }
             if (event.type === "agent_error") {
                 const errorMessage = parseEventJson<{ message?: unknown }>(event.data)?.message;
                 setAgentState({ activity: "出错", waiting: false, sending: false });
-                const messageId = addMessage({ role: "error", title: "错误", text: normalizeText(errorMessage) || "本地 Agent 执行失败，请重试本轮。" });
+                const messageId = addMessage({ role: "error", title: tRef.current("agentLocalUiErrorTitle" as InterfaceMessageKey), text: normalizeText(errorMessage) || tRef.current("agentLocalUiExecutionFailedRetry" as InterfaceMessageKey) });
                 if (activeTurnRef.current) {
                     setRetryTurn(activeTurnRef.current);
                     setRetryMessageId(messageId || null);
                 }
-                addEventLog("错误", errorMessage, errorMessage);
+                addEventLog(tRef.current("agentLocalUiErrorTitle" as InterfaceMessageKey), errorMessage, errorMessage);
                 return;
             }
             if (event.type === "agent_done") {
@@ -304,9 +314,9 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                 } catch (error) {
                     if (controller.signal.aborted) return;
                     const wasConnected = connectedRef.current;
-                    const text = wasConnected ? "本地 Agent 连接已断开，正在重连" : "本地 Agent 连接失败，请检查本机 Runtime";
+                    const text = tRef.current((wasConnected ? "agentLocalUiConnectionDroppedRetrying" : "agentLocalUiConnectionFailedCheckRuntime") as InterfaceMessageKey);
                     if (!errorLoggedRef.current || wasConnected) {
-                        addEventLog(wasConnected ? "连接断开" : "连接失败", text);
+                        addEventLog(tRef.current((wasConnected ? "agentLocalUiConnectionDropped" : "agentLocalUiConnectionFailed") as InterfaceMessageKey), text);
                         if (!headless) message.error(text);
                     }
                     errorLoggedRef.current = true;
@@ -349,15 +359,16 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         setAgentState({ activity: appendUserMessage ? "发送中" : "重试中", sending: true, waiting: true });
         if (appendUserMessage) {
             const files = state.attachments;
-            addMessage({ role: "user", text: payload.text || "发送了图片", attachments: files });
-            addEventLog("用户发送", { text: payload.text, attachments: files.map(({ name, type, size }) => ({ name, type, size })) });
+            addMessage({ role: "user", text: payload.text || tRef.current("agentLocalUiSentImages" as InterfaceMessageKey), attachments: files });
+            addEventLog(tRef.current("agentLocalUiUserSent" as InterfaceMessageKey), { text: payload.text, attachments: files.map(({ name, type, size }) => ({ name, type, size })) });
+            // 保留附件的 data URL 供已发送消息持续显示和放大预览；仅释放 composer 的临时 object URL。
             files.forEach((item) => {
                 URL.revokeObjectURL(item.url);
                 attachmentUrlsRef.current.delete(item.url);
             });
             setAgentState({ prompt: "", attachments: [] });
         } else {
-            addEventLog("重试本轮", { threadId: payload.threadId, attachments: payload.attachments.map(({ name, type }) => ({ name, type })) });
+            addEventLog(tRef.current("agentRuntimeUiRetryTurn" as InterfaceMessageKey), { threadId: payload.threadId, attachments: payload.attachments.map(({ name, type }) => ({ name, type })) });
         }
         try {
             const data = await fetchAgentJson<{ threadId?: string }>("/agent/codex/turn", {
@@ -374,13 +385,14 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             const acceptedPayload = data.threadId ? { ...payload, threadId: data.threadId } : payload;
             activeTurnRef.current = acceptedPayload;
             if (data.threadId) setAgentState({ activeThreadId: data.threadId });
-            addEventLog(appendUserMessage ? "本地 Agent 已接收" : "本地 Agent 已接收重试", { accepted: true });
+            addEventLog(tRef.current((appendUserMessage ? "agentLocalUiLocalAgentAccepted" : "agentLocalUiLocalAgentAcceptedRetry") as InterfaceMessageKey), { accepted: true });
         } catch (error) {
             setRetryTurn(activeTurnRef.current);
             setAgentState({ activity: "发送失败", waiting: false });
-            const messageId = addMessage({ role: "error", title: appendUserMessage ? "发送失败" : "重试失败", text: error instanceof Error ? error.message : "发送失败" });
+            const failure = tRef.current((appendUserMessage ? "agentLocalUiSendFailed" : "agentLocalUiRetryFailed") as InterfaceMessageKey);
+            const messageId = addMessage({ role: "error", title: failure, text: error instanceof Error ? error.message : failure });
             setRetryMessageId(messageId || null);
-            addEventLog(appendUserMessage ? "发送失败" : "重试失败", error);
+            addEventLog(failure, error);
         } finally {
             setAgentState({ sending: false });
         }
@@ -391,20 +403,20 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         const files = attachments;
         if (!connected || !promptWithAttachments(text, files) || sending || waiting) return;
         if (attachmentPayloadBytes(files) > MAX_ATTACHMENT_PAYLOAD_BYTES) {
-            addMessage({ role: "error", title: "图片过大", text: "图片附件超过 30MB，请删减后再发送。" });
+            addMessage({ role: "error", title: t("agentLocalUiImageTooLargeTitle" as InterfaceMessageKey), text: t("agentLocalUiImageAttachmentOverLimit" as InterfaceMessageKey) });
             return;
         }
         let skillExecution: Awaited<ReturnType<typeof skillRuntime.prepare<"localAgent">>>;
         try {
             skillExecution = await skillRuntime.prepare({ profile: "localAgent", prompt: text, skills: composerSkills });
         } catch (error) {
-            addMessage({ role: "error", title: "技能加载失败", text: error instanceof Error ? error.message : "无法读取技能包" });
+            addMessage({ role: "error", title: t("agentLocalUiSkillLoadFailedTitle" as InterfaceMessageKey), text: error instanceof Error ? error.message : t("agentLocalUiCannotReadSkillPackage" as InterfaceMessageKey) });
             return;
         }
         const requestPrompt = promptWithAttachments(skillExecution.prompt, files);
         const skillBundles: AgentTurnPayload["skills"] = skillExecution.skills;
         if (attachmentPayloadBytes(files) + skillBundlePayloadBytes(skillBundles) > MAX_AGENT_TURN_PAYLOAD_BYTES) {
-            addMessage({ role: "error", title: "本轮内容过大", text: "图片与技能包合计超过本地 Agent 单轮限制，请减少附件或只选择一个技能。" });
+            addMessage({ role: "error", title: t("agentLocalUiTurnContentTooLargeTitle" as InterfaceMessageKey), text: t("agentLocalUiTurnContentOverLimit" as InterfaceMessageKey) });
             return;
         }
         await submitTurn({
@@ -436,12 +448,12 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                     URL.revokeObjectURL(item.url);
                     attachmentUrlsRef.current.delete(item.url);
                 });
-                addMessage({ role: "error", title: "图片过大", text: "图片附件最多约 30MB。" });
+                addMessage({ role: "error", title: t("agentLocalUiImageTooLargeTitle" as InterfaceMessageKey), text: t("agentLocalUiImageAttachmentMaxSize" as InterfaceMessageKey) });
                 return;
             }
             if (next.length) setAgentState({ attachments: merged });
         } catch (error) {
-            addMessage({ role: "error", title: "图片读取失败", text: error instanceof Error ? error.message : "图片读取失败" });
+            addMessage({ role: "error", title: t("agentLocalUiImageReadFailedTitle" as InterfaceMessageKey), text: error instanceof Error ? error.message : t("agentLocalUiImageReadFailed" as InterfaceMessageKey) });
         }
     };
 
@@ -462,7 +474,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             }
             pendingToolRef.current = payload;
             setAgentState({ pendingTool: payload, activity: "等待确认", waiting: false });
-            addEventLog("等待确认", payload, payload);
+            addEventLog(tRef.current("agentLocalUiWaitingForConfirmation" as InterfaceMessageKey), payload, payload);
             return;
         }
         await runToolCall(payload);
@@ -474,7 +486,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             const input = (payload.input || {}) as Record<string, unknown>;
             const projectToolName = isProjectAgentToolName(payload.name) ? payload.name : null;
             setAgentState({ activity: payload.name === "canvas_apply_ops" ? "执行画布操作" : projectToolName ? "执行项目工具" : "读取画布", waiting: true });
-            addEventLog(toolName(payload.name), payload, payload);
+            addEventLog(toolName(payload.name, tRef.current), payload, payload);
             if (payload.name === "canvas_apply_ops") {
                 const currentSnapshot = snapshotRef.current;
                 if (typeof input.expectedRevision === "number" && input.expectedRevision !== runtimeRevisionRef.current) throw new Error(`画布 revision 已从 ${input.expectedRevision} 变为 ${runtimeRevisionRef.current}，请重新读取 canvas_get_context 后再执行写操作`);
@@ -484,18 +496,18 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                 // Runtime has already performed the authoritative check before
                 // emitting this tool call. Comparing the two algorithms here
                 // would reject every valid local write.
-                const validation = validateCanvasAgentOps(currentSnapshot, (input.ops || []) as CanvasAgentOp[]);
+                const validation = validateCanvasOperations(currentSnapshot, (input.ops || []) as CanvasOperation[]);
                 if (!validation.ok) throw new Error(`画布操作校验失败：${validation.issues.filter((item) => item.severity === "error").map((item) => item.message).join("；")}`);
             }
             const result =
                 payload.name === "canvas_apply_ops"
                     ? await (async () => {
                           const before = snapshotRef.current;
-                          const next = await onApplyOpsRef.current((input.ops || []) as CanvasAgentOp[], { source: "local", conversationId: activeThreadId || clientIdRef.current, messageId: payload.requestId });
-                          const verification = verifyCanvasAgentOps(before, next, (input.ops || []) as CanvasAgentOp[]);
+                          const next = await onApplyOpsRef.current((input.ops || []) as CanvasOperation[], { source: "local", conversationId: activeThreadId || clientIdRef.current, messageId: payload.requestId });
+                          const verification = verifyCanvasOperations(before, next, (input.ops || []) as CanvasOperation[]);
                           return {
                               ok: verification.ok,
-                              message: canvasAgentPostconditionMessage(verification),
+                              message: canvasOperationPostconditionMessage(verification),
                               data: { verification, snapshot: next },
                               snapshot: next,
                           };
@@ -505,17 +517,17 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                     : payload.name === "canvas_get_context"
                       ? await readLocalCanvasContext()
                       : payload.name === "canvas_find_nodes"
-                        ? findCanvasAgentNodes(snapshotRef.current, input as Parameters<typeof findCanvasAgentNodes>[1])
+                        ? findCanvasNodes(snapshotRef.current, input as Parameters<typeof findCanvasNodes>[1])
                         : payload.name === "canvas_get_node"
-                          ? getCanvasAgentNode(snapshotRef.current, { id: requireString(input.id, "id") })
+                          ? getCanvasNode(snapshotRef.current, { id: requireString(input.id, "id") })
                         : payload.name === "canvas_get_connection"
-                            ? getCanvasAgentConnection(snapshotRef.current, { id: requireString(input.id, "id") })
+                            ? getCanvasConnection(snapshotRef.current, { id: requireString(input.id, "id") })
                         : payload.name === "canvas_get_generation_tasks"
-                          ? getCanvasAgentGenerationTasks(snapshotRef.current, input as Parameters<typeof getCanvasAgentGenerationTasks>[1])
+                          ? getCanvasGenerationTasks(snapshotRef.current, input as Parameters<typeof getCanvasGenerationTasks>[1])
                         : payload.name === "canvas_get_resources"
-                          ? getCanvasAgentResources(snapshotRef.current, input as Parameters<typeof getCanvasAgentResources>[1])
+                          ? getCanvasResources(snapshotRef.current, input as Parameters<typeof getCanvasResources>[1])
                         : payload.name === "canvas_validate_ops"
-                            ? validateCanvasAgentOps(snapshotRef.current, (input.ops || []) as CanvasAgentOp[])
+                            ? validateCanvasOperations(snapshotRef.current, (input.ops || []) as CanvasOperation[])
                             : payload.name === "canvas_get_selection"
                               ? (() => {
                                     const ids = new Set(snapshotRef.current.selectedNodeIds || []);
@@ -525,20 +537,22 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                               ? await runProjectAgentTool(projectToolName, input, snapshotRef.current.domainProjectId)
                               : snapshotRef.current;
             await postToolResult(clientIdRef.current, { requestId: payload.requestId, result });
-            if (payload.name === "canvas_apply_ops") syncState(clientIdRef.current, (result as { snapshot?: CanvasAgentSnapshot }).snapshot || snapshotRef.current);
+            if (payload.name === "canvas_apply_ops") syncState(clientIdRef.current, (result as { snapshot?: CanvasSnapshot }).snapshot || snapshotRef.current);
             setAgentState({ activity: "工具完成", waiting: true });
-            addEventLog(`${toolName(payload.name)}完成`, result, result);
+            const completedTitle = tRef.current("agentLocalUiToolCompletedNamed" as InterfaceMessageKey, { name: toolName(payload.name, tRef.current) });
+            addEventLog(completedTitle, result, result);
             addMessage({
                 role: "tool",
-                title: `${toolName(payload.name)}完成`,
-                text: payload.name === "canvas_apply_ops" ? (result as { message?: string }).message || summarizeCanvasAgentOps((input.ops || []) as CanvasAgentOp[]) || "画布操作" : "已完成",
+                title: completedTitle,
+                text: payload.name === "canvas_apply_ops" ? (result as { message?: string }).message || summarizeCanvasOperations((input.ops || []) as CanvasOperation[]) || "画布操作" : tRef.current("agentRuntimeUiToolStatusCompleted" as InterfaceMessageKey),
                 detail: { requestId: payload.requestId, name: payload.name, input, result },
             });
         } catch (error) {
-            const message = error instanceof Error ? error.message : "画布操作失败";
+            const errorMessage = error instanceof Error ? error.message : tRef.current("agentLocalUiCanvasOperationFailed" as InterfaceMessageKey);
             setAgentState({ activity: "工具失败", waiting: false });
-            addMessage({ role: "tool", title: "工具失败", text: message, detail: payload });
-            await postToolResult(clientIdRef.current, { requestId: payload.requestId, error: message });
+            const title = tRef.current("agentLocalUiToolFailureTitle" as InterfaceMessageKey);
+            addMessage({ role: "tool", title, text: errorMessage, detail: payload });
+            await postToolResult(clientIdRef.current, { requestId: payload.requestId, error: errorMessage });
         } finally {
             activeToolRequestIdsRef.current.delete(payload.requestId);
         }
@@ -550,8 +564,8 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         // read→write precondition compatible with the server-side path.
         const synced = await syncState(clientIdRef.current, snapshotRef.current);
         const stateHash = synced?.stateHash || runtimeCanonicalStateHashRef.current;
-        return buildCanvasAgentContext(snapshotRef.current, {
-            ...(stateHash ? { stateHash, hashSource: "canvas-agent-server" as const } : {}),
+        return buildCanvasContext(snapshotRef.current, {
+            ...(stateHash ? { stateHash, hashSource: "canvas-server" as const } : {}),
         });
     };
 
@@ -559,7 +573,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         if (!pendingTool) return;
         await postToolResult(clientIdRef.current, { requestId: pendingTool.requestId, error: "用户取消了画布工具调用" });
         setAgentState({ activity: "已取消", waiting: false });
-        addMessage({ role: "tool", title: "拒绝执行", text: toolName(pendingTool.name), detail: { requestId: pendingTool.requestId, name: pendingTool.name, input: pendingTool.input } });
+            addMessage({ role: "tool", title: t("agentRuntimeUiToolStatusRejected" as InterfaceMessageKey), text: toolName(pendingTool.name, t), detail: { requestId: pendingTool.requestId, name: pendingTool.name, input: pendingTool.input } });
         pendingToolRef.current = null;
         setAgentState({ pendingTool: null });
     };
@@ -576,7 +590,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         const restored = onUndoOps();
         if (!restored) return;
         setAgentState({ activity: "已撤销" });
-        addMessage({ role: "tool", title: "已撤销 Agent 批次", text: "已恢复到本次写回前的画布状态", detail: restored });
+        addMessage({ role: "tool", title: t("agentLocalUiUndidAgentBatch" as InterfaceMessageKey), text: t("agentLocalUiCanvasRestoredBeforeWriteback" as InterfaceMessageKey), detail: restored });
         if (connected) syncState(clientIdRef.current, restored);
     };
 
@@ -609,8 +623,9 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             setAgentState({ activeThreadId: data.thread?.id || data.workspace?.activeThreadId || "", messages: [], activeTab: "chat", activity: "新对话" });
             await loadThreads();
         } catch (error) {
-            addEventLog("新建对话失败", error);
-            message.error(error instanceof Error ? error.message : "新建对话失败");
+            const failure = t("agentLocalUiNewConversationFailed" as InterfaceMessageKey);
+            addEventLog(failure, error);
+            message.error(error instanceof Error ? error.message : failure);
         } finally {
             setAgentState({ loadingThreads: false });
         }
@@ -628,8 +643,9 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             setAgentState({ activeThreadId: data.thread?.id || threadId, messages: normalizeHistoryMessages(data.messages || []), activeTab: "chat", activity: "已恢复会话" });
             await loadThreads();
         } catch (error) {
-            addEventLog("恢复对话失败", error);
-            message.error(error instanceof Error ? error.message : "恢复对话失败");
+            const failure = t("agentLocalUiConversationRestoreFailed" as InterfaceMessageKey);
+            addEventLog(failure, error);
+            message.error(error instanceof Error ? error.message : failure);
         } finally {
             setAgentState({ loadingThreads: false });
         }
@@ -652,23 +668,24 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                 activeThreadId: current.activeThreadId === threadId ? "" : current.activeThreadId,
                 messages: current.activeThreadId === threadId ? [] : current.messages,
             });
-            message.success("记录已删除");
+            message.success(t("agentLocalUiRecordDeleted" as InterfaceMessageKey));
         } catch (error) {
-            addEventLog("删除对话失败", error);
-            message.error(error instanceof Error ? error.message : "删除对话失败");
+            const failure = t("agentLocalUiDeleteConversationFailed" as InterfaceMessageKey);
+            addEventLog(failure, error);
+            message.error(error instanceof Error ? error.message : failure);
         } finally {
             setAgentState({ loadingThreads: false });
         }
     };
 
     const confirmDeleteThread = (thread: AgentThreadSummary) => {
-        const label = thread.name || thread.preview || "未命名对话";
+        const label = thread.name || thread.preview || t("agentLocalUiUnnamedConversation" as InterfaceMessageKey);
         modal.confirm({
-            title: "删除对话记录",
-            content: `确定删除「${label.length > 48 ? `${label.slice(0, 48)}...` : label}」吗？`,
-            okText: "删除",
+            title: t("agentLocalUiDeleteConversationRecordsTitle" as InterfaceMessageKey),
+            content: t("agentLocalUiConfirmDeleteConversation" as InterfaceMessageKey, { title: label.length > 48 ? `${label.slice(0, 48)}...` : label }),
+            okText: t("agentRuntimeUiDeleteCountLabel" as InterfaceMessageKey),
             okType: "danger",
-            cancelText: "取消",
+            cancelText: t("agentLocalUiCancel" as InterfaceMessageKey),
             onOk: () => deleteThread(thread.id),
         });
     };
@@ -721,7 +738,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
     };
 
     const handleAgentEvent = (event: AgentEventPayload) => {
-        if (shouldLogAgentEvent(event)) addEventLog(eventTitle(event), event, event);
+        if (shouldLogAgentEvent(event)) addEventLog(eventTitle(event, tRef.current), event, event);
         if (event.type === "thread.started" && event.thread_id) setAgentState({ activeThreadId: event.thread_id });
         const nextActivity = activityText(event);
         if (nextActivity) setAgentState({ activity: nextActivity });
@@ -735,7 +752,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
             if (activeTurnRef.current) setRetryTurn(activeTurnRef.current);
             setAgentState({ waiting: false, sending: false });
         }
-        const item = formatAgentEvent(event);
+        const item = formatAgentEvent(event, tRef.current);
         if (item) {
             if (item.role === "error") setAgentState({ waiting: false, sending: false });
             const messageId = addMessage(item);
@@ -747,20 +764,20 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
         <>
             <div className="flex min-h-8 shrink-0 items-center justify-end gap-1 px-3 pb-1">
                 <div className="mr-auto min-w-0 truncate px-1 text-[var(--fs-tiny)]" style={{ color: connected ? "#16a34a" : theme.node.muted }}>
-                    {connected ? "本机 Agent 已连接" : canvasAgentConnectionStatusText({ enabled, connected, activity, connectError })}
+                    {connected ? t("agentLocalUiLocalAgentConnected" as InterfaceMessageKey) : localAgentConnectionLabel(canvasAgentConnectionStatusText({ enabled, connected, activity, connectError }), t)}
                 </div>
                 {!connected ? (
                     <Button size="small" type={enabled ? "default" : "primary"} className="!h-7 !px-2.5" icon={<PlugZap className="size-3.5" />} onClick={toggleAgentConnection}>
-                        {enabled ? "连接中" : "连接"}
+                        {enabled ? t("agentLocalUiConnecting" as InterfaceMessageKey) : t("agentLocalUiConnect" as InterfaceMessageKey)}
                     </Button>
                 ) : null}
-                <Tooltip title={threads.length ? `历史会话 · ${threads.length}` : "历史会话"}>
-                    <Button type="text" className={`!h-7 !min-w-7 !px-1.5 ${activeTab === "history" ? "font-medium" : ""}`} style={{ color: activeTab === "history" ? theme.node.text : theme.node.muted, background: activeTab === "history" ? theme.spatial.surface : "transparent" }} icon={<History className="size-3.5" />} onClick={() => setAgentState({ activeTab: activeTab === "history" ? "chat" : "history" })} aria-label="打开历史会话">
+                <Tooltip title={threads.length ? t("agentLocalUiHistorySessionsCount" as InterfaceMessageKey, { count: threads.length }) : t("agentLocalUiHistorySessions" as InterfaceMessageKey)}>
+                    <Button type="text" className={`!h-7 !min-w-7 !px-1.5 ${activeTab === "history" ? "font-medium" : ""}`} style={{ color: activeTab === "history" ? theme.node.text : theme.node.muted, background: activeTab === "history" ? theme.spatial.surface : "transparent" }} icon={<History className="size-3.5" />} onClick={() => setAgentState({ activeTab: activeTab === "history" ? "chat" : "history" })} aria-label={t("agentLocalUiOpenHistorySessions" as InterfaceMessageKey)}>
                         {threads.length ? <span className="text-[var(--fs-tiny)] tabular-nums">{threads.length}</span> : null}
                     </Button>
                 </Tooltip>
-                <Tooltip title="新对话">
-                    <Button type="text" shape="circle" className="!h-7 !w-7 !min-w-7" disabled={!connected || loadingThreads} style={{ color: theme.node.muted }} icon={<Plus className="size-3.5" />} onClick={() => void startNewThread()} aria-label="新建对话" />
+                <Tooltip title={t("agentLocalUiNewConversation" as InterfaceMessageKey)}>
+                    <Button type="text" shape="circle" className="!h-7 !w-7 !min-w-7" disabled={!connected || loadingThreads} style={{ color: theme.node.muted }} icon={<Plus className="size-3.5" />} onClick={() => void startNewThread()} aria-label={t("agentLocalUiCreateNewConversation" as InterfaceMessageKey)} />
                 </Tooltip>
             </div>
 
@@ -803,8 +820,8 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                         ))}
                         {pendingTool ? (
                             <AgentPendingToolCard
-                                summary={summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}
-                                detail={{ requestId: pendingTool.requestId, name: pendingTool.name, input: pendingTool.input, impact: previewCanvasAgentOps(pendingTool.input?.ops || [], snapshot) }}
+                                summary={summarizeCanvasOperations(pendingTool.input?.ops || [], t) || toolName(pendingTool.name, t)}
+                                detail={{ requestId: pendingTool.requestId, name: pendingTool.name, input: pendingTool.input, impact: previewCanvasOperations(pendingTool.input?.ops || [], snapshot, t) }}
                                 theme={theme}
                                 onReject={rejectPendingTool}
                                 onApprove={approvePendingTool}
@@ -817,7 +834,7 @@ export const CanvasLocalAgentPanel = memo(function CanvasLocalAgentPanel({
                         attachments={attachments.map(agentAttachmentToChatAttachment)}
                         disabled={!connected}
                         sending={sending || waiting}
-                        placeholder="询问 Codex，或让它操作画布"
+                        placeholder={t("agentLocalUiPromptPlaceholder" as InterfaceMessageKey)}
                         theme={theme}
                         references={composerReferences}
                         slashSkills={composerSkills}
@@ -882,24 +899,25 @@ function AgentLogView({
     onCopied: (text: string) => void;
     onCopyBlocked: (text: string) => void;
 }) {
+    const { t } = useInterfaceTranslation();
     const [mode, setMode] = useState<"text" | "json">("text");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const content = mode === "text" ? formatLogText(logs, context) : formatLogJson(logs, context);
-    const lastError = [...logs].reverse().find((item) => /错误|失败|error/i.test(`${item.title}\n${item.text}`));
-    const copy = async (value = content, tip = "日志已复制") => {
+    const content = mode === "text" ? formatLogText(logs, context, t) : formatLogJson(logs, context);
+    const lastError = [...logs].reverse().find((item) => /错误|失败|error|fail|failure|fallo|falha|失敗|エラー|오류|실패/i.test(`${item.title}\n${item.text}`));
+    const copy = async (value = content, tip = t("agentLocalUiLogsCopied" as InterfaceMessageKey)) => {
         if (await copyToClipboard(value)) {
             onCopied(tip);
             return;
         }
         textareaRef.current?.focus();
         textareaRef.current?.select();
-        onCopyBlocked("已选中日志，请手动复制");
+        onCopyBlocked(t("agentLocalUiLogSelectedCopyManually" as InterfaceMessageKey));
     };
     return (
         <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
             <div className="flex min-h-full flex-col gap-3">
                 <div>
-                    <div className="text-base font-semibold leading-6">运行日志</div>
+                    <div className="text-base font-semibold leading-6">{t("agentLocalUiRunLogs" as InterfaceMessageKey)}</div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <Segmented
@@ -907,22 +925,22 @@ function AgentLogView({
                         value={mode}
                         onChange={(value) => setMode(value as "text" | "json")}
                         options={[
-                            { label: "排查日志", value: "text" },
-                            { label: "原始 JSON", value: "json" },
+                            { label: t("agentLocalUiDiagnosticLog" as InterfaceMessageKey), value: "text" },
+                            { label: t("agentLocalUiRawJson" as InterfaceMessageKey), value: "json" },
                         ]}
                     />
                     <div className="flex items-center gap-2">
                         <span className="text-xs" style={{ color: theme.node.muted }}>
-                            {logs.length} 条
+                            {t("agentLocalUiEventLogCount" as InterfaceMessageKey, { count: logs.length })}
                         </span>
                         <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void copy()}>
-                            复制
+                            {t("agentLocalUiCopy" as InterfaceMessageKey)}
                         </Button>
-                        <Button size="small" disabled={!lastError} onClick={() => lastError && void copy(formatLogText([lastError], context), "最近错误已复制")}>
-                            最近错误
+                        <Button size="small" disabled={!lastError} onClick={() => lastError && void copy(formatLogText([lastError], context, t), t("agentLocalUiMostRecentErrorCopied" as InterfaceMessageKey))}>
+                            {t("agentLocalUiMostRecentError" as InterfaceMessageKey)}
                         </Button>
                         <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} disabled={!logs.length} onClick={onClear}>
-                            清空
+                            {t("agentLocalUiClear" as InterfaceMessageKey)}
                         </Button>
                     </div>
                 </div>
@@ -953,43 +971,44 @@ function AgentConnectView({
     onToggleEnabled: () => void;
 }) {
     const { message } = App.useApp();
+    const { t } = useInterfaceTranslation();
     const [platform, setPlatform] = useState<LocalAgentSetupPlatform>(() => detectLocalAgentSetupPlatform());
     const origin = typeof window === "undefined" ? "http://localhost:3000" : window.location.origin;
     const commands = buildLocalAgentSetupCommands(origin, platform);
-    const statusText = canvasAgentConnectionStatusText({ enabled, connected: false, activity, connectError });
+    const statusText = localAgentConnectionLabel(canvasAgentConnectionStatusText({ enabled, connected: false, activity, connectError }), t);
     const statusColor = connectError ? "#dc2626" : enabled ? "#d97706" : theme.node.muted;
     const copyCommand = async (value: string, label: string) => {
         if (await copyToClipboard(value)) {
-            message.success(`${label}已复制`);
+            message.success(t("agentLocalUiCommandCopied" as InterfaceMessageKey, { command: label }));
             return;
         }
-        message.warning("复制失败，请手动复制");
+        message.warning(t("agentLocalUiCopyFailedManually" as InterfaceMessageKey));
     };
     return (
         <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
             <div className="mx-auto w-full max-w-[620px] space-y-5 pb-4">
                 <div>
-                    <div className="text-base font-semibold leading-6">连接本地 Agent</div>
+                    <div className="text-base font-semibold leading-6">{t("agentLocalUiConnectLocalAgent" as InterfaceMessageKey)}</div>
                     <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                        在这台电脑启动 Canvas Agent 后，网页会通过 127.0.0.1 建立本机安全连接。连接成功后，这里会自动恢复原对话。
+                        {t("agentLocalUiConnectLocalAgentDescription" as InterfaceMessageKey)}
                     </div>
                 </div>
                 <div className="rounded-md p-3" style={{ background: theme.spatial.surface }}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
-                                <span className="shrink-0 text-sm font-medium leading-5">网页连接</span>
+                                <span className="shrink-0 text-sm font-medium leading-5">{t("agentLocalUiWebConnection" as InterfaceMessageKey)}</span>
                                 <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[var(--fs-label)] leading-4" style={{ background: theme.node.fill, color: statusColor }}>
                                     {enabled ? <LoaderCircle className="size-3 shrink-0 animate-spin" /> : <span className="size-1.5 shrink-0 rounded-full" style={{ background: statusColor }} />}
                                     <span className="truncate">{statusText}</span>
                                 </span>
                             </div>
                             <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                                {enabled ? "正在检测本机 127.0.0.1:17371；服务启动后会自动连接。" : "先完成下面两步，再点击连接。"}
+                                {enabled ? t("agentLocalUiDetectingLocalRuntime" as InterfaceMessageKey) : t("agentLocalUiCompleteStepsBeforeConnecting" as InterfaceMessageKey)}
                             </div>
                         </div>
                         <Button className="!h-8 !px-3" type={enabled ? "default" : "primary"} icon={<PlugZap className="size-4" />} onClick={onToggleEnabled}>
-                            {enabled ? "停止重试" : connectError ? "重新连接" : "开始连接"}
+                            {enabled ? t("agentLocalUiStopRetrying" as InterfaceMessageKey) : connectError ? t("agentLocalUiReconnect" as InterfaceMessageKey) : t("agentLocalUiStartConnecting" as InterfaceMessageKey)}
                         </Button>
                     </div>
                     <div className="mt-3 grid gap-2.5">
@@ -1008,8 +1027,8 @@ function AgentConnectView({
                             <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
-                                        <div className="text-sm font-medium leading-5">安装本机 Runtime</div>
-                                        <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>需要 Git、Node.js 18+。当前版本从 GitHub 源码安装。</div>
+                                        <div className="text-sm font-medium leading-5">{t("agentLocalUiInstallLocalRuntime" as InterfaceMessageKey)}</div>
+                                        <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>{t("agentLocalUiInstallRuntimeRequirements" as InterfaceMessageKey)}</div>
                                     </div>
                                     <Segmented
                                         size="small"
@@ -1021,7 +1040,7 @@ function AgentConnectView({
                                         onChange={(value) => setPlatform(value as LocalAgentSetupPlatform)}
                                     />
                                 </div>
-                                <CommandBlock value={commands.install} theme={theme} onCopy={() => copyCommand(commands.install, "安装命令")} />
+                                <CommandBlock value={commands.install} theme={theme} t={t} onCopy={() => copyCommand(commands.install, t("agentLocalUiInstallCommand" as InterfaceMessageKey))} />
                             </div>
                         </div>
                     </section>
@@ -1030,11 +1049,11 @@ function AgentConnectView({
                         <div className="flex items-start gap-3">
                             <span className="grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold" style={{ background: theme.node.fill, color: theme.node.text }}>2</span>
                             <div className="min-w-0 flex-1">
-                                <div className="text-sm font-medium leading-5">启动并授权当前站点</div>
+                                <div className="text-sm font-medium leading-5">{t("agentLocalUiStartAndAuthorizeSite" as InterfaceMessageKey)}</div>
                                 <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                                    命令已绑定 <span className="font-mono">{origin}</span>。保持终端运行，再回到上方开始连接。
+                                    {t("agentLocalUiCommandBoundToSite" as InterfaceMessageKey)} <span className="font-mono">{origin}</span>{t("agentLocalUiKeepTerminalRunning" as InterfaceMessageKey)}
                                 </div>
-                                <CommandBlock value={commands.start} theme={theme} onCopy={() => copyCommand(commands.start, "启动命令")} />
+                                <CommandBlock value={commands.start} theme={theme} t={t} onCopy={() => copyCommand(commands.start, t("agentLocalUiStartCommand" as InterfaceMessageKey))} />
                             </div>
                         </div>
                     </section>
@@ -1043,10 +1062,10 @@ function AgentConnectView({
                         <div className="flex items-start gap-3">
                             <span className="grid size-6 shrink-0 place-items-center rounded-full" style={{ background: theme.node.fill, color: theme.node.text }}><CheckCircle2 className="size-3.5" /></span>
                             <div className="min-w-0 flex-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                                <div className="text-sm font-medium" style={{ color: theme.node.text }}>当前支持范围</div>
-                                <div className="mt-1">网页侧边栏使用 Codex；外部 MCP 已提供 Codex 与 Claude Code 接入。Hermes、WorkBuddy 尚未验证。Codex 需要已登录或配置可用凭据。</div>
+                                <div className="text-sm font-medium" style={{ color: theme.node.text }}>{t("agentLocalUiCurrentSupport" as InterfaceMessageKey)}</div>
+                                <div className="mt-1">{t("agentLocalUiSupportDescription" as InterfaceMessageKey)}</div>
                                 <Button type="link" size="small" className="mt-1 !h-7 !px-0" href="https://github.com/ddcat-ai/open-ai-canvas/tree/main/canvas-agent" target="_blank" rel="noreferrer" icon={<ExternalLink className="size-3.5" />}>
-                                    查看完整说明
+                                    {t("agentLocalUiViewFullGuide" as InterfaceMessageKey)}
                                 </Button>
                             </div>
                         </div>
@@ -1060,10 +1079,12 @@ function AgentConnectView({
 function CommandBlock({
     value,
     theme,
+    t,
     onCopy,
 }: {
     value: string;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    t: InterfaceT;
     onCopy: () => void | Promise<void>;
 }) {
     return (
@@ -1071,10 +1092,10 @@ function CommandBlock({
             <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5" style={{ borderColor: theme.node.stroke }}>
                 <span className="inline-flex items-center gap-1.5 text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
                     <Terminal className="size-3.5" />
-                    终端命令
+                    {t("agentLocalUiTerminalCommand" as InterfaceMessageKey)}
                 </span>
-                <Button type="text" size="small" className="!h-6 !px-1.5" icon={<Copy className="size-3.5" />} onClick={() => void onCopy()} aria-label="复制终端命令">
-                    复制
+                <Button type="text" size="small" className="!h-6 !px-1.5" icon={<Copy className="size-3.5" />} onClick={() => void onCopy()} aria-label={t("agentLocalUiCopyTerminalCommand" as InterfaceMessageKey)}>
+                    {t("agentLocalUiCopy" as InterfaceMessageKey)}
                 </Button>
             </div>
             <pre className="thin-scrollbar overflow-x-auto whitespace-pre p-3 font-mono text-[11px] leading-5" style={{ color: theme.node.text }}>{value}</pre>
@@ -1105,26 +1126,27 @@ function AgentHistoryView({
     onResumeThread: (threadId: string) => void;
     onDeleteThread: (thread: AgentThreadSummary) => void;
 }) {
+    const { t } = useInterfaceTranslation();
     return (
         <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             <div className="space-y-3">
                 <div className="flex min-w-0 items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
                     <FolderOpen className="size-3.5 shrink-0" />
-                    <span className="shrink-0">工作空间</span>
+                    <span className="shrink-0">{t("agentLocalUiWorkspace" as InterfaceMessageKey)}</span>
                     <span className="min-w-0 truncate" title={workspacePath}>
-                        {workspacePath || "默认画布目录"}
+                        {workspacePath || t("agentLocalUiDefaultCanvasDirectory" as InterfaceMessageKey)}
                     </span>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm" style={{ color: theme.node.muted }}>
-                        {threads.length ? `${threads.length} 条历史` : connected ? "暂无历史" : "未连接"}
+                        {threads.length ? t("agentLocalUiHistoryCount" as InterfaceMessageKey, { count: threads.length }) : connected ? t("agentLocalUiNoHistory" as InterfaceMessageKey) : t("agentLocalUiNotConnected" as InterfaceMessageKey)}
                     </div>
                     <div className="flex items-center gap-2">
                         <Button size="small" icon={<RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />} disabled={!connected || loading} onClick={onRefresh}>
-                            刷新
+                            {t("agentLocalUiRefresh" as InterfaceMessageKey)}
                         </Button>
                         <Button size="small" type="primary" icon={<Plus className="size-3.5" />} disabled={!connected || loading} onClick={onNewThread}>
-                            新对话
+                            {t("agentLocalUiNewConversation" as InterfaceMessageKey)}
                         </Button>
                     </div>
                 </div>
@@ -1138,19 +1160,19 @@ function AgentHistoryView({
                                         <div className="flex min-w-0 items-center gap-1.5">
                                             {active ? (
                                                 <span className="shrink-0 text-[var(--fs-tiny)] font-medium" style={{ color: theme.node.text }}>
-                                                    当前
+                                                    {t("agentLocalUiCurrent" as InterfaceMessageKey)}
                                                 </span>
                                             ) : null}
-                                            <div className="truncate text-sm font-medium leading-5">{thread.name || thread.preview || "未命名对话"}</div>
+                                            <div className="truncate text-sm font-medium leading-5">{thread.name || thread.preview || t("agentLocalUiUnnamedConversation" as InterfaceMessageKey)}</div>
                                         </div>
                                         <div className="truncate text-[var(--fs-label)] leading-4 opacity-65">{thread.preview || thread.id}</div>
                                     </div>
                                     <div className="flex shrink-0 items-center gap-1">
                                         <span className="text-[var(--fs-tiny)] opacity-55">{formatThreadTime(thread.updatedAt || thread.createdAt)}</span>
                                         <Button size="small" className="!h-6 !px-2" disabled={loading} onClick={() => onResumeThread(thread.id)}>
-                                            进入
+                                            {t("agentLocalUiOpenConversation" as InterfaceMessageKey)}
                                         </Button>
-                                        <Tooltip title="删除记录">
+                                        <Tooltip title={t("agentLocalUiDeleteRecord" as InterfaceMessageKey)}>
                                             <Button size="small" danger type="text" className="!h-6 !w-6 !min-w-6" disabled={loading} icon={<Trash2 className="size-3.5" />} onClick={() => onDeleteThread(thread)} />
                                         </Tooltip>
                                     </div>
@@ -1160,7 +1182,7 @@ function AgentHistoryView({
                     })}
                     {!threads.length ? (
                         <div className="px-3 py-8 text-center text-sm" style={{ color: theme.node.muted }}>
-                            {connected ? "当前工作空间还没有对话记录" : "连接本地 Agent 后显示历史记录"}
+                            {connected ? t("agentLocalUiWorkspaceHasNoConversations" as InterfaceMessageKey) : t("agentLocalUiConnectToSeeHistory" as InterfaceMessageKey)}
                         </div>
                     ) : null}
                 </div>
@@ -1182,12 +1204,12 @@ function agentAttachmentToChatAttachment(item: AgentAttachment): CanvasAgentChat
     return { id: item.id, name: item.name, url: item.dataUrl || item.url };
 }
 
-function formatAgentEvent(event: AgentEventPayload): Omit<AgentChatItem, "id"> | null {
+function formatAgentEvent(event: AgentEventPayload, t: InterfaceT): Omit<AgentChatItem, "id"> | null {
     const item = event.item;
-    if (event.type === "turn.failed" || event.type === "error") return { role: "error", title: "模型调用失败", text: normalizeText(event.error?.message || event.message) || "模型调用失败，请重试本轮。", detail: event };
-    if (event.type === "item.completed" && item?.type === "error") return { role: "error", title: "错误", text: normalizeText(item.message), detail: item };
+    if (event.type === "turn.failed" || event.type === "error") return { role: "error", title: t("agentLocalUiModelCallFailedTitle" as InterfaceMessageKey), text: normalizeText(event.error?.message || event.message) || t("agentLocalUiModelCallFailedRetry" as InterfaceMessageKey), detail: event };
+    if (event.type === "item.completed" && item?.type === "error") return { role: "error", title: t("agentLocalUiErrorTitle" as InterfaceMessageKey), text: normalizeText(item.message), detail: item };
     if ((event.type === "item.updated" || event.type === "item.completed") && item?.type === "agent_message") return { role: "assistant", title: "Codex", text: stringText(item.text), meta: usageText(event), streamId: item.id };
-    if (event.type === "item.completed" && isMcpToolItem(item) && isReadTool(String(item?.tool || ""))) return { role: "tool", title: `${toolName(String(item?.tool || ""))}完成`, text: item?.error?.message || toolSummary(item), detail: toolDetail(item) };
+    if (event.type === "item.completed" && isMcpToolItem(item) && isReadTool(String(item?.tool || ""))) return { role: "tool", title: t("agentLocalUiToolCompletedNamed" as InterfaceMessageKey, { name: toolName(String(item?.tool || ""), t) }), text: item?.error?.message || toolSummary(item, t), detail: toolDetail(item) };
     const text = eventText(event);
     if (text) return { role: "assistant", title: "Codex", text, meta: usageText(event) };
     return null;
@@ -1201,15 +1223,15 @@ function parseEventJson<T>(data: string) {
     }
 }
 
-function formatLogText(logs: AgentEventLog[], context: AgentLogContext) {
+function formatLogText(logs: AgentEventLog[], context: AgentLogContext, t: InterfaceT) {
     const head = [
-        "站点 Canvas Agent 诊断日志",
-        `连接: ${context.connected ? "在线" : context.enabled ? "连接中" : "未启用"}`,
-        `状态: ${context.activity}`,
+        t("agentLocalUiDiagnosticsLog" as InterfaceMessageKey),
+        `${t("agentLocalUiConnectionLabel" as InterfaceMessageKey)}: ${context.connected ? t("agentLocalUiOnline" as InterfaceMessageKey) : context.enabled ? t("agentLocalUiConnecting" as InterfaceMessageKey) : t("agentLocalUiNotEnabled" as InterfaceMessageKey)}`,
+        `${t("agentLocalUiStatusLabel" as InterfaceMessageKey)}: ${agentActivityLabel(context.activity, t)}`,
         `waiting: ${context.waiting}`,
         `sending: ${context.sending}`,
         `messages: ${context.messages}`,
-        `pendingTool: ${context.pendingTool ? toolName(context.pendingTool) : "none"}`,
+        `pendingTool: ${context.pendingTool ? toolName(context.pendingTool, t) : "none"}`,
         `logs: ${logs.length}`,
     ].join("\n");
     const body = logs
@@ -1218,7 +1240,7 @@ function formatLogText(logs: AgentEventLog[], context: AgentLogContext) {
             return [`#${index + 1} ${item.time} ${item.title}`, detail].filter(Boolean).join("\n");
         })
         .join("\n\n---\n\n");
-    return [head, body || "暂无事件日志"].join("\n\n");
+    return [head, body || t("agentLocalUiNoEventLogs" as InterfaceMessageKey)].join("\n\n");
 }
 
 function formatLogJson(logs: AgentEventLog[], context: AgentLogContext) {
@@ -1246,22 +1268,22 @@ function activityText(event: AgentEventPayload) {
     if (name === "turn.started") return "思考中";
     if (name === "turn.completed") return "完成";
     if (name === "turn.failed" || name === "error") return "出错";
-    if (name === "item.started") return isMcpToolItem(event.item) ? `调用${toolName(String(event.item?.tool || ""))}` : "执行步骤";
+    if (name === "item.started") return isMcpToolItem(event.item) ? `调用${String(event.item?.tool || "")}` : "执行步骤";
     if (name === "item.completed") return isMcpToolItem(event.item) ? "工具完成" : "更新消息";
     return "";
 }
 
-function eventTitle(event: AgentEventPayload) {
+function eventTitle(event: AgentEventPayload, t: InterfaceT) {
     const item = event.item;
-    if (event.type === "thread.started") return "已创建 Codex 会话";
-    if (event.type === "turn.started") return "开始处理";
-    if (event.type === "turn.completed") return "本轮完成";
-    if (event.type === "stream.summary") return "流式摘要";
-    if (event.type === "turn.failed" || event.type === "error") return "本轮失败";
-    if (event.type === "item.started" && isMcpToolItem(item)) return `调用工具：${toolName(String(item?.tool || ""))}`;
-    if (event.type === "item.completed" && isMcpToolItem(item)) return `工具完成：${toolName(String(item?.tool || ""))}`;
-    if (event.type === "item.completed" && item?.type === "agent_message") return "Codex 回复";
-    return event.type || "Codex 事件";
+    if (event.type === "thread.started") return t("agentLocalUiEventCodexSessionCreated" as InterfaceMessageKey);
+    if (event.type === "turn.started") return t("agentLocalUiEventStarted" as InterfaceMessageKey);
+    if (event.type === "turn.completed") return t("agentLocalUiEventTurnCompleted" as InterfaceMessageKey);
+    if (event.type === "stream.summary") return t("agentLocalUiEventStreamSummary" as InterfaceMessageKey);
+    if (event.type === "turn.failed" || event.type === "error") return t("agentLocalUiEventTurnFailed" as InterfaceMessageKey);
+    if (event.type === "item.started" && isMcpToolItem(item)) return t("agentLocalUiToolCallNamed" as InterfaceMessageKey, { name: toolName(String(item?.tool || ""), t) });
+    if (event.type === "item.completed" && isMcpToolItem(item)) return t("agentLocalUiToolCompletedNamed" as InterfaceMessageKey, { name: toolName(String(item?.tool || ""), t) });
+    if (event.type === "item.completed" && item?.type === "agent_message") return t("agentLocalUiCodexReply" as InterfaceMessageKey);
+    return event.type || t("agentLocalUiCodexEvent" as InterfaceMessageKey);
 }
 
 function shouldLogAgentEvent(event: AgentEventPayload) {
@@ -1269,55 +1291,57 @@ function shouldLogAgentEvent(event: AgentEventPayload) {
     return !["item.updated"].includes(event.type || "") && !["reasoning"].includes(itemType) && !(event.type === "item.started" && itemType === "agent_message");
 }
 
-function isConnectionErrorMessage(item: AgentChatItem) {
-    return item.role === "error" && /连接失败|无法连接本地 Agent|本地 Agent 连接失败/.test(item.text);
+function isConnectionErrorMessage(item: AgentChatItem, t: InterfaceT) {
+    const connectionMessages = [
+        t("agentLocalUiConnectionDroppedRetrying" as InterfaceMessageKey),
+        t("agentLocalUiConnectionFailedCheckRuntime" as InterfaceMessageKey),
+    ];
+    return item.role === "error" && (connectionMessages.includes(item.text) || /连接失败|无法连接本地 Agent|本地 Agent 连接失败|connection failed|unable to connect/i.test(item.text));
 }
 
-function toolName(name: string) {
-    if (name === "canvas_apply_ops") return "画布操作";
-    if (name === "canvas_get_state") return "读取画布";
-    if (name === "canvas_get_context") return "读取上下文";
-    if (name === "canvas_find_nodes") return "检索节点";
-    if (name === "canvas_get_node") return "读取节点";
-    if (name === "canvas_get_connection") return "读取连线";
-    if (name === "canvas_get_generation_tasks") return "读取生成任务";
-    if (name === "canvas_get_resources") return "读取资源";
-    if (name === "canvas_validate_ops") return "校验操作";
-    if (name === "canvas_get_selection") return "读取选区";
-    if (name === "canvas_export_snapshot") return "导出快照";
-    if (name === "canvas_create_node") return "创建节点";
-    if (name === "canvas_create_text_node") return "创建文本";
-    if (name === "canvas_create_text_nodes") return "批量创建文本";
-    if (name === "canvas_create_image_prompt_flow") return "创建生图流程";
-    if (name === "canvas_create_generation_flow") return "创建生成流程";
-    if (name === "canvas_generate_text") return "生成文本";
-    if (name === "canvas_generate_image") return "生成图片";
-    if (name === "canvas_generate_video") return "生成视频";
-    if (name === "canvas_generate_audio") return "生成音频";
-    if (name === "canvas_update_node") return "更新节点";
-    if (name === "canvas_update_node_text") return "更新文本";
-    if (name === "canvas_move_nodes") return "移动节点";
-    if (name === "canvas_resize_node") return "调整节点尺寸";
-    if (name === "canvas_delete_nodes") return "删除节点";
-    if (name === "canvas_connect_nodes") return "连接节点";
-    if (name === "canvas_select_nodes") return "选择节点";
-    if (name === "canvas_set_viewport") return "调整视口";
-    if (name === "canvas_run_generation") return "触发生成";
-    if (name === "project_get_context") return "读取项目上下文";
-    if (name === "project_list_units") return "读取项目章节";
-    if (name === "project_extract_asset_candidates") return "登记资产候选";
-    if (name === "project_confirm_asset_candidate") return "确认资产候选";
-    if (name === "project_create_or_update_shots") return "保存项目镜头";
-    if (name === "project_link_shot_asset") return "关联镜头素材";
-    if (name === "project_start_workflow_step") return "启动流程步骤";
-    if (name === "project_link_asset") return "引用项目资产";
-    if (name === "project_upsert_asset_version") return "创建资产版本";
-    if (name === "project_register_task_output") return "登记任务产物";
-    return name;
+function localAgentConnectionLabel(status: string, t: InterfaceT) {
+    if (status === "连接中") return t("agentLocalUiConnecting" as InterfaceMessageKey);
+    if (status === "正在重连") return t("agentLocalUiReconnecting" as InterfaceMessageKey);
+    if (status === "连接失败") return t("agentLocalUiConnectionFailed" as InterfaceMessageKey);
+    if (status === "未连接") return t("agentLocalUiNotConnected" as InterfaceMessageKey);
+    return status;
+}
+
+function agentActivityLabel(activity: string, t: InterfaceT) {
+    if (activity.startsWith("调用")) return t("agentLocalUiToolCallNamed" as InterfaceMessageKey, { name: toolName(activity.slice(2), t) });
+    const labels: Record<string, InterfaceMessageKey> = {
+        "就绪": "agentLocalUiActivityReady" as InterfaceMessageKey,
+        "连接中": "agentLocalUiConnecting" as InterfaceMessageKey,
+        "已连接": "agentLocalUiLocalAgentConnected" as InterfaceMessageKey,
+        "出错": "agentLocalUiErrorTitle" as InterfaceMessageKey,
+        "完成": "agentRuntimeUiToolStatusCompleted" as InterfaceMessageKey,
+        "正在重连": "agentLocalUiReconnecting" as InterfaceMessageKey,
+        "连接失败": "agentLocalUiConnectionFailed" as InterfaceMessageKey,
+        "发送中": "agentLocalUiActivitySending" as InterfaceMessageKey,
+        "重试中": "agentRuntimeUiRetrying" as InterfaceMessageKey,
+        "发送失败": "agentLocalUiSendFailed" as InterfaceMessageKey,
+        "等待确认": "agentLocalUiWaitingForConfirmation" as InterfaceMessageKey,
+        "执行画布操作": "agentLocalUiActivityApplyingCanvasOperations" as InterfaceMessageKey,
+        "执行项目工具": "agentLocalUiActivityRunningProjectTool" as InterfaceMessageKey,
+        "读取画布": "agentLocalUiActivityReadingCanvas" as InterfaceMessageKey,
+        "工具完成": "agentRuntimeUiToolStatusCompleted" as InterfaceMessageKey,
+        "工具失败": "agentLocalUiToolFailureTitle" as InterfaceMessageKey,
+        "已取消": "agentRuntimeUiToolStatusRejected" as InterfaceMessageKey,
+        "已撤销": "agentLocalUiActivityUndone" as InterfaceMessageKey,
+        "离线": "agentLocalUiOffline" as InterfaceMessageKey,
+        "新对话": "agentLocalUiNewConversation" as InterfaceMessageKey,
+        "已恢复会话": "agentLocalUiConversationRestored" as InterfaceMessageKey,
+        "已创建会话": "agentLocalUiEventSessionCreated" as InterfaceMessageKey,
+        "思考中": "agentLocalUiEventThinking" as InterfaceMessageKey,
+        "执行步骤": "agentLocalUiEventRunningStep" as InterfaceMessageKey,
+        "更新消息": "agentLocalUiEventMessageUpdated" as InterfaceMessageKey,
+    };
+    const key = labels[activity];
+    return key ? t(key) : activity;
 }
 
 function isReadTool(name: string) {
-    return name === "canvas_get_state" || name === "canvas_get_context" || name === "canvas_find_nodes" || name === "canvas_get_node" || name === "canvas_get_connection" || name === "canvas_get_generation_tasks" || name === "canvas_get_resources" || name === "canvas_validate_ops" || name === "canvas_get_selection" || name === "canvas_export_snapshot" || isProjectAgentReadTool(name);
+    return isCanvasReadTool(name) || isProjectAgentReadTool(name);
 }
 
 function isMcpToolItem(item?: AgentEventItem) {
@@ -1328,14 +1352,14 @@ function toolDetail(item?: AgentEventItem) {
     return { server: item?.server, tool: item?.tool, status: item?.status, arguments: item?.arguments, result: parseToolResult(item?.result), error: item?.error };
 }
 
-function toolSummary(item?: AgentEventItem) {
+function toolSummary(item: AgentEventItem | undefined, t: InterfaceT) {
     const result = parseToolResult(item?.result);
     const nodeField = objectField(result, "nodes");
     const connectionField = objectField(result, "connections");
     const nodes = Array.isArray(nodeField) ? nodeField : [];
     const connections = Array.isArray(connectionField) ? connectionField : [];
-    if (Array.isArray(nodeField) || Array.isArray(connectionField)) return `读取到 ${nodes.length} 个节点，${connections.length} 条连线`;
-    return "工具调用完成";
+    if (Array.isArray(nodeField) || Array.isArray(connectionField)) return t("toolLabelUi.readSummary", { nodes: nodes.length, connections: connections.length });
+    return t("agentRuntimeUiToolStatusCompleted");
 }
 
 function parseToolResult(result: unknown) {

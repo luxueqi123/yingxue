@@ -6,10 +6,10 @@ import { getSkinAntOverrides, normalizeSkinID } from "@/lib/skin-themes";
 // 主操作、普通选择和开关是不同交互语义，必须各自维护成对的背景/前景色。
 const controlTheme = {
     light: {
-        solidBg: "#171717",
-        solidHoverBg: "#303030",
-        solidActiveBg: "#404040",
-        solidFg: "#ffffff",
+        solidBg: "#09caf5",
+        solidHoverBg: "#5ddcff",
+        solidActiveBg: "#05a3c5",
+        solidFg: "#141414",
         checkBg: "#171717",
         checkHoverBg: "#303030",
         checkActiveBg: "#404040",
@@ -45,10 +45,10 @@ const controlTheme = {
         tableSelectedHoverBg: "rgba(17, 17, 17, 0.08)",
     },
     dark: {
-        solidBg: "#f5f5f5",
-        solidHoverBg: "#ffffff",
-        solidActiveBg: "#e5e5e5",
-        solidFg: "#171717",
+        solidBg: "#09caf5",
+        solidHoverBg: "#5ddcff",
+        solidActiveBg: "#05a3c5",
+        solidFg: "#141414",
         checkBg: "#f5f5f5",
         checkHoverBg: "#ffffff",
         checkActiveBg: "#e5e5e5",
@@ -143,7 +143,7 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
 
     return {
         algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        cssVar: { key: `infinite-canvas-${normalizeSkinID(skinID)}-${dark ? "dark" : "light"}` },
+        cssVar: { key: `yingce-${normalizeSkinID(skinID)}-${dark ? "dark" : "light"}` },
         token: {
             colorPrimary: color.solidBg,
             colorPrimaryHover: color.solidHoverBg,
@@ -164,6 +164,7 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
             colorLinkHover: color.solidHoverBg,
             colorLinkActive: color.solidActiveBg,
             colorTextLightSolid: color.solidFg,
+            controlOutlineWidth: 0,
             colorText: skin.text || undefined,
             colorTextSecondary: skin.textMuted || undefined,
             colorIcon: skin.icon || undefined,
@@ -179,61 +180,92 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
             colorBgElevated: elevatedBackground,
             colorBgContainer: skin.controlSurface || undefined,
             colorBorderSecondary: dark ? "rgba(255, 255, 255, 0.1)" : "rgba(17, 17, 17, 0.09)",
+            // 浮层阴影两层：贴边的小阴影交代边缘，大而淡的阴影交代悬浮高度。
             boxShadowSecondary:
-                skin.shadowStyle === "none" ? "none" : skin.shadowStyle === "strong" ? (dark ? "0 28px 84px rgba(0, 0, 0, 0.68)" : "0 26px 72px rgba(15, 23, 42, 0.22)") : dark ? "0 24px 72px rgba(0, 0, 0, 0.48)" : "0 22px 64px rgba(15, 23, 42, 0.14)",
-            borderRadius: skin.borderRadius || 6,
-            borderRadiusLG: skin.borderRadiusLG || 8,
-            borderRadiusSM: skin.borderRadiusSM || 5,
+                skin.shadowStyle === "none"
+                    ? "none"
+                    : skin.shadowStyle === "strong"
+                      ? dark ? "0 1px 3px rgba(0, 0, 0, 0.5), 0 28px 84px rgba(0, 0, 0, 0.6)" : "0 1px 3px rgba(15, 23, 42, 0.12), 0 26px 72px rgba(15, 23, 42, 0.2)"
+                      : dark ? "0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 64px rgba(0, 0, 0, 0.44)" : "0 1px 2px rgba(15, 23, 42, 0.08), 0 20px 56px rgba(15, 23, 42, 0.12)",
+            // 圆角四档 4/8/12/16：控件 8、卡片与浮层 12、弹窗 16、小元素 4。
+            borderRadius: skin.borderRadius || 8,
+            borderRadiusLG: skin.borderRadiusLG || 12,
+            borderRadiusSM: skin.borderRadiusSM || 4,
             lineWidth: skin.borderWidth || 1,
             controlHeight: skin.controlHeight || 36,
             controlHeightLG: skin.controlHeightLarge || 42,
             controlHeightSM: skin.controlHeightSmall || 30,
             fontSize: 13,
             fontSizeSM: 12,
-            motionDurationFast: `${skin.motionFast ?? 120}ms`,
+            motionDurationFast: `${Math.max(skin.motionFast ?? 150, 150)}ms`,
             motionDurationMid: `${skin.motionNormal ?? 180}ms`,
-            motionDurationSlow: `${Math.max(skin.motionNormal ?? 180, 240)}ms`,
+            motionDurationSlow: `${Math.min(Math.max(skin.motionNormal ?? 180, 240), 250)}ms`,
         },
         components: {
+            // 按钮统一规范见 docs/ui-design-system.md §3.0：三套主题（根 / 用户工作台 / 后台）只在高度上
+            // 区分密度，圆角、字号字重、内边距、图标间距和默认配色同值。颜色取 globals.css 的 --button-*，
+            // 主按钮与危险实心按钮的实底和质感阴影由 primary-buttons.css 接管，这里的阴影 token 保持 none。
             Button: {
+                defaultShadow: "none",
                 primaryShadow: "none",
                 dangerShadow: "none",
-                dangerColor: color.dangerForeground,
+                dangerColor: "var(--button-danger-fg)",
                 fontWeight: skin.buttonFontWeight || 500,
-                borderRadius: skin.buttonRadius || skin.borderRadius || 6,
-                paddingInline: 14,
+                borderRadius: skin.buttonRadius || skin.borderRadius || 8,
+                borderRadiusSM: skin.buttonRadius || skin.borderRadius || 8,
+                borderRadiusLG: skin.buttonRadius || skin.borderRadius || 8,
+                contentFontSize: 13,
+                contentFontSizeSM: 12,
+                contentFontSizeLG: 14,
+                paddingInline: 12,
                 paddingInlineLG: 16,
-                paddingInlineSM: 10,
+                paddingInlineSM: 8,
+                iconGap: 6,
+                onlyIconSize: 16,
+                onlyIconSizeSM: 14,
+                onlyIconSizeLG: 16,
                 colorPrimary: color.solidBg,
                 colorPrimaryHover: color.solidHoverBg,
                 colorPrimaryActive: color.solidActiveBg,
                 primaryColor: color.solidFg,
-                defaultBg: skin.controlSurface || "transparent",
-                defaultColor: color.selectedFg,
-                defaultBorderColor: color.controlBorder,
-                defaultHoverBg: skin.controlHover || color.selectedBg,
-                defaultHoverColor: color.selectedFg,
-                defaultHoverBorderColor: color.controlBorder,
-                defaultActiveBg: skin.controlActive || color.selectedHoverBg,
-                defaultActiveColor: color.selectedFg,
-                defaultActiveBorderColor: color.controlBorder,
+                defaultBg: skin.controlSurface || "var(--button-secondary-bg)",
+                defaultColor: skin.selectedForeground || "var(--button-secondary-fg)",
+                defaultBorderColor: skin.controlBorder || "var(--button-secondary-border)",
+                defaultHoverBg: skin.controlHover || "var(--button-secondary-hover-bg)",
+                defaultHoverColor: skin.selectedForeground || "var(--button-secondary-fg)",
+                defaultHoverBorderColor: skin.controlBorder || "var(--button-secondary-hover-border)",
+                defaultActiveBg: skin.controlActive || "var(--button-secondary-active-bg)",
+                defaultActiveColor: skin.selectedForeground || "var(--button-secondary-fg)",
+                defaultActiveBorderColor: skin.controlBorder || "var(--button-secondary-hover-border)",
+                defaultBgDisabled: "var(--button-secondary-bg)",
+                textTextColor: "var(--button-ghost-fg)",
+                textTextHoverColor: "var(--button-ghost-hover-fg)",
+                textTextActiveColor: "var(--button-ghost-hover-fg)",
+                textHoverBg: "var(--button-ghost-hover-bg)",
+                // antd 6 文字按钮按下态取 colorFill（color-light-active）。
+                colorFill: "var(--button-ghost-active-bg)",
             },
             Input: {
-                borderRadius: skin.inputRadius || skin.borderRadiusSM || 5,
-                paddingInline: 11,
+                borderRadius: skin.inputRadius || 8,
+                paddingInline: 12,
                 activeBg: skin.controlSurface || elevatedBackground,
                 hoverBg: skin.controlHover || elevatedBackground,
-                activeBorderColor: interactiveBorder,
-                hoverBorderColor: interactiveBorder,
-                activeShadow: focusShadow,
+                activeBorderColor: "transparent",
+                hoverBorderColor: "transparent",
+                activeShadow: "none",
             },
             InputNumber: {
-                borderRadius: skin.inputRadius || skin.borderRadiusSM || 5,
+                borderRadius: skin.inputRadius || 8,
                 activeBg: skin.controlSurface || elevatedBackground,
                 hoverBg: skin.controlHover || elevatedBackground,
+                activeBorderColor: "transparent",
+                hoverBorderColor: "transparent",
+                activeShadow: "none",
+            },
+            DatePicker: {
+                activeShadow: focusShadow,
                 activeBorderColor: interactiveBorder,
                 hoverBorderColor: interactiveBorder,
-                activeShadow: focusShadow,
             },
             Switch: {
                 handleBg: color.switchOffHandle,
@@ -253,6 +285,8 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 colorPrimary: color.checkBg,
                 colorPrimaryActive: color.checkActiveBg,
                 colorPrimaryHover: color.checkHoverBg,
+                // antd 用 colorWhite 画勾；暗色主题勾选底接近白色，必须跟随前景色，否则白勾压白底看不见。
+                colorWhite: color.checkFg,
                 controlOutline: color.controlFocus,
             },
             Radio: {
@@ -275,8 +309,8 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 controlOutline: color.controlFocus,
             },
             Menu: {
-                itemBorderRadius: skin.menuRadius || skin.borderRadius || 6,
-                subMenuItemBorderRadius: skin.menuRadius || skin.borderRadius || 6,
+                itemBorderRadius: skin.menuRadius || skin.borderRadius || 8,
+                subMenuItemBorderRadius: skin.menuRadius || skin.borderRadius || 8,
                 itemHeight: 40,
                 itemMarginBlock: 2,
                 itemActiveBg: color.menuBg,
@@ -288,11 +322,11 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 darkItemSelectedColor: controlTheme.dark.menuText,
             },
             Select: {
-                borderRadius: skin.inputRadius || skin.borderRadiusSM || 5,
+                borderRadius: skin.inputRadius || 8,
                 selectorBg: elevatedBackground,
                 optionHeight: 40,
                 optionPadding: "8px 12px",
-                multipleItemHeight: 26,
+                multipleItemHeight: 24,
                 activeBorderColor: interactiveBorder,
                 hoverBorderColor: interactiveBorder,
                 activeOutlineColor: "transparent",
@@ -306,8 +340,8 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 headerBorderRadius: 0,
                 rowHoverBg: skin.controlHover || (dark ? "rgba(255, 255, 255, 0.035)" : "rgba(17, 17, 17, 0.025)"),
                 borderColor: skin.controlBorder || (dark ? "rgba(255, 255, 255, 0.08)" : "rgba(17, 17, 17, 0.075)"),
-                cellPaddingBlockMD: 13,
-                cellPaddingInlineMD: 14,
+                cellPaddingBlockMD: 12,
+                cellPaddingInlineMD: 16,
                 rowSelectedBg: color.tableSelectedBg,
                 rowSelectedHoverBg: color.tableSelectedHoverBg,
             },
@@ -319,9 +353,9 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 itemActiveColorHover: color.solidFg,
             },
             Segmented: {
-                borderRadius: skin.inputRadius || skin.borderRadiusSM || 5,
+                borderRadius: skin.inputRadius || 8,
                 trackBg: subtleBackground,
-                trackPadding: 3,
+                trackPadding: 2,
                 itemColor: color.controlDisabledFg,
                 itemHoverColor: color.selectedFg,
                 itemHoverBg: color.selectedBg,
@@ -330,29 +364,44 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 itemSelectedColor: color.selectedFg,
             },
             Modal: {
-                borderRadiusLG: skin.overlayRadius || skin.borderRadiusLG || 8,
+                borderRadiusLG: skin.overlayRadius || 16,
                 headerBg: "transparent",
                 contentBg: elevatedBackground,
                 footerBg: "transparent",
                 titleFontSize: 16,
             },
             Form: {
-                itemMarginBottom: 18,
+                // 24px 正好容纳一行报错（12px × 1.57 ≈ 19px + 间距），出现报错时不推动下方输入框。
+                itemMarginBottom: 24,
                 labelFontSize: 12,
-                verticalLabelPadding: "0 0 6px",
+                verticalLabelPadding: "0 0 8px",
             },
             Dropdown: {
-                paddingBlock: 6,
+                paddingBlock: 8,
             },
             Skeleton: {
                 gradientFromColor: dark ? "rgba(255, 255, 255, 0.055)" : "rgba(15, 23, 42, 0.055)",
                 gradientToColor: dark ? "rgba(255, 255, 255, 0.11)" : "rgba(15, 23, 42, 0.1)",
             },
             Card: {
-                borderRadiusLG: skin.borderRadiusLG || 8,
+                borderRadiusLG: skin.borderRadiusLG || 12,
                 headerBg: "transparent",
-                headerFontSize: 15,
-                bodyPadding: 18,
+                headerFontSize: 16,
+                bodyPadding: 16,
+            },
+            Message: {
+                contentBg: elevatedBackground,
+                contentPadding: "8px 16px",
+            },
+            Notification: {
+                colorBgElevated: elevatedBackground,
+            },
+            Tooltip: {
+                colorBgSpotlight: elevatedBackground,
+                colorTextLightSolid: color.selectedFg,
+            },
+            Popover: {
+                colorBgElevated: elevatedBackground,
             },
         },
     };
@@ -361,6 +410,71 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
 /**
  * 管理后台使用更高密度的控件节奏；只在 AdminShell 内挂载，避免改变创作端的视觉契约。
  */
+/** 用户端与后台共享业务控件，但使用独立的产品尺寸和柔和表面。 */
+export function getWorkspaceAntThemeConfig(): ThemeConfig {
+    return {
+        // 控件尺度与 globals.css 的 --user-control-height / --user-radius-button 保持同值：
+        // 34px 常规、28px 紧凑、8px 圆角；按钮、输入框、选择器在同一工具栏里等高对齐。
+        token: {
+            borderRadius: 8, borderRadiusLG: 12, borderRadiusSM: 4,
+            controlHeight: 34, controlHeightSM: 28, controlHeightLG: 40,
+            // 进入 150–250ms；antd 的 Slow 用于浮层进出，不超过 250ms。
+            motionDurationFast: "0.15s", motionDurationMid: "0.2s", motionDurationSlow: "0.25s",
+            motionEaseInOut: "cubic-bezier(0.16, 1, 0.3, 1)",
+            motionEaseOut: "cubic-bezier(0.16, 1, 0.3, 1)",
+            // antd 默认 Back 曲线会越界（Checkbox 勾选、Badge 弹出像回弹），工作台统一不越界。
+            motionEaseOutBack: "cubic-bezier(0.16, 1, 0.3, 1)",
+            motionEaseInBack: "cubic-bezier(0.7, 0, 0.84, 0)",
+        },
+        components: {
+            // 用户工作台与根主题、后台共用同一套按钮规范（docs/ui-design-system.md §3.0），这里只收紧高度。
+            // 主按钮实底由 primary-buttons.css 接管；次要按钮是带 1px 边缘的实体键，文字按钮悬停才出现底色。
+            Button: {
+                borderRadius: 8, borderRadiusSM: 8, borderRadiusLG: 8,
+                fontWeight: 500, contentFontSize: 13, contentFontSizeSM: 12, contentFontSizeLG: 14,
+                paddingInline: 12, paddingInlineSM: 8, paddingInlineLG: 16,
+                iconGap: 6, onlyIconSize: 16, onlyIconSizeSM: 14, onlyIconSizeLG: 16,
+                defaultBg: "var(--button-secondary-bg)", defaultColor: "var(--button-secondary-fg)", defaultBorderColor: "var(--button-secondary-border)",
+                defaultHoverBg: "var(--button-secondary-hover-bg)", defaultHoverColor: "var(--button-secondary-fg)", defaultHoverBorderColor: "var(--button-secondary-hover-border)",
+                defaultActiveBg: "var(--button-secondary-active-bg)", defaultActiveColor: "var(--button-secondary-fg)", defaultActiveBorderColor: "var(--button-secondary-hover-border)",
+                textTextColor: "var(--button-ghost-fg)", textTextHoverColor: "var(--button-ghost-hover-fg)", textTextActiveColor: "var(--button-ghost-hover-fg)",
+                // antd 6 文字按钮按下态取 colorFill（color-light-active）。
+                textHoverBg: "var(--button-ghost-hover-bg)", colorFill: "var(--button-ghost-active-bg)",
+                defaultBgDisabled: "var(--button-secondary-bg)",
+                defaultShadow: "none", primaryShadow: "none", dangerShadow: "none",
+            },
+            Input: {
+                borderRadius: 8,
+                paddingInline: 12,
+                activeBorderColor: "transparent",
+                hoverBorderColor: "transparent",
+                activeShadow: "none",
+            },
+            InputNumber: {
+                borderRadius: 8,
+                activeBorderColor: "transparent",
+                hoverBorderColor: "transparent",
+                activeShadow: "none",
+            },
+            Select: {
+                borderRadius: 8,
+                colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none",
+                colorFillTertiary: "var(--user-surface-muted)", colorFillSecondary: "var(--user-surface-hover)",
+                activeOutlineColor: "transparent",
+                optionSelectedBg: "var(--user-surface-hover)", optionSelectedColor: "var(--user-ink)",
+                optionActiveBg: "var(--user-surface-muted)", optionPadding: "8px 12px",
+            },
+            Dropdown: { borderRadiusLG: 12, colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none", controlItemBgHover: "var(--user-surface-muted)", paddingBlock: 8 },
+            Popover: { borderRadiusLG: 12, colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none" },
+            Modal: { borderRadiusLG: 16 },
+            Popconfirm: { borderRadiusLG: 12 },
+            Message: { borderRadiusLG: 12, contentPadding: "8px 16px" },
+            Notification: { borderRadiusLG: 12 },
+            Tooltip: { borderRadius: 8 },
+        },
+    };
+}
+
 export function getAdminAntThemeConfig(dark: boolean, skinID: unknown = "classic"): ThemeConfig {
     const base = getAntThemeConfig(dark, skinID);
     const skin = getSkinAntOverrides(skinID, dark ? "dark" : "light");
@@ -370,8 +484,8 @@ export function getAdminAntThemeConfig(dark: boolean, skinID: unknown = "classic
         ...base,
         token: {
             ...base.token,
-            borderRadius: skin.borderRadius || 6,
-            borderRadiusLG: skin.borderRadiusLG || 8,
+            borderRadius: skin.borderRadius || 8,
+            borderRadiusLG: skin.borderRadiusLG || 12,
             colorBgContainer: "var(--color-surface)",
             colorBorder: "var(--color-border)",
             fontFamily: "var(--font-sans)",
@@ -392,7 +506,8 @@ export function getAdminAntThemeConfig(dark: boolean, skinID: unknown = "classic
             },
             Form: {
                 ...base.components?.Form,
-                itemMarginBottom: 16,
+                // 一行报错约 20px，留足位置，出现报错时不推动下方字段。
+                itemMarginBottom: 20,
             },
             Menu: {
                 ...base.components?.Menu,

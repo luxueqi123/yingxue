@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,19 +30,23 @@ func run(ctx context.Context) error {
 	socketPath := env("CANVAS_UPDATER_SOCKET", "/run/open-ai-canvas-updater/updater.sock")
 	token := strings.TrimSpace(os.Getenv("CANVAS_UPDATER_TOKEN"))
 	manager, err := hostupdate.NewManager(hostupdate.Config{
-		Repository:   env("CANVAS_UPDATER_REPOSITORY", "luxueqi123/yingxue"),
-		InstallDir:   env("CANVAS_UPDATER_INSTALL_DIR", "/opt/open-ai-canvas"),
-		ComposeFile:  env("CANVAS_UPDATER_COMPOSE_FILE", "docker-compose.deploy.yml"),
-		EnvFile:      env("CANVAS_UPDATER_ENV_FILE", ".env"),
-		StateDir:     env("CANVAS_UPDATER_STATE_DIR", "/var/lib/open-ai-canvas-updater"),
-		BackupDir:    env("CANVAS_UPDATER_BACKUP_DIR", "/opt/open-ai-canvas/backups"),
-		HealthURL:    strings.TrimSpace(os.Getenv("CANVAS_UPDATER_HEALTH_URL")),
-		GitHubToken:  strings.TrimSpace(os.Getenv("CANVAS_UPDATER_GITHUB_TOKEN")),
-		StableWindow: envDuration("CANVAS_UPDATER_STABLE_WINDOW", 30*time.Second),
-		StepTimeout:  envDuration("CANVAS_UPDATER_STEP_TIMEOUT", 20*time.Minute),
-		BinaryPath:   env("CANVAS_UPDATER_BINARY_PATH", "/usr/local/bin/open-ai-canvas-host-updater"),
-		ServiceName:  env("CANVAS_UPDATER_SERVICE_NAME", "open-ai-canvas-updater.service"),
-		SelfUpdate:   envBool("CANVAS_UPDATER_SELF_UPDATE", true),
+		Repository:         env("CANVAS_UPDATER_REPOSITORY", "ddcat-ai/open-ai-canvas"),
+		UpstreamRepository: strings.TrimSpace(os.Getenv("CANVAS_UPDATER_UPSTREAM_REPOSITORY")),
+		InstallDir:         env("CANVAS_UPDATER_INSTALL_DIR", "/opt/open-ai-canvas"),
+		NginxUpstreamFile:  strings.TrimSpace(os.Getenv("CANVAS_UPDATER_NGINX_UPSTREAM_FILE")),
+		NginxConfigFile:    strings.TrimSpace(os.Getenv("CANVAS_UPDATER_NGINX_CONFIG_FILE")),
+		RolloutPorts:       [2]int{envPort("CANVAS_UPDATER_BLUE_PORT"), envPort("CANVAS_UPDATER_GREEN_PORT")},
+		ComposeFile:        env("CANVAS_UPDATER_COMPOSE_FILE", "docker-compose.deploy.yml"),
+		EnvFile:            env("CANVAS_UPDATER_ENV_FILE", ".env"),
+		StateDir:           env("CANVAS_UPDATER_STATE_DIR", "/var/lib/open-ai-canvas-updater"),
+		BackupDir:          env("CANVAS_UPDATER_BACKUP_DIR", "/opt/open-ai-canvas/backups"),
+		HealthURL:          strings.TrimSpace(os.Getenv("CANVAS_UPDATER_HEALTH_URL")),
+		GitHubToken:        strings.TrimSpace(os.Getenv("CANVAS_UPDATER_GITHUB_TOKEN")),
+		StableWindow:       envDuration("CANVAS_UPDATER_STABLE_WINDOW", 30*time.Second),
+		StepTimeout:        envDuration("CANVAS_UPDATER_STEP_TIMEOUT", 20*time.Minute),
+		BinaryPath:         env("CANVAS_UPDATER_BINARY_PATH", "/usr/local/bin/open-ai-canvas-host-updater"),
+		ServiceName:        env("CANVAS_UPDATER_SERVICE_NAME", "open-ai-canvas-updater.service"),
+		SelfUpdate:         envBool("CANVAS_UPDATER_SELF_UPDATE", true),
 	})
 	if err != nil {
 		return err
@@ -80,6 +85,17 @@ func run(ctx context.Context) error {
 		}
 		return err
 	}
+}
+
+func envPort(key string) int {
+	if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 65535 {
+			log.Fatalf("%s 必须是有效端口", key)
+		}
+		return value
+	}
+	return 0
 }
 
 func removeStaleSocket(path string) error {

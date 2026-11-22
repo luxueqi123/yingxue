@@ -1,6 +1,6 @@
 # NewAPI 媒体任务协议
 
-该插件把多模态参考素材统一包装为 `input.media[]`，把分辨率、比例、时长和水印放入 `parameters`，使用 `/v1/videos` 创建与查询异步任务。它是宿主适配的渠道合同，不是某一家模型厂商的官方协议。
+该插件把多模态参考素材统一包装为 `input.media[]`，把分辨率、比例、时长和水印放入 `parameters`，使用 `/v1/videos` 创建与查询异步任务。它是映雪适配的渠道合同，不是某一家模型厂商的官方协议。
 
 ## 接口与鉴权
 
@@ -21,7 +21,7 @@ Content-Type: application/json
 
 {{PARAMETERS}}
 
-实际映射：图片 -> `{type:"reference_image"}`，视频 -> `{type:"reference_video"}`，音频 -> `{type:"reference_voice"}`；均放入 `input.media`。默认 `resolution=720P`、`ratio=16:9`、`duration=5`。只有 `watermark=true` 时才发送水印字段；`generateAudio` 当前不发送。
+实际映射：`input.media[].type` 取素材 `role`，缺省时图片为 `reference_image`、视频为 `reference_video`、音频为 `reference_voice`。宿主视频任务会给音频带上 `reference_audio`，因此生产请求里音频 type 是 `reference_audio`。默认 `resolution=720P`、`ratio=16:9`、`duration=5`。只有 `watermark=true` 时才发送水印字段；`generateAudio` 当前不发送。
 
 ## 多模态创建示例
 
@@ -51,7 +51,7 @@ curl "{channel_base_url}/v1/videos" \
 
 ## 官方资料与边界
 
-- NewAPI 项目与部署文档由具体运维方提供；本页以宿主当前 adapter 的请求事实为准。
+- NewAPI 项目与部署文档由具体运维方提供；本页以映雪当前 adapter 的请求事实为准。
 - 上游模型官方文档只用于确认模型自身能力，不能替代 NewAPI 网关字段合同。
 
 {{CONTRACT}}

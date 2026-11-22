@@ -7,10 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +20,12 @@ import (
 )
 
 func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
+	registerGoogleAuthRoutes(r, svc)
+	registerGitHubAuthRoutes(r, svc)
+	registerChannelOrderRoutes(r, svc)
+	registerNotificationRoutes(r, svc)
+	registerAuthProfileRoutes(r, svc)
+	registerWechatRoutes(r, svc)
 	r.GET("/auth/settings", func(c *gin.Context) {
 		settings, err := svc.PublicAuthSettings()
 		if err != nil {
@@ -40,6 +45,8 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !available || !enforceRateLimit(c, "register:"+c.ClientIP(), policy.Request.RegisterPerHour, time.Hour) {
 			return
 		}
+		req.LoginContext = loginRequestContext(c)
+		req.Context = c.Request.Context()
 		result, err := svc.Register(req)
 		if err != nil {
 			failService(c, err)
@@ -59,6 +66,9 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		policy, available := loadRuntimePolicy(c, svc)
 		if !available || !enforceRateLimit(c, "email-code:"+c.ClientIP(), policy.Request.EmailCodePerHour, time.Hour) {
+			return
+		}
+		if !enforceRateLimit(c, "registration-email-account:"+passwordResetRateLimitSubject(req.Email), 10, time.Hour) {
 			return
 		}
 		if err := svc.SendRegistrationEmailCode(req.Email); err != nil {
@@ -109,7 +119,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"reset": true})
 	})
-	r.POST("/auth/login", func(c *gin.Context) {
+	r.POST("/auth/login", rejectedLoginAudit(svc, "password"), func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -120,9 +130,17 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !available || !enforceRateLimit(c, "login-ip:"+c.ClientIP(), policy.Request.LoginIPPerTenMinutes, 10*time.Minute) {
 			return
 		}
-		if !enforceRateLimit(c, "login:"+c.ClientIP()+":"+strings.ToLower(strings.TrimSpace(req.Username)), policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
+		subject, err := svc.LoginRateLimitSubject(req.Username)
+		if err != nil {
+			failService(c, err)
 			return
 		}
+		if !enforceRateLimit(c, "login:"+c.ClientIP()+":"+subject, policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
+			return
+		}
+		req.LoginContext = loginRequestContext(c)
+		req.Context = c.Request.Context()
+		c.Set("login_audit_handled", true)
 		result, err := svc.Login(req)
 		if err != nil {
 			failService(c, err)
@@ -135,16 +153,21 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !enforceRateLimit(c, "linuxdo-start:"+c.ClientIP(), 20, 10*time.Minute) {
 			return
 		}
-		target, err := svc.BeginLinuxDOLogin(c.Query("next"))
+		acceptedTerms := c.Query("acceptedTerms") == "true"
+		target, err := svc.BeginLinuxDOLogin(c.Query("next"), acceptedTerms)
 		if err != nil {
 			failService(c, err)
 			return
 		}
 		c.Redirect(http.StatusFound, target)
 	})
-	r.GET("/auth/linuxdo/callback", linuxDOCallbackHandler(svc))
+	r.GET("/auth/linuxdo/callback", rejectedLoginAudit(svc, "linuxdo"), linuxDOCallbackHandler(svc))
+	registerOIDCRoutes(r, svc)
 	r.POST("/auth/logout", func(c *gin.Context) {
-		_ = svc.Logout(sessionCookie(c))
+		if err := svc.LogoutForExpectedUser(sessionCookie(c), c.GetHeader("X-Canvas-Expected-User"), loginRequestContext(c)); err != nil {
+			failService(c, err)
+			return
+		}
 		clearSessionCookie(c)
 		ok(c, gin.H{"ok": true})
 	})
@@ -157,11 +180,6 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		publicUser, err := svc.PublicAuthUser(user)
 		if err != nil {
 			failService(c, err)
-			return
-		}
-		logicalModels, logicalModelsErr := svc.PublicLogicalModels(nil)
-		if logicalModelsErr != nil {
-			failService(c, logicalModelsErr)
 			return
 		}
 		limits, err := svc.PublicRuntimeLimits()
@@ -179,7 +197,12 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"user": publicUser, "logicalModels": logicalModels, "runtimeLimits": limits, "drawingEngine": drawingEngine, "features": features})
+		referralAvailable, err := svc.ReferralAvailable(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"user": publicUser, "userGroup": svc.PublicUserGroupFor(user), "runtimeLimits": limits, "drawingEngine": drawingEngine, "features": features, "referralAvailable": referralAvailable})
 	})
 	r.GET("/channels/system", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
@@ -202,7 +225,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 
 // 兼容已在 Linux.do OAuth 应用中登记的传统回调地址，处理逻辑与 /api/auth/linuxdo/callback 完全一致。
 func RegisterOAuthCallbackRoutes(r gin.IRoutes, svc *service.Service) {
-	r.GET("/oauth/linuxdo/callback", linuxDOCallbackHandler(svc))
+	r.GET("/oauth/linuxdo/callback", rejectedLoginAudit(svc, "linuxdo"), linuxDOCallbackHandler(svc))
 }
 
 func linuxDOCallbackHandler(svc *service.Service) gin.HandlerFunc {
@@ -210,580 +233,38 @@ func linuxDOCallbackHandler(svc *service.Service) gin.HandlerFunc {
 		if !enforceRateLimit(c, "linuxdo-callback:"+c.ClientIP(), 30, 10*time.Minute) {
 			return
 		}
-		result, err := svc.CompleteLinuxDOLogin(c.Query("state"), c.Query("code"))
+		reauthentication, stateErr := svc.LinuxDOReauthenticationState(c.Query("state"))
+		if stateErr != nil {
+			if err := svc.RecordRejectedLogin("linuxdo", loginRequestContext(c), 400); err != nil {
+				log.Printf("OAuth rejected login audit write failed: error=%v", err)
+			}
+			c.Redirect(http.StatusFound, "/login?oauth_error="+url.QueryEscape("无法读取身份验证状态，请重试"))
+			return
+		}
+		c.Set("login_audit_handled", true)
+		result, err := svc.CompleteLinuxDOLogin(c.Query("state"), c.Query("code"), sessionCookie(c), loginRequestContext(c))
 		if err != nil {
+			if reauthentication {
+				c.Redirect(http.StatusFound, "/settings?section=profile&reauth=error")
+				return
+			}
 			c.Redirect(http.StatusFound, "/login?oauth_error="+url.QueryEscape(err.Error()))
 			return
 		}
-		setSessionCookie(c, result.Session.Session, result.Session.MaxAgeSecs)
+		if !result.Reauthenticated {
+			setSessionCookie(c, result.Session.Session, result.Session.MaxAgeSecs)
+		}
 		c.Redirect(http.StatusFound, result.Next)
 	}
 }
 
 func RegisterAdminRoutes(r *gin.RouterGroup, svc *service.Service) {
-	r.GET("/admin/users", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		users, err := svc.AdminUsers(user, service.AdminListQuery{Keyword: c.Query("keyword"), Type: c.Query("role"), Status: c.Query("status"), Page: page, Limit: limit})
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, users)
-	})
-	r.POST("/admin/users", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.CreateAdminUserRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		created, err := svc.CreateAdminUser(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"user": created})
-	})
-	r.GET("/admin/references", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		data, err := svc.AdminReferences(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, data)
-	})
-	r.POST("/admin/users/bulk-disable", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.BulkDisableUsersRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		result, err := svc.BulkDisableUsers(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/users/:id/detail", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		result, err := svc.AdminUserDetail(user, c.Param("id"))
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/users/:id/ledger", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		result, err := svc.AdminUserLedger(user, c.Param("id"), c.Query("type"), page, limit)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/users/:id/tasks", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		result, err := svc.AdminUserTasks(user, c.Param("id"), page, limit)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/users/:id/audit-events", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		result, err := svc.AdminUserAuditEvents(user, c.Param("id"), page, limit)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.PATCH("/admin/users/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		var req service.UpdateUserRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		updated, err := svc.UpdateUser(user, c.Param("id"), req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"user": updated})
-	})
-	r.DELETE("/admin/users/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if err := svc.DeleteUser(user, c.Param("id")); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"ok": true})
-	})
-	r.GET("/admin/channels", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		channels, err := svc.AdminSystemChannelPage(user, service.AdminListQuery{Keyword: c.Query("keyword"), Status: c.Query("status"), Page: page, Limit: limit})
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, channels)
-	})
-	r.POST("/admin/channels", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		var req service.ChannelRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		channel, err := svc.CreateSystemChannel(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"channel": channel})
-	})
-	r.PATCH("/admin/channels/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		var req service.ChannelRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		channel, err := svc.UpdateSystemChannel(user, c.Param("id"), req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"channel": channel})
-	})
-	r.DELETE("/admin/channels/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if err := svc.DeleteSystemChannel(user, c.Param("id")); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"ok": true})
-	})
-	r.GET("/admin/prompt-templates", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		templates, definitions, err := svc.AdminPromptTemplates(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"templates": templates, "definitions": definitions})
-	})
-	r.POST("/admin/prompt-templates", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.PromptTemplateRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		template, err := svc.CreatePromptTemplate(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"template": template})
-	})
-	r.PATCH("/admin/prompt-templates/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.PromptTemplateRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		template, err := svc.UpdatePromptTemplate(user, c.Param("id"), req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"template": template})
-	})
-	r.DELETE("/admin/prompt-templates/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if err := svc.DeletePromptTemplate(user, c.Param("id")); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"ok": true})
-	})
-	r.GET("/admin/settings/oss", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.AdminOSSSetting(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.PATCH("/admin/settings/oss", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.OSSSettingRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		setting, err := svc.UpdateOSSSetting(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.POST("/admin/settings/oss/test", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if !enforceRateLimit(c, "admin-storage-test:"+user.ID, 6, time.Minute) {
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.OSSSettingRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		result, err := svc.TestAdminOSSSetting(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/settings/ark-private-assets", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.AdminArkPrivateAssetSetting(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.PATCH("/admin/settings/ark-private-assets", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		var req service.ArkPrivateAssetSettingRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		setting, err := svc.UpdateArkPrivateAssetSetting(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.GET("/admin/settings/drawing-engine", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.AdminDrawingEngineSetting(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.PATCH("/admin/settings/drawing-engine", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		var req service.DrawingEngineSetting
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		setting, err := svc.UpdateDrawingEngineSetting(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.GET("/admin/settings/runtime-policy", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.AdminRuntimePolicySetting(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.GET("/admin/settings/runtime-policy/self-use", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.AdminSelfUseRuntimePolicy(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.PUT("/admin/settings/runtime-policy", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.RuntimePolicySetting
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		setting, err := svc.UpdateRuntimePolicySetting(user, req)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.DELETE("/admin/settings/runtime-policy", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		setting, err := svc.ResetRuntimePolicySetting(user)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"setting": setting})
-	})
-	r.GET("/admin/api-logs", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		logs, err := svc.AdminAPICallLogs(user, service.APICallLogQuery{AnalyticsQuery: analyticsQuery(c), Keyword: c.Query("keyword"), Status: c.Query("status"), Page: page, Limit: limit})
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, logs)
-	})
-	r.GET("/admin/api-logs/:id/media", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		delivery, err := svc.PrepareAdminAPICallLogMediaDelivery(user, c.Param("id"), c.GetHeader("Range"))
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if delivery.RedirectURL != "" {
-			c.Header("Cache-Control", "private, no-store")
-			c.Header("Referrer-Policy", "no-referrer")
-			c.Header("X-Content-Type-Options", "nosniff")
-			c.Redirect(http.StatusTemporaryRedirect, delivery.RedirectURL)
-			return
-		}
-		stream := delivery.Stream
-		defer stream.Body.Close()
-		resource := stream.Resource
-		mimeType := resource.MimeType
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-		c.Header("Cache-Control", "private, no-cache")
-		c.Header("Accept-Ranges", "bytes")
-		c.Header("X-Content-Type-Options", "nosniff")
-		if c.Query("download") == "1" {
-			extension := filepath.Ext(resource.ObjectKey)
-			if len(extension) > 12 {
-				extension = ""
-			}
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=api-log-media%s", extension))
-		}
-		if resource.Provider == "local" {
-			if seeker, ok := stream.Body.(io.ReadSeeker); ok {
-				c.Header("Content-Type", mimeType)
-				http.ServeContent(c.Writer, c.Request, resource.ID, resource.UpdatedAt, seeker)
-				return
-			}
-		}
-		if stream.ContentRange != "" {
-			c.Header("Content-Range", stream.ContentRange)
-		}
-		if stream.AcceptRanges != "" {
-			c.Header("Accept-Ranges", stream.AcceptRanges)
-		}
-		c.DataFromReader(stream.StatusCode, stream.ContentLength, mimeType, stream.Body, nil)
-	})
-	r.GET("/admin/api-logs/:id", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		log, err := svc.AdminAPICallLog(user, c.Param("id"))
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"log": log})
-	})
-	r.POST("/admin/api-logs/:id/query-task", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		result, err := svc.AdminQueryFailedVideoTask(c.Request.Context(), user, c.Param("id"))
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
-	})
-	r.GET("/admin/api-logs-export.csv", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		selectedIDs := []string(nil)
-		if value := strings.TrimSpace(c.Query("ids")); value != "" {
-			selectedIDs = strings.Split(value, ",")
-		}
-		data, err := svc.AdminAPICallLogsCSV(user, service.APICallLogQuery{AnalyticsQuery: analyticsQuery(c), Keyword: c.Query("keyword"), Status: c.Query("status"), IDs: selectedIDs})
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Header("Content-Disposition", "attachment; filename=api-calls-"+time.Now().UTC().Format("20060102-150405")+".csv")
-		c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
-	})
+	registerAdminUserRoutes(r, svc)
+	registerAdminChannelRoutes(r, svc)
+	registerAdminSettingRoutes(r, svc)
+	registerAdminAPILogRoutes(r, svc)
+	registerAdminLoginLogRoutes(r, svc)
+	registerEmailRoutes(r, svc)
 }
 
 func RegisterSystemProxyRoutes(r *gin.RouterGroup, svc *service.Service) {
@@ -849,7 +330,7 @@ func shortSystemProxyPath(rawPath string) (string, string, bool) {
 // as a channel request when a business route returns 404.
 func isReservedAPIPathPrefix(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "admin", "ai", "announcements", "assets", "auth", "canvas-projects", "channels", "diagnostics", "features", "files", "model-catalog", "models", "oauth", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "user-data", "voice-profiles", "wallet":
+	case "admin", "agent", "ai", "announcements", "banner-announcements", "assets", "auth", "canvas-projects", "channels", "diagnostics", "dramas", "features", "files", "model-catalog", "models", "oauth", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "team-invitations", "teams", "timeline", "user-data", "voice-profiles", "wallet":
 		return true
 	default:
 		return false
@@ -907,18 +388,27 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 			capability = channelModel.Capability
 		}
 	}
-	if err := authorizeSystemProxy(channel, protocol, c.Request.Method, path, c.GetHeader("Content-Type"), body); err != nil {
+	var declaredPaths []string
+	if protocol != "" {
+		declaredPaths = svc.SystemProxyDeclaredPostPaths(protocol)
+	}
+	if err := authorizeSystemProxy(channel, protocol, declaredPaths, c.Request.Method, path, c.GetHeader("Content-Type"), body); err != nil {
 		fail(c, http.StatusForbidden, err)
 		return
 	}
-	if channelModel != nil && channelModel.BillingMode == "token" && protocol == model.ChannelInterfaceChatCompletion {
+	// 按 Token 计费的 Chat Completions 流式请求需要上游最后返回 usage 块；是否属于 Chat Completions
+	// 看实际转发的路径，不看协议 ID，插件协议（deepseek-chat 等）同样能拿到用量结算。
+	clientBody := body
+	if channelModel != nil && channelModel.BillingMode == "token" && service.SystemProxyChatCompletionPath(path) {
 		body, err = service.EnsureChatCompletionStreamUsageRequest(body)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
 	}
+	streamUsageInjected := !bytes.Equal(clientBody, body)
 	billingOrderID := ""
+	imageUsageBilling := false
 	query := c.Request.URL.Query()
 	for _, key := range []string{"key", "api_key", "access_token", "token"} {
 		query.Del(key)
@@ -929,7 +419,6 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	}
 	validatedTarget, err := svc.ValidateChannelOutboundURL(target, channel.AllowLocalChannel, false)
 	if err != nil {
-		_ = svc.RefundBilling(billingOrderID, "系统渠道地址校验失败")
 		failService(c, err)
 		return
 	}
@@ -956,44 +445,64 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		}
 		if order != nil {
 			billingOrderID = order.ID
+			imageUsageBilling = order.BillingMode == "image_usage"
 			if err := svc.MarkBillingRunning(billingOrderID); err != nil {
-				_ = svc.RefundBilling(billingOrderID, "系统渠道请求尚未发出")
+				refundSystemProxyBilling(svc, billingOrderID, "系统渠道请求尚未发出")
 				failService(c, err)
 				return
 			}
 		}
 	}
-	upstreamReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, validatedTarget.String(), bytes.NewReader(body))
+	newUpstreamRequest := func(payload []byte) (*http.Request, error) {
+		payload, err := service.ResolveSystemProxyTextBody(channelModel, c.GetHeader("Content-Type"), payload)
+		if err != nil {
+			return nil, err
+		}
+		upstreamReq, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, validatedTarget.String(), bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		if contentType := c.GetHeader("Content-Type"); contentType != "" {
+			upstreamReq.Header.Set("Content-Type", contentType)
+		}
+		if accept := c.GetHeader("Accept"); accept != "" {
+			upstreamReq.Header.Set("Accept", accept)
+		}
+		service.ApplyOutboundHeaders(upstreamReq, channelHeaders)
+		service.ApplyDefaultOutboundHeaders(upstreamReq)
+		// 鉴权按插件声明写（bearer / header / anthropic / google-api-key / 签名等），未声明时沿用内置写法。
+		if err := svc.ApplySystemProxyAuth(upstreamReq, channel, protocol); err != nil {
+			return nil, err
+		}
+		return upstreamReq, nil
+	}
+	upstreamReq, err := newUpstreamRequest(body)
 	if err != nil {
-		_ = svc.RefundBilling(billingOrderID, "系统渠道请求构造失败")
+		refundSystemProxyBilling(svc, billingOrderID, "系统渠道请求构造失败")
 		fail(c, http.StatusBadRequest, err)
 		return
-	}
-	if contentType := c.GetHeader("Content-Type"); contentType != "" {
-		upstreamReq.Header.Set("Content-Type", contentType)
-	}
-	if accept := c.GetHeader("Accept"); accept != "" {
-		upstreamReq.Header.Set("Accept", accept)
-	}
-	service.ApplyOutboundHeaders(upstreamReq, channelHeaders)
-	service.ApplyDefaultOutboundHeaders(upstreamReq)
-	if protocol == model.ChannelInterfaceGeminiVeo || protocol == model.ChannelInterfaceGeminiImage {
-		upstreamReq.Header.Set("x-goog-api-key", channel.APIKey)
-	} else if protocol == model.ChannelInterfaceClaudeAPI {
-		upstreamReq.Header.Set("x-api-key", channel.APIKey)
-		upstreamReq.Header.Set("anthropic-version", "2023-06-01")
-	} else {
-		upstreamReq.Header.Set("Authorization", "Bearer "+channel.APIKey)
 	}
 
 	status := model.ApiCallStatusSucceeded
 	statusCode := 0
 	errorText := ""
-	resp, err := svc.OutboundHTTPClientForChannel(35*time.Minute, validatedTarget, channel.AllowLocalChannel).Do(upstreamReq)
+	responseLimit := policy.Request.SystemRelayResponseMB << 20
+	client := svc.OutboundHTTPClientForChannel(35*time.Minute, validatedTarget, channel.ProxyURL, channel.AllowLocalChannel)
+	resp, err := client.Do(upstreamReq)
+	if err == nil && streamUsageInjected {
+		resp, err = resendIfStreamUsageRejected(resp, responseLimit, func() (*http.Response, error) {
+			body = clientBody
+			retryReq, buildErr := newUpstreamRequest(body)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			return client.Do(retryReq)
+		})
+	}
 	if err != nil {
 		status = model.ApiCallStatusFailed
 		errorText = err.Error()
-		_ = svc.MarkBillingUncertain(billingOrderID, "系统渠道连接中断，费用状态待核对")
+		markSystemProxyBillingUncertain(svc, billingOrderID, "系统渠道连接中断，费用状态待核对")
 		logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), nil)
 		fail(c, http.StatusBadGateway, errors.New("系统渠道连接失败"))
 		return
@@ -1003,7 +512,6 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		status = model.ApiCallStatusFailed
 	}
-	responseLimit := policy.Request.SystemRelayResponseMB << 20
 	streamed := isSystemProxyEventStream(resp)
 	var responseBody []byte
 	var readErr error
@@ -1019,7 +527,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		if errors.Is(readErr, errSystemProxyResponseTooLarge) {
 			billingNote = "上游已响应但流式响应体超过限制，费用状态待核对"
 		}
-		_ = svc.MarkBillingUncertain(billingOrderID, billingNote)
+		markSystemProxyBillingUncertain(svc, billingOrderID, billingNote)
 		logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
 		// SSE 响应头已经发送，流中断后只能关闭连接；非流式响应仍返回结构化错误。
 		if !streamed {
@@ -1028,27 +536,63 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		return
 	}
 	if int64(len(responseBody)) > responseLimit {
-		_ = svc.MarkBillingUncertain(billingOrderID, "上游已响应但响应体超过限制，费用状态待核对")
+		markSystemProxyBillingUncertain(svc, billingOrderID, "上游已响应但响应体超过限制，费用状态待核对")
 		fail(c, http.StatusBadGateway, fmt.Errorf("系统渠道响应超过 %dMB 限制", policy.Request.SystemRelayResponseMB))
 		return
 	}
 	logErr := logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
 	if status == model.ApiCallStatusSucceeded {
 		if logErr != nil {
-			_ = svc.MarkBillingUncertain(billingOrderID, "上游成功但调用日志写入失败，费用状态待核对")
+			markSystemProxyBillingUncertain(svc, billingOrderID, "上游成功但调用日志写入失败，费用状态待核对")
 		} else if err := svc.SettleBilling(billingOrderID, ""); err != nil {
-			_ = svc.MarkBillingUncertain(billingOrderID, "上游成功但积分结算失败："+err.Error())
+			markSystemProxyBillingUncertain(svc, billingOrderID, "上游成功但积分结算失败："+err.Error())
 		}
-	} else if statusCode == 524 {
-		_ = svc.MarkBillingUncertain(billingOrderID, "上游返回 524，费用状态待核对")
+	} else if statusCode == 524 || imageUsageBilling {
+		markSystemProxyBillingUncertain(svc, billingOrderID, "上游返回 524，费用状态待核对")
 	} else {
-		_ = svc.RefundBilling(billingOrderID, "上游明确返回失败")
+		refundSystemProxyBilling(svc, billingOrderID, "上游明确返回失败")
 	}
 	if streamed {
 		return
 	}
 	copySystemProxyResponseHeaders(c, resp)
 	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), responseBody)
+}
+
+// resendIfStreamUsageRejected 处理严格 schema 上游（如 Mistral）拒收宿主补上的 stream_options：
+// 400/422 且错误里点名该字段时，按浏览器原始请求体重发一次。被拒的请求没有进入生成，不会重复计费；
+// 其他响应原样交回，错误体已读出的部分会放回 Body，后续读取和日志不受影响。
+func resendIfStreamUsageRejected(resp *http.Response, limit int64, resend func() (*http.Response, error)) (*http.Response, error) {
+	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusUnprocessableEntity {
+		return resp, nil
+	}
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	_ = resp.Body.Close()
+	if readErr == nil && service.StreamUsageOptionRejectedResponse(resp.StatusCode, data) {
+		return resend()
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(data))
+	return resp, nil
+}
+
+func refundSystemProxyBilling(svc *service.Service, billingOrderID string, reason string) {
+	if billingOrderID == "" {
+		return
+	}
+	if err := svc.RefundBilling(billingOrderID, reason); err != nil {
+		log.Printf("system proxy billing refund failed: billing_order_id=%s error=%v", billingOrderID, err)
+		// 退款写失败不能当没发生：转待核对，避免订单停在 running 被当成已扣费。
+		markSystemProxyBillingUncertain(svc, billingOrderID, "退款失败，费用状态待核对："+err.Error())
+	}
+}
+
+func markSystemProxyBillingUncertain(svc *service.Service, billingOrderID string, reason string) {
+	if billingOrderID == "" {
+		return
+	}
+	if err := svc.MarkBillingUncertain(billingOrderID, reason); err != nil {
+		log.Printf("system proxy billing uncertainty update failed: billing_order_id=%s error=%v", billingOrderID, err)
+	}
 }
 
 func apiCallLog(user *model.User, channel *model.ModelChannel, billingOrderID string, capability string, protocol model.ChannelInterfaceType, method string, path string, target string, body []byte, contentType string, status model.ApiCallStatus, statusCode int, duration time.Duration, errorText string, concurrencyLimit int) model.ApiCallLog {
@@ -1089,7 +633,10 @@ func apiCallLog(user *model.User, channel *model.ModelChannel, billingOrderID st
 func logSystemProxyCall(svc *service.Service, log model.ApiCallLog, responseBody []byte) error {
 	log.ResponseBody = service.SanitizeAPICallPayload(responseBody, "")
 	svc.EnrichAPICallLog(&log, responseBody)
-	return svc.LogAPICall(log)
+	if err := svc.LogAPICall(log); err != nil {
+		return err
+	}
+	return svc.RecordProxyImageBillingUsage(log, responseBody)
 }
 
 func readPayloadModel(body []byte) string {
@@ -1104,7 +651,14 @@ func readPayloadModel(body []byte) string {
 }
 
 func currentUser(c *gin.Context, svc *service.Service) (*model.User, error) {
-	return svc.CurrentUser(sessionCookie(c))
+	user, err := svc.CurrentUser(sessionCookie(c))
+	if err != nil {
+		return nil, err
+	}
+	if expected := c.GetHeader("X-Canvas-Expected-User"); expected != "" && expected != user.ID {
+		return nil, service.Forbidden("账号已切换，请重新加载后重试")
+	}
+	return user, nil
 }
 
 func sessionCookie(c *gin.Context) string {

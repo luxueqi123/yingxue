@@ -1,0 +1,59 @@
+<svg width="1600" height="760" viewBox="0 0 1600 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#070A10"/><stop offset="0.52" stop-color="#111827"/><stop offset="1" stop-color="#07090D"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/><stop offset="0.34" stop-color="#A9D7F7"/><stop offset="0.67" stop-color="#F4F8FB"/><stop offset="1" stop-color="#7E91A8"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFFFF" stop-opacity="0.085"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.025"/>
+    </linearGradient>
+    <radialGradient id="glow"><stop stop-color="#8DD8FF" stop-opacity="0.2"/><stop offset="1" stop-color="#8DD8FF" stop-opacity="0"/></radialGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18"/></filter>
+  </defs>
+  <rect width="1600" height="760" fill="url(#bg)"/>
+  <circle cx="800" cy="240" r="560" fill="url(#glow)" opacity="0.45"/>
+  <text x="100" y="92" fill="#F5F7FA" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="34" font-weight="600" letter-spacing="8">映雪 · 品牌标志探索</text>
+  <text x="100" y="132" fill="#8F9AAA" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="17" letter-spacing="3">YINGXUE VISUAL IDENTITY / ORIGINAL VECTOR CONCEPTS</text>
+
+  <g transform="translate(90 190)">
+    <rect width="440" height="480" rx="28" fill="url(#card)" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <circle cx="220" cy="175" r="115" fill="#86D8FF" opacity="0.12" filter="url(#shadow)"/>
+    <g transform="translate(124 79) scale(3)" color="url(#silver)">
+      <circle cx="32" cy="32" r="24" stroke="url(#silver)" stroke-width="3"/>
+      <path d="M32 12V52M14.68 22L49.32 42M14.68 42L49.32 22" stroke="url(#silver)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M32 21L41.5 26.5V37.5L32 43L22.5 37.5V26.5L32 21Z" fill="url(#silver)"/>
+      <path d="M32 27L37 30V34L32 37L27 34V30L32 27Z" fill="#111827"/>
+    </g>
+    <text x="220" y="350" text-anchor="middle" fill="#F7F9FB" font-family="'Microsoft YaHei', sans-serif" font-size="30" font-weight="600" letter-spacing="8">雪镜</text>
+    <text x="220" y="385" text-anchor="middle" fill="#92A0B3" font-family="Inter, sans-serif" font-size="15" letter-spacing="4">SNOW MIRROR</text>
+    <text x="220" y="430" text-anchor="middle" fill="#748094" font-family="'Microsoft YaHei', sans-serif" font-size="15">雪晶 · 镜头 · 六维创作</text>
+  </g>
+
+  <g transform="translate(580 190)">
+    <rect width="440" height="480" rx="28" fill="url(#card)" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <circle cx="220" cy="175" r="115" fill="#86D8FF" opacity="0.12" filter="url(#shadow)"/>
+    <g transform="translate(124 79) scale(3)">
+      <path d="M10 10H32V17H17V32H10V10ZM54 54H32V47H47V32H54V54ZM54 10V25H47V17H39.5L35 21.5L30 16.5L36.5 10H54ZM10 54V39H17V47H24.5L29 42.5L34 47.5L27.5 54H10Z" fill="url(#silver)"/>
+      <path d="M32 21L43 32L32 43L21 32L32 21ZM32 27L27 32L32 37L37 32L32 27Z" fill="url(#silver)" fill-rule="evenodd"/>
+    </g>
+    <text x="220" y="350" text-anchor="middle" fill="#F7F9FB" font-family="'Microsoft YaHei', sans-serif" font-size="30" font-weight="600" letter-spacing="8">映界</text>
+    <text x="220" y="385" text-anchor="middle" fill="#92A0B3" font-family="Inter, sans-serif" font-size="15" letter-spacing="4">REFLECTIVE FRAME</text>
+    <text x="220" y="430" text-anchor="middle" fill="#748094" font-family="'Microsoft YaHei', sans-serif" font-size="15">画框 · 映照 · 无限延展</text>
+  </g>
+
+  <g transform="translate(1070 190)">
+    <rect width="440" height="480" rx="28" fill="url(#card)" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <circle cx="220" cy="175" r="115" fill="#86D8FF" opacity="0.12" filter="url(#shadow)"/>
+    <g transform="translate(124 79) scale(3)">
+      <path d="M44.7 11.6C35.1 7.1 23.2 9 15.5 17.1C5.8 27.3 6.2 43.5 16.4 53.2C25.1 61.5 38 62.3 47.6 56C37 58 26.3 52.4 22 42.6C16.8 30.7 22.2 16.8 34.1 11.6C37.6 10.1 41.2 9.5 44.7 9.7V11.6Z" fill="url(#silver)"/>
+      <path d="M44 18V46M31.9 25L56.1 39M31.9 39L56.1 25" stroke="url(#silver)" stroke-width="3.2" stroke-linecap="round"/>
+      <circle cx="44" cy="32" r="4.5" fill="url(#silver)"/>
+    </g>
+    <text x="220" y="350" text-anchor="middle" fill="#F7F9FB" font-family="'Microsoft YaHei', sans-serif" font-size="30" font-weight="600" letter-spacing="8">霜月</text>
+    <text x="220" y="385" text-anchor="middle" fill="#92A0B3" font-family="Inter, sans-serif" font-size="15" letter-spacing="4">FROSTED MOON</text>
+    <text x="220" y="430" text-anchor="middle" fill="#748094" font-family="'Microsoft YaHei', sans-serif" font-size="15">东方 · 留白 · 冰雪光晕</text>
+  </g>
+  <text x="800" y="718" text-anchor="middle" fill="#657085" font-family="Inter, 'Microsoft YaHei', sans-serif" font-size="15" letter-spacing="3">MONOCHROME READY · 16PX LEGIBLE · SVG MASTER</text>
+</svg>

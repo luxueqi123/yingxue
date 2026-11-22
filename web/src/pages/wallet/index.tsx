@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlipayCircleFilled, WechatFilled } from "@ant-design/icons";
 import { App, Button, Grid, Input, Modal, QRCode, Skeleton, Table, Tag } from "antd";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
@@ -7,24 +8,24 @@ import { motion, useReducedMotion } from "motion/react";
 import { ArrowDownLeft, ArrowUpRight, CalendarCheck, Coins, CreditCard, RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, TicketCheck } from "lucide-react";
 
 import { formatCredits } from "@/constant/credits";
+import { accountFileStorageUsageQueryKey, formatStorageCapacity, formatStorageDuration } from "@/lib/account-storage-usage";
+import type { InterfaceLocale, InterfaceMessageKey, InterfaceTranslate } from "@/lib/interface-locale";
 import { PaginationBar, TableSurface } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { aceternityMotion } from "@/lib/aceternity-motion";
-import { checkinCredits, getWallet, redeemCredits, type CreditLedgerEntry, type WalletSummary } from "@/services/api/wallet";
-import { closePaymentOrder, createPaymentOrder, getPaymentOrder, listPaymentProviders, listTopupProducts, queryPaymentOrder, refreshPaymentCheckout, type PaymentOrder, type PaymentProvider, type TopupProduct } from "@/services/api/payments";
+import { checkinCredits, getWallet, redeemCredits, type CreditLedgerEntry, type WalletCreditEntry, type WalletHistoryEntry, type WalletSummary } from "@/services/api/wallet";
+import { WalletHistoryRow } from "@/components/layout/workspace-wallet-history-row";
+import { closePaymentOrder, createPaymentOrder, getPaymentOrder, listPaymentOrders, listPaymentProviders, listTopupProducts, queryPaymentOrder, refreshPaymentCheckout, type PaymentOrder, type PaymentProvider, type TopupProduct } from "@/services/api/payments";
 import { modelDisplayName, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import "@/components/payment/payment-method-colors.css";
 
 type LedgerFilter = "all" | "income" | "consume" | "refund";
 
-const ledgerFilterOptions = [
-    { label: "全部", value: "all" },
-    { label: "充值与调整", value: "income" },
-    { label: "模型消费", value: "consume" },
-    { label: "退款", value: "refund" },
-];
-
 export default function WalletPage() {
+    const { locale, t } = useInterfaceTranslation();
     const { message } = App.useApp();
+    const queryClient = useQueryClient();
     const screens = Grid.useBreakpoint();
     const reducedMotion = useReducedMotion();
     const config = useEffectiveConfig();
@@ -38,9 +39,11 @@ export default function WalletPage() {
     const [pageSize, setPageSize] = useState(20);
     const [paymentProducts, setPaymentProducts] = useState<TopupProduct[]>([]);
     const [paymentProviders, setPaymentProviders] = useState<PaymentProvider[]>([]);
+    const [paymentOrders, setPaymentOrders] = useState<PaymentOrder[]>([]);
     const [paymentsLoading, setPaymentsLoading] = useState(true);
     const [selectedProductId, setSelectedProductId] = useState("");
     const [selectedProviderId, setSelectedProviderId] = useState("");
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"alipay" | "wxpay">("alipay");
     const [paymentCreating, setPaymentCreating] = useState(false);
     const [paymentOrder, setPaymentOrder] = useState<PaymentOrder | null>(null);
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -53,14 +56,15 @@ export default function WalletPage() {
     const paymentIdempotencyKey = useRef("");
     const completedPaymentOrderId = useRef("");
 
-    const reload = async (targetPage = page, targetPageSize = pageSize) => {
+    const reload = async (targetPage = page, targetPageSize = pageSize, propagateError = false) => {
         const sequence = ++requestSequence.current;
         setLoading(true);
         try {
             const nextWallet = await getWallet(targetPage, targetPageSize, filter);
             if (sequence === requestSequence.current) setWallet(nextWallet);
         } catch (error) {
-            if (sequence === requestSequence.current) message.error(error instanceof Error ? error.message : "读取积分记录失败");
+            if (sequence === requestSequence.current) message.error(error instanceof Error ? error.message : t("storageUi.walletLoadFailed"));
+            if (propagateError) throw error;
         } finally {
             if (sequence === requestSequence.current) setLoading(false);
         }
@@ -73,16 +77,17 @@ export default function WalletPage() {
     useEffect(() => {
         let active = true;
         setPaymentsLoading(true);
-        Promise.all([listTopupProducts(), listPaymentProviders()])
-            .then(([productsResult, providersResult]) => {
+        Promise.all([listTopupProducts(), listPaymentProviders(), listPaymentOrders({ page: 1, pageSize: 10 })])
+            .then(([productsResult, providersResult, ordersResult]) => {
                 if (!active) return;
                 setPaymentProducts(productsResult.products);
                 setPaymentProviders(providersResult.providers);
+                setPaymentOrders(ordersResult.items);
                 setSelectedProductId((current) => current || productsResult.products[0]?.id || "");
                 setSelectedProviderId((current) => current || providersResult.providers[0]?.id || "");
             })
             .catch((error) => {
-                if (active) message.error(error instanceof Error ? error.message : "读取在线充值配置失败");
+                if (active) message.error(error instanceof Error ? error.message : t("storageUi.topupConfigLoadFailed"));
             })
             .finally(() => {
                 if (active) setPaymentsLoading(false);
@@ -97,12 +102,13 @@ export default function WalletPage() {
         if (!returnedOrderId) return;
         getPaymentOrder(returnedOrderId)
             .then(({ order }) => {
-                setPaymentOrder(order);
+                if(order.productKind === "membership") { window.location.replace(`/membership?paymentOrder=${encodeURIComponent(order.id)}`); return; }
+                trackPaymentOrder(order);
                 nextPaymentRefreshAt.current = 0;
                 setPaymentModalOpen(true);
                 if (order.status === "pending") void confirmPayment(order.id);
             })
-            .catch((error) => message.error(error instanceof Error ? error.message : "读取支付结果失败"));
+            .catch((error) => message.error(error instanceof Error ? error.message : t("storageUi.readPaymentResultFailed")));
         window.history.replaceState(null, "", window.location.pathname);
     }, []);
 
@@ -114,9 +120,9 @@ export default function WalletPage() {
             void getPaymentOrder(paymentOrder.id)
                 .then(({ order }) => {
                     if (sequence !== paymentPollSequence.current) return;
-                    setPaymentOrder(order);
+                    trackPaymentOrder(order);
                     if (order.status === "credited") {
-                        void paymentCompleted(order.id);
+                        void paymentCompleted(order);
                         return;
                     }
                     const checkoutExpired = order.checkout.mode === "qr_code" && order.checkout.expiresAt && new Date(order.checkout.expiresAt).getTime() <= Date.now();
@@ -125,8 +131,8 @@ export default function WalletPage() {
                         nextPaymentRefreshAt.current = Date.now() + 15 * 60_000;
                         void refreshPaymentCheckout(order.id)
                             .then(async (result) => {
-                                setPaymentOrder(result.order);
-                                if (result.order.status === "credited") await paymentCompleted(result.order.id);
+                                trackPaymentOrder(result.order);
+                                if (result.order.status === "credited") await paymentCompleted(result.order);
                             })
                             .catch(() => undefined)
                             .finally(() => {
@@ -141,15 +147,35 @@ export default function WalletPage() {
 
     const selectedProduct = useMemo(() => paymentProducts.find((item) => item.id === selectedProductId), [paymentProducts, selectedProductId]);
     const selectedProvider = useMemo(() => paymentProviders.find((item) => item.id === selectedProviderId), [paymentProviders, selectedProviderId]);
+    const availablePaymentMethods = useMemo(() => paymentMethodsForProvider(selectedProvider), [selectedProvider]);
+
+    useEffect(() => {
+        if (!availablePaymentMethods.includes(selectedPaymentMethod)) setSelectedPaymentMethod(availablePaymentMethods[0] || "alipay");
+    }, [availablePaymentMethods, selectedPaymentMethod]);
 
     useEffect(() => {
         paymentIdempotencyKey.current = "";
-    }, [selectedProductId, selectedProviderId]);
+    }, [selectedProductId, selectedProviderId, selectedPaymentMethod]);
+
+    function trackPaymentOrder(order: PaymentOrder) {
+        setPaymentOrder(order);
+        setPaymentOrders((current) => [order, ...current.filter((item) => item.id !== order.id)].slice(0, 10));
+    }
+
+    function continuePayment(order: PaymentOrder) {
+        trackPaymentOrder(order);
+        nextPaymentRefreshAt.current = 0;
+        if ((order.status === "created" || order.status === "pending") && order.checkout.mode === "redirect" && order.checkout.url) {
+            window.location.assign(order.checkout.url);
+            return;
+        }
+        setPaymentModalOpen(true);
+    }
 
     const redeem = async () => {
         const normalized = code.trim().toLowerCase();
         if (normalized.length !== 32) {
-            message.error("请输入完整的 32 位兑换码");
+            message.error(t("storageUi.redeemCodeInvalid"));
             return;
         }
         setRedeeming(true);
@@ -159,9 +185,9 @@ export default function WalletPage() {
             setPage(1);
             await reload(1, pageSize);
             window.dispatchEvent(new CustomEvent("wallet:updated"));
-            message.success("兑换成功，积分已到账");
+            message.success(t("storageUi.redeemSucceeded"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "兑换失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.redeemFailed"));
         } finally {
             setRedeeming(false);
         }
@@ -173,9 +199,9 @@ export default function WalletPage() {
             await checkinCredits();
             await reload(page, pageSize);
             window.dispatchEvent(new CustomEvent("wallet:updated"));
-            message.success("签到成功，积分已到账");
+            message.success(t("storageUi.checkinSucceeded"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "签到失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.checkinFailed"));
         } finally {
             setCheckingIn(false);
         }
@@ -183,19 +209,19 @@ export default function WalletPage() {
 
     const startPayment = async () => {
         if (!selectedProduct || !selectedProvider) {
-            message.error("请选择充值商品和支付方式");
+            message.error(t("storageUi.selectTopupProductAndPaymentMethod"));
             return;
         }
         setPaymentCreating(true);
         try {
             if (!paymentIdempotencyKey.current) paymentIdempotencyKey.current = crypto.randomUUID();
-            const result = await createPaymentOrder({ productId: selectedProduct.id, providerId: selectedProvider.id, idempotencyKey: paymentIdempotencyKey.current });
+            const result = await createPaymentOrder({ productId: selectedProduct.id, providerId: selectedProvider.id, paymentMethod: selectedPaymentMethod, idempotencyKey: paymentIdempotencyKey.current });
             paymentIdempotencyKey.current = "";
-            setPaymentOrder(result.order);
+            trackPaymentOrder(result.order);
             nextPaymentRefreshAt.current = 0;
             if (result.order.status === "credited") {
                 setPaymentModalOpen(true);
-                await paymentCompleted(result.order.id);
+                await paymentCompleted(result.order);
                 return;
             }
             if (result.order.checkout.mode === "redirect" && result.order.checkout.url) {
@@ -204,7 +230,7 @@ export default function WalletPage() {
             }
             setPaymentModalOpen(true);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "创建支付订单失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.createPaymentOrderFailed"));
         } finally {
             setPaymentCreating(false);
         }
@@ -215,12 +241,12 @@ export default function WalletPage() {
         setPaymentQuerying(true);
         try {
             const result = await queryPaymentOrder(orderId);
-            setPaymentOrder(result.order);
-            if (result.order.status === "credited") await paymentCompleted(result.order.id);
-            else if (result.order.status === "closed") message.warning("订单已关闭，未产生积分充值");
-            else message.info("渠道尚未确认支付，请稍后再试");
+            trackPaymentOrder(result.order);
+            if (result.order.status === "credited") await paymentCompleted(result.order);
+            else if (result.order.status === "closed") message.warning(notGrantedPaymentText(result.order, t));
+            else message.info(t("storageUi.paymentNotConfirmed"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "查询支付结果失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.queryPaymentResultFailed"));
         } finally {
             setPaymentQuerying(false);
         }
@@ -231,11 +257,12 @@ export default function WalletPage() {
         setPaymentQuerying(true);
         try {
             const result = await closePaymentOrder(paymentOrder.id);
-            setPaymentOrder(result.order);
-            if (result.order.status === "credited") await paymentCompleted(result.order.id);
-            else message.success("未支付订单已关闭");
+            trackPaymentOrder(result.order);
+            if (result.order.status === "credited") await paymentCompleted(result.order);
+            else if (result.order.status === "closed") message.success(t("storageUi.unpaidOrderClosed"));
+            else message.info(t("storageUi.paymentNotConfirmed"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "关闭订单失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.closePaymentOrderFailed"));
         } finally {
             setPaymentQuerying(false);
         }
@@ -246,55 +273,65 @@ export default function WalletPage() {
         setPaymentQuerying(true);
         try {
             const result = await refreshPaymentCheckout(paymentOrder.id);
-            setPaymentOrder(result.order);
-            if (result.order.status === "credited") await paymentCompleted(result.order.id);
-            else if (result.order.status === "closed") message.warning("订单已关闭，未产生积分充值");
+            trackPaymentOrder(result.order);
+            if (result.order.status === "credited") await paymentCompleted(result.order);
+            else if (result.order.status === "closed") message.warning(notGrantedPaymentText(result.order, t));
             else if (result.order.checkout.mode === "redirect" && result.order.checkout.url) {
                 window.location.assign(result.order.checkout.url);
                 return;
-            } else message.success("支付二维码已重新生成");
+            } else message.success(t("storageUi.paymentQrRecreated"));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "重新生成支付收银台失败");
+            message.error(error instanceof Error ? error.message : t("storageUi.refreshPaymentEntryFailed"));
         } finally {
             setPaymentQuerying(false);
         }
     };
 
-    async function paymentCompleted(orderId: string) {
-        if (completedPaymentOrderId.current === orderId) return;
-        completedPaymentOrderId.current = orderId;
-        await reload(1, pageSize);
+    async function paymentCompleted(order: PaymentOrder) {
+        if (completedPaymentOrderId.current === order.id) return;
+        await reload(1, pageSize, true);
+        if (order.productKind === "storage") {
+            await queryClient.invalidateQueries({ queryKey: accountFileStorageUsageQueryKey });
+            await queryClient.invalidateQueries({ queryKey: ["account-storage-grants"] });
+        }
         setPage(1);
         window.dispatchEvent(new CustomEvent("wallet:updated"));
-        message.success("支付成功，积分已到账");
+        completedPaymentOrderId.current = order.id;
+        message.success(grantedPaymentText(order, t));
     }
 
     const entries = wallet?.entries || [];
     const account = wallet?.account;
     const totalMicrocredits = (account?.availableMicrocredits || 0) + (account?.reservedMicrocredits || 0);
+    const ledgerFilterOptions = [
+        { label: t("storageUi.ledgerFilterAll"), value: "all" },
+        { label: t("storageUi.ledgerFilterIncome"), value: "income" },
+        { label: t("storageUi.ledgerFilterConsume"), value: "consume" },
+        { label: t("storageUi.ledgerFilterRefund"), value: "refund" },
+    ];
 
-    const columns: ColumnsType<CreditLedgerEntry> = [
-        { title: "发生时间", dataIndex: "createdAt", width: 180, render: formatTime },
-        { title: "类型", dataIndex: "type", width: 120, render: (type) => <LedgerTypeTag type={type} /> },
+    const columns: ColumnsType<WalletHistoryEntry> = [
+        { title: t("storageUi.ledgerOccurredAt"), dataIndex: "createdAt", width: 180, render: (value) => formatTime(value, locale) },
+        { title: t("storageUi.ledgerType"), dataIndex: "type", width: 120, render: (_, entry) => entry.type === "billing" ? t("storageUi.ledgerFilterConsume") : <LedgerTypeTag type={entry.type} t={t} /> },
         {
-            title: "明细",
+            title: t("storageUi.ledgerDetails"),
             width: 400,
             ellipsis: true,
-            render: (_, entry) => (
-                <div className="min-w-0 max-w-full overflow-hidden" title={[ledgerModelName(config, entry), [sceneLabel(entry.scene), entry.note].filter(Boolean).join(" · ")].filter(Boolean).join("\n")}>
-                    <div className="truncate font-medium">{ledgerModelName(config, entry)}</div>
-                    <div className="mt-1 truncate text-xs text-foreground/50">{[sceneLabel(entry.scene), entry.note].filter(Boolean).join(" · ") || "无补充说明"}</div>
+            render: (_, entry) => entry.type === "billing" ? <WalletHistoryRow entry={entry} /> : (
+                <div className="min-w-0 max-w-full overflow-hidden" title={[ledgerModelName(config, entry, t), [sceneLabel(entry.scene, t), entry.note].filter(Boolean).join(" · ")].filter(Boolean).join("\n")}>
+                    <div className="truncate font-medium">{ledgerModelName(config, entry, t)}</div>
+                    <div className="mt-1 truncate text-xs text-foreground/50">{[sceneLabel(entry.scene, t), entry.note].filter(Boolean).join(" · ") || t("storageUi.noSupplementalInfo")}</div>
                 </div>
             ),
         },
         {
-            title: "积分变化",
+            title: t("storageUi.ledgerCreditsChange"),
             dataIndex: "amountMicrocredits",
             width: 145,
             align: "right",
-            render: (value: number) => <CreditDelta value={value} />,
+            render: (value: number, entry) => entry.type === "billing" ? "—" : <CreditDelta value={value} />,
         },
-        { title: "变更后余额", dataIndex: "availableAfterMicrocredits", width: 145, align: "right", render: (value) => <span className="tabular-nums">{formatCredits(value)}</span> },
+        { title: t("storageUi.ledgerBalanceAfter"), dataIndex: "availableAfterMicrocredits", width: 145, align: "right", render: (value, entry) => entry.type === "billing" ? "—" : <span className="tabular-nums">{formatCredits(value)}</span> },
     ];
 
     return (
@@ -309,14 +346,14 @@ export default function WalletPage() {
                     >
                         <div className="flex min-w-0 items-center gap-3">
                             <div className="min-w-0">
-                                <h1 className="text-[var(--fs-heading-lg)] font-semibold leading-7">积分中心</h1>
-                                <p className="mt-1 text-xs leading-5 text-foreground/58">模型调用、冻结与退款都在同一条可追溯流水中。</p>
+                                <h1 className="text-[var(--fs-heading-lg)] font-semibold leading-7">{t("wallet")}</h1>
+                                <p className="mt-1 text-xs leading-5 text-foreground/58">{t("storageUi.walletPageDescription")}</p>
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="app-projects-header-meta wallet-credit-meta">
                                 <Coins className="size-3" />
-                                可用 {formatCredits(account?.availableMicrocredits || 0, 6)}
+                                {t("storageUi.availableCredits")}: {formatCredits(account?.availableMicrocredits || 0, 6)}
                             </span>
                             <Button
                                 className="library-primary-action"
@@ -326,10 +363,10 @@ export default function WalletPage() {
                                 disabled={wallet?.policy.checkedInToday}
                                 onClick={() => void checkin()}
                             >
-                                {wallet?.policy.checkedInToday ? "今日已签到" : `签到 +${formatCredits(wallet?.policy.checkinBonusMicrocredits || 0)}`}
+                                {wallet?.policy.checkedInToday ? t("storageUi.checkedInToday") : t("storageUi.checkinReward", { value: formatCredits(wallet?.policy.checkinBonusMicrocredits || 0) })}
                             </Button>
                             <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void reload()}>
-                                刷新余额
+                                {t("storageUi.refreshBalance")}
                             </Button>
                         </div>
                     </motion.header>
@@ -344,22 +381,22 @@ export default function WalletPage() {
                                         <Coins />
                                     </span>
                                     <div>
-                                        <strong>可用创作积分</strong>
-                                        <span>最近更新 {formatTime(account?.updatedAt)}</span>
+                                        <strong>{t("storageUi.availableCreationCredits")}</strong>
+                                        <span>{t("storageUi.lastUpdated", { date: formatTime(account?.updatedAt, locale) })}</span>
                                     </div>
                                 </div>
                                 <div className="wallet-balance-number">
                                     <strong>{formatCredits(account?.availableMicrocredits || 0, 6)}</strong>
-                                    <span>积分</span>
+                                    <span>{t("credits")}</span>
                                 </div>
                             </div>
                             <div className="wallet-balance-details">
                                 <span className="wallet-account-status">
                                     <ShieldCheck />
-                                    账户正常
+                                    {t("storageUi.accountNormal")}
                                 </span>
-                                <BalanceMetric label="冻结积分" description="调用中或待核对" value={account?.reservedMicrocredits || 0} icon={<TicketCheck className="size-4" />} />
-                                <BalanceMetric label="账户总额" description="可用与冻结合计" value={totalMicrocredits} icon={<Coins className="size-4" />} />
+                                <BalanceMetric label={t("storageUi.reservedCreditsLabel")} description={t("storageUi.reservedCreditsDescription")} value={account?.reservedMicrocredits || 0} icon={<TicketCheck className="size-4" />} />
+                                <BalanceMetric label={t("storageUi.totalCreditsLabel")} description={t("storageUi.availableAndReservedDescription")} value={totalMicrocredits} icon={<Coins className="size-4" />} />
                             </div>
                         </div>
                     </section>
@@ -375,12 +412,12 @@ export default function WalletPage() {
                                 <TicketCheck className="size-4" />
                             </span>
                             <div>
-                                <h2 className="text-base font-semibold">兑换积分</h2>
-                                <p className="mt-1 text-xs leading-5 text-foreground/55">输入管理员发放的 32 位兑换码。</p>
+                                <h2 className="text-base font-semibold">{t("storageUi.redeemCreditsHeading")}</h2>
+                                <p className="mt-1 text-xs leading-5 text-foreground/55">{t("storageUi.redeemCreditsDescription")}</p>
                             </div>
                         </div>
                         <label className="mt-6 block">
-                            <span className="text-xs font-medium text-foreground/70">兑换码</span>
+                            <span className="text-xs font-medium text-foreground/70">{t("storageUi.redeemCodeHeading")}</span>
                             <Input
                                 className="mt-2 font-mono"
                                 size="large"
@@ -389,16 +426,16 @@ export default function WalletPage() {
                                 spellCheck={false}
                                 autoComplete="off"
                                 onChange={(event) => setCode(event.target.value.replace(/[-\s]/g, ""))}
-                                placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                placeholder={t("storageUi.redeemCodePlaceholder")}
                                 onPressEnter={() => void redeem()}
                             />
                         </label>
                         <div className="mt-2 flex items-center justify-between text-xs text-foreground/45">
-                            <span>兑换成功后立即到账</span>
+                            <span>{t("storageUi.redeemCreditArrival")}</span>
                             <span className="tabular-nums">{code.length} / 32</span>
                         </div>
                         <Button className="mt-5" type="primary" size="large" block loading={redeeming} disabled={code.length !== 32} onClick={() => void redeem()}>
-                            兑换积分
+                            {t("storageUi.redeemCreditsButton")}
                         </Button>
                     </motion.div>
                 </section>
@@ -411,14 +448,14 @@ export default function WalletPage() {
                                     <CreditCard className="size-4" />
                                 </span>
                                 <div>
-                                    <h2 className="text-base font-semibold">在线充值</h2>
-                                    <p className="mt-1 text-xs leading-5 text-foreground/55">支付成功后自动充值积分。平台不提供退款，请确认商品和金额后付款。</p>
+                                    <h2 className="text-base font-semibold">{t("storageUi.onlineTopupHeading")}</h2>
+                                    <p className="mt-1 text-xs leading-5 text-foreground/55">{t("storageUi.onlineTopupDescription")}</p>
                                 </div>
                             </div>
                         </div>
                         {selectedProduct ? (
                             <div className="text-right">
-                                <div className="text-xs text-foreground/45">应付金额</div>
+                                <div className="text-xs text-foreground/45">{t("storageUi.payableAmount")}</div>
                                 <div className="mt-1 text-2xl font-semibold tabular-nums">¥ {(selectedProduct.amountFen / 100).toFixed(2)}</div>
                             </div>
                         ) : null}
@@ -428,25 +465,26 @@ export default function WalletPage() {
                     ) : paymentProducts.length && paymentProviders.length ? (
                         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
                             <div>
-                                <div className="mb-2 text-xs font-medium text-foreground/65">选择充值商品</div>
+                                <div className="mb-2 text-xs font-medium text-foreground/65">{t("storageUi.selectTopupProduct")}</div>
                                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                     {paymentProducts.map((product) => (
                                         <button
                                             key={product.id}
                                             type="button"
                                             className={`rounded-lg border px-4 py-3 text-left transition-colors ${selectedProductId === product.id ? "border-primary bg-primary/5" : "border-border/70 bg-background/35 hover:border-foreground/25"}`}
+                                            disabled={!product.canPurchase}
                                             onClick={() => setSelectedProductId(product.id)}
                                         >
                                             <div className="font-medium">{product.name}</div>
                                             <div className="mt-1 text-xs text-foreground/48">
-                                                {formatCredits(product.creditsMicrocredits, 6)} 积分 · ¥ {(product.amountFen / 100).toFixed(2)}
+                                                {product.kind === "storage" ? t("storageUi.paymentStorageGrantLabel", { capacity: formatStorageCapacity(product.storageBytes), duration: formatStorageDuration(product.storageDurationDays, t) }) : t("storageUi.paymentCreditsGrantLabel", { value: formatCredits(product.creditsMicrocredits, 6), unit: t("credits") })} · ¥ {(product.amountFen / 100).toFixed(2)}
                                             </div>
                                         </button>
                                     ))}
                                 </div>
                             </div>
                             <div>
-                                <div className="mb-2 text-xs font-medium text-foreground/65">选择支付方式</div>
+                                <div className="mb-2 text-xs font-medium text-foreground/65">{t("storageUi.selectPaymentMethod")}</div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {paymentProviders.map((provider) => (
                                         <button
@@ -455,26 +493,64 @@ export default function WalletPage() {
                                             className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-left transition-colors ${selectedProviderId === provider.id ? "border-primary bg-primary/5" : "border-border/70 bg-background/35 hover:border-foreground/25"}`}
                                             onClick={() => setSelectedProviderId(provider.id)}
                                         >
-                                            <PaymentBrandIcon providerId={provider.id} />
+                                            <PaymentBrandIcon providerId={provider.id} t={t} />
                                             <span className="min-w-0 truncate text-sm font-medium">{provider.name}</span>
                                         </button>
                                     ))}
                                 </div>
+                                {availablePaymentMethods.length > 1 ? (
+                                    <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label={t("storageUi.paymentChannel")}>
+                                        {availablePaymentMethods.map((method) => (
+                                            <button
+                                                key={method}
+                                                type="button"
+                                                className={`payment-method-choice is-${method} flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors`}
+                                                disabled={paymentCreating}
+                                                onClick={() => setSelectedPaymentMethod(method)}
+                                                aria-pressed={selectedPaymentMethod === method}
+                                            >
+                                                <PaymentBrandIcon providerId={selectedProvider?.id || ""} paymentMethod={method} t={t} />
+                                                {paymentMethodLabel(method, t)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
                                 <Button className="mt-3" type="primary" size="large" block loading={paymentCreating} disabled={!selectedProduct || !selectedProvider} onClick={() => void startPayment()}>
-                                    {selectedProvider?.checkoutMode === "qr_code" ? "生成支付二维码" : `前往${selectedProvider?.name || "支付"}`}
+                                    {selectedProvider?.checkoutMode === "qr_code" ? t("storageUi.generatePaymentQrCode") : t("storageUi.goToPaymentProvider", { name: selectedProvider?.name || t("storageUi.payment") })}
                                 </Button>
                             </div>
                         </div>
                     ) : (
-                        <WorkspaceState compact icon="wallet" title="在线充值暂未开放" description="管理员配置充值商品和支付渠道后即可使用。" />
+                        <WorkspaceState compact icon="wallet" title={t("storageUi.onlineTopupNotOpen")} description={t("storageUi.configureTopupToUse")} />
                     )}
+                    {paymentOrders.length ? (
+                        <div className="mt-6 border-t border-border/60 pt-4">
+                            <div className="mb-2 text-xs font-medium text-foreground/65">{t("storageUi.recentTopupOrders")}</div>
+                            <div className="grid gap-2">
+                                {paymentOrders.map((order) => {
+                                    const actionable = ["created", "pending", "create_failed"].includes(order.status);
+                                    return (
+                                        <div key={order.id} className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/30 px-3 py-2.5">
+                                            <PaymentBrandIcon providerId={order.providerId} paymentMethod={order.paymentMethod} t={t} />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm font-medium">{order.productName || t("storageUi.creditTopupProduct")}</div>
+                                                <div className="mt-0.5 text-xs text-foreground/48">¥ {(order.amountFen / 100).toFixed(2)} · {formatTime(order.createdAt, locale)}</div>
+                                            </div>
+                                            <Tag variant="filled" color={paymentOrderStatusMeta(order.status, t).color}>{paymentOrderStatusMeta(order.status, t).label}</Tag>
+                                            {actionable ? <Button size="small" onClick={() => continuePayment(order)}>{t("storageUi.continuePayment")}</Button> : <Button size="small" type="text" onClick={() => continuePayment(order)}>{t("storageUi.viewOrder")}</Button>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
                 </section>
 
                 <section className="wallet-ledger-panel app-workspace-surface mt-9 rounded-lg p-4 backdrop-blur-xl sm:p-5">
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
-                            <h2 className="text-base font-semibold">积分流水</h2>
-                            <p className="mt-1 text-xs text-foreground/55">当前展示最近 {wallet?.entries.length || 0} 条记录。</p>
+                            <h2 className="text-base font-semibold">{t("storageUi.ledgerHeading")}</h2>
+                            <p className="mt-1 text-xs text-foreground/55">{t("storageUi.recentLedgerRecords", { count: wallet?.entries.length || 0 })}</p>
                         </div>
                         <SegmentedControl
                             block={!screens.sm}
@@ -494,9 +570,9 @@ export default function WalletPage() {
                     ) : (
                         <div className="grid gap-1 overflow-hidden rounded-md bg-transparent">
                             {entries.length ? (
-                                entries.map((entry) => <LedgerMobileRow key={entry.id} config={config} entry={entry} />)
+                                entries.map((entry) => entry.type === "billing" ? <WalletHistoryRow key={entry.id} entry={entry} /> : <LedgerMobileRow key={entry.id} config={config} entry={entry} locale={locale} t={t} />)
                             ) : (
-                                <WorkspaceState compact icon="wallet" title="没有匹配的积分记录" description="切换流水类型，或完成一次生成后再回来查看。" />
+                                <WorkspaceState compact icon="wallet" title={t("storageUi.noMatchedCreditRecords")} description={t("storageUi.noMatchedCreditRecordsHint")} />
                             )}
                         </div>
                     )}
@@ -515,30 +591,32 @@ export default function WalletPage() {
 
             <Modal
                 open={paymentModalOpen}
-                title={paymentOrder?.status === "credited" ? "充值完成" : paymentOrder?.checkout.mode === "qr_code" ? "扫码支付" : "确认支付结果"}
+                title={paymentOrder?.status === "credited" ? (paymentOrder.productKind === "storage" ? t("storageUi.storageExpansionComplete") : t("storageUi.topupComplete")) : paymentOrder?.checkout.mode === "qr_code" ? t("storageUi.scanToPay") : t("storageUi.confirmPaymentResult")}
                 onCancel={() => setPaymentModalOpen(false)}
                 footer={
                     paymentOrder?.status === "pending"
                         ? [
-                              <Button key="close" danger disabled={paymentQuerying} onClick={() => void cancelPayment()}>
-                                  关闭订单
-                              </Button>,
+                              ...(paymentOrder.canClose === false ? [] : [
+                                  <Button key="close" danger disabled={paymentQuerying} onClick={() => void cancelPayment()}>
+                                       {t("storageUi.closeOrder")}
+                                  </Button>,
+                              ]),
                               <Button key="query" type="primary" loading={paymentQuerying} onClick={() => void confirmPayment()}>
-                                  我已完成支付
+                                   {t("storageUi.paymentCompleted")}
                               </Button>,
                           ]
                         : paymentOrder?.status === "create_failed"
                           ? [
                                 <Button key="done" onClick={() => setPaymentModalOpen(false)}>
-                                    稍后处理
+                                    {t("storageUi.handleLater")}
                                 </Button>,
                                 <Button key="retry" type="primary" loading={paymentQuerying} onClick={() => void retryPaymentCheckout()}>
-                                    {paymentOrder.checkout.mode === "redirect" ? "重新打开收银台" : "重新生成二维码"}
+                                    {paymentOrder.checkout.mode === "redirect" ? t("storageUi.reopenCashier") : t("storageUi.recreatePaymentQrCode")}
                                 </Button>,
                             ]
                           : [
                                 <Button key="done" type="primary" onClick={() => setPaymentModalOpen(false)}>
-                                    完成
+                                    {t("storageUi.done")}
                                 </Button>,
                             ]
                 }
@@ -547,20 +625,23 @@ export default function WalletPage() {
                 {paymentOrder ? (
                     <div className="py-2 text-center">
                         <div className="mx-auto grid size-12 place-items-center rounded-xl bg-foreground/5">
-                            <PaymentBrandIcon providerId={paymentOrder.providerId} size="large" />
+                            <PaymentBrandIcon providerId={paymentOrder.providerId} paymentMethod={paymentOrder.paymentMethod} size="large" t={t} />
                         </div>
                         <div className="mt-3 text-lg font-semibold">¥ {(paymentOrder.amountFen / 100).toFixed(2)}</div>
                         <div className="mt-1 text-xs text-foreground/48">
-                            {paymentOrder.productName} · {formatCredits(paymentOrder.creditsMicrocredits, 6)} 积分
+                            {paymentOrder.productName} · {paymentOrder.productKind === "storage"
+                                ? t("storageUi.paymentStorageGrantLabel", { capacity: formatStorageCapacity(paymentOrder.storageBytes || 0), duration: formatStorageDuration(paymentOrder.storageDurationDays || 0, t) })
+                                : t("storageUi.paymentCreditsGrantLabel", { value: formatCredits(paymentOrder.creditsMicrocredits, 6), unit: t("credits") })}
                         </div>
+                        {paymentOrder.productKind !== "storage" && wallet ? <TopupCreditsBreakdown product={{ amountFen: paymentOrder.amountFen, creditsMicrocredits: paymentOrder.creditsMicrocredits }} creditPerYuan={wallet.policy.creditPerYuan} t={t} /> : null}
                         {paymentOrder.status === "pending" && paymentOrder.checkout.mode === "qr_code" && paymentOrder.checkout.value ? (
                             <div className="mt-5 flex flex-col items-center">
                                 <QRCode value={paymentOrder.checkout.value} size={208} bordered={false} />
-                                <p className="mt-3 text-sm font-medium">请使用支付应用扫码完成支付</p>
-                                <p className="mt-1 text-xs text-foreground/45">请勿保存二维码后长按识别</p>
+                                <p className="mt-3 text-sm font-medium">{t("storageUi.scanWithPaymentApp")}</p>
+                                <p className="mt-1 text-xs text-foreground/45">{t("storageUi.doNotLongPressQr")}</p>
                             </div>
                         ) : null}
-                        <PaymentOrderStatus order={paymentOrder} now={clock} />
+                        <PaymentOrderStatus order={paymentOrder} now={clock} t={t} />
                     </div>
                 ) : null}
             </Modal>
@@ -581,20 +662,20 @@ function BalanceMetric({ label, description, value, icon }: { label: string; des
     );
 }
 
-function LedgerMobileRow({ config, entry }: { config: AiConfig; entry: CreditLedgerEntry }) {
-    const meta = ledgerTypeMeta(entry.type);
+function LedgerMobileRow({ config, entry, locale, t }: { config: AiConfig; entry: WalletCreditEntry; locale: InterfaceLocale; t: InterfaceTranslate }) {
+    const meta = ledgerTypeMeta(entry.type, t);
     return (
         <article className="flex items-start gap-3 rounded-md bg-foreground/[.025] px-4 py-4">
             <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-md ${meta.iconClass}`}>{meta.icon}</span>
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{ledgerModelName(config, entry)}</div>
-                        <div className="mt-1 text-xs text-foreground/45">{formatTime(entry.createdAt)}</div>
+                        <div className="truncate text-sm font-medium">{ledgerModelName(config, entry, t)}</div>
+                        <div className="mt-1 text-xs text-foreground/45">{formatTime(entry.createdAt, locale)}</div>
                     </div>
                     <CreditDelta value={entry.amountMicrocredits} />
                 </div>
-                <div className="mt-2 line-clamp-2 break-words text-xs leading-5 text-foreground/55">{[sceneLabel(entry.scene), entry.note].filter(Boolean).join(" · ") || meta.label}</div>
+                <div className="mt-2 line-clamp-2 break-words text-xs leading-5 text-foreground/55">{[sceneLabel(entry.scene, t), entry.note].filter(Boolean).join(" · ") || meta.label}</div>
             </div>
         </article>
     );
@@ -610,8 +691,8 @@ function CreditDelta({ value }: { value: number }) {
     );
 }
 
-function LedgerTypeTag({ type }: { type: CreditLedgerEntry["type"] }) {
-    const meta = ledgerTypeMeta(type);
+function LedgerTypeTag({ type, t }: { type: CreditLedgerEntry["type"]; t: InterfaceTranslate }) {
+    const meta = ledgerTypeMeta(type, t);
     return (
         <Tag variant="filled" color={meta.tagColor}>
             {meta.label}
@@ -619,46 +700,79 @@ function LedgerTypeTag({ type }: { type: CreditLedgerEntry["type"] }) {
     );
 }
 
-function ledgerTypeMeta(type: CreditLedgerEntry["type"]) {
+function ledgerTypeMeta(type: CreditLedgerEntry["type"], t: InterfaceTranslate) {
     const values = {
-        redeem: { label: "兑换充值", tagColor: "default", icon: <ArrowDownLeft className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
-        payment_topup: { label: "在线充值", tagColor: "success", icon: <CreditCard className="size-4" />, iconClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
-        admin_grant: { label: "管理员充值", tagColor: "default", icon: <ArrowDownLeft className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
-        consume: { label: "模型消费", tagColor: "error", icon: <Sparkles className="size-4" />, iconClass: "bg-rose-500/10 text-rose-600 dark:text-rose-300" },
-        reserve: { label: "积分冻结", tagColor: "warning", icon: <ArrowUpRight className="size-4" />, iconClass: "bg-amber-500/10 text-amber-600 dark:text-amber-300" },
-        refund: { label: "消费退款", tagColor: "warning", icon: <RotateCcw className="size-4" />, iconClass: "bg-amber-500/10 text-amber-600 dark:text-amber-300" },
-        admin_adjustment: { label: "管理员调账", tagColor: "default", icon: <SlidersHorizontal className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
-        signup_bonus: { label: "注册奖励", tagColor: "default", icon: <Sparkles className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
-        checkin_bonus: { label: "签到奖励", tagColor: "default", icon: <CalendarCheck className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        team_transfer: { label: "团队积分划转", tagColor: "default", icon: <Coins className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        membership_grant: { label: "会员积分到账", tagColor: "success", icon: <Coins className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        membership_expire: { label: "会员积分到期", tagColor: "default", icon: <CalendarCheck className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        redeem: { label: t("storageUi.ledgerRedeemTopup"), tagColor: "default", icon: <ArrowDownLeft className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        payment_topup: { label: t("storageUi.ledgerOnlineTopup"), tagColor: "success", icon: <CreditCard className="size-4" />, iconClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
+        referral_commission: { label: t("storageUi.ledgerReferralCommission"), tagColor: "success", icon: <Coins className="size-4" />, iconClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
+        recharge: { label: t("storageUi.ledgerOnlineTopup"), tagColor: "success", icon: <CreditCard className="size-4" />, iconClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
+        admin_grant: { label: t("storageUi.ledgerAdminCreditGrant"), tagColor: "default", icon: <ArrowDownLeft className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        consume: { label: t("storageUi.ledgerModelUsage"), tagColor: "error", icon: <Sparkles className="size-4" />, iconClass: "bg-rose-500/10 text-rose-600 dark:text-rose-300" },
+        reserve: { label: t("storageUi.ledgerCreditsReserved"), tagColor: "warning", icon: <ArrowUpRight className="size-4" />, iconClass: "bg-amber-500/10 text-amber-600 dark:text-amber-300" },
+        refund: { label: t("storageUi.ledgerRefund"), tagColor: "warning", icon: <RotateCcw className="size-4" />, iconClass: "bg-amber-500/10 text-amber-600 dark:text-amber-300" },
+        admin_adjustment: { label: t("storageUi.ledgerAdminAdjustment"), tagColor: "default", icon: <SlidersHorizontal className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        signup_bonus: { label: t("storageUi.ledgerSignupBonus"), tagColor: "default", icon: <Sparkles className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
+        checkin_bonus: { label: t("storageUi.ledgerCheckinBonus"), tagColor: "default", icon: <CalendarCheck className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" },
     } as const;
-    return values[type] || { label: "其他积分变动", tagColor: "default", icon: <ArrowUpRight className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" };
+    return values[type] || { label: t("storageUi.ledgerOtherCreditChange"), tagColor: "default", icon: <ArrowUpRight className="size-4" />, iconClass: "bg-foreground/8 text-foreground/70" };
 }
 
-function ledgerTitle(entry: CreditLedgerEntry) {
-    if (entry.type === "redeem") return "兑换码充值";
-    if (entry.type === "payment_topup") return "在线支付充值";
-    if (entry.type === "refund") return "模型消费退款";
-    if (entry.type === "consume") return "模型调用";
-    if (entry.type === "signup_bonus") return "新用户注册奖励";
-    if (entry.type === "checkin_bonus") return "每日签到奖励";
-    return entry.note || "积分调整";
+function ledgerTitle(entry: WalletCreditEntry, t: InterfaceTranslate) {
+    if (entry.type === "redeem") return t("storageUi.ledgerRedeemTopup");
+    if (entry.type === "payment_topup" || entry.type === "recharge") return t("storageUi.ledgerOnlinePaymentTopup");
+    if (entry.type === "referral_commission") return t("storageUi.ledgerReferralCommission");
+    if (entry.type === "refund") return t("storageUi.ledgerModelRefund");
+    if (entry.type === "consume") return t("storageUi.ledgerModelUsage");
+    if (entry.type === "signup_bonus") return t("storageUi.ledgerNewUserBonus");
+    if (entry.type === "checkin_bonus") return t("storageUi.ledgerDailyCheckinBonus");
+    return entry.note || t("storageUi.ledgerCreditAdjustment");
 }
 
-function PaymentBrandIcon({ providerId, size = "normal" }: { providerId: string; size?: "normal" | "large" }) {
+function PaymentBrandIcon({ providerId, paymentMethod, size = "normal", t }: { providerId: string; paymentMethod?: string; size?: "normal" | "large"; t: InterfaceTranslate }) {
     const className = size === "large" ? "text-3xl" : "text-xl";
-    if (providerId === "wechat-native") return <WechatFilled className={`${className} text-[#07C160]`} aria-label="微信支付" />;
-    return <CreditCard className={`${className} text-foreground/60`} aria-label="支付" />;
+    if (paymentMethod === "wxpay" || providerId === "wechat-native") return <WechatFilled className={`${className} text-[#07C160]`} aria-label={t("storageUi.wechatPay")} />;
+    if (paymentMethod === "alipay" || providerId.includes("alipay") || providerId === "cloudcat-epay") return <AlipayCircleFilled className={`${className} text-[#1677ff]`} aria-label={t("storageUi.alipay")} />;
+    return <CreditCard className={`${className} text-foreground/60`} aria-label={t("storageUi.payment")} />;
 }
 
-function PaymentOrderStatus({ order, now }: { order: PaymentOrder; now: number }) {
+function paymentMethodsForProvider(provider?: PaymentProvider): Array<"alipay" | "wxpay"> {
+    const configured = provider?.paymentMethods?.filter((value): value is "alipay" | "wxpay" => value === "alipay" || value === "wxpay") || [];
+    if (configured.length) return configured;
+    if (provider?.id.includes("alipay")) return ["alipay"];
+    return ["wxpay"];
+}
+
+function paymentMethodLabel(method: "alipay" | "wxpay", t: InterfaceTranslate) {
+    return method === "alipay" ? t("storageUi.alipay") : t("storageUi.wechatPay");
+}
+
+function paymentOrderStatusMeta(status: PaymentOrder["status"], t: InterfaceTranslate): { label: string; color: "default" | "success" | "warning" | "error" } {
+    if (status === "credited") return { label: t("storageUi.paymentOrderCredited"), color: "success" };
+    if (status === "closed") return { label: t("storageUi.paymentOrderClosed"), color: "default" };
+    if (status === "create_failed") return { label: t("storageUi.paymentOrderRetry"), color: "error" };
+    if (status === "closing") return { label: t("storageUi.paymentOrderClosing"), color: "warning" };
+    return { label: t("storageUi.paymentOrderPending"), color: "warning" };
+}
+
+function TopupCreditsBreakdown({ product, creditPerYuan, t }: { product: Pick<TopupProduct, "amountFen" | "creditsMicrocredits">; creditPerYuan: number; t: InterfaceTranslate }) {
+    const principalMicrocredits = product.amountFen * creditPerYuan * 1_000_000 / 100;
+    const bonusMicrocredits = Math.max(0, product.creditsMicrocredits - principalMicrocredits);
+    if (!bonusMicrocredits) return null;
+    return <div className="mt-1 text-xs text-foreground/48">{t("storageUi.topupCreditsBreakdown", { principal: formatCredits(principalMicrocredits, 6), bonus: formatCredits(bonusMicrocredits, 6), unit: t("credits") })}</div>;
+}
+
+function PaymentOrderStatus({ order, now, t }: { order: PaymentOrder; now: number; t: InterfaceTranslate }) {
     const remainingSeconds = Math.max(0, Math.floor((new Date(order.expiresAt).getTime() - now) / 1000));
-    if (order.status === "credited") return <div className="mt-5 rounded-lg bg-emerald-500/8 px-4 py-3 text-sm font-medium text-emerald-600 dark:text-emerald-300">支付已确认，积分已经到账</div>;
-    if (order.status === "closed") return <div className="mt-5 rounded-lg bg-foreground/5 px-4 py-3 text-sm text-foreground/60">订单已关闭，未产生积分充值</div>;
+    if (order.status === "credited") return <div className="mt-5 rounded-lg bg-emerald-500/8 px-4 py-3 text-sm font-medium text-emerald-600 dark:text-emerald-300">{grantedPaymentText(order, t)}</div>;
+    if (order.status === "closed") return <div className="mt-5 rounded-lg bg-foreground/5 px-4 py-3 text-sm text-foreground/60">{notGrantedPaymentText(order, t)}</div>;
     if (order.status === "create_failed") {
-        const action = order.checkout.mode === "redirect" ? "重新打开收银台" : "重新生成支付二维码";
-        return <div className="mt-5 rounded-lg bg-rose-500/8 px-4 py-3 text-sm text-rose-600 dark:text-rose-300">创建渠道订单失败，可使用下方按钮{action}</div>;
+        const action = order.checkout.mode === "redirect" ? t("storageUi.reopenCashier") : t("storageUi.recreatePaymentQrCode");
+        return <div className="mt-5 rounded-lg bg-rose-500/8 px-4 py-3 text-sm text-rose-600 dark:text-rose-300">{t("storageUi.paymentEntryCreateFailedWithAction", { action })}</div>;
     }
-    return <div className="mt-5 text-xs text-foreground/48">订单剩余支付时间 {formatCountdown(remainingSeconds)}，页面将自动确认支付结果</div>;
+    return <div className="mt-5 text-xs text-foreground/48">{t("storageUi.paymentTimeRemaining", { time: formatCountdown(remainingSeconds) })}</div>;
 }
 
 function formatCountdown(seconds: number) {
@@ -668,15 +782,26 @@ function formatCountdown(seconds: number) {
     return [hours, minutes, rest].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
-function ledgerModelName(config: AiConfig, entry: CreditLedgerEntry) {
-    return entry.model ? modelDisplayName(config, entry.model) : ledgerTitle(entry);
+function ledgerModelName(config: AiConfig, entry: WalletCreditEntry, t: InterfaceTranslate) {
+    return entry.model ? modelDisplayName(config, entry.model) : ledgerTitle(entry, t);
 }
 
-function sceneLabel(scene?: string) {
-    const labels: Record<string, string> = { image: "图片生成", text: "文本生成", video: "视频生成", audio: "音频生成", storyboard: "分镜生成" };
-    return scene ? labels[scene] || "其他场景" : "";
+function sceneLabel(scene: string | undefined, t: InterfaceTranslate) {
+    const labels: Record<string, InterfaceMessageKey> = { image: "storageUi.sceneImageGeneration", text: "storageUi.sceneTextGeneration", video: "storageUi.sceneVideoGeneration", audio: "storageUi.sceneAudioGeneration", storyboard: "storageUi.sceneStoryboardGeneration" };
+    const key = scene ? labels[scene] : undefined;
+    return key ? t(key) : scene ? t("storageUi.sceneOther") : "";
 }
 
-function formatTime(value?: string) {
-    return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "--";
+function grantedPaymentText(order: PaymentOrder, t: InterfaceTranslate) {
+    if(order.productKind === "membership") return "会员已开通或续期，积分按会员周期到账";
+    return order.productKind === "storage" ? t("storageUi.paymentStorageGranted") : t("storageUi.paymentCreditsGranted");
+}
+
+function notGrantedPaymentText(order: PaymentOrder, t: InterfaceTranslate) {
+    if(order.productKind === "membership") return "订单已关闭，未开通会员";
+    return order.productKind === "storage" ? t("storageUi.paymentStorageNotGranted") : t("storageUi.paymentCreditsNotGranted");
+}
+
+function formatTime(value: string | undefined, locale: InterfaceLocale) {
+    return value ? new Date(value).toLocaleString(locale, { hour12: false }) : "--";
 }

@@ -104,7 +104,7 @@ describe("Volcengine Ark full-modal references", () => {
     test("显式首帧与项目角色参考图使用不同角色", async () => {
         let requestBody: unknown;
         const deps = {
-            transport: { post: async (_url: string, body: unknown) => (requestBody = body, { id: "task-1" }) },
+            transport: { post: async (_url: string, body: unknown) => ((requestBody = body), { id: "task-1" }) },
             response: videoResponseTools,
         } as unknown as VideoProviderDeps;
         const images = [
@@ -134,7 +134,7 @@ describe("Seedance /videos image roles", () => {
     test("reference_to_video does not promote the first character image to image_url", async () => {
         let requestBody: Record<string, unknown> = {};
         const deps = {
-            transport: { post: async (_url: string, body: unknown) => (requestBody = body as Record<string, unknown>, { id: "task-1" }) },
+            transport: { post: async (_url: string, body: unknown) => ((requestBody = body as Record<string, unknown>), { id: "task-1" }) },
             response: videoResponseTools,
         } as unknown as VideoProviderDeps;
         const config = { ...defaultConfig, baseUrl: "https://video.example.com/v1", model: "seedance-2.0", videoModel: "seedance-2.0" };
@@ -159,7 +159,87 @@ describe("Seedance /videos image roles", () => {
     });
 });
 
+describe("MiniMax requested resolution", () => {
+    test("native V2 rejects unsupported model versions and model-specific tiers before submission", async () => {
+        let submitted = 0;
+        const deps = {
+            transport: { post: async () => { submitted++; return { task_id: "unexpected" }; } },
+            response: videoResponseTools,
+        } as unknown as VideoProviderDeps;
+        for (const model of ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-o2", "MiniMax-Hailuo-H3"]) {
+            const config = { ...defaultConfig, baseUrl: "https://fixture.invalid/v2", vquality: "768P", videoSeconds: "6", size: "16:9" };
+            await expect(createMiniMaxVideoTask(deps, config as never, model, "原提示词", [], [], [])).rejects.toThrow("V2");
+        }
+        for (const [model, vquality] of [["MiniMax-H3", "1080P"], ["MiniMax-H3", "480P"], ["MiniMax-H3-Max", "2K"], ["MiniMax-H3-Max", "512P"]]) {
+            const config = { ...defaultConfig, baseUrl: "https://fixture.invalid/v2", vquality, videoSeconds: "6", size: "16:9" };
+            await expect(createMiniMaxVideoTask(deps, config as never, model, "原提示词", [], [], [])).rejects.toThrow("分辨率");
+        }
+        expect(submitted).toBe(0);
+    });
+
+    test("native V2 refuses an invalid duration without clamping or rounding", async () => {
+        let submitted = 0;
+        const deps = {
+            transport: { post: async () => { submitted++; return { task_id: "unexpected" }; } },
+            response: videoResponseTools,
+        } as unknown as VideoProviderDeps;
+        for (const [model, videoSeconds] of [["MiniMax-H3", ""], ["MiniMax-H3", "invalid"], ["MiniMax-H3", "3"], ["MiniMax-H3", "31"], ["MiniMax-H3", "5.5"], ["MiniMax-H3-Max", "0"]]) {
+            const config = { ...defaultConfig, baseUrl: "https://fixture.invalid/v2", vquality: "768P", videoSeconds, size: "16:9" };
+            await expect(createMiniMaxVideoTask(deps, config as never, model, "原提示词", [], [], [])).rejects.toThrow("时长");
+        }
+        expect(submitted).toBe(0);
+    });
+
+    test("declared pixel tiers reach the request without promotion or reduction", async () => {
+        const sent: Array<{ model: string; resolution: string; duration: number }> = [];
+        const deps = {
+            transport: { post: async (_url: string, body: { model: string; resolution: string; duration: number }) => {
+                sent.push(body);
+                return { task_id: "resolution-fixture" };
+            } },
+            response: videoResponseTools,
+        } as unknown as VideoProviderDeps;
+        for (const [model, vquality, expected, videoSeconds] of [
+            ["MiniMax-H3-Max", "480P", "480P", "5"], ["MiniMax-H3-Max", "768p", "768P", "15"],
+            ["MiniMax-H3", "768", "768P", "4"], ["MiniMax-H3", "2k", "2K", "6"], ["MiniMax-H3", "1440p", "2K", "15"],
+        ]) {
+            const config = { ...defaultConfig, baseUrl: "https://fixture.invalid/v2", vquality, videoSeconds, size: "16:9" };
+            await createMiniMaxVideoTask(deps, config as never, model, "原提示词", [], [], []);
+            expect(sent.at(-1)?.resolution).toBe(expected);
+            expect(sent.at(-1)?.model).toBe(model);
+            expect(sent.at(-1)?.duration).toBe(Number(videoSeconds));
+        }
+        expect(sent).toHaveLength(5);
+    });
+
+    test("unknown or ambiguous tiers are rejected before a task is submitted", async () => {
+        let submitted = 0;
+        const deps = {
+            transport: { post: async () => { submitted++; return { task_id: "unexpected" }; } },
+            response: videoResponseTools,
+        } as unknown as VideoProviderDeps;
+        for (const vquality of ["4K", "2160P", "high", "low", "auto", "", "invalid"]) {
+            const config = { ...defaultConfig, baseUrl: "https://fixture.invalid/v2", vquality, videoSeconds: "6", size: "adaptive" };
+            await expect(createMiniMaxVideoTask(deps, config as never, "MiniMax-H3", "原提示词", [], [], [])).rejects.toThrow("分辨率");
+        }
+        expect(submitted).toBe(0);
+    });
+});
+
 describe("MiniMax explicit reference roles", () => {
+    test("preserves supported durations through 30 seconds in the upstream request", async () => {
+        for (const seconds of [4, 15, 16, 20, 30]) {
+            let requestBody: unknown;
+            const deps = {
+                transport: { post: async (_url: string, body: unknown) => ((requestBody = body), { task_id: "minimax-task-1" }) },
+                response: videoResponseTools,
+            } as unknown as VideoProviderDeps;
+            const config = { ...defaultConfig, baseUrl: "https://api.minimax.io", videoSeconds: String(seconds), vquality: "768P", size: "16:9" };
+            await createMiniMaxVideoTask(deps, config as never, "MiniMax-H3", "a clip", [], [], []);
+            expect((requestBody as { duration: number }).duration).toBe(seconds);
+        }
+    });
+
     test("project assets use reference_image and reference_audio instead of first frame", async () => {
         let requestBody: unknown;
         const deps = {

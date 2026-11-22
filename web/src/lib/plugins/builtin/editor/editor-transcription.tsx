@@ -1,7 +1,5 @@
-// 字幕转写（editor-shell 预设插件贡献 transcription-provider 插槽，M3.6）。
-// M4 后端转写任务（whisper.cpp 本地执行）：创建 POST /timeline/transcriptions
-// → waitForGenerationTask 轮询进度 → 结果 segments 按 ADR-0004 协议以
-// SrtEntry[] 落字幕轨道（rebuildSubtitleClips 重建快照），UI 契约与 M3.6 mock 一致。
+// 转写由后端 whisper.cpp 任务执行；前端只提交资源 ID、观察任务状态，
+// 并将成功结果转换为 SrtEntry[]，通过 rebuildSubtitleClips 原子替换字幕轨道快照。
 
 import { useEffect, useMemo, useState } from "react";
 import { AudioLines, Loader2 } from "lucide-react";
@@ -111,22 +109,22 @@ export function EditorTranscription() {
     };
 
     return (
-        <div className="flex h-full flex-col bg-[var(--director-sequencer-surface)]">
+        <div className="flex h-full flex-col bg-[var(--previs-sequencer-surface)]">
             <div className="director-scroll min-h-0 flex-1 overflow-y-auto p-3">
                 {transcribableAssets.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                        <AudioLines className="size-5 text-[var(--director-dock-fg)]/40" />
-                        <p className="text-xs text-[var(--director-dock-fg)]/60">项目暂无音视频素材</p>
-                        <p className="max-w-[200px] text-[11px] leading-relaxed text-[var(--director-dock-fg)]/45">素材库加入音频或视频后可转写自动字幕</p>
+                        <AudioLines className="size-5 text-[var(--previs-dock-fg)]/40" />
+                        <p className="text-xs text-[var(--previs-dock-fg)]/60">项目暂无音视频素材</p>
+                        <p className="max-w-[200px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">素材库加入音频或视频后可转写自动字幕</p>
                     </div>
                 ) : (
                     <>
                         <label className="mb-2 block">
-                            <span className="mb-1 block text-[11px] text-[var(--director-dock-fg)]/70">音视频素材</span>
+                            <span className="mb-1 block text-[var(--fs-label)] text-[var(--previs-dock-fg)]/70">音视频素材</span>
                             <select
                                 value={selectedId ?? ""}
                                 onChange={(e) => setSelectedId(e.target.value)}
-                                className="w-full rounded-md border border-[var(--director-sequencer-border)] bg-[var(--director-control-hover)] px-2 py-1.5 text-xs text-[var(--director-dock-fg-strong)] outline-none focus:border-[var(--workspace-accent)]/60 [&>option]:bg-[var(--director-sequencer-surface-raised)] [&>option]:text-[var(--director-dock-fg-strong)]"
+                                className="w-full rounded-md border border-[var(--previs-sequencer-border)] bg-[var(--previs-control-hover)] px-2 py-2 text-xs text-[var(--previs-dock-fg-strong)] outline-none focus:border-[var(--workspace-accent)]/60 [&>option]:bg-[var(--previs-sequencer-surface-raised)] [&>option]:text-[var(--previs-dock-fg-strong)]"
                             >
                                 {transcribableAssets.map((a) => (
                                     <option key={a.id} value={a.id}>
@@ -140,21 +138,21 @@ export function EditorTranscription() {
                             type="button"
                             onClick={transcribe}
                             disabled={!selected || running}
-                            className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--director-accent)] px-2 py-1.5 text-xs font-medium text-[var(--director-on-accent)] hover:bg-[var(--director-accent-hover)] disabled:opacity-40"
+                            className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--previs-accent)] px-2 py-2 text-xs font-medium text-[var(--previs-on-accent)] hover:bg-[var(--previs-accent-hover)] disabled:opacity-40"
                         >
                             {running && <Loader2 className="size-3.5 animate-spin" />}
                             {running ? "转写中…" : "转写自动字幕"}
                         </button>
 
                         {running && progressLabel && (
-                            <p className="mt-2 text-[11px] text-[var(--director-dock-fg)]/60">{progressLabel}</p>
+                            <p className="mt-2 text-[var(--fs-label)] text-[var(--previs-dock-fg)]/60">{progressLabel}</p>
                         )}
                         {message && (
-                            <p className={`mt-2 text-[11px] ${failed ? "text-[var(--director-danger)]" : "text-[var(--director-dock-fg)]/70"}`}>
+                            <p className={`mt-2 text-[var(--fs-label)] ${failed ? "text-[var(--previs-danger)]" : "text-[var(--previs-dock-fg)]/70"}`}>
                                 {message}
                             </p>
                         )}
-                        <p className="mt-2 text-[11px] leading-relaxed text-[var(--director-dock-fg)]/45">
+                        <p className="mt-2 text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">
                             由本地 whisper.cpp 识别，音视频不出本机；识别结果写入字幕轨道，可再编辑。
                         </p>
                     </>

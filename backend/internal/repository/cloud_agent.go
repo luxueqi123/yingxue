@@ -1,0 +1,579 @@
+package repository
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"infinite-canvas/backend/internal/model"
+)
+
+func (r *Repository) CloudAgentPiSession(userID, runID string) (*model.CloudAgentPiSession, error) {
+	var session model.CloudAgentPiSession
+	err := r.db.First(&session, "run_id = ? AND user_id = ?", runID, userID).Error
+	return &session, err
+}
+
+// SaveCloudAgentPiSession uses a revision predicate so a stale/recovered Pi
+// process cannot overwrite a newer native session snapshot.
+func (r *Repository) SaveCloudAgentPiSession(session *model.CloudAgentPiSession, expectedRevision int64) error {
+	if session == nil || session.RunID == "" || session.UserID == "" {
+		return fmt.Errorf("invalid Agent session identity")
+	}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(session.UserID); err != nil {
+			return err
+		}
+		var previousBytes int64
+		var result *gorm.DB
+		if expectedRevision == 0 {
+			if err := repo.requireAgentHistoryNotCleared(session.UserID, session.RunID); err != nil {
+				return err
+			}
+			session.Revision = 1
+			result = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(session)
+		} else {
+			var previous model.CloudAgentPiSession
+			if err := tx.First(&previous, "run_id = ? AND user_id = ? AND revision = ?", session.RunID, session.UserID, expectedRevision).Error; err != nil {
+				return err
+			}
+			previousBytes = int64(len(previous.SessionJSONL))
+			result = tx.Model(&model.CloudAgentPiSession{}).
+				Where("run_id = ? AND user_id = ? AND revision = ?", session.RunID, session.UserID, expectedRevision).
+				Updates(map[string]any{"session_jsonl": session.SessionJSONL, "revision": expectedRevision + 1, "updated_at": time.Now()})
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return repo.changeAgentStoredBytes(session.UserID, int64(len(session.SessionJSONL))-previousBytes)
+	})
+	if err == nil {
+		session.Revision = expectedRevision + 1
+	}
+	return err
+}
+
+func (r *Repository) EnsureCloudAgent(run *model.CloudAgentExecution) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(run.UserID); err != nil {
+			return err
+		}
+		if err := repo.requireAgentHistoryNotCleared(run.UserID, run.ID); err != nil {
+			return err
+		}
+		if run.ConversationID == "" {
+			run.ConversationID = run.ID
+			if run.ParentID != "" {
+				var parent model.CloudAgentExecution
+				if err := tx.Select("id", "conversation_id", "title").First(&parent, "id = ? AND user_id = ?", run.ParentID, run.UserID).Error; err != nil {
+					return err
+				}
+				run.ConversationID = parent.ID
+				if parent.ConversationID != "" {
+					run.ConversationID = parent.ConversationID
+				}
+				run.Title = parent.Title
+			}
+		}
+		// GORM saves associations even when the parent INSERT loses its conflict.
+		// A late initializer must not reinsert transcript rows removed by a newer
+		// checkpoint, or append journal rows outside the revision/CAS transition.
+		created := tx.Omit("Journal", "Transcript").Clauses(clause.OnConflict{DoNothing: true}).Create(run)
+		if created.Error != nil {
+			return created.Error
+		}
+		if created.RowsAffected == 1 {
+			bytes := int64(len(run.StateJSON))
+			for _, event := range run.Journal {
+				if event.UserID != run.UserID || event.RunID != run.ID {
+					return gorm.ErrInvalidData
+				}
+				bytes += int64(len(event.EventJSON))
+			}
+			for _, message := range run.Transcript {
+				if message.UserID != run.UserID || message.RunID != run.ID {
+					return gorm.ErrInvalidData
+				}
+				bytes += int64(len(message.MessageJSON))
+			}
+			if err := repo.changeAgentStoredBytes(run.UserID, bytes); err != nil {
+				return err
+			}
+			if len(run.Journal) > 0 {
+				if err := tx.Create(&run.Journal).Error; err != nil {
+					return err
+				}
+			}
+			if len(run.Transcript) > 0 {
+				if err := tx.Create(&run.Transcript).Error; err != nil {
+					return err
+				}
+			}
+		}
+		// Exclude checkpointed Pi carriers (still text_replay) from reservations.
+		// This derived marker is neither busy/idle state nor an authorization flag.
+		return tx.Exec(`UPDATE tasks SET agent_execution_ready = true
+			WHERE id = ? AND user_id = ? AND operation = 'cloud_agent' AND agent_execution_ready = false
+			AND EXISTS (SELECT 1 FROM cloud_agent_executions e WHERE e.id = tasks.id AND e.user_id = tasks.user_id)`, run.ID, run.UserID).Error
+	})
+}
+
+// PostgreSQL 的默认 READ COMMITTED 会让同一事务里的 SELECT 看到不同版本。
+// 执行行、journal 和可压缩 transcript 必须共享快照，否则正常并发 checkpoint
+// 会被解码器当成历史损坏。写事务内的嵌套调用已经持有执行行锁。
+func (r *Repository) CloudAgent(userID, id string) (*model.CloudAgentExecution, error) {
+	var run model.CloudAgentExecution
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&run, "id = ? AND user_id = ?", id, userID).Error; err != nil {
+			return err
+		}
+		return New(tx).hydrateCloudAgent(&run)
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return &run, err
+}
+
+// CloudAgentJournalWindow 是载入执行状态时读取的事件窗口条数。
+//
+// 事件全量在 cloud_agent_event_records（append-only，主键 run_id + sequence），
+// 内存只保留最近这一窗：摘要、卡死判定与个人记忆提取只看最近事件，运行详情与
+// SSE 需要更早的记录时按 seq 分页读表。若在这里全量载入，长跑的 run 每读一次
+// 运行详情（以及调度器每轮扫描的每个活动 run）都要把整份 journal 拉进内存。
+const CloudAgentJournalWindow = 40
+
+func (r *Repository) hydrateCloudAgent(run *model.CloudAgentExecution) error {
+	if run.CheckpointVersion < 2 {
+		return nil
+	}
+	// 只取最近一窗，再翻回升序：与 EventCount 的尾部对齐（不变量见 app 侧解码）。
+	window := []model.CloudAgentEventRecord{}
+	if err := r.db.Where("run_id = ? AND user_id = ?", run.ID, run.UserID).
+		Order("sequence DESC").Limit(CloudAgentJournalWindow).Find(&window).Error; err != nil {
+		return err
+	}
+	run.Journal = make([]model.CloudAgentEventRecord, 0, len(window))
+	for index := len(window) - 1; index >= 0; index-- {
+		run.Journal = append(run.Journal, window[index])
+	}
+	if err := r.db.Where("run_id = ? AND user_id = ?", run.ID, run.UserID).Order("kind, sequence").Find(&run.Transcript).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// CloudAgentEventRecords 取 seq > afterSeq 的事件（升序），keyset 分页走
+// (run_id, sequence) 主键，用于增量拉取与 SSE 断线重连。
+func (r *Repository) CloudAgentEventRecords(userID, runID string, afterSeq, limit int) ([]model.CloudAgentEventRecord, error) {
+	if limit <= 0 {
+		limit = CloudAgentJournalWindow
+	}
+	records := []model.CloudAgentEventRecord{}
+	err := r.db.Where("run_id = ? AND user_id = ? AND sequence > ?", runID, userID, afterSeq).
+		Order("sequence ASC").Limit(limit).Find(&records).Error
+	return records, err
+}
+
+// CloudAgentEventRecordsBefore 取 seq < beforeSeq 的**最近** limit 条（升序返回），
+// 供"请求的页比内存窗口更深、要往前补"的读路径使用。
+func (r *Repository) CloudAgentEventRecordsBefore(userID, runID string, beforeSeq, limit int) ([]model.CloudAgentEventRecord, error) {
+	if limit <= 0 {
+		limit = CloudAgentJournalWindow
+	}
+	records := []model.CloudAgentEventRecord{}
+	err := r.db.Where("run_id = ? AND user_id = ? AND sequence < ?", runID, userID, beforeSeq).
+		Order("sequence DESC").Limit(limit).Find(&records).Error
+	if err != nil {
+		return nil, err
+	}
+	for left, right := 0, len(records)-1; left < right; left, right = left+1, right-1 {
+		records[left], records[right] = records[right], records[left]
+	}
+	return records, nil
+}
+
+// CloudAgentEventRecordCount 是该运行已入库的事件条数；只做计数，不载入正文。
+func (r *Repository) CloudAgentEventRecordCount(userID, runID string) (int64, error) {
+	var count int64
+	err := r.db.Model(&model.CloudAgentEventRecord{}).
+		Where("run_id = ? AND user_id = ?", runID, userID).Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) CloudAgentForActiveTask(userID, taskID string) (*model.CloudAgentExecution, error) {
+	var run model.CloudAgentExecution
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND active_task_id = ? AND status IN ?", userID, taskID, []string{"running", "queued"}).First(&run).Error; err != nil {
+			return err
+		}
+		return New(tx).hydrateCloudAgent(&run)
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return &run, err
+}
+
+// CloudAgentIDsWaitingApprovalForCanvas lists the caller's runs paused on an
+// approval for one canvas. Callers reload each run before mutating it.
+func (r *Repository) CloudAgentIDsWaitingApprovalForCanvas(userID, canvasID string) ([]string, error) {
+	var ids []string
+	err := r.db.Model(&model.CloudAgentExecution{}).
+		Where("user_id = ? AND canvas_id = ? AND status = ?", userID, canvasID, "waiting_approval").
+		Order("id").Limit(20).Pluck("id", &ids).Error
+	return ids, err
+}
+
+func (r *Repository) CloudAgentRoots() ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.db.Where("operation = ? AND agent_execution_ready = false AND id NOT IN (SELECT id FROM cloud_agent_executions)", "cloud_agent").Order("created_at").Limit(50).Find(&tasks).Error
+	return tasks, err
+}
+
+// A stable keyset makes waiting rows yield to later runs without changing business timestamps.
+func (r *Repository) ActiveCloudAgentsAfter(after string, limit int) ([]model.CloudAgentExecution, error) {
+	var runs []model.CloudAgentExecution
+	if limit < 1 || limit > 50 {
+		limit = 50
+	}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("(status IN ? OR cleanup_pending = ?) AND id > ?", []string{"running", "queued"}, true, after).Order("id").Limit(limit).Find(&runs).Error; err != nil {
+			return err
+		}
+		scoped := New(tx)
+		for i := range runs {
+			if err := scoped.hydrateCloudAgent(&runs[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return runs, err
+}
+
+func (r *Repository) ActiveCloudAgents() ([]model.CloudAgentExecution, error) {
+	return r.ActiveCloudAgentsAfter("", 50)
+}
+
+// Do not load the transcript, tasks and bills for an unchanged SSE subscription.
+func (r *Repository) CloudAgentRevision(userID, id string) (int64, error) {
+	var run model.CloudAgentExecution
+	err := r.db.Select("id", "revision").Where("id = ? AND user_id = ?", id, userID).First(&run).Error
+	return run.Revision, err
+}
+
+// RecentCloudAgentEventsForUser returns the journal rows of the caller's most
+// recent runs, ordered by event time. Runs are resolved first so a fixed
+// event limit cannot cut a run in half; an ongoing run may still add events.
+func (r *Repository) RecentCloudAgentEventsForUser(userID string, runLimit int) ([]model.CloudAgentEventRecord, error) {
+	if runLimit < 1 {
+		return nil, nil
+	}
+	var runIDs []string
+	if err := r.db.Model(&model.CloudAgentExecution{}).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(runLimit).
+		Pluck("id", &runIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(runIDs) == 0 {
+		return nil, nil
+	}
+	var records []model.CloudAgentEventRecord
+	err := r.db.Where("user_id = ? AND run_id IN ?", userID, runIDs).
+		Order("created_at, sequence").
+		Find(&records).Error
+	return records, err
+}
+
+// Lock before reading: checkpoints, canvas writes and task reservations commit together.
+func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func(*model.CloudAgentExecution, *Repository) error) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		// Keep storage -> execution as the common lock order, including nested
+		// session/undo writes, so different runs of one user cannot deadlock.
+		if err := repo.beginAgentStorageWrite(userID); err != nil {
+			return err
+		}
+		q := tx.Model(&model.CloudAgentExecution{}).Where("id = ? AND user_id = ? AND revision = ?", id, userID, revision).UpdateColumn("revision", gorm.Expr("revision + 1"))
+		if q.Error != nil {
+			return q.Error
+		}
+		if q.RowsAffected != 1 {
+			return ErrCreationConflict
+		}
+		run, err := New(tx).CloudAgent(userID, id)
+		if err != nil {
+			return err
+		}
+		previousEvents := run.EventCount
+		previousBytes := int64(len(run.StateJSON))
+		previousEventBodies := make(map[int]string, len(run.Journal))
+		for _, event := range run.Journal {
+			previousEventBodies[event.Sequence] = event.EventJSON
+		}
+		previousMessages := make(map[string]string, len(run.Transcript))
+		for _, message := range run.Transcript {
+			previousMessages[fmt.Sprintf("%s:%d", message.Kind, message.Sequence)] = message.MessageJSON
+			previousBytes += int64(len(message.MessageJSON))
+		}
+		if err = fn(run, New(tx)); err != nil {
+			return err
+		}
+		if run.UserID != userID || run.ID != id {
+			return gorm.ErrInvalidData
+		}
+		currentBytes := int64(len(run.StateJSON))
+		for _, event := range run.Journal {
+			if event.UserID != userID || event.RunID != id {
+				return gorm.ErrInvalidData
+			}
+			if event.Sequence > previousEvents {
+				currentBytes += int64(len(event.EventJSON))
+			}
+		}
+		for _, message := range run.Transcript {
+			if message.UserID != userID || message.RunID != id {
+				return gorm.ErrInvalidData
+			}
+			currentBytes += int64(len(message.MessageJSON))
+		}
+		if err := repo.changeAgentStoredBytes(userID, currentBytes-previousBytes); err != nil {
+			return err
+		}
+		if run.EventCount < previousEvents {
+			return fmt.Errorf("cloud Agent journal cannot be truncated")
+		}
+		// journal 是 append-only：本次转移之前已经载入的事件不许改写。
+		// 内存里只有最近一窗，窗口右移后更早的行会落在新窗口之外——那些行不在
+		// run.Journal 里，也不会被下面的 Create 循环碰到（只追加 seq > 水位的新行），
+		// 因此只要求它们确实比新窗口更早，而不是要求它们仍在窗口内。
+		current := make(map[int]string, len(run.Journal))
+		for _, event := range run.Journal {
+			current[event.Sequence] = event.EventJSON
+		}
+		for sequence, body := range previousEventBodies {
+			updated, present := current[sequence]
+			if !present {
+				if len(run.Journal) == 0 || sequence >= run.Journal[0].Sequence {
+					return fmt.Errorf("cloud Agent journal is append-only")
+				}
+				continue
+			}
+			if !sameJSONDocument(updated, body) {
+				return fmt.Errorf("cloud Agent journal is append-only")
+			}
+		}
+		// 水位与窗口必须自洽：窗口最后一条就是要落库的最后一条，否则说明写入端
+		// 算错了窗口起点，或行被删掉过。
+		if len(run.Journal) > 0 && run.Journal[len(run.Journal)-1].Sequence != run.EventCount {
+			return fmt.Errorf("cloud Agent journal watermark is inconsistent")
+		}
+		if err = tx.Omit("Journal", "Transcript").Save(run).Error; err != nil {
+			return err
+		}
+		for _, event := range run.Journal {
+			if event.Sequence <= previousEvents {
+				continue
+			}
+			if err = tx.Create(&event).Error; err != nil {
+				return err
+			}
+		}
+		for _, message := range run.Transcript {
+			key := fmt.Sprintf("%s:%d", message.Kind, message.Sequence)
+			if previousMessages[key] == message.MessageJSON {
+				continue
+			}
+			if err = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "run_id"}, {Name: "kind"}, {Name: "sequence"}}, DoUpdates: clause.AssignmentColumns([]string{"message_json"})}).Create(&message).Error; err != nil {
+				return err
+			}
+		}
+		for _, kind := range []string{"canonical", "history"} {
+			count := 0
+			for _, message := range run.Transcript {
+				if message.Kind == kind {
+					count++
+				}
+			}
+			if err = tx.Where("run_id = ? AND user_id = ? AND kind = ? AND sequence > ?", run.ID, run.UserID, kind, count).Delete(&model.CloudAgentMessageRecord{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// sameJSONDocument compares event records by JSON meaning rather than source
+// bytes. Event payloads may contain json.RawMessage (for example tool arguments),
+// so decode/re-encode can legally normalize whitespace, object key order, or
+// numeric spellings such as 0.0 and 0 while preserving the immutable event
+// contract.
+func sameJSONDocument(left, right string) bool {
+	decode := func(raw string) (any, error) {
+		decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		var extra any
+		if err := decoder.Decode(&extra); err == nil {
+			return nil, fmt.Errorf("multiple JSON documents")
+		}
+		return canonicalJSONValue(value), nil
+	}
+	leftValue, leftErr := decode(left)
+	rightValue, rightErr := decode(right)
+	if leftErr != nil || rightErr != nil {
+		return left == right
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+// Keep numbers distinct from event strings after numeric normalization.
+type canonicalJSONNumber string
+
+func canonicalJSONValue(value any) any {
+	switch typed := value.(type) {
+	case json.Number:
+		raw := typed.String()
+		// 工具参数里的浮点原文（模型给出）与 float64 的最短表示可能不同，
+		// 例如 4140.7990379296753 与 4140.799037929675 是同一 float64 值。
+		// 写库前会按 float64 重新编码事件体，若仍用精确有理数比较，会把这种
+		// 等价数值误判成"历史事件被改写"。小数/科学计数按 float64 归一，整数仍精确。
+		if strings.ContainsAny(raw, ".eE") {
+			if f, err := strconv.ParseFloat(raw, 64); err == nil {
+				raw = strconv.FormatFloat(f, 'g', -1, 64)
+			}
+		}
+		if rational, ok := new(big.Rat).SetString(raw); ok {
+			return canonicalJSONNumber(rational.RatString())
+		}
+		return canonicalJSONNumber(raw)
+	case []any:
+		for index := range typed {
+			typed[index] = canonicalJSONValue(typed[index])
+		}
+	case map[string]any:
+		for key, nested := range typed {
+			typed[key] = canonicalJSONValue(nested)
+		}
+	}
+	return value
+}
+
+func (r *Repository) CreateCloudAgentCanvasMutation(mutation *model.CloudAgentCanvasMutation) error {
+	if err := canonicalizeCanvasUndoSnapshot(mutation); err != nil {
+		return err
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(mutation.UserID); err != nil {
+			return err
+		}
+		if err := repo.requireAgentHistoryNotCleared(mutation.UserID, mutation.RunID); err != nil {
+			return err
+		}
+		if err := repo.changeAgentStoredBytes(mutation.UserID, int64(len(mutation.BeforeJSON))); err != nil {
+			return err
+		}
+		return tx.Create(mutation).Error
+	})
+}
+
+func (r *Repository) LatestCloudAgentCanvasMutation(userID, runID string) (*model.CloudAgentCanvasMutation, error) {
+	var mutation model.CloudAgentCanvasMutation
+	err := r.db.Where("user_id = ? AND run_id = ?", userID, runID).
+		Order("created_at DESC, id DESC").First(&mutation).Error
+	return &mutation, err
+}
+
+func (r *Repository) MarkCloudAgentCanvasMutationUndone(userID, runID, mutationID string, undoneAt time.Time) error {
+	result := r.db.Model(&model.CloudAgentCanvasMutation{}).
+		Where("id = ? AND user_id = ? AND run_id = ? AND status = ?", mutationID, userID, runID, "applied").
+		Updates(map[string]any{"status": "undone", "undone_at": undoneAt})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCreationConflict
+	}
+	return nil
+}
+
+// MarkCloudAgentFailed is a terminal CAS transition that does not read or
+// rewrite StateJSON. It is deliberately usable when a corrupted runtime state
+// can no longer be decoded; leaving such a run in running would make the
+// scheduler retry it forever.
+func (r *Repository) MarkCloudAgentFailed(userID, id string, revision int64, message ...string) error {
+	detail := "Agent 运行状态损坏，本轮已停止"
+	if len(message) > 0 {
+		detail = message[0]
+	}
+	result := r.db.Model(&model.CloudAgentExecution{}).
+		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running", "waiting_approval", "waiting_user"}).
+		Updates(map[string]any{"status": "failed", "cleanup_pending": true, "failure_message": detail, "revision": gorm.Expr("revision + 1")})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCreationConflict
+	}
+	return nil
+}
+
+// MarkCloudAgentCancelled is the corruption-safe cancellation transition. It
+// intentionally does not touch StateJSON: cancellation must still stop the
+// scheduler when the orchestration blob can no longer be decoded.
+func (r *Repository) MarkCloudAgentCancelled(userID, id string, revision int64) error {
+	result := r.db.Model(&model.CloudAgentExecution{}).
+		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running", "waiting_approval", "waiting_user"}).
+		Updates(map[string]any{"status": "cancelled", "cleanup_pending": true, "revision": gorm.Expr("revision + 1")})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCreationConflict
+	}
+	return nil
+}
+
+// GeminiCacheByKey returns an official Gemini CachedContent owned by the user.
+func (r *Repository) GeminiCacheByKey(userID, cacheKey string) (*model.CloudAgentGeminiCache, error) {
+	var cache model.CloudAgentGeminiCache
+	if err := r.db.Where("user_id = ? AND cache_key = ?", userID, cacheKey).First(&cache).Error; err != nil {
+		return nil, err
+	}
+	return &cache, nil
+}
+
+// UpsertGeminiCache persists the resource name and expiry returned by Gemini.
+func (r *Repository) UpsertGeminiCache(cache *model.CloudAgentGeminiCache) error {
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "cache_key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"user_id", "base_url", "model", "credential_hash", "resource_name", "expire_time", "updated_at",
+		}),
+	}).Create(cache).Error
+}
+
+func (r *Repository) DeleteGeminiCache(userID, cacheKey string) error {
+	return r.db.Where("user_id = ? AND cache_key = ?", userID, cacheKey).Delete(&model.CloudAgentGeminiCache{}).Error
+}
+
+// DeleteGeminiCacheIfResourceMatches prevents a late request using an old
+// CachedContent resource from deleting a newer cache for the same identity.
+func (r *Repository) DeleteGeminiCacheIfResourceMatches(userID, cacheKey, resourceName string) (bool, error) {
+	result := r.db.Where("user_id = ? AND cache_key = ? AND resource_name = ?", userID, cacheKey, resourceName).Delete(&model.CloudAgentGeminiCache{})
+	return result.RowsAffected == 1, result.Error
+}

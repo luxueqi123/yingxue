@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -17,8 +18,8 @@ type LogicalModelGraph struct {
 	ChannelModels []model.ChannelModel
 }
 
-var ErrLogicalModelInUse = errors.New("logical model is in use")
-var ErrLogicalModelUnavailable = errors.New("logical model is unavailable")
+var ErrLogicalModelInUse = errors.New("该模型正在被使用，无法删除或停用")
+var ErrLogicalModelUnavailable = errors.New("所选模型已停用或不可用，请重新选择")
 
 func (r *Repository) LogicalModels(includeDisabled bool) ([]model.LogicalModel, error) {
 	var items []model.LogicalModel
@@ -250,6 +251,18 @@ func (r *Repository) CreateRouteAttempt(item *model.RouteAttempt) error {
 }
 func (r *Repository) SaveRouteAttempt(item *model.RouteAttempt) error { return r.db.Save(item).Error }
 
+func (r *Repository) MarkRouteAttemptDispatching(id string) error {
+	result := r.db.Model(&model.RouteAttempt{}).Where("id = ? AND dispatch_state = ?", id, "not_sent").
+		Updates(map[string]any{"status": "dispatching", "dispatch_state": "submission_unknown"})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrCreationConflict
+	}
+	return nil
+}
+
 func (r *Repository) LatestRouteAttempt(taskID string) (*model.RouteAttempt, error) {
 	var item model.RouteAttempt
 	if err := r.db.Where("task_id = ?", taskID).Order("route_run desc, attempt_number desc").First(&item).Error; err != nil {
@@ -266,7 +279,7 @@ func (r *Repository) RouteAttempts(taskID string, routeRun int) ([]model.RouteAt
 
 // SwitchTaskLogicalRoute 同时更新任务执行目标和账单。跟随供应价格时会原子调整预留积分，
 // 保证明确未创建上游任务后的故障切线不会沿用上一条线路的价格快照。
-func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID string, routeID string, inputJSON string, billingOrderID string, channelID string, channelModelID string, replacement *model.BillingOrder) error {
+func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID string, routeID string, inputJSON string, billingOrderID string, channelID string, channelModelID string, replacement *model.BillingOrder, cost model.BillingCostSnapshot) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		updated := tx.Model(&model.Task{}).
 			Where("id = ? AND status = ? AND route_id = ?", taskID, model.TaskStatusRunning, expectedRouteID).
@@ -281,14 +294,35 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 			return nil
 		}
 		var order model.BillingOrder
-		if err := tx.First(&order, "id = ? AND task_id = ? AND status IN ?", billingOrderID, taskID, []model.BillingStatus{model.BillingStatusReserved, model.BillingStatusRunning}).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ? AND task_id = ? AND status IN ?", billingOrderID, taskID, []model.BillingStatus{model.BillingStatusReserved, model.BillingStatusRunning}).Error; err != nil {
 			return err
 		}
 		now := time.Now()
 		updates := map[string]any{"channel_id": channelID, "channel_model_id": channelModelID, "updated_at": now}
+		updates["cost_configured"] = cost.CostPricing.Configured
+		costImagePricing, err := json.Marshal(cost.CostPricing.ImagePricing)
+		if err != nil {
+			return err
+		}
+		updates["cost_image_pricing"] = string(costImagePricing)
+		updates["cost_unit_price_microcredits"] = cost.CostPricing.UnitPriceMicrocredits
+		updates["cost_input_token_price_microcredits"] = cost.CostPricing.InputTokenPriceMicrocredits
+		updates["cost_output_token_price_microcredits"] = cost.CostPricing.OutputTokenPriceMicrocredits
+		updates["cost_cached_token_price_microcredits"] = cost.CostPricing.CachedTokenPriceMicrocredits
+		updates["cost_cache_write_token_price_microcredits"] = cost.CostPricing.CacheWriteTokenPriceMicrocredits
+		updates["cost_reference_video_unit_price_microcredits"] = cost.CostPricing.ReferenceVideoUnitPriceMicrocredits
+		updates["cost_reference_video_output_token_price_microcredits"] = cost.CostPricing.ReferenceVideoOutputTokenPriceMicrocredits
+		updates["cost_billing_mode"] = cost.CostBillingMode
+		updates["cost_quantity"] = cost.CostQuantity
+		updates["cost_video_formula_tokens"] = cost.CostVideoFormulaTokens
 		if replacement != nil {
 			if replacement.UserID != order.UserID || replacement.TaskID != taskID || replacement.AmountMicrocredits <= 0 {
 				return ErrBillingStateConflict
+			}
+			// The new supplier price cannot expand the user's original authorization.
+			// Keep the existing cap; replacement is a price snapshot, not a new grant.
+			if err := validateBillingChargeLimit(order, replacement.AmountMicrocredits); err != nil {
+				return err
 			}
 			reserved := order.ReservedAmountMicrocredits
 			if reserved <= 0 {
@@ -296,7 +330,10 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 			}
 			delta := replacement.AmountMicrocredits - reserved
 			accountUpdates := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": now}
-			accountQuery := tx.Model(&model.CreditAccount{}).Where("user_id = ?", order.UserID)
+			if err := prepareMembershipCredits(tx, order.UserID); err != nil {
+				return err
+			}
+			accountQuery := billingAccountQuery(tx, order)
 			if delta > 0 {
 				accountQuery = accountQuery.Where("available_microcredits >= ?", delta)
 				accountUpdates["available_microcredits"] = gorm.Expr("available_microcredits - ?", delta)
@@ -319,15 +356,16 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 					return errors.New("reserved credit balance is inconsistent")
 				}
 				var account model.CreditAccount
-				if err := tx.First(&account, "user_id = ?", order.UserID).Error; err != nil {
+				if err := billingAccountQuery(tx, order).First(&account).Error; err != nil {
 					return err
 				}
 				entryType := model.CreditLedgerReserve
 				if delta < 0 {
 					entryType = model.CreditLedgerRefund
 				}
-				if err := tx.Create(&model.CreditLedgerEntry{
+				if err := createCreditLedger(tx, &model.CreditLedgerEntry{
 					ID: newRepositoryID(), UserID: order.UserID, Type: entryType,
+					AccountID: order.BillingAccountID, TeamID: order.TeamID, MembershipID: order.MembershipID,
 					AvailableDeltaMicrocredits: -delta, ReservedDeltaMicrocredits: delta,
 					AvailableAfterMicrocredits: account.AvailableMicrocredits, ReservedAfterMicrocredits: account.ReservedMicrocredits,
 					BillingOrderID: order.ID, Model: order.Model, ChannelID: channelID, Scene: order.Scene,
@@ -337,6 +375,13 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 				}
 			}
 			updates["billing_mode"] = replacement.BillingMode
+			imagePricing, err := json.Marshal(replacement.ImagePricing)
+			if err != nil {
+				return err
+			}
+			updates["image_pricing"] = string(imagePricing)
+			updates["image_input_images"] = replacement.ImageInputImages
+			updates["image_max_output_images"] = replacement.ImageMaxOutputImages
 			updates["price_version"] = replacement.PriceVersion
 			updates["price_tier_id"] = replacement.PriceTierID
 			updates["price_tier_version"] = replacement.PriceTierVersion
@@ -348,6 +393,14 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 			updates["input_token_price_microcredits"] = replacement.InputTokenPriceMicrocredits
 			updates["output_token_price_microcredits"] = replacement.OutputTokenPriceMicrocredits
 			updates["cached_token_price_microcredits"] = replacement.CachedTokenPriceMicrocredits
+			updates["cache_write_token_price_microcredits"] = replacement.CacheWriteTokenPriceMicrocredits
+			updates["token_price_rules_json"] = replacement.TokenPriceRulesJSON
+			// 结算按这些快照判断：公式用量、参考视频是否计费与计入的毫秒数必须跟着新线路的单价一起换，
+			// 否则新单价会配上旧线路的参考视频口径（如带参考视频单价却不计参考视频秒数）。
+			updates["video_formula_tokens"] = replacement.VideoFormulaTokens
+			updates["reference_video_count"] = replacement.ReferenceVideoCount
+			updates["reference_video_millis"] = replacement.ReferenceVideoMillis
+			updates["reference_video_billed"] = replacement.ReferenceVideoBilled
 		}
 		billingUpdated := tx.Model(&model.BillingOrder{}).
 			Where("id = ? AND task_id = ? AND status IN ?", billingOrderID, taskID, []model.BillingStatus{model.BillingStatusReserved, model.BillingStatusRunning}).
@@ -363,6 +416,10 @@ func (r *Repository) SwitchTaskLogicalRoute(taskID string, expectedRouteID strin
 }
 
 func (r *Repository) SaveLogicalModelBundle(item *model.LogicalModel, revision *model.LogicalModelRevision, routes []model.LogicalModelRoute, creating bool) error {
+	imagePricing, err := json.Marshal(item.ImagePricing)
+	if err != nil {
+		return err
+	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if creating {
 			if err := tx.Create(item).Error; err != nil {
@@ -370,22 +427,24 @@ func (r *Repository) SaveLogicalModelBundle(item *model.LogicalModel, revision *
 			}
 		} else {
 			result := tx.Model(&model.LogicalModel{}).Where("id = ?", item.ID).Updates(map[string]any{
-				"code":                      item.Code,
-				"name":                      item.Name,
-				"icon":                      item.Icon,
-				"description":               item.Description,
-				"capability":                item.Capability,
-				"enabled":                   item.Enabled,
-				"sort_order":                item.SortOrder,
-				"source_channel_model_id":   item.SourceChannelModelID,
-				"price_policy":              item.PricePolicy,
-				"billing_mode":              item.BillingMode,
-				"unit_price_microcredits":   item.UnitPriceMicrocredits,
-				"input_price_microcredits":  item.InputPriceMicrocredits,
-				"output_price_microcredits": item.OutputPriceMicrocredits,
-				"cached_price_microcredits": item.CachedPriceMicrocredits,
-				"legacy_model_ids_json":     item.LegacyModelIDsJSON,
-				"updated_at":                item.UpdatedAt,
+				"code":                           item.Code,
+				"name":                           item.Name,
+				"icon":                           item.Icon,
+				"description":                    item.Description,
+				"capability":                     item.Capability,
+				"enabled":                        item.Enabled,
+				"sort_order":                     item.SortOrder,
+				"source_channel_model_id":        item.SourceChannelModelID,
+				"price_policy":                   item.PricePolicy,
+				"billing_mode":                   item.BillingMode,
+				"unit_price_microcredits":        item.UnitPriceMicrocredits,
+				"input_price_microcredits":       item.InputPriceMicrocredits,
+				"output_price_microcredits":      item.OutputPriceMicrocredits,
+				"cached_price_microcredits":      item.CachedPriceMicrocredits,
+				"cache_write_price_microcredits": item.CacheWritePriceMicrocredits,
+				"image_pricing":                  string(imagePricing),
+				"legacy_model_ids_json":          item.LegacyModelIDsJSON,
+				"updated_at":                     item.UpdatedAt,
 			})
 			if result.Error != nil {
 				return result.Error

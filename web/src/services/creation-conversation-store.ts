@@ -9,6 +9,7 @@ type PendingCreationMessage = {
     mode?: string;
     status?: string;
     taskIds?: string[];
+    errorKind?: string;
 };
 
 export type StoredCreationConversation = {
@@ -28,15 +29,18 @@ export function removeCreationConversationSnapshot<T extends { id: string }>(con
     return next;
 }
 
+/**
+ * 媒体消息的前端等待可能先于后端结束（轮询中断、长视频），消息曾被判失败但任务其实已经成功。
+ * 失败态一并纳入恢复：任务成功就把结果补回消息；后端已确认失败（errorKind=task）的不再反复订阅。
+ */
 function isRecoverableCreationMessage(message: PendingCreationMessage) {
     if (message.role !== "assistant" || !message.taskIds?.length) return false;
-    return message.mode === "text" ? message.status === "streaming" || message.status === "pending" : message.status === "pending";
+    if (message.mode === "text") return message.status === "streaming" || message.status === "pending";
+    return message.status === "pending" || (message.status === "error" && message.errorKind !== "task");
 }
 
 export function pendingCreationTaskKey(conversations: StoredCreationConversation[]) {
-    return conversations
-        .flatMap((conversation) => conversation.messages.flatMap((message) => (isRecoverableCreationMessage(message) ? [`${conversation.id}:${message.id}:${(message.taskIds || []).join(",")}`] : [])))
-        .join("|");
+    return conversations.flatMap((conversation) => conversation.messages.flatMap((message) => (isRecoverableCreationMessage(message) ? [`${conversation.id}:${message.id}:${(message.taskIds || []).join(",")}`] : []))).join("|");
 }
 
 export function pendingCreationTaskIds(conversations: StoredCreationConversation[]) {
@@ -49,8 +53,14 @@ export function pendingCreationTaskIds(conversations: StoredCreationConversation
     return Array.from(new Set(taskIds));
 }
 
-export async function loadCreationConversations<T extends StoredCreationConversation>() {
-    const storage = localForageStorageForScope(getActiveUserScope());
+export async function loadCreationConversations<T extends StoredCreationConversation>(scope = getActiveUserScope()) {
+    const storage = localForageStorageForScope(scope);
+    const synced = await storage.getItem("creation-history-sync-v1");
+    if (synced) {
+        const envelope = JSON.parse(synced);
+        if (envelope.version !== 1 || !Array.isArray(envelope.conversations)) throw new Error("创作对话同步缓存无效");
+        return envelope.conversations as T[];
+    }
     const value = await storage.getItem(CREATION_CONVERSATIONS_KEY);
     if (!value) return null;
     let parsed: unknown;
@@ -63,7 +73,19 @@ export async function loadCreationConversations<T extends StoredCreationConversa
     return parsed as T[];
 }
 
+export function persistableCreationConversations<T extends StoredCreationConversation>(conversations: T[]) {
+    return conversations.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((message) => {
+            const candidate = message as PendingCreationMessage & { resultUrls?: unknown; resultStorageKeys?: unknown };
+            if (!Array.isArray(candidate.resultStorageKeys) || candidate.resultStorageKeys.length === 0) return message;
+            const { resultUrls: _transientResultUrls, ...persistedMessage } = candidate;
+            return persistedMessage as typeof message;
+        }),
+    })) as T[];
+}
+
 export async function saveCreationConversations<T extends StoredCreationConversation>(conversations: T[]) {
     const storage = localForageStorageForScope(getActiveUserScope());
-    await storage.setItem(CREATION_CONVERSATIONS_KEY, JSON.stringify(conversations));
+    await storage.setItem(CREATION_CONVERSATIONS_KEY, JSON.stringify(persistableCreationConversations(conversations)));
 }

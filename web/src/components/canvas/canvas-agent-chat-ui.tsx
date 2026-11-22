@@ -1,13 +1,15 @@
 import { Button } from "antd";
 import { Tooltip } from "@/components/ui/base/tooltip";
-import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowUp, CheckCircle2, CircleAlert, ImagePlus, LoaderCircle, RotateCcw, Sparkles, UserRound, Wrench, X, XCircle } from "lucide-react";
+import { ArrowUp, AtSign, CheckCircle2, ChevronDown, CircleAlert, ImagePlus, LoaderCircle, RotateCcw, Sparkles, UserRound, Wrench, X, XCircle } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import type { CanvasAgentOperationImpact } from "@/lib/canvas/canvas-agent-ops";
+import { type InterfaceMessageKey } from "@/lib/interface-locale";
+import type { CanvasOperationImpact } from "@/lib/canvas/canvas-operation-contract";
 import type { LocalUser } from "@/stores/use-user-store";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { AIMessageMarkdown } from "@/components/ai/ai-message-markdown";
 import { WorkingDots, WorkingGlow } from "@/components/ai/working-indicator";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
@@ -49,9 +51,6 @@ export function extractCanvasAgentQuickActions(text: string): CanvasAgentQuickAc
     return actions;
 }
 
-const WORKING_TEXT = "正在推演...";
-
-
 function AgentWorkingElapsed() {
     const [elapsed, setElapsed] = useState(0);
     useEffect(() => {
@@ -83,6 +82,7 @@ export function AgentChatMessage({
     onQuickAction?: (prompt: string) => void;
     onRetry?: () => void;
 }) {
+    const { t } = useInterfaceTranslation();
     const isUser = item.role === "user";
     const isSystem = item.role === "system";
     const color = item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
@@ -100,10 +100,7 @@ export function AgentChatMessage({
     if (item.role === "tool") {
         if (objectField(item.detail, "status") === "pending") return <AgentPendingToolCard summary={item.text} detail={item.detail} theme={theme} onReject={() => onRejectTool?.(item.id)} onApprove={() => onApproveTool?.(item.id)} />;
         return (
-            <div className="flex items-start gap-2.5">
-                <AgentAvatar theme={theme} />
-                <AgentToolCard title={item.title || "工具调用"} text={item.text} detail={item.detail} theme={theme} />
-            </div>
+            <AgentToolCard title={item.title || t("agentRuntimeUiToolCall" as InterfaceMessageKey)} text={item.text} detail={item.detail} theme={theme} />
         );
     }
     return (
@@ -119,11 +116,11 @@ export function AgentChatMessage({
                 )}
                 {item.role === "error" && onRetry ? (
                     <Button size="small" className="mt-2 !h-7" icon={retrying ? <LoaderCircle className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />} disabled={retrying} onClick={onRetry}>
-                        {retrying ? "重试中" : "重试本轮"}
+                        {retrying ? t("agentRuntimeUiRetrying" as InterfaceMessageKey) : t("agentRuntimeUiRetryTurn" as InterfaceMessageKey)}
                     </Button>
                 ) : null}
                 {quickActions.length && onQuickAction ? (
-                    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="快捷选项">
+                    <div className="mt-3 flex flex-wrap gap-1.5" aria-label={t("agentLocalUiQuickOptions" as InterfaceMessageKey)}>
                         {quickActions.map((action) => (
                             <motion.button
                                 key={action.label}
@@ -147,34 +144,35 @@ export function AgentChatMessage({
 }
 
 export function AgentPendingToolCard({ summary, detail, theme, onReject, onApprove }: { summary: string; detail?: unknown; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onReject?: () => void; onApprove?: () => void }) {
+    const { t } = useInterfaceTranslation();
     const impact = agentImpactFromDetail(detail);
     return (
         <div className="flex items-start gap-2.5">
             <AgentAvatar theme={theme} />
-            <div className="min-w-0 flex-1 rounded-md p-3.5" style={{ background: "rgba(217,119,6,.07)", color: theme.node.text }}>
+            <div className="agent-pending-tool min-w-0 flex-1 rounded-md p-2.5" style={{ background: "rgba(217,119,6,.07)", color: theme.node.text }}>
                 <div className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md" style={{ color: "#d97706", background: "rgba(217,119,6,.1)" }}>
+                    <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md" style={{ color: "#d97706", background: "rgba(217,119,6,.1)" }}>
                         <CircleAlert className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold leading-5">
-                            <span>确认工具调用</span>
+                        <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold leading-5">
+                            <span>{t("agentLocalUiConfirmToolCall" as InterfaceMessageKey)}</span>
                             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[var(--fs-label)] font-medium" style={{ color: "#d97706", background: "rgba(217,119,6,.1)" }}>
-                                等待确认
+                                {t("agentUiApprovalWaiting" as InterfaceMessageKey)}
                             </span>
                         </div>
-                        <div className="mt-2 text-sm leading-6" style={{ color: theme.node.text }}>
+                        <div className="mt-1 text-xs leading-5" style={{ color: theme.node.text }}>
                             {summary}
                         </div>
                     </div>
                 </div>
                 {impact?.operationCount ? (
                     <div className="mt-3 pt-1">
-                        <div className="grid grid-cols-2 gap-2">
-                            <ImpactMetric label="操作" value={impact.operationCount} theme={theme} />
-                            <ImpactMetric label="涉及节点" value={impact.affectedNodeCount} theme={theme} />
-                            <ImpactMetric label="删除" value={impact.destructiveCount} attention={impact.destructiveCount > 0} theme={theme} />
-                            <ImpactMetric label="生成" value={impact.generationCount} attention={impact.generationCount > 0} theme={theme} />
+                        <div className="grid grid-cols-4 gap-1">
+                            <ImpactMetric label={t("agentRuntimeUiOperationCountLabel" as InterfaceMessageKey)} value={impact.operationCount} theme={theme} />
+                            <ImpactMetric label={t("agentUiApprovalAffectedNodes" as InterfaceMessageKey)} value={impact.affectedNodeCount} theme={theme} />
+                            <ImpactMetric label={t("agentRuntimeUiDeleteCountLabel" as InterfaceMessageKey)} value={impact.destructiveCount} attention={impact.destructiveCount > 0} theme={theme} />
+                            <ImpactMetric label={t("agentUiOperationGenerate" as InterfaceMessageKey)} value={impact.generationCount} attention={impact.generationCount > 0} theme={theme} />
                         </div>
                         {impact.items.length ? (
                             <div className="mt-3 space-y-1.5">
@@ -192,18 +190,18 @@ export function AgentPendingToolCard({ summary, detail, theme, onReject, onAppro
                 {detail ? (
                     <details className="mt-3 pt-1">
                         <summary className="cursor-pointer text-xs" style={{ color: theme.node.muted }}>
-                            技术详情
+                            {t("agentLocalUiTechnicalDetails" as InterfaceMessageKey)}
                         </summary>
                         <AgentDetailBlock detail={detail} theme={theme} />
                     </details>
                 ) : null}
                 {onReject || onApprove ? (
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                        <Button danger className="!h-9" icon={<XCircle className="size-4" />} onClick={() => onReject?.()}>
-                            拒绝执行
+                    <div className="mt-2 flex gap-2">
+                        <Button danger size="small" className="!h-8 flex-1" icon={<XCircle className="size-3.5" />} onClick={() => onReject?.()}>
+                            {t("agentRuntimeUiToolStatusRejected" as InterfaceMessageKey)}
                         </Button>
-                        <Button className="!h-9" icon={<CheckCircle2 className="size-4" />} style={{ borderColor: "rgba(22,163,74,.42)", color: "#16a34a", background: "transparent" }} onClick={() => onApprove?.()}>
-                            批准执行
+                        <Button size="small" className="!h-8 flex-1" icon={<CheckCircle2 className="size-3.5" />} style={{ borderColor: "rgba(22,163,74,.42)", color: "#16a34a", background: "transparent" }} onClick={() => onApprove?.()}>
+                            {t("agentUiApproveAction" as InterfaceMessageKey)}
                         </Button>
                     </div>
                 ) : null}
@@ -228,7 +226,7 @@ function ImpactMetric({ label, value, attention = false, theme }: { label: strin
 function agentImpactFromDetail(detail: unknown) {
     const impact = objectField(detail, "impact");
     if (!impact || typeof impact !== "object") return null;
-    const value = impact as Partial<CanvasAgentOperationImpact>;
+    const value = impact as Partial<CanvasOperationImpact>;
     return {
         operationCount: Number(value.operationCount) || 0,
         affectedNodeCount: Number(value.affectedNodeCount) || 0,
@@ -236,33 +234,28 @@ function agentImpactFromDetail(detail: unknown) {
         generationCount: Number(value.generationCount) || 0,
         items: Array.isArray(value.items) ? value.items.filter((item): item is string => typeof item === "string") : [],
         warning: typeof value.warning === "string" ? value.warning : "",
-    } satisfies CanvasAgentOperationImpact;
+    } satisfies CanvasOperationImpact;
 }
 
 export function AgentToolCard({ title, text, detail, theme }: { title: string; text: string; detail?: unknown; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
-    const state = toolCardState(title, text, detail);
+    const { t } = useInterfaceTranslation();
+    const state = toolCardState(title, text, detail, t);
     return (
-        <details className="min-w-0 flex-1 rounded-md px-3 py-3 text-left" style={{ background: theme.spatial.surface, color: theme.node.text }}>
-            <summary className="cursor-pointer list-none">
-                <div className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md" style={{ color: state.color, background: state.softBg }}>
+        <details data-agent-tool-card className="agent-tool-row group min-w-0 flex-1 text-left" style={{ color: theme.node.text }}>
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                <div className="flex min-h-7 items-center gap-2">
+                    <span className="agent-tool-status" style={{ color: state.isError ? state.color : theme.node.muted }}>
                         {state.icon}
                     </span>
                     <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold leading-5">
+                        <div className="flex min-w-0 items-center gap-2 text-[13px] leading-5">
                             <span className="min-w-0 truncate">{title}</span>
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[var(--fs-label)] font-medium" style={{ color: state.color, background: state.softBg }}>
+                            <span className="agent-tool-label" style={{ color: state.color }}>
                                 {state.label}
                             </span>
-                            {detail ? (
-                                <span className="ml-auto text-xs font-normal" style={{ color: theme.node.muted }}>
-                                    详情
-                                </span>
-                            ) : null}
+                            {detail ? <ChevronDown className="ml-auto size-3.5 shrink-0 transition-transform duration-200 group-open:rotate-180" style={{ color: theme.node.muted }} aria-hidden="true" /> : null}
                         </div>
-                        <div className="mt-2 text-sm leading-6" style={{ color: state.isError ? state.color : theme.node.muted }}>
-                            {text}
-                        </div>
+                        <div className="truncate text-xs leading-5" style={{ color: state.isError ? state.color : theme.node.muted, maxWidth: "100%" }}>{text}</div>
                     </div>
                 </div>
             </summary>
@@ -271,11 +264,12 @@ export function AgentToolCard({ title, text, detail, theme }: { title: string; t
     );
 }
 
-export function AgentWorkingMessage({ theme, label = WORKING_TEXT }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; label?: string }) {
+export function AgentWorkingMessage({ theme, label }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; label?: string }) {
+    const { t } = useInterfaceTranslation();
     return (
         <div role="status" aria-live="polite" className="flex items-center gap-2.5" style={{ color: theme.node.muted }}>
             <WorkingDots />
-            <span className="text-sm leading-5">{label}</span>
+            <span className="text-sm leading-5">{label ?? t("agentUiAgentThinking" as InterfaceMessageKey)}</span>
             <AgentWorkingElapsed />
         </div>
     );
@@ -315,10 +309,14 @@ export function AgentChatComposer({
     /** 是否在「@」候选里包含素材库资源 */
     includeAssetLibrary?: boolean;
 }) {
+    const { t } = useInterfaceTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [slash, setSlash] = useState<{ start: number; query: string } | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
+    const [previewAttachment, setPreviewAttachment] = useState<CanvasAgentChatAttachment | null>(null);
     const availableSlashSkills = slashSkills ?? [];
+    const attachmentReferences = useMemo(() => agentAttachmentReferences(attachments, t), [attachments, t]);
+    const composerReferences = useMemo(() => [...references, ...attachmentReferences], [attachmentReferences, references]);
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length);
     const reducedMotion = useReducedMotion();
     const activeSlashIndex = Math.min(Math.max(slashIndex, 0), Math.max(availableSlashSkills.length - 1, 0));
@@ -337,7 +335,7 @@ export function AgentChatComposer({
     };
 
     const applySlashSkill = (skill: Skill) => {
-        const token = `@[skill:${skill.skill_id}] `;
+        const token = `@[skill:${skill.skillId}] `;
         const next = slash ? `${prompt.slice(0, slash.start)}${token}${prompt.slice(slash.start + slash.query.length)}` : prompt ? `${prompt.replace(/\s+$/u, "")} ${token}` : token;
         setSlash(null);
         setSlashIndex(0);
@@ -377,6 +375,12 @@ export function AgentChatComposer({
         void onAddFiles(images);
     };
 
+    const insertAttachmentMention = (item: CanvasAgentChatAttachment) => {
+        const token = `@[attachment:${item.id}] `;
+        if (prompt.includes(`@[attachment:${item.id}]`)) return;
+        onPromptChange(prompt ? `${prompt.replace(/\s+$/u, "")} ${token}` : token);
+    };
+
     return (
         <div className="px-3 pb-3 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
             <div
@@ -390,20 +394,40 @@ export function AgentChatComposer({
                 {sending && !reducedMotion ? <WorkingGlow active color={theme.accent.primary} radius={22} /> : null}
                 {attachments.length ? (
                     <div className="thin-scrollbar mb-2 flex gap-2 overflow-x-auto pb-1">
-                        {attachments.map((item) => (
-                            <div key={item.id} className="group relative size-14 shrink-0 overflow-hidden rounded-md" title={item.name}>
-                                <img src={item.url} alt={item.name} className="size-full object-cover" />
-                                {onRemoveAttachment ? (
+                        {attachments.map((item, index) => (
+                            <div key={item.id} className="group relative w-20 shrink-0">
+                                <button
+                                    type="button"
+                                    className="relative block size-20 overflow-hidden rounded-lg"
+                                    title={t("agentUiEnlargeImagePreview" as InterfaceMessageKey)}
+                                    aria-label={t("agentUiPreviewAttachment" as InterfaceMessageKey, { name: item.name || t("agentUiImageNumber" as InterfaceMessageKey, { count: index + 1 }) })}
+                                    onClick={() => setPreviewAttachment(item)}
+                                    onDoubleClick={() => setPreviewAttachment(item)}
+                                >
+                                    <img src={item.url} alt={item.name} className="size-full object-cover" />
+                                </button>
+                                <div className="mt-1 flex min-w-0 items-center justify-between gap-1">
                                     <button
                                         type="button"
-                                        className="absolute right-1 top-1 grid size-5 place-items-center rounded-full opacity-0 shadow-sm transition group-hover:opacity-100"
-                                        style={{ background: theme.toolbar.panel, color: theme.node.text }}
-                                        onClick={() => onRemoveAttachment(item.id)}
-                                        aria-label="移除图片"
+                                        className="flex min-w-0 items-center gap-0.5 truncate text-[var(--fs-tiny)] opacity-80 hover:opacity-100"
+                                        title={t("agentUiInsertImageReference" as InterfaceMessageKey, { count: index + 1 })}
+                                        onClick={() => insertAttachmentMention(item)}
                                     >
-                                        <X className="size-3" />
+                                        <AtSign className="size-2.5 shrink-0" />
+                                        <span className="truncate">{t("agentUiImageNumber" as InterfaceMessageKey, { count: index + 1 })}</span>
                                     </button>
-                                ) : null}
+                                    {onRemoveAttachment ? (
+                                        <button
+                                            type="button"
+                                            className="grid size-4 shrink-0 place-items-center rounded-full opacity-70 hover:opacity-100"
+                                            style={{ background: theme.toolbar.panel, color: theme.node.text }}
+                                            onClick={() => onRemoveAttachment(item.id)}
+                                            aria-label={t("agentUiRemoveImage" as InterfaceMessageKey)}
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    ) : null}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -412,17 +436,17 @@ export function AgentChatComposer({
                     <div className="thin-scrollbar max-h-40 min-h-[60px] overflow-y-auto">
                         <CanvasResourceMentionTextarea
                             value={prompt}
-                            references={references}
+                            references={composerReferences}
                             includeAssetLibrary={includeAssetLibrary}
-                            sendOnEnter={false}
+                            sendOnEnter
                             disabled={disabled}
                             onChange={handlePromptChange}
-                            onSubmit={onSubmit}
+                            onSubmit={() => { if (canSubmit) onSubmit(); }}
                             className="w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:opacity-45"
                             containerClassName="min-h-[60px]"
                             style={{ color: theme.node.text }}
                             placeholder={placeholder}
-                            aria-label="Agent 输入"
+                            aria-label={t("agentUiInputLabel" as InterfaceMessageKey)}
                         />
                     </div>
                     {slash && availableSlashSkills.length ? (
@@ -434,7 +458,7 @@ export function AgentChatComposer({
                         >
                             {availableSlashSkills.map((skill, index) => (
                                 <button
-                                    key={skill.skill_id}
+                                    key={skill.skillId}
                                     type="button"
                                     className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs"
                                     style={{ background: index === activeSlashIndex ? theme.toolbar.itemHover : "transparent", color: theme.node.text }}
@@ -442,7 +466,7 @@ export function AgentChatComposer({
                                     onClick={() => applySlashSkill(skill)}
                                 >
                                     <Sparkles className="size-3.5 shrink-0 opacity-70" />
-                                    <span className="min-w-0 truncate font-medium">{skill.skill_name}</span>
+                                    <span className="min-w-0 truncate font-medium">{skill.skillName}</span>
                                     {skill.description ? <span className="min-w-0 flex-1 truncate opacity-50">{skill.description}</span> : null}
                                 </button>
                             ))}
@@ -464,16 +488,16 @@ export function AgentChatComposer({
                                         event.target.value = "";
                                     }}
                                 />
-                                <Tooltip title="上传图片">
+                                <Tooltip title={t("agentUiUploadImages" as InterfaceMessageKey)}>
                                     <Button
                                         type="text"
-                                        shape="circle"
-                                        className="!h-8 !w-8 !min-w-8 !transition-transform hover:!scale-105 active:!scale-95"
+                                        className="!h-8 !px-1"
                                         disabled={sending}
                                         style={{ color: theme.node.muted }}
                                         icon={<ImagePlus className="size-4" />}
+                                        aria-label={t("agentLocalUiUploadReferenceImage" as InterfaceMessageKey)}
                                         onClick={() => fileInputRef.current?.click()}
-                                    />
+                                    >{t("agentLocalUiReferenceImage" as InterfaceMessageKey)}</Button>
                                 </Tooltip>
                             </>
                         ) : null}
@@ -482,7 +506,8 @@ export function AgentChatComposer({
                     <motion.button
                         type="button"
                         disabled={!canSubmit}
-                        aria-label={sending ? "发送中" : "发送"}
+                        aria-label={sending ? t("agentUiSending" as InterfaceMessageKey) : t("agentUiSend" as InterfaceMessageKey)}
+                        title={t("agentLocalUiSendHint" as InterfaceMessageKey)}
                         onClick={() => void onSubmit()}
                         whileHover={canSubmit && !reducedMotion ? { scale: 1.06, y: -1 } : undefined}
                         whileTap={canSubmit && !reducedMotion ? { scale: 0.9, y: 1 } : undefined}
@@ -507,6 +532,7 @@ export function AgentChatComposer({
                     </motion.button>
                 </div>
             </div>
+            {previewAttachment ? <AgentImagePreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} /> : null}
         </div>
     );
 }
@@ -524,10 +550,11 @@ export function AgentPanelTabs<T extends string>({
     right?: ReactNode;
     onChange: (value: T) => void;
 }) {
+    const { t } = useInterfaceTranslation();
     return (
         <div className="shrink-0 px-3 pb-1">
             <div className="flex min-h-8 items-center justify-between gap-2 rounded-lg px-0.5 py-0.5" style={{ background: "transparent" }}>
-                <nav className="grid min-w-0 flex-1 grid-flow-col auto-cols-fr items-center gap-0.5 text-[var(--fs-label)]" role="tablist" aria-label="Agent 面板">
+                <nav className="grid min-w-0 flex-1 grid-flow-col auto-cols-fr items-center gap-0.5 text-[var(--fs-label)]" role="tablist" aria-label={t("agentRuntimeUiPanelTabsLabel" as InterfaceMessageKey)}>
                     {items.map((item) => (
                         <button
                             key={item.value}
@@ -576,25 +603,57 @@ function AgentUserAvatar({ user, theme }: { user: LocalUser | null; theme: (type
 }
 
 function AgentMessageAttachments({ attachments }: { attachments: CanvasAgentChatAttachment[] }) {
+    const { t } = useInterfaceTranslation();
+    const [preview, setPreview] = useState<CanvasAgentChatAttachment | null>(null);
     return (
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
-            {attachments.map((item) => (
-                <img key={item.id} src={item.url} alt={item.name} className="aspect-square w-full rounded-lg object-cover" />
-            ))}
+        <>
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {attachments.map((item) => (
+                    <button key={item.id} type="button" className="group relative overflow-hidden rounded-lg" onClick={() => setPreview(item)} onDoubleClick={() => setPreview(item)} aria-label={t("agentRuntimeUiViewImageAttachment" as InterfaceMessageKey, { name: item.name })}>
+                        <img src={item.url} alt={item.name} className="aspect-square w-full object-cover transition-transform group-hover:scale-105" />
+                    </button>
+                ))}
+            </div>
+            {preview ? <AgentImagePreview attachment={preview} onClose={() => setPreview(null)} /> : null}
+        </>
+    );
+}
+
+export function AgentImagePreview({ attachment, onClose }: { attachment: CanvasAgentChatAttachment; onClose: () => void }) {
+    const { t } = useInterfaceTranslation();
+    return (
+        <div className="fixed inset-0 z-[var(--z-dialog-popover)] grid place-items-center bg-black/80 p-6" role="dialog" aria-label={attachment.name} onClick={onClose}>
+            <img src={attachment.url} alt={attachment.name} className="max-h-[90vh] max-w-[92vw] rounded-xl object-contain shadow-2xl" onClick={(event) => event.stopPropagation()} />
+            <button type="button" className="absolute right-5 top-5 rounded-full bg-black/60 p-2 text-white" onClick={onClose} aria-label={t("agentUiCloseImagePreview" as InterfaceMessageKey)}>
+                <X className="size-5" />
+            </button>
         </div>
     );
 }
 
-function toolCardState(title: string, text: string, detail?: unknown) {
+function agentAttachmentReferences(attachments: CanvasAgentChatAttachment[], t: ReturnType<typeof useInterfaceTranslation>["t"]): CanvasResourceReference[] {
+    return attachments.map((item, index) => ({
+        id: `attachment:${item.id}`,
+        nodeId: "",
+        kind: "image",
+        label: t("agentUiImageNumber" as InterfaceMessageKey, { count: index + 1 }),
+        title: item.name || t("agentUiImageNumber" as InterfaceMessageKey, { count: index + 1 }),
+        previewUrl: item.url,
+        active: true,
+        mentionToken: `@[attachment:${item.id}]`,
+    }));
+}
+
+function toolCardState(title: string, text: string, detail: unknown, t: ReturnType<typeof useInterfaceTranslation>["t"]) {
     const raw = `${title} ${text} ${normalizeText(objectField(detail, "error"))}`;
     const lower = raw.toLowerCase();
     const tool = String(objectField(detail, "name") || objectField(detail, "tool") || "");
-    if (objectField(detail, "status") === "noop" || /未生效|无需|没有找到|没有.*可|已存在/.test(raw)) return { label: "未生效", color: "#d97706", softBg: "rgba(217,119,6,.04)", icon: <CircleAlert className="size-4" />, isError: false };
-    if (/拒绝|取消/.test(raw) || lower.includes("rejected")) return { label: "拒绝执行", color: "#dc2626", softBg: "rgba(220,38,38,.04)", icon: <XCircle className="size-4" />, isError: true };
-    if (/失败|错误/.test(raw) || lower.includes("failed") || lower.includes("error")) return { label: "执行失败", color: "#dc2626", softBg: "rgba(220,38,38,.04)", icon: <XCircle className="size-4" />, isError: true };
+    if (objectField(detail, "status") === "noop" || /未生效|无需|没有找到|没有.*可|已存在/.test(raw)) return { label: t("agentRuntimeUiToolStatusNoEffect" as InterfaceMessageKey), color: "#d97706", softBg: "rgba(217,119,6,.04)", icon: <CircleAlert className="size-4" />, isError: false };
+    if (/拒绝|取消/.test(raw) || lower.includes("rejected")) return { label: t("agentRuntimeUiToolStatusRejected" as InterfaceMessageKey), color: "#dc2626", softBg: "rgba(220,38,38,.04)", icon: <XCircle className="size-4" />, isError: true };
+    if (/失败|错误/.test(raw) || lower.includes("failed") || lower.includes("error")) return { label: t("agentRuntimeUiToolStatusFailed" as InterfaceMessageKey), color: "#dc2626", softBg: "rgba(220,38,38,.04)", icon: <XCircle className="size-4" />, isError: true };
     if (/完成|成功/.test(raw) || lower.includes("completed") || lower.includes("succeeded"))
-        return { label: tool === "canvas_apply_ops" || /画布操作/.test(title) ? "已批准执行" : "执行完成", color: "#16a34a", softBg: "rgba(22,163,74,.04)", icon: <CheckCircle2 className="size-4" />, isError: false };
-    return { label: "工具调用", color: "#2563eb", softBg: "rgba(37,99,235,.04)", icon: <Wrench className="size-4" />, isError: false };
+        return { label: tool === "canvas_apply_ops" || /画布操作/.test(title) ? t("agentLocalUiToolStatusApproved" as InterfaceMessageKey) : t("agentRuntimeUiToolStatusCompleted" as InterfaceMessageKey), color: "#16a34a", softBg: "rgba(22,163,74,.04)", icon: <CheckCircle2 className="size-4" />, isError: false };
+    return { label: t("agentRuntimeUiToolCall" as InterfaceMessageKey), color: "#2563eb", softBg: "rgba(37,99,235,.04)", icon: <Wrench className="size-4" />, isError: false };
 }
 
 function normalizeText(value: unknown) {

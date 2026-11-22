@@ -1,19 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Input, Modal, Select, Spin } from "antd";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { App, Button, Input, Modal, Spin } from "antd";
 import { Copy, Link2, RefreshCw, Share2, Unlink } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { createCanvasShare, deleteCanvasShare, getCanvasShare, type CanvasShareStatus } from "@/services/api/canvas-share";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
+import { Select } from "@/components/ui/base/select";
+import { useLocation, useNavigate } from "react-router";
+import { useTranslation } from "react-i18next";
 
 export function CanvasShareModal({ projectId, open, onClose, beforeCreate }: { projectId: string; open: boolean; onClose: () => void; beforeCreate: () => Promise<boolean | void> }) {
+    const { t } = useInterfaceTranslation();
+    const { t: translate } = useTranslation();
+    const location = useLocation();
+    const navigate = useNavigate();
     const { message, modal } = App.useApp();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = canvasThemes[useActiveTheme()];
     const [share, setShare] = useState<CanvasShareStatus>({ enabled: false });
     const [expiresDays, setExpiresDays] = useState(0);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
-    const shareUrl = useMemo(() => share.token ? `${window.location.origin}/share/canvas/${share.token}` : "", [share.token]);
+    const [openingSubmission, setOpeningSubmission] = useState(false);
+    const submissionLock = useRef(false);
+    const shareUrl = useMemo(() => (share.token ? `${window.location.origin}/share/canvas/${share.token}` : ""), [share.token]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -34,7 +44,7 @@ export function CanvasShareModal({ projectId, open, onClose, beforeCreate }: { p
     const copy = async (value = shareUrl) => {
         if (!value) return;
         await navigator.clipboard.writeText(value);
-        message.success("分享链接已复制");
+        message.success(t("canvasCompleteUi.shareLinkCopied"));
     };
 
     const create = async (rotate = false) => {
@@ -53,45 +63,95 @@ export function CanvasShareModal({ projectId, open, onClose, beforeCreate }: { p
         }
     };
 
-    const revoke = () => modal.confirm({
-        title: "停止公开分享？",
-        content: "现有分享链接会立即失效，原画布内容不会被删除。",
-        okText: "停止分享",
-        okButtonProps: { danger: true },
-        cancelText: "取消",
-        onOk: async () => {
-            await deleteCanvasShare(projectId);
-            setShare({ enabled: false });
-            message.success("已停止分享");
-        },
-    });
+    const revoke = () =>
+        modal.confirm({
+            title: t("canvasCompleteUi.stopShareConfirm"),
+            content: "现有分享链接会立即失效，原画布内容不会被删除。",
+            okText: t("canvasCompleteUi.stopSharing"),
+            okButtonProps: { danger: true },
+            cancelText: t("timelineCancel"),
+            onOk: async () => {
+                await deleteCanvasShare(projectId);
+                setShare({ enabled: false });
+                message.success(t("canvasCompleteUi.sharingStopped"));
+            },
+        });
+
+    const openSubmission = async () => {
+        if (submissionLock.current) return;
+        submissionLock.current = true;
+        setOpeningSubmission(true);
+        try {
+            if ((await beforeCreate()) === false) return;
+            onClose();
+            navigate(`/my/works?projectId=${encodeURIComponent(projectId)}`, { state: { returnTo: location.pathname + location.search, returnState: location.state } });
+        } catch (error) {
+            void message.error(error instanceof Error ? error.message : translate("communityWorks.failed"));
+        } finally {
+            submissionLock.current = false;
+            setOpeningSubmission(false);
+        }
+    };
 
     return (
-        <Modal title={<span className="inline-flex items-center gap-2"><Share2 className="size-4" />分享画布</span>} open={open} onCancel={onClose} footer={null} centered width={520} destroyOnHidden>
+        <Modal
+            title={
+                <span className="inline-flex items-center gap-2">
+                    <Share2 className="size-4" />
+                    {t("canvasToolbarShare")}
+                </span>
+            }
+            open={open}
+            onCancel={onClose}
+            footer={null}
+            centered
+            width={520}
+            destroyOnHidden
+        >
             <Spin spinning={loading}>
                 <div className="border-t pt-5" style={{ borderColor: theme.node.stroke }}>
                     <p className="mb-4 text-sm leading-6" style={{ color: theme.node.muted }}>
-                        获得链接的人无需登录即可查看。访客可拖动画布节点并临时添加节点，但刷新后会恢复，不能修改原画布或执行生成。
+                        {t("canvasCompleteUi.shareHelp")}
                     </p>
                     {share.enabled && shareUrl ? (
                         <div className="space-y-4">
-                            <Input value={shareUrl} readOnly suffix={<Button type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<Copy className="size-3.5" />} onClick={() => void copy()} aria-label="复制分享链接" />} />
+                            <Input value={shareUrl} readOnly suffix={<Button type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<Copy className="size-3.5" />} onClick={() => void copy()} aria-label={t("canvasCompleteUi.copyShareLink")} />} />
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                                <span className="text-xs" style={{ color: theme.node.muted }}>{share.expiresAt ? `有效至 ${new Date(share.expiresAt).toLocaleString("zh-CN")}` : "长期有效，直至手动停止分享"}</span>
+                                <span className="text-xs" style={{ color: theme.node.muted }}>
+                                    {share.expiresAt ? t("canvasCompleteUi.expires", { value0: new Date(share.expiresAt).toLocaleString("zh-CN") }) : t("canvasCompleteUi.shareIndefinite")}
+                                </span>
                                 <div className="flex gap-2">
-                                    <Button icon={<RefreshCw className="size-3.5" />} loading={submitting} onClick={() => void create(true)}>重新生成链接</Button>
-                                    <Button danger icon={<Unlink className="size-3.5" />} onClick={revoke}>停止分享</Button>
+                                    <Button icon={<RefreshCw className="size-3.5" />} loading={submitting} onClick={() => void create(true)}>
+                                        {t("canvasCompleteUi.regenerateLink")}
+                                    </Button>
+                                    <Button danger icon={<Unlink className="size-3.5" />} onClick={revoke}>
+                                        {t("canvasCompleteUi.stopSharing")}
+                                    </Button>
                                 </div>
                             </div>
                         </div>
                     ) : (
                         <div className="flex items-center gap-2">
-                            <Select value={expiresDays} onChange={setExpiresDays} className="min-w-40" options={[{ value: 0, label: "长期有效" }, { value: 7, label: "7 天有效" }, { value: 30, label: "30 天有效" }]} />
-                            <Button type="primary" icon={<Link2 className="size-4" />} loading={submitting} onClick={() => void create(false)}>创建并复制链接</Button>
+                            <Select
+                                value={expiresDays}
+                                onChange={setExpiresDays}
+                                className="min-w-40"
+                                options={[
+                                    { value: 0, label: t("completeUi.212") },
+                                    { value: 7, label: t("completeUi.213") },
+                                    { value: 30, label: t("completeUi.214") },
+                                ]}
+                            />
+                            <Button type="primary" icon={<Link2 className="size-4" />} loading={submitting} onClick={() => void create(false)}>
+                                {t("canvasCompleteUi.createCopyLink")}
+                            </Button>
                         </div>
                     )}
                 </div>
             </Spin>
+            <Button block className="mt-4" loading={openingSubmission} disabled={submitting} onClick={() => void openSubmission()}>
+                {translate("communityWorks.create")}
+            </Button>
         </Modal>
     );
 }

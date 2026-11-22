@@ -1,0 +1,229 @@
+package app
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"infinite-canvas/backend/internal/canvas"
+	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/repository"
+)
+
+func agentStorageCapacityError(err error) bool {
+	var appErr *kernel.AppError
+	return errors.As(err, &appErr) && appErr.Reason == kernel.ReasonAgentHistoryCapacityExceeded
+}
+
+func structuredBytes(usage repository.UserStorageUsage) int64 {
+	return usage.AssetBytes + usage.CanvasBytes
+}
+
+func validateStructuredStorageQuotaWithPolicy(usage repository.UserStorageUsage, kind string, creating bool, deltaBytes int64, policy RuntimeResourcePolicy) error {
+	if structuredBytes(usage)+deltaBytes > megabytes(policy.StructuredDataMB) {
+		return QuotaExceeded(fmt.Sprintf("账号画布和素材数据已达到 %dMB 上限，请先删除不需要的内容", policy.StructuredDataMB))
+	}
+	if !creating {
+		return nil
+	}
+	switch kind {
+	case "asset":
+		if usage.AssetCount >= policy.AssetCount {
+			return QuotaExceeded(fmt.Sprintf("账号素材数量已达到 %d 个上限", policy.AssetCount))
+		}
+	case "canvas":
+		if usage.CanvasCount >= policy.CanvasCount {
+			return QuotaExceeded(fmt.Sprintf("账号画布数量已达到 %d 个上限", policy.CanvasCount))
+		}
+	}
+	return nil
+}
+
+func validateTaskStorageQuotaWithPolicy(usage repository.UserStorageUsage, incomingBytes int64, policy RuntimeResourcePolicy) error {
+	if usage.TaskCount >= policy.TaskCount {
+		return QuotaExceeded(fmt.Sprintf("账号任务历史已达到 %d 条上限，请联系管理员归档", policy.TaskCount))
+	}
+	return validateTaskDataGrowthQuotaWithPolicy(usage, incomingBytes, policy)
+}
+
+func validateTaskDataGrowthQuotaWithPolicy(usage repository.UserStorageUsage, incomingBytes int64, policy RuntimeResourcePolicy) error {
+	if usage.TaskBytes+incomingBytes > gigabytes(policy.TaskDataGB) {
+		return QuotaExceeded(fmt.Sprintf("账号任务历史数据已达到 %dGB 上限，请联系管理员归档", policy.TaskDataGB))
+	}
+	return nil
+}
+
+func validateAPICallLogQuotaWithPolicy(usage repository.UserStorageUsage, incomingBytes int64, policy RuntimeResourcePolicy) error {
+	if usage.APICallCount >= policy.APICallLogCount {
+		return QuotaExceeded(fmt.Sprintf("账号上游请求日志已达到 %d 条上限，请联系管理员归档", policy.APICallLogCount))
+	}
+	return validateTaskDataGrowthQuotaWithPolicy(usage, incomingBytes, policy)
+}
+
+func validateStructuredReplacementQuotaWithPolicy(usage repository.UserStorageUsage, kind string, count int, bytes int64, policy RuntimeResourcePolicy) error {
+	deltaBytes := bytes
+	switch kind {
+	case "asset":
+		if int64(count) > policy.AssetCount {
+			return QuotaExceeded(fmt.Sprintf("账号素材数量不能超过 %d 个", policy.AssetCount))
+		}
+		deltaBytes -= usage.AssetBytes
+	case "canvas":
+		if int64(count) > policy.CanvasCount {
+			return QuotaExceeded(fmt.Sprintf("账号画布数量不能超过 %d 个", policy.CanvasCount))
+		}
+		deltaBytes -= usage.CanvasBytes
+	}
+	return validateStructuredStorageQuotaWithPolicy(usage, kind, false, deltaBytes, policy)
+}
+
+func (s *Service) createTaskWithinStorageQuota(task *model.Task, billingOrder *model.BillingOrder, policy RuntimePolicySetting) error {
+	s.storageMu.Lock()
+	err := func() error {
+		defer s.storageMu.Unlock()
+		return createTaskWithStorageQuotaRepository(s.repo, task, billingOrder, policy)
+	}()
+	if err == nil {
+		s.wakeTaskDispatcher()
+	}
+	return err
+}
+
+func createTaskWithStorageQuotaRepository(repo *repository.Repository, task *model.Task, billingOrder *model.BillingOrder, policy RuntimePolicySetting) error {
+	usage, err := repo.UserStorageUsage(task.UserID)
+	if err != nil {
+		return err
+	}
+	incomingBytes := int64(len([]byte(task.Prompt)) + len([]byte(task.InputJSON)) + len([]byte(task.Error)))
+	if err := validateTaskStorageQuotaWithPolicy(usage, incomingBytes, policy.Resource); err != nil {
+		return err
+	}
+	if billingOrder != nil {
+		return repo.CreateTaskWithCreditReservation(task, billingOrder, policy.Task.ActiveTaskLimit, policy.Task.AgentMaxRunsPerUser)
+	}
+	return repo.CreateTaskWithActiveLimit(task, policy.Task.ActiveTaskLimit, policy.Task.AgentMaxRunsPerUser)
+}
+
+// 任务完成会同时扩张任务历史和画布操作数据，必须在同一临界区核算并原子写入。
+func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJSON []byte, opsJSON []byte, hasCanvasOps bool) error {
+	policy, err := s.RuntimePolicy()
+	if err != nil {
+		return err
+	}
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
+
+	usage, err := s.repo.UserStorageUsage(task.UserID)
+	if err != nil {
+		return err
+	}
+	var register func(*repository.Repository) error
+	if _, team := model.TeamIDFromContentKey(task.UserID); team && task.Type == "canvas_text" {
+		asset, encoded, err := s.workspaceTextResultAsset(task, resultJSON)
+		if err != nil {
+			return err
+		}
+		if err := validateStructuredStorageQuotaWithPolicy(usage, "asset", true, int64(len(asset.PayloadJSON)), policy.Resource); err != nil {
+			return err
+		}
+		register = func(repo *repository.Repository) error { return repo.UpsertAsset(&asset) }
+		resultJSON = encoded
+	}
+	publicInputJSON := publicTaskInputJSON(task.InputJSON)
+	taskDelta := int64(len(resultJSON) + len(publicInputJSON) - len(task.ResultJSON) - len(task.InputJSON))
+
+	results := make([]model.Result, 0, 2)
+	structuredDelta := int64(0)
+	if hasCanvasOps {
+		results = append(results, model.Result{ID: newID(), UserID: task.UserID, TaskID: task.ID, Kind: "canvas_ops", Payload: string(opsJSON)})
+	}
+	for index := range results {
+		taskDelta += int64(len(results[index].URL) + len(results[index].Payload))
+	}
+	if err := validateTaskDataGrowthQuotaWithPolicy(usage, taskDelta, policy.Resource); err != nil {
+		return err
+	}
+	if err := validateStructuredStorageQuotaWithPolicy(usage, "canvas", false, structuredDelta, policy.Resource); err != nil {
+		return err
+	}
+
+	expectedStatus := task.Status
+	completed := *task
+	completed.Status = model.TaskStatusSucceeded
+	completed.Stage = "任务完成"
+	completed.Progress = 100
+	completed.ResultJSON = string(resultJSON)
+	completed.InputJSON = publicInputJSON
+	completed.CompletedAt = ptr(time.Now())
+	visualImage := strings.Contains(task.InputJSON, "project_asset_image")
+	if register == nil && (task.MediaRecoveryJSON != "" || visualImage) {
+		completed.MediaStage = "completed"
+		register = func(repo *repository.Repository) error {
+			writer := &Service{repo: repo, dataDir: s.dataDir}
+			if visualImage {
+				var result map[string]interface{}
+				if err := json.Unmarshal(resultJSON, &result); err != nil {
+					return err
+				}
+				if _, err := writer.finalizeProjectAssetImageTask(*task, result); err != nil {
+					return err
+				}
+				encoded, err := json.Marshal(result)
+				if err != nil {
+					return err
+				}
+				if err := validateTaskDataGrowthQuotaWithPolicy(usage, taskDelta+int64(len(encoded)-len(resultJSON)), policy.Resource); err != nil {
+					return err
+				}
+				completed.ResultJSON = string(encoded)
+			}
+			if task.MediaRecoveryJSON == "" {
+				return nil
+			}
+			if err := writer.RegisterTaskOutputFromTask(completed); err != nil {
+				return err
+			}
+			return writer.registerRecoveredMediaAssets(completed)
+		}
+	}
+	if err := s.repo.SaveTaskCompletionWithRegistration(&completed, expectedStatus, results, register); err != nil {
+		return err
+	}
+	*task = completed
+	return nil
+}
+
+func (s *Service) workspaceTextResultAsset(task *model.Task, resultJSON []byte) (model.Asset, []byte, error) {
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(resultJSON, &result); err != nil {
+		return model.Asset{}, nil, err
+	}
+	var text string
+	if err := json.Unmarshal(result["text"], &text); err != nil || strings.TrimSpace(text) == "" {
+		return model.Asset{}, nil, errors.New("生成结果缺少文本")
+	}
+	actor, err := s.taskModelActor(task)
+	if err != nil {
+		return model.Asset{}, nil, err
+	}
+	assetID := generationMediaAssetID(task.ID, 0)
+	now := time.Now().UTC()
+	raw, err := json.Marshal(map[string]any{"id": assetID, "kind": "text", "title": generationMediaAssetTitle(*task, "text", 0, 1), "tags": []string{}, "coverUrl": "", "data": map[string]string{"content": text}, "metadata": map[string]string{"source": "generation-task", "taskId": task.ID}, "createdAt": now, "updatedAt": now})
+	if err != nil {
+		return model.Asset{}, nil, err
+	}
+	asset, err := canvas.AssetFromJSON(task.UserID, raw)
+	if err != nil {
+		return model.Asset{}, nil, err
+	}
+	asset.CreatedBy = actor
+	result["assetId"], err = json.Marshal(assetID)
+	if err != nil {
+		return model.Asset{}, nil, err
+	}
+	encoded, err := json.Marshal(result)
+	return asset, encoded, err
+}

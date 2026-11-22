@@ -3,7 +3,7 @@ import type { ServerResponse } from "node:http";
 
 import { CANVAS_GENERATION_CONTINUATION_TIMEOUT_MS } from "./canvas-tool-timeouts.js";
 import { buildCanvasContext, findCanvasNodes, getCanvasConnection, getCanvasGenerationTasks, getCanvasNode, getCanvasResources, hashState, validateCanvasOps } from "./canvas-context.js";
-import { type ToolName } from "./schemas.js";
+import { type ToolName, workflowGenerationOptionsSchema } from "./schemas.js";
 import { compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInput } from "./tools.js";
 import type { CanvasNode, CanvasNodeType, CanvasSnapshot } from "./types.js";
 
@@ -291,7 +291,9 @@ function workflowOps(input: Record<string, unknown>, state: CanvasSnapshot | nul
         const position = { ...cursor };
         const internalReferenceIds = Array.isArray(node.referenceRefs) ? node.referenceRefs.map((ref) => ids.get(String(ref))).filter(Boolean) : [];
         const externalReferenceIds = Array.isArray(node.referenceNodeIds) ? node.referenceNodeIds.map(String) : [];
-        ops.push({ type: "add_node", id: ids.get(String(node.ref)), nodeType: type, title: String(node.title), position, width: size.width, height: size.height, metadata: { content: type === "text" ? String(node.content || prompt) : "", composerContent: prompt || undefined, prompt: prompt || undefined, workflowKind: workflowKind(kind), workflowTitle: input.title, workflowDescription: node.description || input.description, generationMode: type === "image" ? "image" : type === "video" ? "video" : type === "audio" ? "audio" : undefined, status: type === "text" || type === "script" ? "success" : "idle", referenceNodeIds: [...internalReferenceIds, ...externalReferenceIds].length ? [...internalReferenceIds, ...externalReferenceIds] : undefined } });
+        const generationOptions = workflowGenerationOptionsSchema.parse(node);
+        const strictGenerationOptions = Object.keys(generationOptions);
+        ops.push({ type: "add_node", id: ids.get(String(node.ref)), nodeType: type, title: String(node.title), position, width: size.width, height: size.height, metadata: { content: type === "text" ? String(node.content || prompt) : "", composerContent: prompt || undefined, prompt: prompt || undefined, workflowKind: workflowKind(kind), workflowTitle: input.title, workflowDescription: node.description || input.description, generationMode: type === "image" ? "image" : type === "video" ? "video" : type === "audio" ? "audio" : undefined, status: type === "text" || type === "script" ? "success" : "idle", referenceNodeIds: [...internalReferenceIds, ...externalReferenceIds].length ? [...internalReferenceIds, ...externalReferenceIds] : undefined, ...generationOptions, ...(strictGenerationOptions.length ? { strictGenerationOptions } : {}) } });
         cursor = direction === "vertical" ? { x: Number(start.x), y: cursor.y + size.height + gap } : { x: cursor.x + size.width + gap, y: Number(start.y) };
     }
     const edges = Array.isArray(input.edges) && input.edges.length ? input.edges as Array<Record<string, unknown>> : nodes.slice(0, -1).map((node, index) => ({ from: node.ref, to: nodes[index + 1].ref }));

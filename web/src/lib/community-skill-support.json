@@ -1,0 +1,178 @@
+[
+  {
+    "id": "pl-368020d0489c22d47dcbbfd22a40e",
+    "origin": "community-site:14811816970508",
+    "name": "叙事短片导演分镜",
+    "author": "乔轻舟",
+    "sourceBodySha256": "397afaa21eb43d36164f54f8c8285b1d5e19c3484c0d6e5cf18fd741f965ae00",
+    "bodySha256": "6df755fccaf2e019886b2cb6e8dbc415188f48915458a87cacb3f5ddc106cde3",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-506d560beb92a9d2aecf1f84b9e41",
+    "origin": "community-site:14811816981772",
+    "name": "一图成片-电影广告全能导演",
+    "author": "顾清禾",
+    "sourceBodySha256": "7255f6d2e6f9efdb78cfff7a26551c24ca14103b778172781b83686ff9c20de9",
+    "bodySha256": "3bc1fd700bbf03b0e8092f27c6a9b34554878c4b182b80312e84a479f0b692e9",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-0f104cd6b0895c3c8c9c1f06bcb94",
+    "origin": "community-site:14811816970252",
+    "name": "剧本资产视频一条龙创作",
+    "author": "傅以宁",
+    "sourceBodySha256": "ab26e10843cb5ceb8c578cf3252e2337e8c0597194a9de7ef24f05bfe2b824cb",
+    "bodySha256": "0543224c805d0f361551a369228698cff98f08255f3bbf9123a908be3e4e47ef",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-db50e40399f340b28228ceb69eb14",
+    "origin": "community-site:14889899552012",
+    "name": "AI演员微表情导演",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "33a7d6535676b2c81aad29db85079a1827bfa0fa5f5079d2fc8ed37596cd92c5",
+    "bodySha256": "20e5bf16fe8909fbddb18b3fbb7eb58b19048bd1c1212de8654a6222ff4d6475",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-d295ead1aec9c2b6b2b4102a38e6d",
+    "origin": "community-site:14811816982028",
+    "name": "系列套图生成",
+    "author": "顾清禾",
+    "sourceBodySha256": "ece791dc68381a956b24d69600a1c405b75f8e6e48b6589aac95ad2b1afa05a9",
+    "bodySha256": "ca4ff6fa261fe64669a2ff805d4c5311fc9fea7897ee54c970ba7f20e6d5a2b5",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-1265442f5f77180211913b1f6d5c1",
+    "origin": "community-site:14519800321292",
+    "name": "顶级波普视觉广告导演",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "ef5ad81963f9bb5ff623588ee3dca2b0b6c75cd30b2685630cb34712596649c7",
+    "bodySha256": "ff3901901691eb87af43d5582c3332c01a807249448c9fb4db0b813912001965",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-7d8a63a28142e2322db20811fcffb",
+    "origin": "community-site:14811816962316",
+    "name": "穿搭上身试穿视频生成",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "e17e67bee75ad89be0f45db18ab138b443bca4174cb6d20308cbad549deef572",
+    "bodySha256": "911252f63485a1dd0d2e94806396a9c1bf6d8fffe5baa4df4d583669e8ff2c37",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-f0347eecd5ca041264225bc17d9ac",
+    "origin": "community-site:14811816981004",
+    "name": "15秒视觉特效",
+    "author": "舒予安",
+    "sourceBodySha256": "491799e628201410fa6f8cdd19cad18ce7248922a07b83637a05663a6be970bc",
+    "bodySha256": "192f17e46eecb6ee5b78a01731fe1cf315fe90496716f59a3918573f8d9d2fdf",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-63fab75e1455be0ab52d629a7269d",
+    "origin": "community-site:14811816961036",
+    "name": "TikTok网红带货视频",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "52ccccece3fd92e30fd6a7fbd46985add88a2ca91656d25eb524a212a6ba2bf7",
+    "bodySha256": "db05737707ba51e68706d824aa87e196a009901fd4bd0e4bff051a8b0903174f",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-48a72ccb7f7cc215e4dff68ba4e9f",
+    "origin": "community-site:14811816960780",
+    "name": "珠宝电商图文视频一站式",
+    "author": "Finley Snow",
+    "sourceBodySha256": "c59a9b391d4920cdfc0c11251e05bdffb5017fd9f09369adb7e08ee48b961858",
+    "bodySha256": "1313dc4c0aa261562bbe5fedbbd314137c8ed854d0c1d2f378e565d603729fce",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-4ade5c93ffc04e0e688f89e0a2dcd",
+    "origin": "community-site:14811816962060",
+    "name": "高能未来电子产品广告视频",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "d64b8d69c269ddacd656d24701fb8b6204775952dc5d4955e48032dedb497222",
+    "bodySha256": "7f95b06e21abea3404a88e00128d043276b91699b0dc8c043bb780925a8e097f",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-6f862e473ef9cb6ed75d2cddc48c4",
+    "origin": "community-site:14811816980748",
+    "name": "数字人搞笑采访视频生成",
+    "author": "Arden Hale",
+    "sourceBodySha256": "a9091b38df506ebe07774b85f7fa562b90b1f2048649713ece4b6706c7d082da",
+    "bodySha256": "fc52a620326fbe397b4afdd3df082ca7ff87bd9c6b0538ca4715833042d8dc54",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-e890d0d57703df3a235d1b23449a4",
+    "origin": "community-site:15215320902412",
+    "name": "治愈系原创IP孵化助手",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "7219d74e27b0547d0b14d3c82dc62e94893d857b13ae7e5a30216328bd47a409",
+    "bodySha256": "dd4d5c94492e5c0ec095579a6fa1d6327f85fddae1b7bd388b579aa9fcdba035",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-047245ff15b081b3ce81bb2572f10",
+    "origin": "community-site:14811816960524",
+    "name": "名导十五秒视频风格资产引擎",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "3ed1a4d96f50704a71dc1d47631914583ff26eccf7d5af8e4ed954e0bdd788d9",
+    "bodySha256": "5ee6f16eec9f309855b765d602da542284fa83fa749d9e644811a211e1c1c2cf",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-392557451bfefbaf17368c42ca659",
+    "origin": "community-site:15507072002828",
+    "name": "人像捏脸导演",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "a50dca8061eaffb1c477d1941af7196e4c37e9f73c0f0324f2addb99509c641b",
+    "bodySha256": "e516d6557ddb2a388baa940c184dff13e2d8b225951366f13fc2f3779a3ed765",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  },
+  {
+    "id": "pl-2bce627310b6f5f3f94ca8aade138",
+    "origin": "community-site:14811816960268",
+    "name": "小红书素人穿搭配方",
+    "author": "Skyler Birch",
+    "sourceBodySha256": "381230d3801d18a5774228ee0554a76e81f43641643728dadd0e15bd61722a08",
+    "bodySha256": "e429a760eca4a135f31a40b099143d185c03abe210fafc22775f3b151ce37d5c",
+    "cover": "",
+    "generationVerified": false,
+    "packageComplete": true
+  }
+]

@@ -1,79 +1,44 @@
-import { Button, Dropdown, Input, InputNumber, Modal, Segmented, Select, Table } from "antd";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { Button, Input, InputNumber, Modal, Popover } from "antd";
+import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
 import { Tooltip } from "@/components/ui/base/tooltip";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
-import { CheckboxGroup } from "@/components/ui/base/checkbox";
 import type { MenuProps } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { ChevronDown, ChevronUp, Clapperboard, Copy, Expand, Film, Grid3X3, Image as ImageIcon, ListTree, Merge, MoreHorizontal, Plus, RefreshCw, Send, Square, Trash2, Video } from "lucide-react";
+import { Check, Clapperboard, Expand, Film, Grid3X3, Image as ImageIcon, ListTree, Merge, MoreHorizontal, Plus, RefreshCw, Send, Square, Trash2, Video } from "lucide-react";
 
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
 import { StoryboardAssetsCell } from "@/components/canvas/storyboard-assets-cell";
+import { StoryboardReferenceCell } from "@/components/canvas/storyboard-reference-cell";
+import "./canvas-script-node.css";
 import { ModelPicker } from "@/components/model-picker";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
+import { copyStoryboardRow } from "@/lib/canvas/canvas-node-copy";
+import { storyboardCsv } from "@/lib/canvas/canvas-storyboard-export";
+import { confirmStoryboardDialogueReferenceReview, dialogueLineReviewIssue, storyboardDialogueText, updateStoryboardDialogueLine } from "@/lib/canvas/canvas-storyboard-dialogue";
+import { saveAs } from "file-saver";
+import type { InterfaceTranslate } from "@/lib/interface-locale";
+import type { StoryboardView } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
-import { pipelineStatusLabel, type CanvasStoryboardPipelineProgress, type StoryboardPipelineStage } from "@/lib/canvas/canvas-storyboard-progress";
-import { generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
+import { type CanvasStoryboardPipelineProgress } from "@/lib/canvas/canvas-storyboard-progress";
+import { generationErrorMessage } from "@/lib/generation-error";
 import { generationTaskShowsProgress, generationTaskStageLabel } from "@/lib/generation-task-display";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { STORYBOARD_COMPOSER_MIN_HEIGHT, STORYBOARD_HEADER_HEIGHT, STORYBOARD_ROW_HEIGHT, storyboardTableHeight } from "@/lib/canvas/canvas-storyboard-layout";
-import type {
-    CanvasGenerationBatch,
-    CanvasGenerationBatchItem,
-    CanvasGenerationBatchItemStatus,
-    CanvasNodeData,
-    CanvasNodeStatus,
-    CanvasWorkspaceMode,
-    StoryboardColumn,
-    StoryboardRow,
-    StoryboardShotCount,
-    StoryboardShotDuration,
-    StoryboardVideoInputMode,
-} from "@/types/canvas";
+import type { CanvasGenerationBatch, CanvasGenerationBatchItem, CanvasNodeData, CanvasWorkspaceMode, StoryboardRow, StoryboardShotCount, StoryboardShotDuration, StoryboardVideoInputMode } from "@/types/canvas";
 import type { TaskStatus } from "@/services/api/task-center";
+import { CanvasNodeType } from "@/types/canvas";
+import { Select } from "@/components/ui/base/select";
+import { GenerationBatchDetails, StoryboardMiniPipeline, batchItemTone, batchRowTone, generationBatchItemLabel, generationBatchRowLabel, generationBatchSummary } from "./canvas-script-node-parts";
+import "./canvas-script-editor.css";
+export { CanvasScriptEditor } from "./canvas-script-editor";
 
 const STORYBOARD_PROMPT_MIN_HEIGHT = 40;
 const STORYBOARD_PROMPT_MAX_HEIGHT = 116;
 const SCRIPT_GRID_TEMPLATE = "64px 76px minmax(300px, 1.55fr) minmax(220px, 1fr) 180px";
-const EMPTY_STORYBOARD_ROWS: StoryboardRow[] = [];
-const DEFAULT_STORYBOARD_COLUMNS: StoryboardColumn[] = ["shotNumber", "durationSeconds", "videoMotionPrompt", "dialogue", "assets"];
-const LEGACY_STORYBOARD_COLUMNS: StoryboardColumn[] = ["shotNumber", "durationSeconds", "plotDescription", "dialogue"];
-const PREVIOUS_DEFAULT_STORYBOARD_COLUMNS: StoryboardColumn[] = ["shotNumber", "plotDescription", "videoMotionPrompt", "dialogue"];
-
-function resolveStoryboardVisibleColumns(columns?: StoryboardColumn[]) {
-    const isLegacyDefault = columns?.length === LEGACY_STORYBOARD_COLUMNS.length && LEGACY_STORYBOARD_COLUMNS.every((column) => columns.includes(column));
-    const isPreviousDefault = columns?.length === PREVIOUS_DEFAULT_STORYBOARD_COLUMNS.length && PREVIOUS_DEFAULT_STORYBOARD_COLUMNS.every((column) => columns.includes(column));
-    if (!columns?.length || isLegacyDefault || isPreviousDefault) {
-        return DEFAULT_STORYBOARD_COLUMNS;
-    }
-    return columns;
-}
-
-const columnOptions: Array<{ label: string; value: StoryboardColumn }> = [
-    { label: "序号", value: "shotNumber" },
-    { label: "时长", value: "durationSeconds" },
-    { label: "画面描述", value: "plotDescription" },
-    { label: "台词/旁白", value: "dialogue" },
-    { label: "镜头意图", value: "narrativeIntent" },
-    { label: "观众视点", value: "viewerPOV" },
-    { label: "表演调度", value: "performanceBlocking" },
-    { label: "景别", value: "shotSize" },
-    { label: "情绪", value: "emotion" },
-    { label: "光影氛围", value: "lightingAndAtmosphere" },
-    { label: "音效", value: "audioEffects" },
-    { label: "镜头设计", value: "camera" },
-    { label: "运镜", value: "motion" },
-    { label: "时间节拍", value: "timeBeats" },
-    { label: "图片提示词", value: "imageGenerationPrompt" },
-    { label: "视频提示词", value: "videoMotionPrompt" },
-    { label: "关联资产", value: "assets" },
-    { label: "连续性出口", value: "continuityOut" },
-    { label: "负面要求", value: "negativePrompt" },
-];
-
 export function CanvasScriptNodeContent({
     node,
     nodes,
@@ -98,13 +63,14 @@ export function CanvasScriptNodeContent({
     onPromptChange,
     onGenerateScript,
     onModelChange,
+    onImageModelChange,
     onShotDurationChange,
     onShotCountChange,
     onComposerHeightChange,
     onConnectStart,
     onScrollTopChange,
     workspaceMode = "professional",
-}: {
+ onEditAssets}: {
     node: CanvasNodeData;
     nodes: CanvasNodeData[];
     batch?: CanvasGenerationBatch;
@@ -128,16 +94,30 @@ export function CanvasScriptNodeContent({
     onPromptChange: (prompt: string) => void;
     onGenerateScript: (prompt: string) => void;
     onModelChange: (model: string) => void;
+    onImageModelChange: (model: string) => void;
     onShotDurationChange: (duration: StoryboardShotDuration) => void;
     onShotCountChange: (count: StoryboardShotCount) => void;
     onComposerHeightChange: (height: number) => void;
     onConnectStart: (event: ReactPointerEvent, rowId: string, handleType: "source" | "target") => void;
     onScrollTopChange: (scrollTop: number) => void;
     workspaceMode?: CanvasWorkspaceMode;
-}) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+
+onEditAssets: (rowId: string) => void;}) {
+    const { t } = useInterfaceTranslation();
+    const theme = canvasThemes[useActiveTheme()];
     const effectiveConfig = useEffectiveConfig();
     const generationConfig = buildGenerationConfig(effectiveConfig, node, "text");
+    const imageConfig = node.metadata?.storyboardImageDefaults
+        ? buildGenerationConfig(
+              effectiveConfig,
+              {
+                  ...node,
+                  type: CanvasNodeType.Image,
+                  metadata: { ...node.metadata.storyboardImageDefaults, generationMode: "image" },
+              },
+              "image",
+          )
+        : undefined;
     const simpleMode = workspaceMode === "simple";
     const rows = node.metadata?.storyboard?.rows || [];
     const [prompt, setPrompt] = useState(node.metadata?.composerContent || "");
@@ -150,8 +130,16 @@ export function CanvasScriptNodeContent({
     const shotDuration = node.metadata?.storyboardShotDuration || "auto";
     const shotCount = node.metadata?.storyboardShotCount || "auto";
     const videoInputMode = node.metadata?.storyboardVideoInputMode || "direct";
-    const batchItemByRowId = useMemo(() => new Map((batch?.items || []).map((item) => [item.rowId, item])), [batch?.items]);
-    const batchSummary = batch ? generationBatchSummary(batch) : null;
+    const batchItemsByRowId = useMemo(() => {
+        const itemsByRowId = new Map<string, CanvasGenerationBatchItem[]>();
+        for (const item of batch?.items || []) {
+            const items = itemsByRowId.get(item.rowId) || [];
+            items.push(item);
+            itemsByRowId.set(item.rowId, items);
+        }
+        return itemsByRowId;
+    }, [batch?.items]);
+    const batchSummary = batch ? generationBatchSummary(batch, t) : null;
     const hasFailedBatchItems = Boolean(batch?.items.some((item) => item.status === "failed"));
     const hasWaitingBatchItems = Boolean(batch?.items.some((item) => item.status === "waiting" || item.status === "submitting"));
     const hasActiveBatchItems = Boolean(batch?.items.some((item) => item.status === "waiting" || item.status === "submitting" || item.status === "queued" || item.status === "running"));
@@ -170,7 +158,7 @@ export function CanvasScriptNodeContent({
         node.metadata?.status === "loading"
             ? displayTask
                 ? `${generationTaskStageLabel(displayTask)}${generationTaskShowsProgress(displayTask) && typeof node.metadata.taskProgress === "number" ? ` · ${node.metadata.taskProgress}%` : ""}`
-                : "正在创建任务"
+                : t("canvasScriptUi114")
             : node.metadata?.status === "error"
               ? generationErrorMessage(node.metadata.errorDetails)
               : "";
@@ -182,12 +170,12 @@ export function CanvasScriptNodeContent({
     const canMerge = pipeline.successfulVideoNodeIds.length >= 2 && pipeline.final.success === 0;
     const allRowIds = pipeline.rows.map((item) => item.row.id);
     const moreMenuItems: MenuProps["items"] = [
-        { key: "generate-images", icon: <ImageIcon className="size-3.5" />, label: "生成未完成分镜图", disabled: pipelineDisabled || pipeline.images.incomplete === 0, onClick: () => onGenerateImages(allRowIds) },
-        { key: "generate-videos", icon: <Video className="size-3.5" />, label: "生成未完成视频", disabled: pipelineDisabled || pipeline.videos.incomplete === 0, onClick: () => onGenerateVideos(allRowIds) },
+        { key: "generate-images", icon: <ImageIcon className="size-3.5" />, label: t("canvasScriptUi001"), disabled: pipelineDisabled || pipeline.images.incomplete === 0, onClick: () => onGenerateImages(allRowIds) },
+        { key: "generate-videos", icon: <Video className="size-3.5" />, label: t("canvasScriptUi002"), disabled: pipelineDisabled || pipeline.videos.incomplete === 0, onClick: () => onGenerateVideos(allRowIds) },
         {
             key: "merge",
             icon: <Merge className="size-3.5" />,
-            label: pipeline.final.success ? "成片已完成" : pipeline.successfulVideoNodeIds.length >= 2 ? `合并 ${pipeline.successfulVideoNodeIds.length} 段视频` : "合并成片（至少 2 段视频）",
+            label: pipeline.final.success ? t("canvasScriptUi115") : pipeline.successfulVideoNodeIds.length >= 2 ? t("canvasScriptDyn001", { count: pipeline.successfulVideoNodeIds.length }) : t("canvasScriptUi116"),
             disabled: !canMerge,
             onClick: () => onMergeVideos(),
         },
@@ -195,26 +183,38 @@ export function CanvasScriptNodeContent({
         {
             key: "video-input",
             icon: <Film className="size-3.5" />,
-            label: "视频输入模式",
+            label: t("canvasScriptUi003"),
             children: [
-                { key: "video-input-direct", label: videoInputMode === "direct" ? "✓ 直接生成" : "直接生成", onClick: () => onVideoInputModeChange("direct") },
-                { key: "video-input-keyframe", label: videoInputMode === "keyframe" ? "✓ 先做首帧" : "先做首帧", onClick: () => onVideoInputModeChange("keyframe") },
+                { key: "video-input-direct", label: videoInputMode === "direct" ? "✓ " + t("canvasScriptUi082") : t("canvasScriptUi082"), onClick: () => onVideoInputModeChange("direct") },
+                { key: "video-input-keyframe", label: videoInputMode === "keyframe" ? "✓ " + t("canvasScriptUi083") : t("canvasScriptUi083"), onClick: () => onVideoInputModeChange("keyframe") },
             ],
         },
         ...(!simpleMode
             ? [
                   { type: "divider" as const },
-                  { key: "create-image-nodes", icon: <Grid3X3 className="size-3.5" />, label: missingImages ? `创建 ${missingImages} 个图片节点` : "图片节点已创建", disabled: pipelineDisabled || missingImages === 0, onClick: () => onCreateImageNodes() },
-                  { key: "create-video-nodes", icon: <Film className="size-3.5" />, label: missingVideos ? `创建 ${missingVideos} 个视频节点` : "视频节点已创建", disabled: pipelineDisabled || missingVideos === 0, onClick: () => onCreateVideoNodes() },
-                  { key: "action-boards", icon: <Grid3X3 className="size-3.5" />, label: "生成动作拆分 12 宫格", disabled: !rows.length || hasActiveBatchItems, onClick: () => onCreateActionBoards() },
+                  {
+                      key: "create-image-nodes",
+                      icon: <Grid3X3 className="size-3.5" />,
+                      label: missingImages ? t("canvasScriptDyn002", { count: missingImages }) : t("canvasScriptUi117"),
+                      disabled: pipelineDisabled || missingImages === 0,
+                      onClick: () => onCreateImageNodes(),
+                  },
+                  {
+                      key: "create-video-nodes",
+                      icon: <Film className="size-3.5" />,
+                      label: missingVideos ? t("canvasScriptDyn003", { count: missingVideos }) : t("canvasScriptUi118"),
+                      disabled: pipelineDisabled || missingVideos === 0,
+                      onClick: () => onCreateVideoNodes(),
+                  },
+                  { key: "action-boards", icon: <Grid3X3 className="size-3.5" />, label: t("canvasScriptUi004"), disabled: !rows.length || hasActiveBatchItems, onClick: () => onCreateActionBoards() },
               ]
             : []),
         ...(batch
             ? [
                   { type: "divider" as const },
-                  { key: "retry", icon: <RefreshCw className="size-3.5" />, label: "重试失败项", disabled: !hasFailedBatchItems, onClick: () => onRetryBatch(batch.id) },
-                  { key: "stop", icon: <Square className="size-3.5" />, label: "停止剩余任务", disabled: !hasWaitingBatchItems, onClick: () => onStopBatch(batch.id) },
-                  { key: "details", icon: <ListTree className="size-3.5" />, label: "查看批次详情", onClick: () => setBatchDetailsOpen(true) },
+                  { key: "retry", icon: <RefreshCw className="size-3.5" />, label: t("canvasScriptUi005"), disabled: !hasFailedBatchItems, onClick: () => onRetryBatch(batch.id) },
+                  { key: "stop", icon: <Square className="size-3.5" />, label: t("canvasScriptUi006"), disabled: !hasWaitingBatchItems, onClick: () => onStopBatch(batch.id) },
+                  { key: "details", icon: <ListTree className="size-3.5" />, label: t("canvasScriptUi007"), onClick: () => setBatchDetailsOpen(true) },
               ]
             : []),
     ];
@@ -233,26 +233,50 @@ export function CanvasScriptNodeContent({
         composerHeightChangeRef.current(composerHeight);
     }, []);
 
+    if (node.metadata?.ltvStoryboardSource?.videoStory)
+        return (
+            <div className="flex h-full w-full flex-col overflow-hidden rounded-[17px]" style={{ color: theme.node.text, background: theme.node.panel }}>
+                <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4" style={{ borderColor: theme.node.stroke }}>
+                    <Clapperboard className="size-4" />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{node.title || t("canvasScriptUi008")}</span>
+                    <span className="text-xs">{t("canvasScriptDyn006", { count: rows.length, duration: totalDuration })}</span>
+                    <Button size="small" onClick={onOpen}>
+                        {t("canvasScriptUi011")}
+                    </Button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2" data-canvas-wheel-scroll onWheel={(event) => event.stopPropagation()}>
+                    {rows.map((row) => (
+                        <div key={row.id} className="border-b py-2 text-xs" style={{ borderColor: theme.node.stroke }}>
+                            <span className="font-semibold">
+                                {t("creationPageShot")} {row.shotNumber} · {row.videoReference?.startTime}–{row.videoReference?.endTime}s
+                            </span>
+                            <p className="mt-1 line-clamp-2">{row.plotDescription || row.videoMotionPrompt}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
     return (
         <div className="relative flex h-full w-full flex-col overflow-visible" style={{ color: theme.node.text }} onDoubleClick={(event) => event.stopPropagation()}>
             <div className="relative flex h-10 shrink-0 items-center gap-2 rounded-t-[17px] border-b px-4" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
                 <Clapperboard className="size-4" />
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={node.title || "分镜脚本"}>
-                    {node.title || "分镜脚本"}
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={node.title || t("createScript")}>
+                    {node.title || t("createScript")}
                 </span>
-                {batchSummary ? (
-                    <span className="min-w-0 max-w-[42%] truncate text-[var(--fs-label)] font-medium" title={batchSummary} style={{ color: batch?.status === "partial_failed" ? theme.accent.danger : theme.node.muted }}>
-                        {batchSummary}
-                    </span>
-                ) : taskFeedback ? (
+                {taskFeedback ? (
                     <span className="min-w-0 max-w-[38%] truncate text-[var(--fs-label)] font-medium" title={taskFeedback} style={{ color: node.metadata?.status === "error" ? theme.accent.danger : theme.node.muted }}>
                         {taskFeedback}
                     </span>
+                ) : batchSummary ? (
+                    <span className="min-w-0 max-w-[42%] truncate text-[var(--fs-label)] font-medium" title={batchSummary} style={{ color: batch?.status === "partial_failed" ? theme.accent.danger : theme.node.muted }}>
+                        {batchSummary}
+                    </span>
                 ) : null}
                 <span className="text-[var(--fs-caption)] font-semibold tabular-nums" style={{ color: theme.node.muted }}>
-                    {rows.length} 镜 · {totalDuration}s
+                    {t("canvasScriptDyn005", { count: rows.length, duration: totalDuration })}
                 </span>
-                <Tooltip title="全屏编辑">
+                <Tooltip title={t("projectUi.fullscreenEdit")}>
                     <button
                         type="button"
                         className="grid size-7 place-items-center rounded outline-none transition hover:bg-black/5 focus-visible:ring-2 dark:hover:bg-white/10"
@@ -263,7 +287,7 @@ export function CanvasScriptNodeContent({
                             event.stopPropagation();
                             onOpen();
                         }}
-                        aria-label="全屏编辑"
+                        aria-label={t("projectUi.fullscreenEdit")}
                     >
                         <Expand className="size-3.5" />
                     </button>
@@ -279,32 +303,35 @@ export function CanvasScriptNodeContent({
                             event.stopPropagation();
                             setMoreMenuOpen(true);
                         }}
-                        aria-label="更多操作"
+                        aria-label={t("canvasLibraryMore")}
                     >
                         <MoreHorizontal className="size-3.5" />
                     </button>
                 </Dropdown>
             </div>
             {batch ? (
-                <Modal title="批次详情" open={batchDetailsOpen} onCancel={() => setBatchDetailsOpen(false)} footer={null} width={560} centered destroyOnHidden>
+                <Modal title={t("canvasScriptUi012")} open={batchDetailsOpen} onCancel={() => setBatchDetailsOpen(false)} footer={null} width={560} centered destroyOnHidden>
                     <GenerationBatchDetails batch={batch} rows={rows} onRetryItem={(itemId) => onRetryBatchItem(batch.id, itemId)} />
                 </Modal>
             ) : null}
             <StoryboardMiniPipeline pipeline={pipeline} theme={theme} rows={rows} />
             <div className="storyboard-header-gutter grid h-9 shrink-0 items-center border-b text-xs font-semibold" style={{ borderColor: theme.node.stroke, color: theme.node.muted, gridTemplateColumns: SCRIPT_GRID_TEMPLATE }}>
                 <HeaderCell borderColor={theme.node.stroke} align="center">
-                    序号
+                    {t("canvasScriptUi013")}
                 </HeaderCell>
-                <HeaderCell borderColor={theme.node.stroke} align="center">时长</HeaderCell>
-                <HeaderCell borderColor={theme.node.stroke}>视频提示词</HeaderCell>
-                <HeaderCell borderColor={theme.node.stroke}>台词/旁白</HeaderCell>
-                <span className="px-3">关联资产</span>
+                <HeaderCell borderColor={theme.node.stroke} align="center">
+                    {t("timelineDuration")}
+                </HeaderCell>
+                <HeaderCell borderColor={theme.node.stroke}>{t("canvasScriptUi014")}</HeaderCell>
+                <HeaderCell borderColor={theme.node.stroke}>{t("canvasScriptUi015")}</HeaderCell>
+                <span className="px-3">{t("canvasScriptUi016")}</span>
             </div>
             <div
                 data-canvas-wheel-scroll
+                data-canvas-wheel-intent
                 tabIndex={0}
                 role="region"
-                aria-label="分镜镜头列表"
+                aria-label={t("canvasScriptUi017")}
                 className="storyboard-scrollbar min-h-0 flex-1 overflow-y-scroll overflow-x-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset"
                 style={{ "--tw-ring-color": theme.node.muted } as CSSProperties}
                 onScroll={(event) => {
@@ -316,18 +343,15 @@ export function CanvasScriptNodeContent({
             >
                 {rows.length ? (
                     rows.map((row) => (
-                        <div key={row.id} className="relative grid border-b" style={{ height: STORYBOARD_ROW_HEIGHT, borderColor: theme.node.stroke, gridTemplateColumns: SCRIPT_GRID_TEMPLATE }}>
+                        <div key={row.id} className="canvas-script-compact-row relative grid border-b" style={{ height: STORYBOARD_ROW_HEIGHT, borderColor: theme.node.stroke, gridTemplateColumns: SCRIPT_GRID_TEMPLATE }}>
                             <div className="flex flex-col items-center justify-center gap-0.5 border-r tabular-nums" style={{ color: theme.node.muted, borderColor: theme.node.stroke }}>
                                 <div className="flex items-center gap-0.5">
                                     <span className="text-sm">{row.shotNumber}</span>
-                                    <Dropdown
-                                        trigger={["click"]}
-                                        menu={{ items: [{ key: "delete", label: "删除镜头", icon: <Trash2 className="size-3.5" />, danger: true, disabled: rows.length <= 1, onClick: () => onRemoveRow(row.id) }] }}
-                                    >
+                                    <Dropdown trigger={["click"]} menu={{ items: [{ key: "delete", label: t("canvasScriptUi018"), icon: <Trash2 className="size-3.5" />, danger: true, disabled: rows.length <= 1, onClick: () => onRemoveRow(row.id) }] }}>
                                         <button
                                             type="button"
                                             className="grid size-5 place-items-center rounded outline-none opacity-45 transition hover:bg-black/5 hover:opacity-100 focus-visible:ring-2 dark:hover:bg-white/10"
-                                            aria-label={`镜头 ${row.shotNumber} 操作`}
+                                            aria-label={t("canvasScriptDyn004", { shot: row.shotNumber })}
                                             onMouseDown={(event) => event.stopPropagation()}
                                             onPointerDown={(event) => event.stopPropagation()}
                                             onClick={(event) => event.stopPropagation()}
@@ -336,17 +360,33 @@ export function CanvasScriptNodeContent({
                                         </button>
                                     </Dropdown>
                                 </div>
-                                {batchItemByRowId.get(row.id) ? (
-                                    <span className="max-w-14 truncate text-[var(--fs-micro)] leading-3" title={generationBatchItemLabel(batchItemByRowId.get(row.id)!)}>
-                                        {generationBatchItemLabel(batchItemByRowId.get(row.id)!)}
+                                {batchItemsByRowId.get(row.id) ? (
+                                    <span className="max-w-14 truncate text-[var(--fs-micro)] leading-3" title={generationBatchRowLabel(batchItemsByRowId.get(row.id)!, t)}>
+                                        {generationBatchRowLabel(batchItemsByRowId.get(row.id)!, t)}
                                     </span>
                                 ) : null}
                             </div>
-                            <CompactDurationInput value={row.durationSeconds} borderColor={theme.node.stroke} onChange={(durationSeconds) => onUpdateRow(row.id, { durationSeconds })} />
-                            <CompactInput value={row.videoMotionPrompt} placeholder="描述视频运动、镜头和动作" onChange={(value) => onUpdateRow(row.id, { videoMotionPrompt: value })} borderColor={theme.node.stroke} />
-                            <CompactInput value={row.dialogue} placeholder="台词或旁白" onChange={(value) => onUpdateRow(row.id, { dialogue: value })} borderColor={theme.node.stroke} />
+                            <CompactDurationInput value={row.durationSeconds} allowFractional={Boolean(node.metadata?.ltvStoryboardSource)} borderColor={theme.node.stroke} onChange={(durationSeconds) => onUpdateRow(row.id, { durationSeconds })} />
+                            <CompactInput value={row.videoMotionPrompt} placeholder={t("canvasScriptUi019")} onChange={(value) => onUpdateRow(row.id, { videoMotionPrompt: value })} borderColor={theme.node.stroke} />
+                            {row.dialogueLines?.length || row.voiceover ? (
+                                <button
+                                    type="button"
+                                    className="h-full min-w-0 overflow-hidden px-3 text-left text-xs leading-5 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 dark:hover:bg-white/10"
+                                    title={t("canvasScriptUi020")}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onOpen();
+                                    }}
+                                >
+                                    <span className="line-clamp-2 block whitespace-pre-wrap break-words">{storyboardDialogueText(row) || t("canvasScriptUi021")}</span>
+                                    <span className="text-[var(--fs-micro)] opacity-65">{t("canvasScriptUi022")}</span>
+                                </button>
+                            ) : (
+                                <CompactInput value={row.dialogue} placeholder={t("canvasScriptUi023")} onChange={(value) => onUpdateRow(row.id, { dialogue: value })} borderColor={theme.node.stroke} />
+                            )}
                             <div className="flex h-full min-w-0 items-center px-3">
-                                <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} />
+                                <StoryboardAssetsCell onEdit={() => onEditAssets(row.id)} disabled={node.metadata?.locked} bindings={row.assetBindings || []} nodes={nodes} generationReferences={row.generationReferenceNodeIds} />
                             </div>
                         </div>
                     ))
@@ -361,9 +401,9 @@ export function CanvasScriptNodeContent({
                         }}
                     >
                         <span className="flex flex-col items-center gap-2.5">
-                            <span className="text-sm font-bold">＋ 添加第一个镜头</span>
+                            <span className="text-sm font-bold">{t("canvasScriptUi024")}</span>
                             <span className="text-[var(--fs-label)] font-medium" style={{ color: theme.node.faint }}>
-                                可先连接「故事梗概 / 项目画风」节点，或在下方输入提示词一键生成分镜表
+                                {t("canvasScriptUi025")}
                             </span>
                         </span>
                     </button>
@@ -381,19 +421,19 @@ export function CanvasScriptNodeContent({
                     }}
                 >
                     <Plus className="size-3.5" />
-                    添加行
+                    {t("canvasScriptUi026")}
                 </button>
             </div>
             <div className="relative grid shrink-0 grid-rows-[minmax(0,1fr)_28px] gap-1.5 rounded-b-[17px] p-2.5" style={{ height: composerHeight, background: theme.node.panel }}>
                 <CanvasResourceMentionTextarea
                     rows={1}
                     references={mentionReferences}
-                    aria-label="分镜剧情与项目设定"
+                    aria-label={t("canvasScriptUi027")}
                     containerClassName="h-full min-h-0 overflow-hidden"
                     className="thin-scrollbar h-full min-h-0 w-full touch-pan-y resize-none overflow-y-auto overflow-x-hidden overscroll-contain rounded-md border bg-transparent px-3 py-2 text-sm leading-5 outline-none transition placeholder:opacity-45 focus:ring-1"
                     style={{ borderColor: theme.node.stroke, color: theme.node.text, "--tw-ring-color": theme.node.muted } as CSSProperties}
                     value={prompt}
-                    placeholder="描述想生成的脚本或视频内容"
+                    placeholder={t("canvasScriptUi028")}
                     onContentSizeChange={resizePrompt}
                     onChange={(value) => {
                         setPrompt(value);
@@ -410,7 +450,24 @@ export function CanvasScriptNodeContent({
                     onWheel={(event) => event.stopPropagation()}
                 />
                 <div className="flex min-w-0 items-center justify-end gap-2" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
-                    <Tooltip title="脚本生成需要文本理解与结构化输出能力，仅展示文本模型；视频/图片模型无法生成分镜表" placement="topLeft">
+                    {imageConfig && (
+                        <Tooltip title={t("canvasScriptUi029")}>
+                            <div className="flex min-w-0 max-w-56 items-center gap-1">
+                                <ImageIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                                <ModelPicker
+                                    config={imageConfig}
+                                    capability="image"
+                                    value={node.metadata?.storyboardImageDefaults?.model || ""}
+                                    className="!h-7 !min-w-0 !text-[var(--fs-tiny)]"
+                                    placeholder={t("canvasScriptUi030")}
+                                    showSelectedPrice={false}
+                                    onChange={onImageModelChange}
+                                    onMissingConfig={() => navigateToSettings({ continueCreation: true })}
+                                />
+                            </div>
+                        </Tooltip>
+                    )}
+                    <Tooltip title={t("canvasScriptUi031")} placement="topLeft">
                         <div className="mr-auto min-w-36 max-w-56 flex-1">
                             <ModelPicker
                                 className="!h-7 !w-full !min-w-0 !text-[var(--fs-tiny)] !font-normal [&_img]:!size-3 [&_.lucide]:!size-3"
@@ -418,7 +475,7 @@ export function CanvasScriptNodeContent({
                                 config={generationConfig}
                                 value={generationConfig.model}
                                 capability="text"
-                                placeholder="选择文本模型"
+                                placeholder={t("agentUiSelectTextModel")}
                                 showSelectedPrice={false}
                                 onChange={onModelChange}
                                 onMissingConfig={() => navigateToSettings({ continueCreation: true })}
@@ -427,15 +484,28 @@ export function CanvasScriptNodeContent({
                     </Tooltip>
                     {simpleMode ? (
                         <span className="text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
-                            自动拆分 · 时长自动
+                            {t("canvasScriptUi032")}
                         </span>
+                    ) : node.metadata?.ltvStoryboardSource ? (
+                        <InputNumber
+                            size="small"
+                            className="w-28"
+                            min={1}
+                            max={512}
+                            precision={0}
+                            placeholder={t("canvasScriptUi033")}
+                            aria-label={t("canvasScriptUi034")}
+                            value={shotCount === "auto" ? null : Number(shotCount)}
+                            disabled={node.metadata.status === "loading"}
+                            onChange={(value) => onShotCountChange(value === null ? "auto" : (String(value) as StoryboardShotCount))}
+                        />
                     ) : (
                         <Select<StoryboardShotCount>
                             className="min-w-24"
                             size="small"
                             value={shotCount}
                             disabled={node.metadata?.status === "loading"}
-                            options={[{ value: "auto", label: "自动拆分" }, ...Array.from({ length: 10 }, (_, index) => ({ value: String(index + 1) as StoryboardShotCount, label: `${index + 1} 镜` }))]}
+                            options={[{ value: "auto", label: t("canvasScriptUi033") }, ...Array.from({ length: 10 }, (_, index) => ({ value: String(index + 1) as StoryboardShotCount, label: t("canvasScriptDyn015", { count: index + 1 }) }))]}
                             popupMatchSelectWidth={false}
                             onChange={onShotCountChange}
                         />
@@ -447,11 +517,11 @@ export function CanvasScriptNodeContent({
                             value={shotDuration}
                             disabled={node.metadata?.status === "loading"}
                             options={[
-                                { value: "auto", label: "时长自动" },
-                                { value: "5", label: "5 秒" },
-                                { value: "10", label: "10 秒" },
-                                { value: "15", label: "15 秒" },
-                                { value: "30", label: "30 秒" },
+                                { value: "auto", label: t("canvasScriptUi035") },
+                                { value: "5", label: t("canvasScriptUi036") },
+                                { value: "10", label: t("canvasScriptUi037") },
+                                { value: "15", label: t("canvasScriptUi038") },
+                                { value: "30", label: t("canvasScriptUi039") },
                             ]}
                             popupMatchSelectWidth={false}
                             onChange={onShotDurationChange}
@@ -467,292 +537,19 @@ export function CanvasScriptNodeContent({
                         onClick={submitPrompt}
                     />
                 </div>
-                <RowHandle side="left" top={composerHeight / 2} scale={scale} tone="idle" theme={theme} title="连接文本节点作为项目设定" onPointerDown={(event) => onConnectStart(event, "context", "target")} />
+                <RowHandle side="left" top={composerHeight / 2} scale={scale} tone="idle" theme={theme} title={t("canvasScriptUi040")} onPointerDown={(event) => onConnectStart(event, "context", "target")} />
             </div>
             {rows.map((row, index) => {
                 const top = STORYBOARD_HEADER_HEIGHT + index * STORYBOARD_ROW_HEIGHT + STORYBOARD_ROW_HEIGHT / 2 - scrollTop;
                 if (top < STORYBOARD_HEADER_HEIGHT + 4 || top > STORYBOARD_HEADER_HEIGHT + tableHeight - 4) return null;
                 return (
                     <div key={`ports-${row.id}`}>
-                        <RowHandle side="left" top={top} scale={scale} tone={batchItemTone(batchItemByRowId.get(row.id)) || row.status} theme={theme} onPointerDown={(event) => onConnectStart(event, row.id, "target")} />
-                        <RowHandle side="right" top={top} scale={scale} tone={batchItemTone(batchItemByRowId.get(row.id)) || row.status} theme={theme} onPointerDown={(event) => onConnectStart(event, row.id, "source")} />
+                        <RowHandle side="left" top={top} scale={scale} tone={batchRowTone(batchItemsByRowId.get(row.id)) || row.status} theme={theme} onPointerDown={(event) => onConnectStart(event, row.id, "target")} />
+                        <RowHandle side="right" top={top} scale={scale} tone={batchRowTone(batchItemsByRowId.get(row.id)) || row.status} theme={theme} onPointerDown={(event) => onConnectStart(event, row.id, "source")} />
                     </div>
                 );
             })}
         </div>
-    );
-}
-
-function storyboardStepState(stage: StoryboardPipelineStage): "done" | "current" | "error" | "idle" {
-    if (stage.failed > 0 && stage.success === 0) return "error";
-    if (stage.success > 0) return "done";
-    if (stage.loading > 0 || stage.incomplete > 0) return "current";
-    return "idle";
-}
-
-function StoryboardMiniPipeline({ pipeline, theme, rows }: { pipeline: CanvasStoryboardPipelineProgress; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; rows: StoryboardRow[] }) {
-    const steps: Array<{ key: string; label: string; state: "done" | "current" | "error" | "idle"; hint: string }> = [
-        { key: "script", label: "分镜", state: rows.length > 0 ? "done" : "idle", hint: rows.length > 0 ? `${rows.length} 个镜头` : "待添加镜头" },
-        { key: "images", label: "分镜图（可选）", state: storyboardStepState(pipeline.images), hint: pipelineStatusLabel(pipeline.images) },
-        { key: "videos", label: "视频", state: storyboardStepState(pipeline.videos), hint: pipelineStatusLabel(pipeline.videos) },
-        {
-            key: "final",
-            label: "合并成片",
-            state: pipeline.final.success > 0 ? "done" : pipeline.final.failed > 0 ? "error" : pipeline.final.loading > 0 || pipeline.successfulVideoNodeIds.length >= 2 ? "current" : "idle",
-            hint: pipelineStatusLabel(pipeline.final),
-        },
-    ];
-    return (
-        <div
-            className="flex h-9 shrink-0 items-center justify-center overflow-hidden border-b px-4"
-            style={{ borderColor: theme.node.stroke, background: theme.node.fill }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-        >
-            {steps.map((step, index) => (
-                <Fragment key={step.key}>
-                    {index > 0 ? <span className="mx-2.5 h-px min-w-3.5 flex-1 max-w-20" style={{ background: theme.node.stroke }} /> : null}
-                    <span
-                        className="flex items-center gap-1.5 whitespace-nowrap text-[var(--fs-tiny)]"
-                        title={step.hint}
-                        style={{
-                            color: step.state === "done" ? theme.node.muted : step.state === "current" ? theme.accent.primary : step.state === "error" ? theme.accent.danger : theme.node.faint,
-                            fontWeight: step.state === "current" || step.state === "error" ? 700 : 500,
-                        }}
-                    >
-                        <span
-                            className="size-2 shrink-0 rounded-full"
-                            style={{
-                                background: step.state === "done" ? theme.node.activeStroke : step.state === "current" ? theme.accent.primary : step.state === "error" ? theme.accent.danger : theme.node.stroke,
-                                boxShadow: step.state === "current" ? `0 0 0 3px ${theme.accent.primarySoft}` : undefined,
-                            }}
-                        />
-                        {step.label}
-                    </span>
-                </Fragment>
-            ))}
-        </div>
-    );
-}
-
-function GenerationBatchDetails({ batch, rows, onRetryItem }: { batch: CanvasGenerationBatch; rows: StoryboardRow[]; onRetryItem: (itemId: string) => void }) {
-    const shotByRowId = new Map(rows.map((row) => [row.id, row.shotNumber]));
-    return (
-        <div className="w-80" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-            <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold">{generationBatchModeLabel(batch)}详情</span>
-                <span className="text-xs text-foreground/50">{batch.items.length} 项</span>
-            </div>
-            <div className="thin-scrollbar max-h-72 overflow-y-auto">
-                {batch.items.map((item) => {
-                    const requiresPromptChange = isContentModerationError(item.errorDetails);
-                    return (
-                        <div key={item.id} className="flex min-h-9 items-center gap-2 border-t border-foreground/10 py-1.5 first:border-t-0">
-                            <span className="w-14 shrink-0 text-xs font-medium">镜头 {shotByRowId.get(item.rowId) || "--"}</span>
-                            <span className="min-w-0 flex-1 truncate text-xs text-foreground/60" title={item.errorDetails ? generationErrorMessage(item.errorDetails) : undefined}>
-                                {generationBatchItemLabel(item)}
-                                {item.retryCount ? ` · 重试 ${item.retryCount}` : ""}
-                            </span>
-                            {item.status === "failed" ? (
-                                <Tooltip title={requiresPromptChange ? "请先修改提示词，再重试这个镜头" : "只重试这个镜头"}>
-                                    <button
-                                        type="button"
-                                        className="grid size-7 shrink-0 place-items-center rounded outline-none transition hover:bg-black/5 focus-visible:ring-2 dark:hover:bg-white/10"
-                                        onClick={() => onRetryItem(item.id)}
-                                        aria-label={`重试镜头 ${shotByRowId.get(item.rowId) || ""}`}
-                                    >
-                                        <RefreshCw className="size-3.5" />
-                                    </button>
-                                </Tooltip>
-                            ) : null}
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
-function generationBatchModeLabel(batch: CanvasGenerationBatch) {
-    return batch.mode === "storyboard_video" ? "视频生成" : batch.mode === "storyboard_image" ? "分镜图生成" : "动作板生成";
-}
-
-function generationBatchSummary(batch: CanvasGenerationBatch) {
-    const count = (status: CanvasGenerationBatchItemStatus) => batch.items.filter((item) => item.status === status).length;
-    const generating = count("submitting") + count("queued") + count("running");
-    const stopped = count("cancelled");
-    return `${generationBatchModeLabel(batch)}${batch.status === "completed" ? "完成" : batch.status === "cancelled" ? "已停止" : "中"} · 完成 ${count("succeeded")}/${batch.items.length} / 失败 ${count("failed")} / 生成中 ${generating} / 等待 ${count("waiting")}${stopped ? ` / 已停止 ${stopped}` : ""}`;
-}
-
-function generationBatchItemLabel(item: CanvasGenerationBatchItem) {
-    if (item.costUncertain) return "费用待确认";
-    if (isContentModerationError(item.errorDetails)) return "审核未通过，需修改提示词";
-    const labels: Record<CanvasGenerationBatchItemStatus, string> = { waiting: "等待", submitting: "提交中", queued: "排队", running: "生成中", succeeded: "成功", failed: "失败", cancelled: "已停止" };
-    return labels[item.status];
-}
-
-function batchItemTone(item?: CanvasGenerationBatchItem): CanvasNodeStatus | undefined {
-    if (!item) return undefined;
-    if (item.status === "succeeded") return "success";
-    if (item.status === "failed" || item.status === "cancelled") return "error";
-    if (item.status === "waiting") return "idle";
-    return "loading";
-}
-
-export function CanvasScriptEditor({
-    node,
-    nodes,
-    open,
-    onClose,
-    onUpdateRows,
-    onVisibleColumnsChange,
-    onGenerateImages,
-    onGenerateVideos,
-    onVideoInputModeChange,
-}: {
-    node: CanvasNodeData | null;
-    nodes: CanvasNodeData[];
-    open: boolean;
-    onClose: () => void;
-    onUpdateRows: (rows: StoryboardRow[]) => void;
-    onVisibleColumnsChange: (columns: StoryboardColumn[]) => void;
-    onGenerateImages: (rowIds: string[]) => void;
-    onGenerateVideos: (rowIds: string[]) => void;
-    onVideoInputModeChange: (mode: StoryboardVideoInputMode) => void;
-}) {
-    const [query, setQuery] = useState("");
-    const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const rows = node?.metadata?.storyboard?.rows || EMPTY_STORYBOARD_ROWS;
-    const visibleColumns = resolveStoryboardVisibleColumns(node?.metadata?.storyboard?.visibleColumns);
-    const videoInputMode = node?.metadata?.storyboardVideoInputMode || "direct";
-    const nodeById = useMemo(() => new Map(nodes.map((item) => [item.id, item])), [nodes]);
-    const filteredRows = useMemo(() => {
-        const keyword = query.trim().toLowerCase();
-        return keyword
-            ? rows.filter((row) =>
-                  [row.plotDescription, row.dialogue, row.camera, row.motion, row.timeBeats, row.imageGenerationPrompt, row.videoMotionPrompt, row.negativePrompt, ...(row.assetBindings || []).map((binding) => nodeById.get(binding.nodeId)?.title || "")].some((value) =>
-                      String(value || "")
-                          .toLowerCase()
-                          .includes(keyword),
-                  ),
-              )
-            : rows;
-    }, [nodeById, query, rows]);
-    useEffect(() => {
-        setSelectedIds((current) => {
-            const next = current.filter((id) => rows.some((row) => row.id === id));
-            return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
-        });
-    }, [rows]);
-    const updateRow = (rowId: string, patch: Partial<StoryboardRow>) => onUpdateRows(rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
-    const moveRow = (rowId: string, direction: -1 | 1) => {
-        const index = rows.findIndex((row) => row.id === rowId);
-        const nextIndex = index + direction;
-        if (index < 0 || nextIndex < 0 || nextIndex >= rows.length) return;
-        const next = [...rows];
-        [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-        onUpdateRows(next.map((row, rowIndex) => ({ ...row, shotNumber: rowIndex + 1 })));
-    };
-    const duplicateRow = (row: StoryboardRow) => {
-        const index = rows.findIndex((item) => item.id === row.id);
-        const next = [...rows];
-        next.splice(index + 1, 0, { ...row, id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, imageNodeId: undefined, videoNodeId: undefined, status: "idle" });
-        onUpdateRows(next.map((item, rowIndex) => ({ ...item, shotNumber: rowIndex + 1 })));
-    };
-    const removeRow = (rowId: string) => onUpdateRows(rows.filter((row) => row.id !== rowId).map((row, index) => ({ ...row, shotNumber: index + 1 })));
-
-    const columns: ColumnsType<StoryboardRow> = columnOptions
-        .filter((option) => visibleColumns.includes(option.value))
-        .map((option) => ({
-            title: option.label,
-            dataIndex: option.value,
-            key: option.value,
-            width: option.value === "shotNumber" ? 72 : option.value === "durationSeconds" ? 100 : option.value === "assets" ? 220 : option.value === "plotDescription" || option.value === "dialogue" || option.value === "timeBeats" || option.value.endsWith("Prompt") ? 260 : 170,
-            fixed: option.value === "shotNumber" ? ("left" as const) : undefined,
-            render: (_: unknown, row: StoryboardRow) =>
-                option.value === "shotNumber" ? (
-                    <span className="font-semibold">{row.shotNumber}</span>
-                ) : option.value === "durationSeconds" ? (
-                    <InputNumber min={1} max={60} value={row.durationSeconds} addonAfter="s" onChange={(value) => updateRow(row.id, { durationSeconds: Number(value) || 1 })} />
-                ) : option.value === "assets" ? (
-                    <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} />
-                ) : option.value === "shotSize" ? (
-                    <Select
-                        className="w-full"
-                        value={row.shotSize || undefined}
-                        placeholder="选择景别"
-                        options={["特写", "近景", "中景", "全景", "远景"].map((value) => ({ value, label: value }))}
-                        onChange={(shotSize) => updateRow(row.id, { shotSize })}
-                    />
-                ) : (
-                    <Input.TextArea
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        value={String(row[option.value] || "")}
-                        placeholder={`填写${option.label}`}
-                        onChange={(event) => updateRow(row.id, { [option.value]: event.target.value } as Partial<StoryboardRow>)}
-                    />
-                ),
-        }));
-    columns.push({
-        title: "操作",
-        key: "actions",
-        dataIndex: "shotNumber",
-        width: 150,
-        fixed: "right" as const,
-        render: (_: unknown, row: StoryboardRow) => (
-            <div className="flex gap-1">
-                <SmallButton title="上移" onClick={() => moveRow(row.id, -1)}>
-                    <ChevronUp className="size-3.5" />
-                </SmallButton>
-                <SmallButton title="下移" onClick={() => moveRow(row.id, 1)}>
-                    <ChevronDown className="size-3.5" />
-                </SmallButton>
-                <SmallButton title="复制" onClick={() => duplicateRow(row)}>
-                    <Copy className="size-3.5" />
-                </SmallButton>
-                <SmallButton title="删除" onClick={() => removeRow(row.id)}>
-                    <Trash2 className="size-3.5" />
-                </SmallButton>
-            </div>
-        ),
-    });
-
-    return (
-        <Modal title={node?.title || "分镜脚本"} open={open} onCancel={onClose} footer={null} width="min(1480px, calc(100vw - 40px))" centered destroyOnHidden>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Input.Search className="w-72" allowClear placeholder="筛选画面、台词或提示词" value={query} onChange={(event) => setQuery(event.target.value)} />
-                    <CheckboxGroup className="script-column-picker" options={columnOptions} value={visibleColumns} onChange={(values) => onVisibleColumnsChange(values)} />
-                <span className="min-w-0 flex-1" />
-                <Button icon={<Plus className="size-4" />} onClick={() => onUpdateRows([...rows, editorRow(rows.length + 1)])}>
-                    新增镜头
-                </Button>
-                <Button icon={<ImageIcon className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateImages(selectedIds)}>
-                    生成{videoInputMode === "keyframe" ? "首帧" : "分镜图"}
-                </Button>
-                <Segmented<StoryboardVideoInputMode>
-                    value={videoInputMode}
-                    options={[
-                        { value: "direct", label: "直接生成" },
-                        { value: "keyframe", label: "先做首帧" },
-                    ]}
-                    onChange={onVideoInputModeChange}
-                />
-                <Button type="primary" icon={<Film className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateVideos(selectedIds)}>
-                    {videoInputMode === "keyframe" ? "确认首帧并生成" : "生成视频"}
-                </Button>
-            </div>
-            <Table<StoryboardRow>
-                rowKey="id"
-                size="small"
-                bordered
-                sticky
-                pagination={false}
-                scroll={{ x: Math.max(900, columns.length * 180), y: "calc(78vh - 170px)" }}
-                dataSource={filteredRows}
-                columns={columns}
-                rowSelection={{ selectedRowKeys: selectedIds, onChange: (keys) => setSelectedIds(keys.map(String)) }}
-            />
-        </Modal>
     );
 }
 
@@ -770,21 +567,26 @@ function CompactInput({ value, placeholder, borderColor, onChange }: { value: st
     );
 }
 
-function CompactDurationInput({ value, borderColor, onChange }: { value: number; borderColor: string; onChange: (value: number) => void }) {
+function CompactDurationInput({ value, allowFractional, borderColor, onChange }: { value: number; allowFractional: boolean; borderColor: string; onChange: (value: number) => void }) {
+    const { t } = useInterfaceTranslation();
     return (
         <label className="flex h-full items-center justify-center gap-1 border-r text-xs tabular-nums text-foreground/60" style={{ borderColor }}>
             <input
                 type="number"
-                min={1}
+                min={allowFractional ? 0 : 1}
                 max={60}
+                step={allowFractional ? "any" : 1}
                 value={value}
                 className="w-9 bg-transparent text-right outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                aria-label="镜头时长（秒）"
-                onChange={(event) => onChange(Math.max(1, Math.min(60, Number(event.target.value) || 1)))}
+                aria-label={t("canvasScriptUi088")}
+                onChange={(event) => {
+                    const next = event.target.valueAsNumber;
+                    if (Number.isFinite(next) && next > 0 && next <= 60) onChange(next);
+                }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
             />
-            秒
+            {t("createUiSecondUnit")}
         </label>
     );
 }
@@ -795,53 +597,6 @@ function HeaderCell({ children, borderColor, align = "left" }: { children: React
             {children}
         </span>
     );
-}
-
-function SmallButton({ title, children, onClick, disabled }: { title: string; children: ReactNode; onClick: () => void; disabled?: boolean }) {
-    return (
-        <button
-            type="button"
-            disabled={disabled}
-            className="grid size-7 shrink-0 place-items-center rounded opacity-65 transition enabled:hover:bg-black/5 enabled:hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-25 dark:enabled:hover:bg-white/10"
-            title={title}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-                event.stopPropagation();
-                onClick();
-            }}
-        >
-            {children}
-        </button>
-    );
-}
-
-function editorRow(shotNumber: number): StoryboardRow {
-    return {
-        id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        shotNumber,
-        durationSeconds: 6,
-        plotDescription: "",
-        dialogue: "",
-        characters: [],
-        narrativeIntent: "",
-        viewerPOV: "",
-        performanceBlocking: "",
-        shotSize: "",
-        emotion: "",
-        lightingAndAtmosphere: "",
-        audioEffects: "",
-        camera: "",
-        motion: "",
-        timeBeats: "",
-        imageGenerationPrompt: "",
-        videoMotionPrompt: "",
-        mustHave: [],
-        optionalDetails: [],
-        continuityOut: "",
-        negativePrompt: "",
-        assetBindings: [],
-        status: "idle",
-    };
 }
 
 function RowHandle({
@@ -861,13 +616,14 @@ function RowHandle({
     title?: string;
     onPointerDown: (event: ReactPointerEvent) => void;
 }) {
+    const { t } = useInterfaceTranslation();
     const color = tone === "loading" ? theme.accent.primary : tone === "error" ? theme.accent.danger : tone === "success" ? theme.node.activeStroke : theme.node.muted;
     const inverseHitScale = 1 / Math.max(scale, 0.05);
     return (
         <button
             type="button"
-            aria-label={title || `${side === "left" ? "输入" : "输出"}连接点`}
-            title={title || `${side === "left" ? "引入参考" : "连接到图片、视频或生成节点"}`}
+            aria-label={t("canvasScriptDyn014", { label: title || (side === "left" ? t("studioUi.input") : t("studioUi.output")) })}
+            title={title || `${side === "left" ? t("canvasScriptUi089") : t("canvasScriptUi090")}`}
             className={`canvas-connection-handle absolute z-[var(--node-z-handle)] flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 ${side === "left" ? "left-0 -translate-x-1/2" : "right-0 translate-x-1/2"}`}
             style={{ top, width: 32 * inverseHitScale, height: 32 * inverseHitScale, "--tw-ring-color": theme.accent.primary } as CSSProperties}
             onPointerDown={onPointerDown}

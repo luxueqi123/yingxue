@@ -1,29 +1,44 @@
 import { dirname, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { ltvCaseLibraryPlugin } from "./vite-plugins/ltv-case-library";
+import { caseSupportDataPlugin } from "./vite-plugins/case-support-data";
+import { canvasRouteChunks, workspaceStartupChunks } from "./vite-plugins/workspace-startup-chunks";
+
+import { startupChunks } from "./build/startup-chunks";
+import { resilientPreload } from "./build/resilient-preload";
 
 const webDir = dirname(fileURLToPath(import.meta.url));
 const appVersion = process.env.CANVAS_BUILD_VERSION?.trim() || readFileSync(resolve(webDir, "../VERSION"), "utf8").trim();
+const buildCommit = process.env.CANVAS_BUILD_COMMIT?.trim() || process.env.VITE_BUILD_COMMIT?.trim() || "unknown";
+const buildTime = process.env.CANVAS_BUILD_TIME?.trim() || process.env.VITE_BUILD_TIME?.trim() || "unknown";
 const appChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8080";
 // tldraw and the rich-text editor both depend on Tiptap. Keep ProseMirror's
 // singleton modules on the workspace copy so pnpm/Bun peer layouts cannot
 // create two plugin-key registries in the same browser bundle.
 const tiptapPmDir = resolve(webDir, "node_modules/@tiptap/pm");
+// Drawer and Modal must share one focus-lock stack, including deep util imports.
+const antdRequire = createRequire(createRequire(import.meta.url).resolve("antd/package.json"));
+const rcUtilDir = dirname(antdRequire.resolve("@rc-component/util/package.json"));
 
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), resilientPreload(), startupChunks(), caseSupportDataPlugin(webDir), ltvCaseLibraryPlugin(resolve(webDir, "../.local/ltv-case-library"))],
     define: {
         __APP_VERSION__: JSON.stringify(appVersion),
         __APP_CHANGELOG__: JSON.stringify(appChangelog),
         "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
+        "import.meta.env.VITE_BUILD_COMMIT": JSON.stringify(buildCommit),
+        "import.meta.env.VITE_BUILD_TIME": JSON.stringify(buildTime),
     },
     server: {
         proxy: {
             "/api": {
                 target: apiProxyTarget,
+                ws: true,
                 changeOrigin: true,
                 xfwd: true,
             },
@@ -38,6 +53,7 @@ export default defineConfig({
         alias: {
             "@": resolve(webDir, "src"),
             "@tiptap/pm": tiptapPmDir,
+            "@rc-component/util": rcUtilDir,
         },
         dedupe: ["@tiptap/pm"],
     },
@@ -46,9 +62,22 @@ export default defineConfig({
             output: {
                 strictExecutionOrder: true,
                 codeSplitting: {
+                    // Keep route-level lazy imports isolated. Recursively merging dependencies
+                    // pulls unrelated pages into the initial modulepreload graph.
                     includeDependenciesRecursively: false,
-                    minSize: 20 * 1024,
+                    minSize: 40 * 1024,
                     groups: [
+                        workspaceStartupChunks(webDir),
+                        canvasRouteChunks(webDir),
+                        { name: "motion-runtime", test: /node_modules[\\/](?:motion|framer-motion|motion-dom|motion-utils)[\\/]/ },
+                        {
+                            // Shared interop helpers must not be emitted into a route entry:
+                            // AntD would import that entry back and execute its bootstrap early.
+                            name: "vendor-babel-runtime",
+                            minSize: 0,
+                            test: /node_modules[\\/]@babel[\\/]runtime[\\/]/,
+                            priority: 40,
+                        },
                         {
                             name: "vendor-react",
                             test: /node_modules[\\/](?:react(?:-dom|-router|-router-dom)?|scheduler|zustand|use-sync-external-store|@tanstack[\\/](?:query-core|react-query))[\\/]/,
@@ -67,14 +96,6 @@ export default defineConfig({
                             priority: 10,
                             entriesAware: true,
                             entriesAwareMergeThreshold: 80 * 1024,
-                        },
-                        {
-                            name: "app-shared",
-                            test: /[\\/]src[\\/]/,
-                            priority: 5,
-                            minShareCount: 2,
-                            entriesAware: true,
-                            entriesAwareMergeThreshold: 48 * 1024,
                         },
                     ],
                 },

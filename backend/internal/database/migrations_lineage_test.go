@@ -24,7 +24,7 @@ func legacyFolderMigrationDatabase(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&schemaMigration{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range schemaMigrations[:7] {
+	for _, item := range schemaMigrations[:5] {
 		if err := item.apply(db); err != nil {
 			t.Fatal(err)
 		}
@@ -32,7 +32,7 @@ func legacyFolderMigrationDatabase(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
-	if err := migrateSchemaV8(db); err != nil {
+	if err := migrateSchemaV7(db); err != nil {
 		t.Fatal(err)
 	}
 	for _, column := range []string{"playback_status", "playback_object_key", "playback_error"} {
@@ -42,7 +42,7 @@ func legacyFolderMigrationDatabase(t *testing.T) *gorm.DB {
 			}
 		}
 	}
-	if err := db.Create(&schemaMigration{Version: 8, Name: "asset_library_folders", Checksum: assetLibraryFoldersChecksum, AppliedAt: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)}).Error; err != nil {
+	if err := db.Create(&schemaMigration{Version: 6, Name: "asset_library_folders", Checksum: assetLibraryFoldersChecksum, AppliedAt: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -51,7 +51,7 @@ func legacyFolderMigrationDatabase(t *testing.T) *gorm.DB {
 func TestMigrateSchemaPreservesLegacyFolderMigration(t *testing.T) {
 	db := legacyFolderMigrationDatabase(t)
 	var before schemaMigration
-	if err := db.First(&before, "version = 8").Error; err != nil {
+	if err := db.First(&before, "version = 6").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO asset_folders (id, user_id, name) VALUES ('kept-folder', 'owner', 'Keep me')").Error; err != nil {
@@ -66,14 +66,14 @@ func TestMigrateSchemaPreservesLegacyFolderMigration(t *testing.T) {
 		}
 	}
 	var after schemaMigration
-	if err := db.First(&after, "version = 8").Error; err != nil {
+	if err := db.First(&after, "version = 6").Error; err != nil {
 		t.Fatal(err)
 	}
 	if before.Name != after.Name || before.Checksum != after.Checksum || !before.AppliedAt.Equal(after.AppliedAt) {
 		t.Fatalf("historical record changed: before=%+v after=%+v", before, after)
 	}
 	var playback schemaMigration
-	if err := db.First(&playback, "version = 9").Error; err != nil {
+	if err := db.First(&playback, "version = 7").Error; err != nil {
 		t.Fatal(err)
 	}
 	if playback.Name != "resource_playback_variant" || playback.Checksum != resourcePlaybackChecksum {
@@ -91,20 +91,20 @@ func TestMigrateSchemaPreservesLegacyFolderMigration(t *testing.T) {
 }
 
 func TestMigrateSchemaRejectsUnknownLegacyLineage(t *testing.T) {
-	for _, scenario := range []string{"checksum", "name", "version-nine"} {
+	for _, scenario := range []string{"checksum", "name", "version-seven"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := legacyFolderMigrationDatabase(t)
 			switch scenario {
 			case "checksum":
-				if err := db.Model(&schemaMigration{}).Where("version = 8").Update("checksum", "unknown").Error; err != nil {
+				if err := db.Model(&schemaMigration{}).Where("version = 6").Update("checksum", "unknown").Error; err != nil {
 					t.Fatal(err)
 				}
 			case "name":
-				if err := db.Model(&schemaMigration{}).Where("version = 8").Update("name", "unknown").Error; err != nil {
+				if err := db.Model(&schemaMigration{}).Where("version = 6").Update("name", "unknown").Error; err != nil {
 					t.Fatal(err)
 				}
-			case "version-nine":
-				if err := db.Create(&schemaMigration{Version: 9, Name: "asset_library_folders", Checksum: assetLibraryFoldersChecksum, AppliedAt: time.Now().UTC()}).Error; err != nil {
+			case "version-seven":
+				if err := db.Create(&schemaMigration{Version: 7, Name: "asset_library_folders", Checksum: assetLibraryFoldersChecksum, AppliedAt: time.Now().UTC()}).Error; err != nil {
 					t.Fatal(err)
 				}
 			}

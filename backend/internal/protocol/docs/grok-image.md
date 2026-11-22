@@ -50,6 +50,8 @@ curl "{channel_base_url}/v1/images/generations" \
 
 ## 响应与错误
 
+模型能力配置中的 `responseFormat` 同时声明 `supported` 和 `default`。`default` 可选 `auto`、`b64_json` 或 `url`；明确选择后请求发送对应值，`auto` 不发送 `response_format`。声明式插件和后端 Grok 手写路径共用此映射。xAI 零数据保留团队可按实际渠道配置选择 Base64；Base64 图片由已有响应解析器接收，不需要另设接收开关。
+
 插件按 OpenAI Images 风格解析 `data[]` 中的 `url`、`b64_json` 或 `data`。如果 xAI 的实际响应结构发生变化或只返回异步任务，当前解析会失败而不是伪造结果。素材不可达、比例/分辨率不受模型支持、模型无权限和审核拒绝应原样暴露。
 
 ## 官方资料

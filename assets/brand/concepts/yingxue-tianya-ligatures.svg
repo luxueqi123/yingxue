@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="760" viewBox="0 0 1800 760">
+  <rect width="1800" height="760" fill="#F2F0EB"/>
+  <style>
+    .panel { fill: #FAF9F6; stroke: #DDD9D1; stroke-width: 1.5; }
+    .ink { fill: none; stroke: #111923; stroke-linecap: square; stroke-linejoin: miter; }
+    .ice { fill: none; stroke: #60B9E8; stroke-linecap: square; stroke-linejoin: miter; }
+    .guide { fill: none; stroke: #C9C5BD; stroke-width: 1; stroke-dasharray: 4 8; }
+    .title { fill: #111923; font: 600 24px "Microsoft YaHei", sans-serif; letter-spacing: .12em; }
+    .meta { fill: #7C7972; font: 400 15px "Microsoft YaHei", sans-serif; letter-spacing: .08em; }
+  </style>
+
+  <g transform="translate(40 40)">
+    <rect class="panel" width="540" height="680" rx="24"/>
+    <text class="title" x="40" y="56">01  天琊·剑骨</text>
+    <text class="meta" x="40" y="86">共享剑脊 / 王旁三玉 / 天字负形</text>
+    <g id="mark-01" transform="translate(270 362)">
+      <path class="guide" d="M-190-190H190V190H-190Z"/>
+      <path class="ink" stroke-width="29" d="M0-204V211 M-153-151H153 M-119-74H119"/>
+      <path fill="#111923" d="M0-230 17-199 0-180-17-199Z M0 239 18 201H-18Z"/>
+      <path class="ink" stroke-width="38" d="M0-71-139 101"/>
+      <path class="ink" stroke-width="34" d="M0-71 111 34Q166 82 139 151Q117 207 63 232"/>
+      <path class="ice" stroke-width="9" d="M-56-13H-24 M-91 31H-57 M-126 75H-91 M7-177V182"/>
+    </g>
+    <text class="meta" x="40" y="638">结构最清晰 · 适合网站与 App 图标</text>
+  </g>
+
+  <g transform="translate(630 40)">
+    <rect class="panel" width="540" height="680" rx="24"/>
+    <text class="title" x="40" y="56">02  天琊·玉契</text>
+    <text class="meta" x="40" y="86">合文字契 / 冰玉切口 / 非对称秩序</text>
+    <g id="mark-02" transform="translate(270 362)">
+      <path class="guide" d="M-190-190H190V190H-190Z"/>
+      <path fill="#111923" d="M-168-168H168L143-132H22V-87H128L108-53H22V206L0 238-22 206V-53H-117L-143-87H-22V-132H-142Z"/>
+      <path fill="#111923" d="M-22-53-168 112-130 139-17 9ZM22-53 139 44Q183 84 155 145Q132 196 71 232L48 196Q101 162 114 126Q125 96 92 74L18 10Z"/>
+      <path fill="#FAF9F6" d="M-76 16H-39V27H-85Z M-110 55H-73V66H-120Z M-144 94H-107V105H-154Z"/>
+      <path fill="#60B9E8" d="M-76 20H-43V26H-82Z M-110 59H-77V65H-116Z M-144 98H-111V104H-150Z M-3-124H9V188H-3Z"/>
+      <path fill="#D8EEF8" d="M0-199 16-166 0-146-16-166Z"/>
+    </g>
+    <text class="meta" x="40" y="638">轮廓最稳 · 适合门头、印章与周边</text>
+  </g>
+
+  <g transform="translate(1220 40)">
+    <rect class="panel" width="540" height="680" rx="24"/>
+    <text class="title" x="40" y="56">03  天琊·飞白</text>
+    <text class="meta" x="40" y="86">书写速度 / 白衣长发 / 隐藏琊字</text>
+    <g id="mark-03" transform="translate(270 362)">
+      <path class="guide" d="M-190-190H190V190H-190Z"/>
+      <path fill="#111923" d="M-164-166H118L162-142 116-126H12V-82H131L100-51H12L-4 215-20 240-34 207-20-50H-120Z"/>
+      <path fill="#111923" d="M-13-49-169 105-138 133-20 16Z"/>
+      <path fill="#111923" d="M5-53 142 21 121 59 28 8Q147 80 157 139Q166 196 78 241L59 202Q111 174 111 142Q109 105 20 28Z"/>
+      <path class="ice" stroke-width="8" d="M-74 1H-41 M-112 39H-79 M-149 77H-116 M-12-158-23 188"/>
+      <path fill="#60B9E8" d="M72 208Q112 185 111 143 131 198 78 241Z"/>
+    </g>
+    <text class="meta" x="40" y="638">气质最强 · 适合片头动画与品牌主视觉</text>
+  </g>
+</svg>

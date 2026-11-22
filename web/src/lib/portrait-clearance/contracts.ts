@@ -213,27 +213,27 @@ export function createDefaultPortraitClearanceState(): PortraitClearanceNodeStat
 
 export const PORTRAIT_RISK_ORDER: readonly PortraitRiskLevel[] = ["high", "medium", "low_to_medium", "low", "unable_to_determine"];
 
-export const PORTRAIT_RISK_LABELS: Record<PortraitRiskLevel, string> = {
-    high: "高风险",
-    medium: "中风险",
-    low_to_medium: "中低风险",
-    low: "低风险",
-    unable_to_determine: "无法判断",
-};
+export const PORTRAIT_RISK_LABEL_KEYS = {
+    high: "canvasPortraitUi012",
+    medium: "canvasPortraitUi013",
+    low_to_medium: "canvasPortraitUi014",
+    low: "canvasPortraitUi015",
+    unable_to_determine: "canvasPortraitUi016",
+} as const satisfies Record<PortraitRiskLevel, string>;
 
-export const PORTRAIT_TASK_STAGE_LABELS: Record<PortraitClearanceTaskStage, string> = {
-    "validating-inputs": "校验输入",
-    "checking-model-resources": "检查本地模型",
-    "preparing-query": "准备查询图",
-    searching: "网络搜图",
-    "downloading-candidates": "采集候选",
-    deduplicating: "候选去重",
-    "local-comparing": "本地比对",
-    "waiting-for-model": "等待视觉模型",
-    "model-comparing": "视觉模型分析",
-    "building-report": "生成报告",
-    done: "已完成",
-};
+export const PORTRAIT_TASK_STAGE_LABEL_KEYS = {
+    "validating-inputs": "canvasPortraitUi017",
+    "checking-model-resources": "canvasPortraitUi018",
+    "preparing-query": "canvasPortraitUi019",
+    searching: "canvasPortraitUi020",
+    "downloading-candidates": "canvasPortraitUi021",
+    deduplicating: "canvasPortraitUi022",
+    "local-comparing": "canvasPortraitUi023",
+    "waiting-for-model": "canvasPortraitUi024",
+    "model-comparing": "canvasPortraitUi025",
+    "building-report": "canvasPortraitUi026",
+    done: "canvasPortraitUi027",
+} as const satisfies Record<PortraitClearanceTaskStage, string>;
 
 export function isPortraitClearanceTerminalStatus(status?: PortraitClearanceTaskStatus) {
     return status === "partial" || status === "completed" || status === "failed" || status === "cancelled";

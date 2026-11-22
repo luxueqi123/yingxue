@@ -1,14 +1,30 @@
 import type { CanvasConnection } from "@/types/canvas";
-import { apiClient, request } from "@/services/api/request";
+import { http } from "@/services/api/request";
 
 export type AdminLibTVSetting = {
     enabled: boolean;
-    hasToken: boolean;
+    connected: boolean;
+    hasToken?: boolean;
+    accountName?: string;
+    accountId?: string;
+    warning?: string;
+    preferredCallbackMode?: "redirect" | "paste" | string;
+    preferredRedirectUri?: string;
+    publicBaseUrlConfigured?: string;
     updatedAt?: string;
+};
+
+export type LibTVConnectStartResult = {
+    authorizeUrl: string;
+    redirectUri: string;
+    callbackMode: "redirect" | "paste" | string;
+    expiresAt?: string;
+    hint?: string;
 };
 
 export type LibTVImportIssue = { id?: string; name?: string; reason: string };
 export type LibTVImportWarning = { id?: string; message: string };
+export type LibTVSourceSnapshot = { version: number; detailJson: string; redactedFields: number };
 
 export type LibTVImportNode = {
     id: string;
@@ -56,20 +72,40 @@ export type LibTVImportResult = {
     reusedFailedNodeCount: number;
     placeholderNodeCount: number;
     convertedSpecialCount: number;
+    sourceSnapshot?: LibTVSourceSnapshot;
 };
 
 export function getAdminLibTVSetting() {
-    return request<{ setting: AdminLibTVSetting }>(apiClient.get("/admin/settings/libtv"));
+    return http.get<{ setting: AdminLibTVSetting }>("/admin/settings/libtv");
 }
 
-export function updateAdminLibTVSetting(input: { enabled: boolean; token?: string; clearToken?: boolean }) {
-    return request<{ setting: AdminLibTVSetting }>(apiClient.patch("/admin/settings/libtv", input));
+export function updateAdminLibTVSetting(input: { enabled: boolean }) {
+    return http.patch<{ setting: AdminLibTVSetting }>("/admin/settings/libtv", input);
+}
+
+export function startAdminLibTVOAuth(origin?: string) {
+    return http.post<LibTVConnectStartResult>("/admin/settings/libtv/oauth/start", { origin });
+}
+
+export function completeAdminLibTVOAuth(input: { callbackUrl?: string; code?: string; state?: string }) {
+    return http.post<{ setting: AdminLibTVSetting }>("/admin/settings/libtv/oauth/complete", input);
+}
+
+export function disconnectAdminLibTV() {
+    return http.post<{ setting: AdminLibTVSetting }>("/admin/settings/libtv/oauth/disconnect");
 }
 
 export function testAdminLibTV(uuid: string) {
-    return request<{ ok: boolean }>(apiClient.post("/admin/settings/libtv/test", { uuid }));
+    return http.post<{ ok: boolean }>("/admin/settings/libtv/test", { uuid });
 }
 
 export function importLibTVCanvas(projectId: string, uuid: string) {
-    return request<LibTVImportResult>(apiClient.post(`/canvas-projects/${encodeURIComponent(projectId)}/import/libtv`, { uuid }));
+    return http.post<LibTVImportResult>(`/canvas-projects/${encodeURIComponent(projectId)}/import/libtv`, { uuid });
+}
+
+export function importLibTVCanvasJSON(projectId: string, source: string) {
+    return http.post<LibTVImportResult>(`/canvas-projects/${encodeURIComponent(projectId)}/import/libtv/json`, source, {
+        headers: { "Content-Type": "application/json" },
+        transformRequest: [(value) => value],
+    });
 }

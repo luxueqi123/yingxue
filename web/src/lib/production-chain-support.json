@@ -1,0 +1,446 @@
+[
+  {
+    "id": "pl-2c77ed62e86c6d5c2af7772fdd830a97",
+    "name": "原创AI角色捏脸 Skill",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-001ff2d28ef5a58289e077221f3b9f99",
+    "name": "中式仙境场景提示词",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-cc30e4aa0b2fc07422b340a7731205f2",
+    "name": "视频提示词生成一（仲哥）",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-e627ac3031d76f0ad13de0259b371505",
+    "name": "全能经典影视作品风格复刻",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-53636a0044d8dc0c2af9b4d6816ccc4b",
+    "name": "爆款级 AI 剧本改造师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-0cf562f2f628ffe9fdcaa8fb9cd5d978",
+    "name": "口播知识视频脚本生成器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-3a376ebf6f594acbfc0c2242651b5534",
+    "name": "分镜升镜师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-86dcba416d2f7c4019a1e6b9e492b4d1",
+    "name": "「大师镜头」名导风格视觉",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-944c23690309b303e7f00d3970bdd3ba",
+    "name": "爆款级 AI 剧本创作师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-2bfa41f952886677ab184ec29eb9fc3a",
+    "name": "分镜脚本生成器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-aa008befea38a466fa648c706cf8f337",
+    "name": "AI写短剧剧本",
+    "chain": "text-authoring",
+    "qualityVerified": true
+  },
+  {
+    "id": "pl-d51e9f2fe3672205bead0b99bba378ef",
+    "name": "电影镜头设计拆解",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-3b05f0f64f6d64c8ebf464ac87f5c0c2",
+    "name": "短视频分镜脚本生成器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-2611eaea76b8b6d5e364d029d4ad7747",
+    "name": "S+短剧质量评分器 ·",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-3b93349ee48eaea222d35ad9800df3d8",
+    "name": "审美级资产提取skill",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-7a4d6f506e6fdc3e292321a3137880f7",
+    "name": "口播文案生成器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-9f2751fa4a29941b1d90c8a450e5f6b9",
+    "name": "钩子公式生成器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-17b52de75554441740d4fbe3ad6e81c1",
+    "name": "剧本审核超强skill",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-4435b9f4474274ff922d1384da42deb2",
+    "name": "Prompt优化器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-df402c39dc789f7814715656b2f10027",
+    "name": "精品剧本拆解-长沙空镜",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-8499bd7703530d075b790cb9de64b86d",
+    "name": "AI版导演分镜提案助手",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-ec8e8394eff13b0cbca3831fbbc2a7cb",
+    "name": "专业编剧思维剧本创作",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c314de3e3d0e54e01426d87c01023a82",
+    "name": "数字人口播 skill",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-d651279589f45e526601cee8cd21b430",
+    "name": "Seedance武打提示词生成",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-e7a4caf6f4855ac9e7d577a54a1da7a1",
+    "name": "修复提示词大师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-99eaf87e9b51c65cb6dd04d9eee9ff08",
+    "name": "剧本转Seedance提示词",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-9d48a6f9e82ff5afeb09381da5baee57",
+    "name": "万物生视频提示词",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-19393815066760c7dd2e818390e4f1cf",
+    "name": "脚本",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c6001ff7db3703c5c4811d529a970f7c",
+    "name": "视频制作提示词优化",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-4694a8c5b595cc61d588f6ef04ee1cbf",
+    "name": "晋祠宣传片创作助手",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-4a6fe5b70740a9bc858bb545ab0b676d",
+    "name": "数字编剧 Skill",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-b4b108420c604188e33ea2da99d364f7",
+    "name": "SD2.0虚拟导演",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c23e293ff431b932fae3dbb97619f587",
+    "name": "导演风格",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-7356824b581f50366b51e7c1b535fd45",
+    "name": "跨模型调度编排器",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-6751110332983a927db9e38a877ee22a",
+    "name": "视频提示词架构师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-a26c5bc3625947c26a321cd2ecf64b4d",
+    "name": "分镜画师",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-8c04da7bace2103af8dd4392e95bc47f",
+    "name": "IP向无对白闹剧剧本",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-f8e94aea24c4d7fa010cd668d81d195b",
+    "name": "4宫格线稿故事板(分镜脚本转线稿_5色标注_中文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c89a235131a9fb716691a9300a1980e0",
+    "name": "4宫格线稿故事板(分镜脚本转线稿_5色标注_英文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-662a45a92f543e4482a28bc3a803871c",
+    "name": "6宫格线稿故事板(分镜脚本转线稿_5色标注_中文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-6ee750bbc9b731050bead30797211792",
+    "name": "6宫格线稿故事板(分镜脚本转线稿_5色标注_英文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-48a690d165fc646441d8357a3524f4c0",
+    "name": "9宫格线稿故事板(分镜脚本转线稿_5色标注_中文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-ea47767207aa40b5de0e5b5d428bfbca",
+    "name": "9宫格线稿故事板(分镜脚本转线稿_5色标注_英文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-3319eea0ea1f374f8c0fb21c0a1bb3d9",
+    "name": "12宫格线稿故事板(分镜脚本转线稿_5色标注_中文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-e56d77452c1534cb638d863cf0260ccd",
+    "name": "12宫格线稿故事板(分镜脚本转线稿_5色标注_英文版)",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-21cf56feee8fa03e5f007e61a0e4c016",
+    "name": "转绘/复刻（短剧/短视频/短剧出海）助手（加强版）",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-77e5ecd8c05df4c1f38d6fbb57446f30",
+    "name": "转绘/复刻（短剧/短视频/短剧出海）助手（简洁版）",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c9c0469c9bca978fa79dcf5a4eca4343",
+    "name": "转绘/复刻（短剧/短视频/短剧出海）助手（稳定版）",
+    "chain": "vision-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-af0da7421c3a92baa8904a465ea96343",
+    "name": "电影级AI分镜导演",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-32c1d9a416c9ae0bbd6f08998eb0ec0c",
+    "name": "美术资产设计提示词生成",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-5ae385501ed5f394e0f69efe4732e03d",
+    "name": "角色资产提示词",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-405b5324d0e13920fca2e3511c163c27",
+    "name": "剧本拆解 · 剧情细腻刻画",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-150cbfb9131c78145ede6df528957248",
+    "name": "剧本拆解 · 通用剧情叙事拆解",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-dc1544c9b883ad2330118442ee20b6cb",
+    "name": "视频润色 · 慢节奏细腻质感模板",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-d2dc7991cdb852b6a8880f0ce9ef7720",
+    "name": "视频润色 · 高能戏剧化模板",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-e58905cc53517dc4d103a7badedaa7b2",
+    "name": "视频润色 · 通用模板",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-0ceb5f9bf0210e02c5054ea3f55d54d9",
+    "name": "镜头编排 · 单镜独立编排",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-82862297b51e40b231e36f4ec690633b",
+    "name": "镜头编排 · 满编编排（按模型时长）",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-ca322ac6b4895fee962a7ce5dd5be70d",
+    "name": "镜头编排 · 剧情连贯编排",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-faf05438b867177067cf02e8871b9ea1",
+    "name": "剧本拆解 · 直接采用剧本原文",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-18dd2ae739d7a9f1453028786c9e2359",
+    "name": "剧本拆解 · 动作高能场面描述",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-97afe74a01cbd40cb645f75c97a0c40a",
+    "name": "剧本拆解 · 对话冲突情绪刻画",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-67ffc2cc722368e4bf8e0abd29d82611",
+    "name": "美术配方 · 角色设定图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-c3e9f75dd3cb6716f2fe8ec92b2589ff",
+    "name": "美术配方 · 角色脸部三视图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-f793183ee3fb440b25933e38a3be8054",
+    "name": "美术配方 · 人像质感调节",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-054d6f303ccb1d2d1d4b77c4e2fe493b",
+    "name": "美术配方 · 场景设定图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-dc6bf8344777338ca2e4ac105bf01721",
+    "name": "美术配方 · 场景对向双视图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-aa89e194b5e4b8bcfde47e942eda498c",
+    "name": "美术配方 · 道具设定图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-21560fe51a17367ad63198435a0b2de2",
+    "name": "美术配方 · 道具拆解图",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-afe18b609c73dc7a3fd84f5738cf24e6",
+    "name": "图片润色 · 通用润色",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-1c2d24e4294a6dadfabf4dee41dc6898",
+    "name": "图片润色 · 电影分镜",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-6d86edeb8aedca5b9a4b979486babf41",
+    "name": "图片润色 · 摄影写实",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-886f181cb6b7fc430d205251c8b9f481",
+    "name": "图片润色 · 艺术创作",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  },
+  {
+    "id": "pl-509b55802ac4982be8b3849348b6571a",
+    "name": "图片润色 · 设计表达",
+    "chain": "text-authoring",
+    "qualityVerified": false
+  }
+]

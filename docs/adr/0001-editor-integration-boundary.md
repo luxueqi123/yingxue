@@ -1,6 +1,8 @@
 # ADR-0001: 编辑器整合以 TS 时间线状态机为真相源，不移植 Concat 的 Rust 引擎
 
-状态：已接受。日期：2026-09-01。来源：借鉴 Concat（WolfCut）编辑器能力整合决策。
+本站已移除手工时间线、字幕编辑与剪辑专用插件，下文不再作为实施要求。短剧自动合成和专业工具交付继续保留，现状以[功能说明](../content/docs/overview/features.mdx)为准。
+
+状态：已被手工剪辑退场决策取代，仅保留历史记录。日期：2026-09-01。来源：借鉴 Concat（WolfCut）编辑器能力整合决策。
 
 > 更新记录（2026-09-01）：采纳 ADR-0005 后，编辑器 UI 与能力出口改为预设插件贡献（详见 ADR-0005）；本 ADR 聚焦的边界因此收窄为：核心状态机仍是宿主 TS 库，但不再是编辑器的一切。
 
@@ -8,7 +10,7 @@
 
 Concat（WolfCut）的核心架构原则是"引擎拥有项目模型"（engine doctrine）：Rust 引擎持有时间线模型、全部编辑命令（`commands.rs`）、撤销栈、渲染与导出路径、文档格式（wolfcut.json）；Tauri host 只是管道，UI 只渲染状态并派发命令。这一形态依赖本地文件系统、ffmpeg 子进程和 GPU 组合器，与其桌面产品定位绑定。
 
-影策是 Web 应用（React 19 + Go 后端 + Node canvas-agent），画布节点模型以 TS 状态机为真相源（localforage user-scope + 后端项目接口持久化）。时间线已有第一期字幕数据落地与第二期类型（`TimelineProject` v2，含轨道/片段/directMedia），第三期规划了 ffmpeg 导出（`timeline-to-ffmpeg.ts` 纯函数规划层已存在）。后端 Go 目前不执行 ffmpeg。
+影策是 Web 应用（React 19 + Go 后端），画布节点模型以 TS 状态机为真相源（localforage user-scope + 后端项目接口持久化）。时间线已有第一期字幕数据落地与第二期类型（`TimelineProject` v2，含轨道/片段/directMedia），第三期规划了 ffmpeg 导出（`timeline-to-ffmpeg.ts` 纯函数规划层已存在）。后端 Go 目前不执行 ffmpeg。
 
 ## 决策
 

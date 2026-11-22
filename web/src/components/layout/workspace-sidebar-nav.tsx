@@ -1,17 +1,33 @@
-import { ChevronDown, ChevronRight, Home, LogOut, PanelLeftOpen, Plus, Search, ShieldCheck } from "lucide-react";
+import { YingxueBrandLockup } from "@/components/brand/yingxue-brand-lockup";
+import { Popover } from "antd";
+import { ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, PanelLeftClose, PanelLeftOpen, ShoppingBag, Users, Video, Wallet, FileText } from "lucide-react";
+import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
-import { BrandLogoFrame } from "@/components/brand/brand-logo";
-import { YingxueBrandMark } from "@/components/brand/yingxue-brand-mark";
+import { AuthLoginLink } from "@/components/auth/auth-login-link";
+import { UserAvatar } from "@/components/layout/user-avatar";
+import { UserGroupAvatarRing, UserGroupBadge } from "@/components/layout/user-group-badge";
 import { Kbd } from "@/components/ui/base/kbd";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
-import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
+import { aceternityMotion } from "@/lib/aceternity-motion";
 import { cn } from "@/lib/utils";
 import { preloadWorkspaceRoute } from "@/lib/workspace-route-modules";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { WorkspaceAccountCard } from "./workspace-account-card";
+import { WorkspaceSidebarCheckin } from "./workspace-sidebar-checkin";
+import { WorkspaceSidebarStorageMeter } from "./workspace-sidebar-storage-meter";
+import { openWorkspaceWallet } from "@/lib/workspace-wallet";
+import { trackSiteTrafficAction } from "@/services/site-traffic";
+import { WorkspaceSidebarHistory } from "./workspace-sidebar-history";
+import { TeamSpaceSwitcher } from "./team-space-switcher";
+import { teamIdFromPath } from "@/lib/team-query-keys";
+import "./workspace-sidebar-history.css";
 
 export type WorkspaceNavItem = {
     id: string;
@@ -29,125 +45,125 @@ type WorkspaceNavGroup = {
     items: WorkspaceNavItem[];
 };
 
-/** 设置页分区子项，沿用 /settings?section=<key> 路由合同。 */
-const SETTINGS_SECTIONS: Array<{ key: string; label: string }> = [
-    { key: "local-cli", label: "本机工具" },
-    { key: "channels", label: "自定义渠道" },
-    { key: "models", label: "模型选择" },
-    { key: "preferences", label: "生成偏好" },
-    { key: "prompts", label: "提示词偏好" },
-    { key: "storage", label: "我的对象存储" },
-];
+// 收起侧栏时只显示短名称。
+const COLLAPSED_TITLE_KEYS: Record<string, string> = {
+    home: "nav.collapsed.home",
+    projects: "nav.collapsed.projects",
+    canvas: "nav.collapsed.canvas",
+    assets: "nav.collapsed.assets",
+    skills: "nav.collapsed.skills",
+    plugins: "nav.collapsed.plugins",
+    tasks: "nav.collapsed.tasks",
+};
 
-function toolItem(slug: NavigationToolSlug, to: string): WorkspaceNavItem {
+function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): WorkspaceNavItem {
     const tool = navigationTools.find((item) => item.slug === slug);
-    return { id: slug, title: tool?.label ?? slug, icon: tool?.icon, to };
+    return { id: slug, title: tool ? t(tool.labelKey) : slug, icon: tool?.icon, to };
 }
 
-function buildNav(features: FeatureAvailability, balance: string, isAdmin: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+function buildNav(features: FeatureAvailability, t: TFunction, canUseSkills: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
-                { id: "home", title: "首页", icon: Home, to: "/" },
-toolItem("projects", "/projects"),
-                toolItem("canvas", "/canvas"),
-                ...(features.taskCenterEnabled ? [toolItem("tasks", "/tasks")] : []),
-                toolItem("assets", "/assets"),
+                { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
+                { ...toolItem("assets", "/assets", t), title: t("nav.sidebar.assets") },
+                { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
+                ...(features.teamsEnabled ? [{ id: "teams", title: "公司与团队", icon: Users, to: "/teams" }] : []),
+                ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
+                ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
             ],
         },
         {
-            heading: "工作台管理",
+            heading: t("nav.sidebar.headingTools"),
             items: [
-                toolItem("skills", "/skills"),
-                toolItem("prompts", "/prompts"),
-                ...(features.pluginCenterEnabled || isAdmin ? [toolItem("plugins", "/plugins")] : []),
-                ...(features.creditsEnabled ? [{ ...toolItem("wallet", "/wallet"), badge: balance }] : []),
+                ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
+                ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
+                ...(canUseSkills ? [{ ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") }] : []),
+                ...(features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
             ],
         },
     ];
 
-    const settingsSections = SETTINGS_SECTIONS.filter((section) => section.key !== "channels" || features.customChannelsEnabled);
-    const footer: WorkspaceNavItem[] = [
-        ...(isAdmin ? [{ id: "admin", title: "管理员后台", icon: ShieldCheck, to: "/admin" }] : []),
-        {
-            ...toolItem("settings", "/settings"),
-            children: settingsSections.map((section) => ({
-                id: `settings:${section.key}`,
-                title: section.label,
-                to: `/settings?section=${section.key}`,
-            })),
-        },
-        { id: "logout", title: "退出登录", icon: LogOut, action: "logout" },
-    ];
-
-    return { groups, footer };
+    // 管理、设置和退出登录不再占据参考站式侧栏底部，而是通过用户卡片菜单进入。
+    // 路由和写操作仍保留，避免把用户端导航变成无法访问的装饰。
+    return { groups, footer: [] };
 }
 
-function WorkspaceSwitcher({ collapsed, onNavigate, onExpand }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void }) {
-    const appearance = useAppearanceStore((state) => state.appearance);
-    const [isOpen, setIsOpen] = useState(false);
-    const navigate = useNavigate();
+function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user: NonNullable<ReturnType<typeof useUserStore.getState>["user"]> | null }) {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const { t } = useTranslation();
+    const userGroup = useUserStore((state) => state.userGroup);
+    const profileName = user?.displayName || user?.username || t("shell.guest");
+    const teamId = teamIdFromPath(useLocation().pathname);
 
-    const go = (to: string) => {
-        setIsOpen(false);
-        onNavigate();
-        navigate(to);
-    };
-
-    if (collapsed) {
+    if (!user) {
         return (
-            <div className="app-workspace-sidebar-rail-header shrink-0">
-                <button type="button" className="app-workspace-sidebar-rail-button" aria-label="展开侧栏菜单" title="展开侧栏菜单" onClick={onExpand}>
-                    <PanelLeftOpen className="size-4" strokeWidth={1.7} />
-                </button>
-            </div>
+            <AuthLoginLink className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label={t("shell.login")} title={t("shell.login")}>
+                <span className="app-workspace-sidebar-profile-avatar">
+                    <CircleUserRound aria-hidden />
+                </span>
+                {!collapsed ? <span>{t("shell.guest")}</span> : null}
+            </AuthLoginLink>
         );
     }
 
-    return (
-        <div className="relative shrink-0 px-3 pt-3">
-            <button
-                type="button"
-                onClick={() => setIsOpen((open) => !open)}
-                aria-haspopup="listbox"
-                aria-expanded={isOpen}
-                className="group flex w-full items-center justify-between rounded-[var(--r-sm)] px-2 py-2 text-left transition-colors select-none hover:bg-surface-hover"
-            >
-                <span className="flex min-w-0 items-center gap-3">
-                    <BrandLogoFrame className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm" logoClassName="size-5 object-contain" alt="" fallback={<YingxueBrandMark className="size-5" />} />
-                    <span className="flex min-w-0 flex-col">
-                        <span className="app-workspace-brand-wordmark truncate text-[var(--fs-body)] leading-none font-medium">{appearance.brandName}</span>
-                        <span className="mt-1 truncate text-[var(--fs-label)] leading-none text-foreground/42">创作工作台</span>
-                    </span>
-                </span>
-                <ChevronDown className="size-4 shrink-0 text-foreground/40 transition-colors group-hover:text-foreground/70" strokeWidth={1.5} />
-            </button>
+    const content = (
+        <WorkspaceAccountCard
+            onNavigate={() => setMenuOpen(false)}
+            onWallet={() => {
+                setMenuOpen(false);
+                openWorkspaceWallet();
+            }}
+        />
+    );
 
-            {isOpen ? (
-                <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-                    <div className="app-workspace-nav-popover absolute left-3 right-3 top-full z-50 mt-1 overflow-hidden rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-surface-strong)] py-1 animate-in fade-in zoom-in-95 duration-100">
-                        <div className="px-3 py-2.5">
-                            <div className="truncate text-[var(--fs-body)] font-semibold">{appearance.brandName}</div>
-                            <div className="mt-0.5 truncate text-[var(--fs-label)] text-foreground/45">创作工作台</div>
-                        </div>
-                        <div className="mx-2 my-1 h-px bg-[var(--workspace-border)]" />
-                        {[
-                            { label: "首页", to: "/" },
-                            { label: "画布", to: "/canvas" },
-                            { label: "设置", to: "/settings" },
-                        ].map((entry) => (
-                            <button key={entry.to} type="button" onClick={() => go(entry.to)} className="flex w-full items-center gap-2 px-3 py-2 text-[var(--fs-body)] text-foreground/80 transition-colors hover:bg-surface-hover hover:text-foreground">
-                                {entry.label}
-                            </button>
-                        ))}
-                        <div className="mx-2 my-1 h-px bg-[var(--workspace-border)]" />
-                        <button type="button" onClick={() => go("/canvas?mode=new")} className="flex w-full items-center gap-2 px-3 py-2 text-[var(--fs-body)] text-foreground/45 transition-colors hover:bg-surface-hover hover:text-foreground">
-                            <Plus className="size-3.5" /> 新建画布
-                        </button>
-                    </div>
-                </>
-            ) : null}
+    return (
+        <div className={cn("app-workspace-sidebar-account", collapsed && "is-collapsed")}>
+            {!teamId ? <WorkspaceSidebarCheckin collapsed={collapsed} /> : null}
+            {!teamId ? <WorkspaceSidebarStorageMeter collapsed={collapsed} /> : null}
+            <div className={cn("app-workspace-sidebar-profile-row", collapsed && "is-collapsed")}>
+                <Popover open={menuOpen} onOpenChange={setMenuOpen} trigger="click" placement="topLeft" arrow={false} rootClassName="workspace-account-popover" content={content}>
+                    <button type="button" className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label={t("shell.openAccountMenu")} title={profileName}>
+                        <UserGroupAvatarRing>
+                            <UserAvatar user={user} className="app-workspace-sidebar-profile-avatar" />
+                        </UserGroupAvatarRing>
+                        {!collapsed ? (
+                            <span className="app-workspace-sidebar-profile-copy">
+                                <strong>{profileName}</strong>
+                                {userGroup?.badgeStyle === "vip" || userGroup?.badgeStyle === "svip" ? <UserGroupBadge className="self-start" /> : null}
+                            </span>
+                        ) : null}
+                    </button>
+                </Popover>
+            </div>
+        </div>
+    );
+}
+
+function WorkspaceSwitcher({ collapsed, onNavigate, onCollapse }: { collapsed: boolean; onNavigate: () => void; onCollapse: () => void }) {
+    const { t } = useTranslation();
+    const user = useUserStore((state) => state.user);
+    const teamsEnabled = useUserStore((state) => state.features.teamsEnabled);
+    const brandName = useAppearanceStore((state) => state.appearance.brandName);
+    return (
+        <div className={cn("app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3", collapsed && "is-collapsed")}>
+            {user && teamsEnabled ? (
+                <TeamSpaceSwitcher collapsed={collapsed} onNavigate={onNavigate} />
+            ) : (
+                <Link to="/home" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: brandName })}>
+                    <YingxueBrandLockup variant="adaptive" className="aspect-[184/47] w-full" />
+                </Link>
+            )}
+            {!collapsed ? <button
+                type="button"
+                className="product-icon-button app-workspace-brand-toggle"
+                aria-label={t("shell.collapseSidebar")}
+                title={t("shell.collapseSidebar")}
+                aria-expanded="true"
+                onClick={onCollapse}
+            >
+                <PanelLeftClose aria-hidden />
+            </button> : null}
         </div>
     );
 }
@@ -169,9 +185,11 @@ function NavItem({
     level?: number;
     collapsed?: boolean;
 }) {
+    const { t } = useTranslation();
     const isActive = activeId === item.id || (item.id === "settings" && activeId.startsWith("settings:"));
     const hasChildren = Boolean(item.children?.length);
     const [isOpen, setIsOpen] = useState(false);
+    const reducedMotion = useReducedMotion();
 
     // 激活分支自动展开（如设置分区子项），保证当前位置可见。
     useEffect(() => {
@@ -179,33 +197,35 @@ function NavItem({
     }, [isActive, hasChildren]);
 
     const Icon = item.icon;
-    const rowStyle = collapsed ? undefined : ({ paddingLeft: `${level * 12 + 10}px` } as CSSProperties);
+    const rowStyle = !collapsed && level ? ({ paddingLeft: `${level * 12 + 8}px` } as CSSProperties) : undefined;
 
+    const collapsedTitle = COLLAPSED_TITLE_KEYS[item.id] ? t(COLLAPSED_TITLE_KEYS[item.id]) : item.title.slice(0, 2);
     const rowContent = (
         <>
-            <span className="app-workspace-nav-main flex min-w-0 items-center gap-2.5">
+            <span className="app-workspace-nav-main flex min-w-0 items-center gap-2">
                 {Icon ? (
-                    <Icon className={cn("size-4 shrink-0", isActive ? "text-foreground" : "text-foreground/60 group-hover:text-foreground/80")} strokeWidth={1.6} />
+                    <span className="app-workspace-nav-icon" aria-hidden>
+                        <Icon className="size-4.5 shrink-0" strokeWidth={2.2} />
+                    </span>
                 ) : (
                     <span className="size-1.5 shrink-0 rounded-full bg-current opacity-40" aria-hidden />
                 )}
-                <span className="app-workspace-nav-title truncate">{item.title}</span>
+                <span className="app-workspace-nav-title truncate">{collapsed ? collapsedTitle : item.title}</span>
             </span>
             <span className="app-workspace-nav-meta flex shrink-0 items-center gap-2">
-                {item.shortcut ? (
-                    <Kbd className="hidden group-hover:inline-flex">{item.shortcut}</Kbd>
-                ) : null}
-                {item.badge !== undefined ? <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[var(--fs-tiny)] font-medium tabular-nums text-primary">{item.badge}</span> : null}
+                {item.shortcut ? <Kbd className="hidden group-hover:inline-flex">{item.shortcut}</Kbd> : null}
+                {item.badge !== undefined ? <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[var(--fs-tiny)] font-medium tabular-nums text-primary">{item.badge}</span> : null}
                 {hasChildren ? <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/40 transition-transform duration-200", isOpen && "rotate-90")} strokeWidth={2} /> : null}
             </span>
         </>
     );
 
     const rowClassName = cn(
-        "app-workspace-nav-link group flex min-h-9 w-full items-center justify-between gap-2 rounded-[var(--r-sm)] px-2.5 py-2 text-[var(--fs-body)] transition-colors duration-200 select-none",
+        "app-workspace-nav-link group relative isolate flex min-h-11 w-full items-center justify-between gap-2 rounded-[var(--r-md)] px-3 py-2 text-[var(--fs-body)] transition-[color,transform] duration-200 select-none",
         collapsed && "is-collapsed",
         isActive ? "is-active font-medium" : "text-foreground/62 hover:bg-surface-hover hover:text-foreground",
     );
+    const activePill = isActive ? <motion.span layoutId="workspace-nav-active-pill" className="app-workspace-nav-active-pill" aria-hidden transition={reducedMotion ? { duration: 0 } : aceternityMotion.spring.dock} /> : null;
 
     const handleClick = () => {
         if (item.action === "search") {
@@ -220,6 +240,8 @@ function NavItem({
             setIsOpen((open) => !open);
             return;
         }
+        if (item.to === "/" || item.to === "/create") trackSiteTrafficAction("open_create");
+        if (item.to === "/ecommerce") trackSiteTrafficAction("open_ecommerce");
         onSelect(item.id);
     };
 
@@ -231,7 +253,10 @@ function NavItem({
             {linkTo ? (
                 <Link
                     to={linkTo}
+                    viewTransition
+                    aria-current={isActive ? "page" : undefined}
                     className={rowClassName}
+                    data-nav-id={item.id}
                     style={rowStyle}
                     aria-label={collapsed ? item.title : undefined}
                     title={collapsed ? item.title : undefined}
@@ -240,18 +265,28 @@ function NavItem({
                     onPointerDown={() => preloadWorkspaceRoute(linkTo)}
                     onPointerEnter={() => preloadWorkspaceRoute(linkTo)}
                 >
+                    {activePill}
                     {rowContent}
                 </Link>
             ) : (
-                <button type="button" className={rowClassName} style={rowStyle} aria-label={collapsed ? item.title : undefined} title={collapsed ? item.title : undefined} onClick={handleClick} aria-expanded={hasChildren ? isOpen : undefined}>
+                <button
+                    type="button"
+                    className={rowClassName}
+                    data-nav-id={item.id}
+                    style={rowStyle}
+                    aria-label={collapsed ? item.title : undefined}
+                    title={collapsed ? item.title : undefined}
+                    onClick={handleClick}
+                    aria-expanded={hasChildren ? isOpen : undefined}
+                >
+                    {activePill}
                     {rowContent}
                 </button>
             )}
 
             {hasChildren && !collapsed ? (
-                <div className={cn("grid transition-[grid-template-rows,opacity] duration-300 ease-in-out", isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
+                <div className={cn("grid transition-[grid-template-rows,opacity] duration-200 ease-in-out", isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
                     <div className="relative flex min-h-0 flex-col gap-0.5 overflow-hidden pt-0.5">
-                        <span className="app-workspace-nav-guide-line" style={{ left: `${(level + 1) * 12 + 12.5}px` }} />
                         {item.children!.map((child) => (
                             <NavItem key={child.id} item={child} activeId={activeId} onSelect={onSelect} onOpenSearch={onOpenSearch} onLogout={onLogout} level={level + 1} collapsed={false} />
                         ))}
@@ -263,8 +298,8 @@ function NavItem({
 }
 
 function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collapsed }: { group: WorkspaceNavGroup; activeId: string; onNavigate: () => void; onOpenSearch: () => void; onLogout: () => void; collapsed: boolean }) {
-    const [isOpen, setIsOpen] = useState(true);
     const hasActive = group.items.some((item) => item.id === activeId || (item.id === "settings" && activeId.startsWith("settings:")));
+    const [isOpen, setIsOpen] = useState(true);
 
     // 激活项所在分组自动展开，保证当前位置可见。
     useEffect(() => {
@@ -272,7 +307,7 @@ function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collaps
     }, [hasActive]);
 
     const content = (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
             {group.items.map((item) => (
                 <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={onLogout} collapsed={collapsed} />
             ))}
@@ -281,88 +316,129 @@ function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collaps
 
     // 无标题分组（核心导航入口）常驻展示，不做折叠。
     if (!group.heading || collapsed) {
-        return <div className="flex shrink-0 flex-col">{content}</div>;
+        return (
+            <div className="app-workspace-nav-group flex shrink-0 flex-col" data-nav-group-heading={group.heading || ""}>
+                {content}
+            </div>
+        );
     }
 
     return (
-        <div className="flex shrink-0 flex-col">
+        <div className="app-workspace-nav-group flex shrink-0 flex-col" data-nav-group-heading={group.heading}>
             <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen} className="app-workspace-nav-group-toggle select-none">
                 <span className="app-workspace-nav-group-label">{group.heading}</span>
                 <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/35 transition-transform duration-200", isOpen && "rotate-90")} strokeWidth={2} />
             </button>
-            <div className={cn("grid transition-[grid-template-rows,opacity] duration-300 ease-in-out", isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
-                <div className="min-h-0 overflow-hidden pt-0.5">{content}</div>
-            </div>
+            {isOpen ? <div className="min-h-0 pt-1">{content}</div> : null}
         </div>
     );
 }
 
-export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExpand }: { collapsed: boolean; onNavigate: () => void; onOpenSearch: () => void; onExpand: () => void }) {
+// 菜单项 id 与实际路由不一定同名：/toolbox/image 和 /toolbox/video 共用 toolbox 前缀，
+// 只取首段会让两者都匹配不到任何菜单项，侧栏因此没有高亮。
+export function workspaceNavActiveId(pathname: string, section?: string | null) {
+    const segments = pathname.split("/").filter(Boolean);
+    if (segments[0] === "toolbox" && segments[1]) return `toolbox-${segments[1]}`;
+    const slug = segments[0] || "home";
+    if (slug === "create") return "home";
+    return slug === "settings" && section ? `settings:${section}` : slug;
+}
+
+export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExpand, onCollapse }: { collapsed: boolean; onNavigate: () => void; onOpenSearch: () => void; onExpand: () => void; onCollapse: () => void }) {
     const { pathname } = useLocation();
     const [searchParams] = useSearchParams();
     const features = useUserStore((state) => state.features);
     const user = useUserStore((state) => state.user);
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
-    const { availableMicrocredits } = useWalletBalance(user?.id, creditsEnabled);
     const { handleLogout } = useWorkspaceLogout();
-
-    const balance = availableMicrocredits === null ? "--" : (availableMicrocredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-
-    const { groups, footer } = useMemo(() => buildNav(features, balance, user?.role === "admin"), [features, balance, user?.role]);
-
-    const slug = pathname.split("/").filter(Boolean)[0] || "home";
-    const section = searchParams.get("section");
-    const activeId = slug === "settings" && section ? `settings:${section}` : slug;
+    const { t, i18n } = useTranslation();
+    const canUseSkills = useSkillLibraryAccess();
+    const personalNav = useMemo(() => buildNav(features, t, canUseSkills), [features, t, i18n.language, canUseSkills]);
+    const teamId = features.teamsEnabled ? teamIdFromPath(pathname) : undefined;
+    const base = teamId ? `/teams/${encodeURIComponent(teamId)}` : "";
+    const { groups, footer } = teamId
+        ? {
+              groups: [
+                  {
+                      items: [
+                          ...personalNav.groups[0].items
+                              .filter((item) => item.id === "canvas" || item.id === "assets" || (features.creditsEnabled && item.id === "home"))
+                              .map((item) => ({ ...item, to: `${base}${item.id === "home" ? "/create" : item.to}` })),
+                          { id: "team-members", title: "成员与邀请", icon: Users, to: `${base}/members` },
+                          ...(features.creditsEnabled ? [{ id: "team-wallet", title: "团队积分", icon: Wallet, to: `${base}/wallet` }] : []),
+                      ],
+                  },
+              ],
+              footer: [],
+          }
+        : personalNav;
+    const section = pathname.slice(base.length).split("/")[1];
+    const activeId = teamId && (section === "members" || section === "wallet") ? `team-${section}` : pathname === "/teams" ? "teams" : workspaceNavActiveId(pathname.slice(base.length) || "/canvas", searchParams.get("section"));
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const sectionsRef = useRef<HTMLDivElement>(null);
     const [scrollState, setScrollState] = useState({ hasTopFade: false, hasBottomFade: false });
     const handleScroll = () => {
         const element = scrollRef.current;
         if (!element) return;
         const { scrollTop, scrollHeight, clientHeight } = element;
-        setScrollState({
+        const next = {
             hasTopFade: scrollTop > 0,
             hasBottomFade: scrollTop + clientHeight < scrollHeight - 1,
-        });
+        };
+        setScrollState((previous) => (previous.hasTopFade === next.hasTopFade && previous.hasBottomFade === next.hasBottomFade ? previous : next));
     };
     useEffect(() => {
         handleScroll();
-    }, [groups]);
+        if (typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(handleScroll);
+        if (scrollRef.current) observer.observe(scrollRef.current);
+        if (sectionsRef.current) observer.observe(sectionsRef.current);
+        return () => observer.disconnect();
+    }, []);
 
     return (
-        <div className={cn("app-workspace-sidebar-nav flex h-full shrink-0 flex-col", collapsed && "is-collapsed")}>
-            <WorkspaceSwitcher collapsed={collapsed} onNavigate={onNavigate} onExpand={onExpand} />
+        <div className={cn("app-workspace-sidebar-nav flex h-full shrink-0 flex-col", collapsed && "is-collapsed")} onClick={(event) => {
+            const target = event.target;
+            if (!collapsed || event.defaultPrevented || !(target instanceof Element) || !event.currentTarget.contains(target)) return;
+            if (target.closest('a, button, input, textarea, select, [role="button"], [role="menu"], [role="dialog"]')) return;
+            onExpand();
+        }}>
+            {collapsed ? <button type="button" className="sr-only focus:not-sr-only" aria-expanded="false" onClick={onExpand}>
+                {t("shell.expandSidebarMenu")}
+            </button> : null}
+            <WorkspaceSwitcher collapsed={collapsed} onNavigate={onNavigate} onCollapse={onCollapse} />
 
-            <div className="app-workspace-sidebar-search shrink-0 px-3 pb-1 pt-2">
-                <button
-                    type="button"
-                    onClick={onOpenSearch}
-                    className="group flex h-9 w-full items-center gap-2 rounded-[var(--r-lg)] bg-foreground/5 px-3 text-left text-[var(--fs-caption)] text-muted-foreground transition-colors hover:bg-foreground/[.07] hover:text-foreground/70"
-                    aria-label={collapsed ? "快速搜索" : undefined}
-                    title={collapsed ? "快速搜索" : undefined}
+            <LayoutGroup id="workspace-sidebar-nav">
+                <div
+                    ref={scrollRef}
+                    onScroll={handleScroll}
+                    className={cn(
+                        "app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 pb-3 pt-7",
+                        collapsed && "is-collapsed",
+                        scrollState.hasTopFade && "has-top-fade",
+                        scrollState.hasBottomFade && "has-bottom-fade",
+                    )}
                 >
-                    <Search className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground/70" strokeWidth={1.6} />
-                    <span className="app-workspace-sidebar-search-label flex-1 truncate">快速搜索</span>
-                    <Kbd className="app-workspace-sidebar-search-shortcut">⌘K</Kbd>
-                </button>
-            </div>
-
-            <div
-                ref={scrollRef}
-                onScroll={handleScroll}
-                className={cn("app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-3 pt-2", collapsed && "is-collapsed", scrollState.hasTopFade && "has-top-fade", scrollState.hasBottomFade && "has-bottom-fade")}
-            >
-                {groups.map((group, index) => (
-                    <NavGroup key={index} group={group} activeId={activeId} onNavigate={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
-                ))}
-            </div>
+                    <div ref={sectionsRef} className="app-workspace-sidebar-sections">
+                        <nav className="app-workspace-sidebar-navigation" aria-label={t("nav.sections.create")}>
+                            {groups.map((group, index) => (
+                                <NavGroup key={index} group={group} activeId={activeId} onNavigate={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
+                            ))}
+                        </nav>
+                        {!collapsed && user && !teamId ? <WorkspaceSidebarHistory key={user.id} userId={user.id} onNavigate={onNavigate} /> : null}
+                    </div>
+                </div>
+            </LayoutGroup>
 
             <div className="app-workspace-sidebar-footer shrink-0 px-3 py-3">
-                <div className="flex flex-col gap-0.5">
-                    {footer.map((item) => (
-                        <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
-                    ))}
-                </div>
+                <WorkspaceSidebarProfile collapsed={collapsed} user={user} />
+                {footer.length ? (
+                    <div className="mt-2 flex flex-col gap-0.5">
+                        {footer.map((item) => (
+                            <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
+                        ))}
+                    </div>
+                ) : null}
             </div>
         </div>
     );

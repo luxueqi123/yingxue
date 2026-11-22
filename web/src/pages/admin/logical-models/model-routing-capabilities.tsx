@@ -1,12 +1,16 @@
-import { Button, InputNumber, Select, Tag } from "antd";
-import { Switch } from "@/components/ui/base/switch";
-import { Callout } from "@/components/ui/product/callout";
+import { Button, InputNumber, Tag } from "antd";
+import { Switch } from "@/pages/admin/ui/controls";
+import { Callout } from "@/pages/admin/ui/controls";
 import { RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { CapabilitySpec, OptionConstraint } from "@/services/api/logical-models";
+import type { CapabilityImageSize, CapabilitySpec, OptionConstraint } from "@/services/api/logical-models";
 import type { ChannelModel } from "@/services/api/wallet";
 import { STANDARD_IMAGE_SIZE_VALUES } from "@/lib/model-capabilities";
+import { imageSizePresets } from "@/lib/image-size-presets";
+import { Select } from "@/components/ui/base/select";
+import { ImageParameterInput } from "@/components/image-parameter-fields";
+import { imageParameterConstraints, imageParametersForSpec, type ImageParameter } from "@/lib/image-parameters";
 
 export type CapabilityKind = CapabilitySpec["capability"];
 export type Scalar = string | number | boolean;
@@ -59,6 +63,11 @@ const optionDefinitions: Record<CapabilityKind, Array<{ name: string; label: str
     ],
 };
 
+function definitionsFor(capability: CapabilityKind, specs: CapabilitySpec[] = []): Array<{ name: string; label: string; unit?: string }> {
+    if (capability !== "image" || !specs.some((spec) => spec.imageParameters)) return optionDefinitions[capability];
+    return [...new Map(specs.flatMap((spec) => spec.imageParameters || []).map((p) => [p.name, { name: p.name, label: p.label }])).values()];
+}
+
 export function capabilityLabel(value: CapabilityKind) {
     return { text: "文本", image: "图片", video: "视频", audio: "音频" }[value];
 }
@@ -93,6 +102,15 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
     if (capability === "image") {
         const image = item.capabilityConfig?.image;
         if (!image) return null;
+        if (image.parameters)
+            return {
+                version: 1,
+                capability,
+                inputs: compactInputs({ image: { min: 0, max: image.references.maxImages }, mask: { min: 0, max: image.references.maskSupported ? 1 : 0 } }),
+                imageParameters: image.parameters.map(({ binding: _binding, models: _models, encoding: _encoding, ...p }) => p),
+                options: imageParameterConstraints(image.parameters),
+                imageSize: image.size.parameter === "none" ? undefined : { parameter: image.size.parameter, allowCustom: image.size.allowCustom, presets: imageSizePresets(image), defaultTier: image.size.defaultTier },
+            };
         return {
             version: 1,
             capability,
@@ -106,6 +124,7 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
                 transparentBackground: { values: image.transparentBackground.supported ? [false, true] : [false] },
                 count: { min: 1, max: image.maxOutputs, step: 1 },
             }),
+            imageSize: image.size.parameter === "none" ? undefined : { parameter: image.size.parameter, allowCustom: image.size.allowCustom, presets: image.size.presets },
         };
     }
     if (capability === "video") {
@@ -145,7 +164,7 @@ export function mergeCapabilitySpecs(capability: CapabilityKind, specs: Capabili
             result.inputs![definition.name] = widestCoveredInputRange(constraints);
         }
     }
-    for (const definition of optionDefinitions[capability]) {
+    for (const definition of definitionsFor(capability, matching)) {
         const constraints = matching.map((item) => item.options?.[definition.name]).filter(Boolean) as OptionConstraint[];
         if (constraints.length === 0) continue;
         if (constraints.some(isWildcardConstraint)) {
@@ -175,7 +194,36 @@ export function mergeCapabilitySpecs(capability: CapabilityKind, specs: Capabili
         }
         result.options![definition.name] = preferredSourceConstraint(constraints);
     }
+    result.imageSize = mergeImageSize(matching);
+    if (capability === "image" && matching.some((spec) => spec.imageParameters)) {
+        const fields = new Map<string, ImageParameter>();
+        const conflicts = new Set<string>();
+        for (const field of matching.flatMap((spec) => spec.imageParameters || []).filter((p) => p.enabled !== false)) {
+            const previous = fields.get(field.name);
+            if (previous && previous.type !== field.type) conflicts.add(field.name);
+            fields.set(field.name, previous ? { ...previous, pricing: Boolean(previous.pricing && field.pricing) } : field);
+        }
+        for (const name of conflicts) {
+            fields.delete(name);
+            delete result.options![name];
+        }
+        result.imageParameters = [...fields.values()];
+        result.imageParameters = imageParametersForSpec(result);
+    }
     return result;
+}
+
+function mergeImageSize(specs: CapabilitySpec[]): CapabilityImageSize | undefined {
+    const parts = specs.map((item) => item.imageSize).filter((item): item is CapabilityImageSize => Boolean(item));
+    if (!parts.length) return undefined;
+    const parameters = [...new Set(parts.map((item) => item.parameter).filter((value): value is NonNullable<CapabilityImageSize["parameter"]> => Boolean(value)))];
+    const presets = [...new Map(parts.flatMap((item) => item.presets || []).map((preset) => [`${preset.tier}:${preset.ratio}:${preset.size}`, preset])).values()];
+    return {
+        parameter: parameters.includes("aspect_ratio") ? "aspect_ratio" : parameters[0],
+        allowCustom: parts.some((item) => item.allowCustom),
+        defaultTier: parts.every((item) => item.defaultTier === parts[0].defaultTier) ? parts[0].defaultTier : undefined,
+        presets,
+    };
 }
 
 /**
@@ -185,13 +233,29 @@ export function mergeCapabilitySpecs(capability: CapabilityKind, specs: Capabili
 export function normalizeCapabilitySpecForSources(value: CapabilitySpec | undefined, sourceSpecs: CapabilitySpec[]) {
     if (!value) return value;
     const source = mergeCapabilitySpecs(value.capability, sourceSpecs);
+    if (value.capability === "image" && source.imageParameters) {
+        const options = Object.fromEntries(
+            Object.entries(source.options || {}).flatMap(([name, available]) => {
+                const selected = value.options?.[name];
+                if (!selected && value.imageParameters?.some((p) => p.name === name)) return [];
+                if (!selected) return [[name, available]];
+                if (selected.values && available.values && !isWildcardConstraint(available)) {
+                    const values = selected.values.filter((v) => available.values!.some((a) => scalarKey(a) === scalarKey(v)));
+                    return values.length ? [[name, { values }]] : [];
+                }
+                return [[name, optionConstraintCovered(selected, name, sourceSpecs) ? selected : available]];
+            }),
+        );
+        const next = { ...value, options, imageSize: source.imageSize, imageParameters: source.imageParameters };
+        return { ...next, imageParameters: imageParametersForSpec(next) };
+    }
     const options = { ...(value.options || {}) };
     for (const [name, constraint] of Object.entries(options)) {
         const sourceConstraint = source.options?.[name];
         if (!sourceConstraint || !isWildcardConstraint(constraint) || !sourceConstraint.values) continue;
         options[name] = { values: uniqueScalars([...(sourceConstraint.values || []), ...(constraint.values || [])]) };
     }
-    return { ...value, options };
+    return { ...value, options, imageSize: value.imageSize?.presets?.length ? value.imageSize : source.imageSize || value.imageSize };
 }
 
 export function capabilitySourceError(capability: CapabilityKind, sourceSpecs: CapabilitySpec[], value?: CapabilitySpec) {
@@ -219,7 +283,7 @@ export function CapabilityScopeEditor({ capability, sourceSpecs, value, onChange
     const current = value?.capability === capability ? normalizeCapabilitySpecForSources(value, sourceSpecs)! : emptyCapabilitySpec(capability);
     const hasSource = sourceSpecs.some((item) => item.capability === capability);
     const sourceInputs = inputDefinitions[capability].filter((item) => source.inputs?.[item.name]);
-    const sourceOptions = optionDefinitions[capability].filter((item) => source.options?.[item.name]);
+    const sourceOptions = definitionsFor(capability, [source]).filter((item) => source.options?.[item.name]);
     const sourceError = capabilitySourceError(capability, sourceSpecs, current);
 
     const update = (patch: Partial<CapabilitySpec>) => onChange?.({ ...current, ...patch, version: 1, capability });
@@ -322,7 +386,7 @@ export function CapabilityScopeEditor({ capability, sourceSpecs, value, onChange
 }
 
 export function DefaultOptionsEditor({ spec, value, onChange }: { spec?: CapabilitySpec; value?: Record<string, unknown>; onChange?: (value: Record<string, Scalar>) => void }) {
-    const options = optionDefinitions[spec?.capability || "text"].filter((item) => spec?.options?.[item.name]);
+    const options = definitionsFor(spec?.capability || "text", spec ? [spec] : []).filter((item) => spec?.options?.[item.name]);
     if (!options.length) return <div className="rounded-md bg-muted/20 px-3 py-2 text-xs text-foreground/50">当前能力没有需要设置的默认参数。</div>;
     return (
         <div className="divide-y divide-border">
@@ -337,6 +401,7 @@ export function DefaultOptionsEditor({ spec, value, onChange }: { spec?: Capabil
                         </div>
                         <div className="col-span-12 sm:col-span-7">
                             <ConstraintValueInput
+                                field={spec?.imageParameters?.find((p) => p.name === definition.name)}
                                 constraint={constraint}
                                 value={selected}
                                 allowClear
@@ -369,7 +434,7 @@ export function CapabilityRequestEditor({
     onOptionsChange: (value: Record<string, unknown>) => void;
 }) {
     const inputItems = inputDefinitions[spec.capability].filter((item) => spec.inputs?.[item.name]);
-    const optionItems = optionDefinitions[spec.capability].filter((item) => spec.options?.[item.name]);
+    const optionItems = definitionsFor(spec.capability, [spec]).filter((item) => spec.options?.[item.name]);
     return (
         <div className="space-y-4">
             {inputItems.length ? (
@@ -404,6 +469,7 @@ export function CapabilityRequestEditor({
                                         {definition.unit ? ` (${definition.unit})` : ""}
                                     </span>
                                     <ConstraintValueInput
+                                        field={spec.imageParameters?.find((p) => p.name === definition.name)}
                                         constraint={constraint}
                                         value={options[definition.name] as Scalar | undefined}
                                         allowClear
@@ -435,7 +501,7 @@ export function CapabilitySummary({ spec }: { spec: CapabilitySpec }) {
             labels.push(`${definition.label} ${minimum}-${maximum}${definition.unit}`);
         }
     }
-    for (const definition of optionDefinitions[spec.capability]) {
+    for (const definition of definitionsFor(spec.capability, [spec])) {
         const option = spec.options?.[definition.name];
         if (!option) continue;
         labels.push(option.values ? `${definition.label} ${option.values.map(scalarLabel).join("/")}` : `${definition.label} ${option.min}-${option.max}${definition.unit || ""}`);
@@ -541,7 +607,8 @@ function OptionRuleEditor({ definition, source, value, onChange }: { definition:
     );
 }
 
-function ConstraintValueInput({ constraint, value, allowClear, onChange }: { constraint: OptionConstraint; value?: Scalar; allowClear?: boolean; onChange: (value?: Scalar) => void }) {
+function ConstraintValueInput({ constraint, field, value, allowClear, onChange }: { constraint: OptionConstraint; field?: ImageParameter; value?: Scalar; allowClear?: boolean; onChange: (value?: Scalar) => void }) {
+    if (field) return <ImageParameterInput field={field} value={value} onChange={onChange} />;
     if (constraint.values) {
         return (
             <Select

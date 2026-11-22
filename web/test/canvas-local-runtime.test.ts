@@ -245,10 +245,11 @@ test("Canvas local Agent setup generates exact-origin commands for Unix and Wind
 });
 
 test("Canvas local Agent tutorial replaces the conversation only while disconnected", async () => {
-    const source = (await Bun.file(new URL("../src/components/canvas/canvas-local-agent-panel.tsx", import.meta.url)).text()).replace(/\r\n/g, "\n");
-    expect(source).toContain('!connected ? (\n                <AgentConnectView');
-    expect(source).toContain("连接成功后，这里会自动恢复原对话");
-    expect(source).toContain("当前支持范围");
+    const source = await Bun.file(new URL("../src/components/canvas/canvas-local-agent-panel.tsx", import.meta.url)).text();
+    const normalizedSource = source.replace(/\r\n/g, "\n");
+    expect(normalizedSource).toContain("!connected ? (\n                <AgentConnectView");
+    expect(normalizedSource).toContain("连接成功后，这里会自动恢复原对话");
+    expect(normalizedSource).toContain("当前支持范围");
 });
 
 test("Canvas reconnect wait resolves quietly when component cleanup aborts", async () => {

@@ -160,3 +160,58 @@ describe("formatSrtTimestamp", () => {
         expect(formatSrtTimestamp(0)).toBe("00:00:00,000");
     });
 });
+
+describe("本地导出保留视频片段音量与轨道状态", () => {
+    for (const [volume, muted, expected] of [[undefined, false, 1], [0, false, 0], [0.35, false, 0.35], [1, true, 0]] as const) {
+        test(`volume=${volume}, muted=${muted}`, () => {
+            const clip = { ...videoClip("a", "node-a", 0, 1000), volume };
+            const project = timeline([clip]);
+            project.tracks = [{ id: "video", kind: "video", label: "视频", order: 0, muted }];
+            const plan = buildTimelineRenderPlan(project, [source("node-a")]);
+            const args = plan.steps.find(step => step.kind === "trim")!.args;
+            expect(args[args.indexOf("-af") + 1]).toBe(`volume=${expected}`);
+        });
+    }
+    test("隐藏轨道不进入本地导出", () => {
+        const project = timeline([videoClip("a", "node-a", 0, 1000)]);
+        project.tracks = [{ id: "video", kind: "video", label: "视频", order: 0, visible: false }];
+        expect(buildTimelineRenderPlan(project, [source("node-a")]).concatEntries).toEqual([]);
+    });
+});
+
+describe("独立音频轨导出", () => {
+    const voice = { ...videoClip("voice", "voice-source", 200, 600), kind: "audio" as const,
+        trackId: "audio", sourceStartMs: 300, sourceDurationMs: 1300, fadeInMs: 100, fadeOutMs: 200, volume: 0.25 };
+    const project = { ...timeline([voice]), tracks: [{ id: "audio", kind: "audio" as const, label: "旁白", order: 0 }] };
+    test("音频独立导出保留源裁切、时间偏移、音量和淡入淡出", () => {
+        const plan = buildTimelineRenderPlan(project, [source("voice-source")], { burnSubtitles: false });
+        expect(plan.concatEntries).toHaveLength(1);
+        const args = plan.steps.find(step => step.kind === "mix")!.args;
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain("atrim=start=0.3:duration=0.6");
+        expect(filter).toContain("volume=0.25");
+        expect(filter).toContain("adelay=200:all=1");
+        expect(filter).toContain("afade=t=in:st=0:d=0.1");
+        expect(filter).toContain("afade=t=out:st=0.4:d=0.2");
+        expect(filter).toContain("normalize=0");
+        expect(filter).toContain("apad,atrim=duration=0.8");
+        expect(args).not.toContain("-t");
+        expect(plan.steps.at(-1)?.args).toContain("timeline-mixed.mp4");
+    });
+    test("缺音频源明确报错而不是输出无声成片", () => {
+        expect(() => buildTimelineRenderPlan(project, [])).toThrow("音频素材");
+    });
+    test("字幕烧录及其降级输出均保留独立配乐", () => {
+        const subtitled = { ...project, clips: [...project.clips, { ...voice, id: "subtitle", kind: "subtitle" as const, trackId: "subtitle", text: "测试字幕" }], tracks: [...project.tracks, { id: "subtitle", kind: "subtitle" as const, label: "字幕", order: 1 }] };
+        const burn = buildTimelineRenderPlan(subtitled, [source("voice-source")], { burnSubtitles: true }).steps.find(step => step.kind === "burn")!;
+        expect(burn.args[burn.args.indexOf("-i") + 1]).toBe("timeline-mixed.mp4");
+        expect(burn.fallback!.args[burn.fallback!.args.indexOf("-i") + 1]).toBe("timeline-mixed.mp4");
+        expect(burn.argsWithoutMetadata![burn.argsWithoutMetadata!.indexOf("-i") + 1]).toBe("timeline-mixed.mp4");
+    });
+    test("静音保留时长，隐藏音轨不参与输出", () => {
+        const muted = buildTimelineRenderPlan({ ...project, tracks: [{ ...project.tracks[0], muted: true }] }, [source("voice-source")]);
+        expect(muted.steps.find(step => step.kind === "mix")!.args.join(" ")).toContain("volume=0");
+        const hidden = buildTimelineRenderPlan({ ...project, tracks: [{ ...project.tracks[0], visible: false }] }, []);
+        expect(hidden.steps).toHaveLength(0);
+    });
+});

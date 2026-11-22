@@ -27,8 +27,9 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${CANVAS_IMAGE_REPOSITORY:-ghcr.io/luxueqi123}/open-ai-canvas-backend:${CANVAS_IMAGE_TAG:-latest}
-    command: ["migrate-schema", "up"]
+    image: ${CANVAS_BACKEND_IMAGE:?请先配置 CANVAS_BACKEND_IMAGE（必须包含镜像 digest）}
+    entrypoint: ["migrate-schema"]
+    command: ["up"]
     environment:
       CANVAS_BACKEND_DATA_DIR: /data
       CANVAS_DATABASE_DRIVER: postgres
@@ -37,12 +38,48 @@ services:
       postgres:
         condition: service_healthy
 
+  yingce-agent:
+    # 让旧更新器也能完成本次升级；新版更新器在后续更新中会固定为镜像 digest。
+    image: ${CANVAS_YINGCE_AGENT_IMAGE:-ghcr.io/ddcat-ai/open-ai-canvas-yingce-agent:${CANVAS_IMAGE_TAG:?请先配置 CANVAS_IMAGE_TAG}}
+    environment:
+      YINGCE_AGENT_TOKEN: ${YINGCE_AGENT_TOKEN:-${CANVAS_UPDATER_TOKEN:?请先配置 YINGCE_AGENT_TOKEN}}
+      MAX_CONCURRENT_SESSIONS: ${YINGCE_AGENT_MAX_SESSIONS:-8}
+      YINGCE_AGENT_SESSION_CAP: ${YINGCE_AGENT_SESSION_CAP:-8}
+      NODE_MAX_OLD_SPACE_SIZE: ${YINGCE_AGENT_NODE_MEMORY_MB:-512}
+      YINGCE_AGENT_MAX_QUEUE: ${YINGCE_AGENT_MAX_QUEUE:-64}
+      YINGCE_AGENT_QUEUE_TIMEOUT_SECONDS: ${YINGCE_AGENT_QUEUE_TIMEOUT_SECONDS:-60}
+      YINGCE_AGENT_BODY_TIMEOUT_SECONDS: ${YINGCE_AGENT_BODY_TIMEOUT_SECONDS:-30}
+      YINGCE_AGENT_KILL_GRACE_SECONDS: ${YINGCE_AGENT_KILL_GRACE_SECONDS:-5}
+      YINGCE_AGENT_ORPHAN_TTL_SECONDS: ${YINGCE_AGENT_ORPHAN_TTL_SECONDS:-86400}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=${YINGCE_AGENT_TMPFS_SIZE:-512m},mode=1777
+    mem_limit: ${YINGCE_AGENT_MEMORY_LIMIT:-4g}
+    cpus: ${YINGCE_AGENT_CPUS:-2}
+    pids_limit: ${YINGCE_AGENT_PIDS_LIMIT:-256}
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CANVAS_LOG_MAX_SIZE:-10m}
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   backend:
-    image: ${CANVAS_IMAGE_REPOSITORY:-ghcr.io/luxueqi123}/open-ai-canvas-backend:${CANVAS_IMAGE_TAG:-latest}
+    image: ${CANVAS_BACKEND_IMAGE:?请先配置 CANVAS_BACKEND_IMAGE（必须包含镜像 digest）}
     environment:
       CANVAS_BACKEND_ADDR: ":8080"
       CANVAS_BACKEND_DATA_DIR: /data
       CANVAS_AUTO_MIGRATE: "false"
+      CANVAS_BACKGROUND_WORKERS_ENABLED: ${CANVAS_BACKGROUND_WORKERS_ENABLED:-true}
       CANVAS_SHUTDOWN_TIMEOUT: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
       CANVAS_DATABASE_DRIVER: postgres
       DATABASE_URL: ${DATABASE_URL:?请先运行一键部署脚本生成数据库连接}
@@ -50,15 +87,35 @@ services:
       CANVAS_WORKER_CONCURRENCY: ${CANVAS_WORKER_CONCURRENCY:-3}
       CANVAS_CHANNEL_CONCURRENCY: ${CANVAS_CHANNEL_CONCURRENCY:-3}
       CANVAS_REGISTRATION_ENABLED: ${CANVAS_REGISTRATION_ENABLED:-false}
+      CANVAS_OIDC_ISSUER: ${CANVAS_OIDC_ISSUER:-}
+      CANVAS_OIDC_CLIENT_ID: ${CANVAS_OIDC_CLIENT_ID:-}
+      CANVAS_OIDC_CLIENT_SECRET: ${CANVAS_OIDC_CLIENT_SECRET:-}
+      CANVAS_OIDC_REDIRECT_URL: ${CANVAS_OIDC_REDIRECT_URL:-}
+      CANVAS_OIDC_ALLOWED_GROUP: ${CANVAS_OIDC_ALLOWED_GROUP:-}
       CANVAS_ALLOW_PRIVATE_UPSTREAMS: ${CANVAS_ALLOW_PRIVATE_UPSTREAMS:-false}
       CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS: ${CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS:-}
+      CANVAS_MCP_ALLOWED_PRIVATE_HOSTS: ${CANVAS_MCP_ALLOWED_PRIVATE_HOSTS:-}
       CANVAS_CORS_ORIGINS: ${CANVAS_CORS_ORIGINS:-}
+      CANVAS_PUBLIC_BASE_URL: ${CANVAS_PUBLIC_BASE_URL:-}
       CANVAS_UPDATER_SOCKET: /run/open-ai-canvas-updater/updater.sock
       CANVAS_UPDATER_TOKEN: ${CANVAS_UPDATER_TOKEN:-}
+      YINGCE_AGENT_URL: http://yingce-agent:8081
+      YINGCE_AGENT_TOKEN: ${YINGCE_AGENT_TOKEN:-${CANVAS_UPDATER_TOKEN:?请先配置 YINGCE_AGENT_TOKEN}}
+      YINGCE_AGENT_BRIDGE_HOST: backend
+      CANVAS_LOG_LEVEL: ${CANVAS_LOG_LEVEL:-info}
+      CANVAS_LOG_FORMAT: ${CANVAS_LOG_FORMAT:-text}
       GIN_MODE: release
     volumes:
       - ${CANVAS_DATA_PATH:-backend-data}:/data
       - ${CANVAS_UPDATER_SOCKET_DIR:-/run/open-ai-canvas-updater}:/run/open-ai-canvas-updater
+    mem_limit: ${CANVAS_BACKEND_MEMORY_LIMIT:-4g}
+    cpus: ${CANVAS_BACKEND_CPUS:-2}
+    pids_limit: ${CANVAS_BACKEND_PIDS_LIMIT:-256}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CANVAS_LOG_MAX_SIZE:-10m}
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,15 +123,21 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      yingce-agent:
+        condition: service_healthy
     restart: unless-stopped
     stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
 
   web:
-    image: ${CANVAS_IMAGE_REPOSITORY:-ghcr.io/luxueqi123}/open-ai-canvas-web:${CANVAS_IMAGE_TAG:-latest}
+    image: ${CANVAS_WEB_IMAGE:?请先配置 CANVAS_WEB_IMAGE（必须包含镜像 digest）}
     ports:
-      - "${CANVAS_HTTP_PORT:-3000}:3000"
+      - "${CANVAS_HTTP_BIND:-0.0.0.0}:${CANVAS_HTTP_PORT:-3000}:3000"
     volumes:
+      # Keep hashed chunks from current and previous releases for existing tabs.
+      - ${CANVAS_WEB_DATA_PATH:-web-data}:/usr/share/nginx/html
       - ${CANVAS_SKILL_MEDIA_PATH:-./skill-media}:/usr/share/nginx/html/skill-media:ro
+      - ${CANVAS_LTV_CASE_MEDIA_PATH:-./ltv-case-library}:/data/ltv-case-library:ro
+      - ${CANVAS_LTV_CASE_MEDIA_EXTRA_PATH:-${CANVAS_LTV_CASE_MEDIA_PATH:-./ltv-case-library}/media}:/data/ltv-case-library-extra:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -84,3 +147,4 @@ volumes:
   backend-data:
   postgres-data:
   redis-data:
+  web-data:

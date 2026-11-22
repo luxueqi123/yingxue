@@ -1,11 +1,20 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import { applyMaterializedGenerationTaskResultToNodes } from "@/lib/canvas/canvas-generation-task-sync";
+import { applyMaterializedGenerationTaskResultToNodes, generationTaskInput } from "@/lib/canvas/canvas-generation-task-sync";
+import { canvasGenerationPresentation, commitCanvasGenerationResult, completedGenerationObservationBase } from "@/lib/canvas/canvas-generation-result";
+import { reconcileImageBatchRoot } from "@/lib/canvas/canvas-image-batch-retry";
+import { imageLayerCompositeSignature } from "@/lib/canvas/canvas-image-layers";
+import { findCanvasNodeAsset, requiresMaterializedCanvasAsset } from "@/lib/canvas/canvas-node-asset";
+import { planCanvasImageGroupOutputs, reconcileCanvasImageGroupStatus } from "@/lib/canvas/canvas-image-group-outputs";
+import { isolateCopiedNodeMetadata } from "@/lib/canvas/canvas-node-copy";
+import { sameCanvasContent } from "@/lib/canvas/canvas-content";
 import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import type { GenerationTask, GenerationTaskOutput } from "@/services/api/task-center";
 import { generationEffectApplied } from "@/services/generation-consumer-dedupe";
+import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
+import { flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
 import {
     CANVAS_STORE_KEY,
     canvasStoreStorageRevision,
@@ -39,6 +48,35 @@ export class CanvasGenerationDurableAckError extends Error {
 
 export function isCanvasGenerationDurableAckError(error: unknown): error is CanvasGenerationDurableAckError {
     return error instanceof CanvasGenerationDurableAckError;
+}
+
+// ACT: 完整交付流程由调用方的 consumer 管理，覆盖素材落盘及后续画布提交。
+export async function prepareCanvasMediaNodeAsset(projectId: string, node: CanvasNodeData, signal?: AbortSignal): Promise<CanvasNodeData> {
+    throwIfAborted(signal);
+    try {
+        const assetId = node.metadata?.assetId;
+        if (assetId && findCanvasNodeAsset(useAssetStore.getState().assets, node, projectId)?.id === assetId) return node;
+        if (requiresMaterializedCanvasAsset(node)) throw new Error("生成结果尚未绑定已物化素材，请重新读取结果");
+        const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
+        if (!project) throw new Error("画布项目已不存在，无法登记结果素材");
+        const asset = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId: project.projectId, node, source: node.metadata?.taskId ? "canvas-generation" : "canvas-manual", signal });
+        await flushAssetStorePersistence();
+        throwIfAborted(signal);
+        return { ...node, metadata: { ...node.metadata, assetId: asset.assetId } };
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        throw new CanvasGenerationDurableAckError(error);
+    }
+}
+
+function reconcileMaskBatchRoot(nodes: CanvasNodeData[], rootId?: string) {
+    if (!rootId) return nodes;
+    return nodes.map((root) => {
+        if (root.id !== rootId) return root;
+        const reconciled = reconcileImageBatchRoot(root, nodes);
+        const primary = nodes.find((child) => child.id === reconciled.metadata?.primaryImageId);
+        return primary && !root.metadata?.manualSize ? { ...reconciled, width: primary.width, height: primary.height } : reconciled;
+    });
 }
 
 type CanvasGenerationLiveProjectState = Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId">;
@@ -112,23 +150,98 @@ export async function applyCanvasGenerationTaskNodeEffect(input: {
     signal?: AbortSignal;
     nodesRef: { current: CanvasNodeData[] };
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
+    preserveVersionSelection?: boolean;
+    imageGroupRootId?: string;
 }) {
     throwIfAborted(input.signal);
-    const previousNodes = input.nodesRef.current;
-    const applied = await applyMaterializedGenerationTaskResultToNodes(previousNodes, input.task, input.output, input.effectKey, input.nodeId);
+    const snapshot = input.nodesRef.current;
+    const before = snapshot.find((node) => node.id === input.nodeId);
+    if (!before) throw new Error("画布中找不到对应任务节点");
+    const groupSignature = before.metadata?.imageLayerGroup ? imageLayerCompositeSignature(before.metadata.imageLayerGroup, snapshot) : undefined;
+    const groupChanged = (nodes: CanvasNodeData[]) => {
+        if (!groupSignature) return false;
+        const group = nodes.find((node) => node.id === input.nodeId)?.metadata?.imageLayerGroup;
+        return !group || imageLayerCompositeSignature(group, nodes) !== groupSignature;
+    };
+    const applied = await applyMaterializedGenerationTaskResultToNodes(snapshot, input.task, input.output, input.effectKey, input.nodeId, input.signal, Boolean(input.imageGroupRootId));
     if (!applied.updated || !applied.node) throw new Error("画布中找不到对应任务节点");
-    const persistedProject = await persistCanvasGenerationEffect({
-        projectId: input.projectId,
-        effectKey: input.effectKey,
-        previousNodes,
-        nodes: applied.nodes,
-        signal: input.signal,
-    });
-    input.nodesRef.current = persistedProject.nodes;
-    input.setNodes(persistedProject.nodes);
+    throwIfAborted(input.signal);
+    const node = await prepareCanvasMediaNodeAsset(input.projectId, applied.node, input.signal);
+    const additionalNodes = await Promise.all(applied.additionalNodes.map((child) => prepareCanvasMediaNodeAsset(input.projectId, child, input.signal)));
+    throwIfAborted(input.signal);
+    const imageBatchRootId = ["mask", "region"].includes(generationTaskInput(input.task)?.metadata?.edit || "") ? before.metadata?.batchRootId : undefined;
+    const previousNodes = input.nodesRef.current;
+    const merge = (current: CanvasNodeData[]) => {
+        const committed = commitCanvasGenerationResult(current, before, node, input.task.id, additionalNodes);
+        const merged = input.imageGroupRootId ? reconcileCanvasImageGroupStatus(committed, input.imageGroupRootId, input.task) : committed;
+        if (!input.preserveVersionSelection) return reconcileMaskBatchRoot(merged, imageBatchRootId);
+        const selection = new Map(current.map(node => [node.id, node.metadata?.versionPrimary]));
+        return reconcileMaskBatchRoot(merged.map(node => ({ ...node, metadata: { ...node.metadata, versionPrimary: selection.get(node.id) } })), imageBatchRootId);
+    };
+    if (groupChanged(previousNodes)) throw new CanvasGenerationDurableAckError(new Error("图层已修改，请按当前图层重新读取结果"));
+    const nodes = merge(previousNodes);
+    try {
+        await persistCanvasGenerationEffect({
+            projectId: input.projectId,
+            effectKey: input.effectKey,
+            previousNodes,
+            nodes,
+            imageBatchRootId,
+            completedTaskId: input.task.status === "succeeded" ? input.task.id : undefined,
+            signal: input.signal,
+        });
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        throw new CanvasGenerationDurableAckError(error);
+    }
+    throwIfAborted(input.signal);
+    // 持久化已完成；最后一次 await 之后仍按节点合并，保留期间发生的编辑。
+    input.setNodes((current) => groupChanged(current) ? current : merge(current));
 }
 
-export async function persistCanvasAgentGenerationContinuationEffect(input: {
+export async function applyCanvasImageGroupOutputEffect(input: Parameters<typeof applyCanvasGenerationTaskNodeEffect>[0] & { rootNodeId: string }) {
+    throwIfAborted(input.signal);
+    const snapshot = input.nodesRef.current;
+    const planned = planCanvasImageGroupOutputs(snapshot, input.rootNodeId, input.task);
+    const target = planned.find(item => item.outputIndex === input.output.outputIndex);
+    if (!target || target.nodeId !== input.nodeId) throw new Error("组图输出与目标节点不匹配");
+    if (target.outputIndex === 0) return applyCanvasGenerationTaskNodeEffect({ ...input, preserveVersionSelection: true, imageGroupRootId: input.rootNodeId });
+    const root = snapshot.find(node => node.id === input.rootNodeId)!;
+    const existing = snapshot.find(node => node.id === target.nodeId);
+    const seed: CanvasNodeData = existing ?? {
+        ...root, id: target.nodeId,
+        position: { x: root.position.x + (root.width + 24) * target.outputIndex, y: root.position.y },
+        metadata: { ...isolateCopiedNodeMetadata(root, new Map()), content: undefined, storageKey: undefined, assetId: undefined,
+            generationEffectKeys: undefined, taskId: input.task.id, status: "loading",
+            versionOfNodeId: root.metadata?.versionOfNodeId || root.id, versionLabel: `组图 ${target.outputIndex + 1}`, versionPrimary: false,
+            imageGroupOutput: { rootNodeId: root.id, taskId: input.task.id, outputIndex: target.outputIndex } },
+    };
+    const prepared = existing ? snapshot : [...snapshot, seed];
+    const applied = await applyMaterializedGenerationTaskResultToNodes(prepared, input.task, input.output, input.effectKey, seed.id, input.signal, true);
+    if (!applied.node) throw new Error("组图产物回写失败");
+    const materialized = await prepareCanvasMediaNodeAsset(input.projectId, applied.node, input.signal);
+    const result = { ...materialized, metadata: { ...materialized.metadata, versionPrimary: existing?.metadata?.versionPrimary ?? false } };
+    const merge = (current: CanvasNodeData[]) => {
+        planCanvasImageGroupOutputs(current, input.rootNodeId, input.task);
+        const live = current.find(node => node.id === result.id);
+        if (live && !existing) {
+            if (generationEffectApplied(live.metadata || {}, input.effectKey)) return reconcileCanvasImageGroupStatus(current, input.rootNodeId, input.task);
+            throw new Error("组图节点已由其它写入创建，停止覆盖");
+        }
+        if (!live && existing) throw new Error("组图节点已删除，停止恢复覆盖");
+        if (!existing) return reconcileCanvasImageGroupStatus([...current, result], input.rootNodeId, input.task);
+        // Preserve selection of the user's current version while updating this one output.
+        return reconcileCanvasImageGroupStatus(commitCanvasGenerationResult(current, existing, result, input.task.id).map(node => ({ ...node,
+            metadata: { ...node.metadata, versionPrimary: current.find(old => old.id === node.id)?.metadata?.versionPrimary } })), input.rootNodeId, input.task);
+    };
+    throwIfAborted(input.signal);
+    const previousNodes = input.nodesRef.current;
+    await persistCanvasGenerationEffect({ projectId: input.projectId, effectKey: input.effectKey, previousNodes, nodes: merge(previousNodes), signal: input.signal });
+    throwIfAborted(input.signal);
+    input.setNodes(merge);
+}
+
+export async function persistCanvasOperationContinuationEffect(input: {
     projectId: string;
     nodeId: string;
     continuation: NonNullable<NonNullable<CanvasNodeData["metadata"]>["agentGenerationContinuation"]>;
@@ -376,6 +489,8 @@ export async function persistCanvasCinematicSessionContinuationEffect(input: {
 export type CanvasGenerationEffectInput = {
     projectId: string;
     effectKey: string;
+    completedTaskId?: string;
+    imageBatchRootId?: string;
     previousNodes?: CanvasNodeData[];
     nodes?: CanvasNodeData[];
     previousConnections?: CanvasConnection[];
@@ -475,19 +590,40 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
                 const durable = parseCanvasStorageDocument(await storage.getItem(CANVAS_STORE_KEY), memoryProjects);
                 latestDurable = durable;
                 throwIfAborted(input.signal);
+                const baseProject = input.completedTaskId ? {
+                    ...delta.baseProject,
+                    nodes: completedGenerationObservationBase(delta.baseProject.nodes, delta.localProject.nodes, durable.state.projects.find((project) => project.id === input.projectId)?.nodes ?? [], input.completedTaskId, input.effectKey),
+                } : delta.baseProject;
+                const previousById = new Map(baseProject.nodes.map(node => [node.id, node]));
+                const durableById = new Map((durable.state.projects.find(project => project.id === input.projectId)?.nodes ?? []).map(node => [node.id, node]));
+                const localProject = {
+                    ...delta.localProject,
+                    nodes: delta.localProject.nodes.map(node => {
+                        const previous = previousById.get(node.id);
+                        // 批次主图由锁内最新子图统一派生，不提交锁外的旧主图快照。
+                        if (previous && node.id === input.imageBatchRootId) return previous;
+                        const current = durableById.get(node.id);
+                        return previous && current ? { ...node, ...canvasGenerationPresentation(previous, node, current) } : node;
+                    }),
+                };
                 const rebased = rebaseCanvasProjects({
                     document: durable,
-                    baseProjects: [delta.baseProject],
-                    localProjects: [delta.localProject],
+                    baseProjects: [baseProject],
+                    localProjects: [localProject],
                     baseRevision,
                 });
-                if (rebased.conflicts.some((conflict) => conflict.reason === "concurrent-update")) {
-                    reconcileLiveOnFailure = true;
-                    throw new Error("画布生成副作用与并发修改冲突");
-                }
                 if (rebased.conflicts.length) {
                     reconcileLiveOnFailure = true;
-                    throw new Error("画布生成副作用与已删除内容冲突");
+                    throw new Error(rebased.conflicts.some((conflict) => conflict.reason !== "concurrent-update")
+                        ? "画布生成副作用与已删除内容冲突"
+                        : "画布生成副作用与并发修改冲突");
+                }
+
+                // 批量子图并发完成时，在锁内从最新子图派生主图，避免争写父节点。
+                if (input.imageBatchRootId) {
+                    rebased.document.state.projects = rebased.document.state.projects.map((project) => project.id === input.projectId
+                        ? { ...project, nodes: reconcileMaskBatchRoot(project.nodes, input.imageBatchRootId) }
+                        : project);
                 }
 
                 throwIfAborted(input.signal);
@@ -512,11 +648,19 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
                 const persistedProject = rebaseCommittedCanvasGenerationOntoLiveProject(scope, input.projectId, finalDocument, memoryProject, baseRevision) ?? generationCommittedProject;
                 if (!persistedProject) throw new Error("画布项目不存在，无法确认生成副作用");
                 if (getActiveUserScope() === scope) {
-                    withCanvasStorePersistenceSuppressed(() => {
+                    const publish = () => {
                         useCanvasStore.setState((state) => ({
                             projects: state.projects.map((project) => (project.id === input.projectId ? persistedProject : project)),
                         }));
-                    });
+                    };
+                    const durableProject = finalDocument.state.projects.find((project) => project.id === input.projectId);
+                    // 只有已落盘的快照才能跳过普通保存。rebase 带回的编辑仍是脏数据，
+                    // 否则 store 已接受编辑、后续 updateProject 判定无变化，刷新就会丢失。
+                    if (sameCanvasContent(durableProject, persistedProject) && JSON.stringify(durableProject?.viewport) === JSON.stringify(persistedProject.viewport)) {
+                        withCanvasStorePersistenceSuppressed(publish);
+                    } else {
+                        publish();
+                    }
                 }
                 return persistedProject;
             } catch (error) {

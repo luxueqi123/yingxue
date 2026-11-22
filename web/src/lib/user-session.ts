@@ -1,70 +1,169 @@
 import { getFeatureAvailability, type AuthSessionPayload } from "@/services/api/auth";
-import { getModelCatalog, listLogicalModels, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog, type PublicLogicalModel } from "@/services/api/logical-models";
+import { getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog } from "@/services/api/logical-models";
 import { localForageStorage } from "@/lib/localforage-storage";
-import { appQueryClient } from "@/lib/query-client";
-import { scopedLocalStorage, setActiveUserScope } from "@/lib/user-scope";
-import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { projectImageParameters, imageParametersForSpec } from "./image-parameters";
+import { appQueryClient, clearUserQueryCache } from "@/lib/query-client";
+import { assertCurrentUserSession, captureUserSession, isUserSessionInvalidated, scopedLocalStorage, setActiveUserScope, withUserScopedPersistenceSuppressed, type UserSessionSnapshot } from "@/lib/user-scope";
+import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore, withCanvasStorePersistenceSuppressed } from "@/stores/canvas/use-canvas-store";
 import { CANVAS_HISTORY_STORE_KEY, useCanvasHistoryStore } from "@/stores/canvas/use-canvas-history-store";
-import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
-import { CONFIG_STORE_KEY, PUBLIC_MODEL_CATALOG_ID, defaultConfig, normalizeConfigSnapshot, useConfigStore, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore, withAssetStorePersistenceSuppressed } from "@/stores/use-asset-store";
+import { CONFIG_STORE_KEY, defaultConfig, normalizeConfigSnapshot, useConfigStore, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { CREATION_PREFERENCES_STORE_KEY, useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { defaultModelCapabilityConfig, STANDARD_IMAGE_SIZE_VALUES, type ModelCapabilityConfig } from "@/lib/model-capabilities";
-import { useUserStore } from "@/stores/use-user-store";
+import { isTextWire } from "@/lib/model-protocols";
+import { imageSizeConfigWithPresets } from "@/lib/image-size-presets";
+import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
 import { PLUGIN_STORE_KEY, usePluginStore } from "@/stores/use-plugin-store";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { initializeRemoteUserDataSession, installRemoteUserDataAutoSync, resetRemoteUserDataSync, withRemoteUserDataSyncExclusive } from "@/services/user-data-sync";
+import { clearResourceAccessCache } from "@/services/api/resources";
+import { clearResourceBlobCache } from "@/services/resource-blob-cache";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
+import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { useModelCatalogStore } from "@/stores/use-model-catalog-store";
 
-export async function switchUserStorageScope(userId?: string | null) {
-    await withGenerationConsumersPaused(async () => {
-        await withRemoteUserDataSyncExclusive(async () => {
+export async function switchUserStorageScope(userId?: string | null, expectedSession = captureUserSession(true), isCurrent = () => true) {
+    return withGenerationConsumersPaused(async () => {
+        return withRemoteUserDataSyncExclusive(async () => {
             await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
+            assertCurrentUserSession(expectedSession, true);
+            if (!isCurrent()) return false;
             resetRemoteUserDataSync();
-            setActiveUserScope(userId);
+            clearResourceAccessCache();
+            clearResourceBlobCache();
+            setActiveUserScope(userId, expectedSession);
+            return true;
         });
     });
 }
 
-export async function applyUserSession(payload: AuthSessionPayload) {
+let sessionGeneration = 0;
+let catalogRequest: { generation: number; promise: Promise<void> } | undefined;
+let catalogInitialConfig: typeof defaultConfig | undefined;
+
+function resetModelCatalog() {
+    catalogRequest = undefined;
+    catalogInitialConfig = undefined;
+    useModelCatalogStore.setState({ status: "idle" });
+}
+
+export function suspendUserSession() {
+    sessionGeneration += 1;
+    resetModelCatalog();
+    useUserStore.getState().setHydrated(false);
+    appQueryClient.clear();
+    resetRemoteUserDataSync();
+    clearResourceAccessCache();
+    clearResourceBlobCache();
+}
+
+export async function applyUserSession(payload: AuthSessionPayload, expectedSession: UserSessionSnapshot = captureUserSession(true)) {
+    const generation = ++sessionGeneration;
+    resetModelCatalog();
     const previousUserId = useUserStore.getState().user?.id || "";
     const nextUserId = payload.user?.id || "";
     useUserStore.getState().setHydrated(false);
     try {
-        // Query key 不携带用户 ID；身份变化时必须取消并清空旧账号请求，避免跨账号复用内存数据。
-        if (previousUserId !== nextUserId) appQueryClient.clear();
-        await switchUserStorageScope(payload.user?.id);
-        const [persistedCanvas, persistedCanvasHistory, persistedAssets, persistedPlugins] = await Promise.all([
-            localForageStorage.getItem(CANVAS_STORE_KEY),
-            localForageStorage.getItem(CANVAS_HISTORY_STORE_KEY),
-            localForageStorage.getItem(ASSET_STORE_KEY),
-            localForageStorage.getItem(PLUGIN_STORE_KEY),
-        ]);
-        const persistedConfig = scopedLocalStorage.getItem(CONFIG_STORE_KEY);
-        const persistedCreationPreferences = scopedLocalStorage.getItem(CREATION_PREFERENCES_STORE_KEY);
-        usePluginStore.setState({ hydrated: false, runtimeStatuses: {}, pluginStates: {} });
+        // Clear old account requests while preserving the public catalogs already visible in the lobby.
+        if (previousUserId !== nextUserId) clearUserQueryCache(appQueryClient);
+        if (!(await switchUserStorageScope(payload.user?.id, expectedSession, () => isCurrentGeneration(generation)))) return;
+        // 切换存储 scope 时 user store 仍保留旧身份；此处只能先检查 generation，
+        // 否则登录后的新用户会被误判为过期会话，hydrated 永远无法解除。
+        if (!isCurrentGeneration(generation)) return;
+        withCanvasStorePersistenceSuppressed(() =>
+            withAssetStorePersistenceSuppressed(() =>
+                withUserScopedPersistenceSuppressed(() => {
+                    resetUserScopedMemory();
+                }),
+            ),
+        );
         useUserStore.getState().setUser(payload.user);
+        useUserStore.getState().setUserGroup(payload.userGroup);
         useUserStore.getState().setRuntimeLimits(payload.runtimeLimits);
         useUserStore.getState().setDrawingEngine(payload.drawingEngine);
         useUserStore.getState().setFeatures(payload.features);
-        await Promise.all([useCanvasStore.persist.rehydrate(), useCanvasHistoryStore.persist.rehydrate(), useAssetStore.persist.rehydrate(), useConfigStore.persist.rehydrate(), usePluginStore.persist.rehydrate(), useCreationPreferencesStore.persist.rehydrate()]);
-        // Zustand 在目标 scope 没有快照时会保留旧内存，必须显式恢复该 scope 的空状态。
-        if (!persistedCanvas) useCanvasStore.setState({ projects: [] });
-        if (!persistedCanvasHistory) useCanvasHistoryStore.setState({ deletedProjects: [] });
-        if (!persistedAssets) useAssetStore.setState({ assets: [] });
-        if (!persistedPlugins) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
-        if (!persistedCreationPreferences) useCreationPreferencesStore.setState({ preferences: {} });
+        useUserStore.getState().setReferralAvailable(payload.referralAvailable);
+        installRemoteUserDataAutoSync();
+        await hydrateUserSessionData(payload, generation);
+        if (!isCurrentSession(generation, nextUserId)) return;
+        useUserStore.getState().setHydrated(true);
+    } catch (error) {
+        if (isCurrentGeneration(generation)) throw error;
+    }
+}
+
+function resetUserScopedMemory() {
+    useCanvasStore.setState({ projects: [], hydrated: false });
+    useCanvasHistoryStore.setState({ deletedProjects: [] });
+    useAssetStore.setState({ assets: [], hydrated: false });
+    useConfigStore.setState({ config: normalizeConfigSnapshot({ config: defaultConfig }).config });
+    usePluginStore.setState({ hydrated: false, installations: [], runtimeStatuses: {}, pluginStates: {} });
+    useCreationPreferencesStore.setState({ hydrated: false, preferences: {} });
+    useGlobalAgentStore.getState().reset();
+}
+
+async function hydrateUserSessionData(payload: AuthSessionPayload, generation: number) {
+    const startedAt = performance.now();
+    const userId = payload.user?.id || "";
+    const [canvas, canvasHistory, assets, plugins] = await Promise.allSettled([
+        localForageStorage.getItem(CANVAS_STORE_KEY),
+        localForageStorage.getItem(CANVAS_HISTORY_STORE_KEY),
+        localForageStorage.getItem(ASSET_STORE_KEY),
+        localForageStorage.getItem(PLUGIN_STORE_KEY),
+    ]);
+    if (!isCurrentSession(generation, userId)) return;
+    const persistedConfig = safeScopedStorageGet(CONFIG_STORE_KEY);
+    const persistedCreationPreferences = safeScopedStorageGet(CREATION_PREFERENCES_STORE_KEY);
+    await Promise.allSettled([
+        useCanvasStore.persist.rehydrate(),
+        useCanvasHistoryStore.persist.rehydrate(),
+        useAssetStore.persist.rehydrate(),
+        useConfigStore.persist.rehydrate(),
+        usePluginStore.persist.rehydrate(),
+        useCreationPreferencesStore.persist.rehydrate(),
+    ]);
+    if (!isCurrentSession(generation, userId)) return;
+    // Zustand 在目标 scope 没有快照时会保留旧内存，必须显式恢复该 scope 的空状态。
+    if (!hasPersistedValue(canvas)) useCanvasStore.setState({ projects: [] });
+    if (!hasPersistedValue(canvasHistory)) useCanvasHistoryStore.setState({ deletedProjects: [] });
+    if (!hasPersistedValue(assets)) useAssetStore.setState({ assets: [] });
+    if (!hasPersistedValue(plugins)) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
+    if (!persistedCreationPreferences) useCreationPreferencesStore.setState({ preferences: {} });
+
+
+    if (userId) {
+        try {
+            await initializeRemoteUserDataSession(userId);
+        } catch (error) {
+            if (isCurrentSession(generation, userId)) console.warn("远端用户数据后台同步初始化失败", error);
+        }
+    } else {
+        resetRemoteUserDataSync();
+    }
+
+    if (isCurrentSession(generation, userId)) {
+        catalogInitialConfig = persistedConfig ? undefined : useConfigStore.getState().config;
+        // 失败状态保留给页面重试，不把网络故障当成空模型目录。
+        void refreshSystemChannels().catch(() => {});
+        recordDiagnosticEvent({
+            category: "navigation",
+            level: "info",
+            code: "startup.workspace_data_ready",
+            message: "账号数据与画布同步会话已就绪",
+            durationMs: performance.now() - startedAt,
+        });
+    }
+}
+
+async function refreshUserModelCatalog(userId: string, generation: number, persistedConfig: string | null) {
+    try {
+        const catalog = await getModelCatalog();
+        if (!isCurrentSession(generation, userId)) return;
         if (!persistedConfig) {
             // 只有首次配置缺失时才生成能力推荐；已有配置中的空数组代表用户明确清空。
-            // 使用统一模型目录接口
-            const catalog = await getModelCatalog();
-            let channels: ModelChannel[] = [];
-            if (catalog.source === "frontend" && catalog.models) {
-                channels = managedModelChannels(catalog.models);
-            } else if (catalog.source === "system" && catalog.channels) {
-                channels = systemChannelModelChannels(catalog.channels);
-            }
             const initialSystemConfig = {
                 ...defaultConfig,
-                channels,
+                channels: modelCatalogChannels(catalog),
                 imageModels: undefined,
                 videoModels: undefined,
                 textModels: undefined,
@@ -72,79 +171,82 @@ export async function applyUserSession(payload: AuthSessionPayload) {
             };
             useConfigStore.getState().replaceConfig(normalizeConfigSnapshot({ config: initialSystemConfig }).config);
         } else {
-            // 已有配置时也需要合并最新的系统渠道
-            const catalog = await getModelCatalog();
-            if (catalog.source === "frontend" && catalog.models) {
-                useConfigStore.getState().mergeSystemChannels(managedModelChannels(catalog.models));
-            } else if (catalog.source === "system" && catalog.channels) {
-                useConfigStore.getState().mergeSystemChannels(systemChannelModelChannels(catalog.channels));
-            }
+            useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
         }
-        installRemoteUserDataAutoSync();
-        if (payload.user?.id) {
-            await initializeRemoteUserDataSession(payload.user.id);
-        } else resetRemoteUserDataSync();
-    } finally {
-        useUserStore.getState().setHydrated(true);
+    } catch (error) {
+        if (isCurrentSession(generation, userId)) console.warn("模型目录后台刷新失败，保留本地配置", error);
     }
 }
 
-export async function refreshSystemChannels() {
-    // 使用统一模型目录接口，根据 frontendModelsEnabled 自动返回前台模型或系统渠道模型
-    const catalog = await getModelCatalog();
+function isCurrentSession(generation: number, userId: string) {
+    return !isUserSessionInvalidated() && generation === sessionGeneration && (useUserStore.getState().user?.id || "") === userId;
+}
 
-    if (catalog.source === "frontend" && catalog.models) {
-        // 前台模型模式
-        useConfigStore.getState().mergeSystemChannels(managedModelChannels(catalog.models));
-    } else if (catalog.source === "system" && catalog.channels) {
-        // 系统渠道模式
-        useConfigStore.getState().mergeSystemChannels(systemChannelModelChannels(catalog.channels));
+function isCurrentGeneration(generation: number) {
+    return generation === sessionGeneration;
+}
+
+function hasPersistedValue(result: PromiseSettledResult<unknown>) {
+    return result.status === "fulfilled" && result.value !== null && result.value !== undefined;
+}
+
+function safeScopedStorageGet(key: string) {
+    try {
+        return scopedLocalStorage.getItem(key);
+    } catch (error) {
+        console.warn("读取用户本地配置失败", { key, error });
+        return null;
     }
 }
 
-function managedModelChannels(models: PublicLogicalModel[]) {
-    const availableModels = models.filter((item) => item.available);
-    if (!availableModels.length) return [];
-    const managed: ModelChannel = {
-        id: PUBLIC_MODEL_CATALOG_ID,
-        name: "平台模型",
-        baseUrl: "/api",
-        apiKey: "system",
-        apiFormat: "openai",
-        scope: "system",
-        enabled: true,
-        models: availableModels.map((item) => item.id),
-        modelAliases: Object.fromEntries(availableModels.flatMap((item) => (item.legacyModelIds || []).map((legacyID) => [legacyID, item.id]))),
-        modelCosts: availableModels.map((item) => ({
-            model: item.id,
-            displayName: item.name,
-            description: item.description,
-            icon: item.icon,
-            capability: item.capability,
-            pricePolicy: item.pricePolicy,
-            billingMode: item.billingMode,
-            unitPriceMicrocredits: item.unitPriceMicrocredits,
-            inputTokenPriceMicrocredits: item.inputPriceMicrocredits,
-            outputTokenPriceMicrocredits: item.outputPriceMicrocredits,
-            cachedTokenPriceMicrocredits: item.cachedPriceMicrocredits,
-            capabilityConfig: projectLogicalCapability(item.capabilitySpec, item.defaultOptions),
-            logicalModelId: item.id,
-            logicalCapabilitySpec: item.capabilitySpec,
-            logicalCapabilityProfiles: item.capabilityProfiles,
-            logicalPriceTiers: item.priceTiers,
-            defaultOptions: item.defaultOptions,
-        })),
-    };
-    return [managed];
+export function refreshSystemChannels(): Promise<void> {
+    const generation = sessionGeneration;
+    const userId = useUserStore.getState().user?.id || "";
+    if (!isCurrentSession(generation, userId)) return Promise.reject(new DOMException("账号已切换，请重新加载", "AbortError"));
+    if (catalogRequest?.generation === generation) return catalogRequest.promise;
+    useModelCatalogStore.setState({ status: "loading" });
+    const promise = (async () => {
+        try {
+            const catalog = await getModelCatalog();
+            if (!isCurrentSession(generation, userId)) throw new DOMException("账号已切换，请重新加载", "AbortError");
+            const channels = modelCatalogChannels(catalog);
+            if (catalogInitialConfig && useConfigStore.getState().config === catalogInitialConfig) {
+                // 重试仍可初始化首次配置，但不能覆盖等待期间用户做过的编辑。
+                const initialSystemConfig = { ...defaultConfig, channels, imageModels: undefined, videoModels: undefined, textModels: undefined, audioModels: undefined };
+                useConfigStore.getState().replaceConfig(normalizeConfigSnapshot({ config: initialSystemConfig }).config);
+            } else {
+                useConfigStore.getState().mergeSystemChannels(channels);
+            }
+            catalogInitialConfig = undefined;
+            useModelCatalogStore.setState({ status: "ready" });
+        } catch (error) {
+            if (isCurrentSession(generation, userId)) useModelCatalogStore.setState({ status: "error" });
+            throw error;
+        } finally {
+            if (catalogRequest?.generation === generation) catalogRequest = undefined;
+        }
+    })();
+    catalogRequest = { generation, promise };
+    return promise;
+}
+
+// 目录仅接受系统渠道模型，避免畸形响应被当成空目录写入配置。
+function modelCatalogChannels(catalog: ModelCatalogResponse): ModelChannel[] {
+    if (catalog.source === "system") {
+        if (!Array.isArray(catalog.channels)) throw new Error("模型目录响应缺少系统渠道列表");
+        return systemChannelModelChannels(catalog.channels);
+    }
+    throw new Error("模型目录响应来源无效");
 }
 
 // 系统渠道模型转换为前端配置格式
-function systemChannelModelChannels(channels: PublicChannelCatalog[]): ModelChannel[] {
+export function systemChannelModelChannels(channels: PublicChannelCatalog[]): ModelChannel[] {
     return channels.map((channel) => {
         const availableModels = channel.models.filter((m) => m.available);
         return {
             id: channel.id,
             name: channel.displayName,
+            sortOrder: channel.sortOrder,
             // 系统渠道必须走带渠道 ID 的站内代理；/api 只是业务 API 根路径，
             // 不能作为模型请求的运行时 Base URL 传给 channelRequest。
             baseUrl: `/api/${channel.id}`,
@@ -166,40 +268,50 @@ function systemChannelModelChannels(channels: PublicChannelCatalog[]): ModelChan
                     selector: tier.selector || {},
                     resolution: tier.resolution || "*",
                     videoSeconds: tier.videoSeconds || 0,
-                    billingMode: tier.billingMode as "fixed_request" | "per_second" | "token",
+                    billingMode: tier.billingMode as "fixed_request" | "per_second" | "token" | "image_usage",
+                    imagePricing: tier.imagePricing,
                     unitPriceMicrocredits: tier.unitPriceMicrocredits || 0,
                     inputTokenPriceMicrocredits: tier.inputTokenPriceMicrocredits || 0,
                     outputTokenPriceMicrocredits: tier.outputTokenPriceMicrocredits || 0,
                     cachedTokenPriceMicrocredits: tier.cachedTokenPriceMicrocredits || 0,
+                    cacheWriteTokenPriceMicrocredits: tier.cacheWriteTokenPriceMicrocredits || 0,
+                    ...(tier.tokenPriceRules?.length ? { tokenPriceRules: tier.tokenPriceRules } : {}),
+                    referenceVideoUnitPriceMicrocredits: tier.referenceVideoUnitPriceMicrocredits || 0,
+                    referenceVideoOutputTokenPriceMicrocredits: tier.referenceVideoOutputTokenPriceMicrocredits || 0,
                 }));
 
                 return {
                     model: model.modelKey,
                     displayName: model.displayName,
-                    description: "",
-                    // 系统渠道目录不把供应商 Logo 作为敏感字段返回；协议是稳定的前端展示合同。
-                    // AutoDL H3 与秘塔 MiniMax H3 都使用 MiniMax 官方 Logo，其他渠道保持默认 CPU 图标。
+                    channelLabel: model.channelLabel,
+                    tags: model.tags || [],
+                    description: model.description || "",
                     icon: model.icon || (model.protocol === "minimax-video" || model.protocol === "autodl-h3-video" ? "Minimax" : ""),
                     capability: model.capability as ModelCapability,
                     protocol: model.protocol as any,
+                    textWire: isTextWire(model.textWire) ? model.textWire : undefined,
                     pricePolicy: "channel" as const,
                     billingMode: billingMode as any,
                     unitPriceMicrocredits: unitPrice,
                     inputTokenPriceMicrocredits: inputPrice,
                     outputTokenPriceMicrocredits: outputPrice,
                     cachedTokenPriceMicrocredits: cachedPrice,
+                    cacheWriteTokenPriceMicrocredits: firstTier?.cacheWriteTokenPriceMicrocredits || 0,
                     capabilityConfig: (model.capabilityConfig as ModelCapabilityConfig | undefined) || defaultModelCapabilityConfig(),
                     channelModelId: model.id,
                     channelId: channel.id,
                     modelKey: model.modelKey,
                     logicalPriceTiers,
+                    availability: model.availability,
+                    available: model.available,
+                    referenceVideoBilling: model.capability === "video" && model.referenceVideoBilling === true,
                 };
             }),
         };
     });
 }
 
-function projectLogicalCapability(spec: CapabilitySpec, defaults: Record<string, unknown>): ModelCapabilityConfig {
+export function projectLogicalCapability(spec: CapabilitySpec, defaults: Record<string, unknown>): ModelCapabilityConfig {
     const projected = defaultModelCapabilityConfig();
     if (spec.capability === "image" && projected.image) {
         projected.image.references.maxImages = spec.inputs?.image?.max ?? 0;
@@ -209,17 +321,27 @@ function projectLogicalCapability(spec: CapabilitySpec, defaults: Record<string,
         projected.image.transparentBackground = { supported: false, default: false };
         const sizeOption = spec.options?.size || spec.options?.aspectRatio;
         const sizeValues = stringValues(sizeOption);
-        const sizeAllowsCustom = sizeValues.includes("*");
+        const sizeAllowsCustom = sizeValues.includes("*") || Boolean(spec.imageSize?.allowCustom);
         const concreteSizeValues = sizeValues.filter((value) => value !== "*");
         const sizePresets = concreteSizeValues.length ? concreteSizeValues : sizeAllowsCustom ? [...STANDARD_IMAGE_SIZE_VALUES] : [];
-        if (sizePresets.length || sizeAllowsCustom) {
-            projected.image!.size = { parameter: "size", values: sizePresets, default: concreteDefault(defaults.size, sizePresets, "1:1"), allowCustom: sizeAllowsCustom };
+        if (sizePresets.length || sizeAllowsCustom || spec.imageSize?.presets?.length) {
+            const parameter = spec.imageSize?.parameter === "aspect_ratio" || spec.imageSize?.parameter === "size" ? spec.imageSize.parameter : "size";
+            const sourceSize = String(spec.imageParameters?.find((field) => field.name === "size")?.default ?? "");
+            const defaultRatio = sourceSize.includes(":") ? sourceSize : spec.imageSize?.presets?.find((preset) => preset.size === sourceSize)?.ratio;
+            projected.image.size = { parameter, values: sizePresets, default: concreteDefault(defaults.size, sizePresets, "1:1"), allowCustom: sizeAllowsCustom, defaultTier: spec.imageSize?.defaultTier, defaultRatio };
+            if (spec.imageSize?.presets?.length) projected.image.size = imageSizeConfigWithPresets(projected.image, spec.imageSize.presets);
         }
         applyStringOption(spec.options?.quality, defaults.quality, (values, initial) => {
             projected.image!.quality = { supported: true, values, default: initial };
         });
         projected.image.maxOutputs = maxNumericOption(spec.options?.count, 1);
         projected.image.transparentBackground = booleanOption(spec.options?.transparentBackground, defaults.transparentBackground);
+        if (spec.imageParameters) {
+            projected.image = projectImageParameters(
+                projected.image,
+                imageParametersForSpec(spec).map((field) => ({ ...field, default: (defaults[field.name] as import("./image-parameters").ImageParameterValue | undefined) ?? field.default })),
+            );
+        }
     }
     if (spec.capability === "video" && projected.video) {
         projected.video.references.minImages = spec.inputs?.image?.min ?? 0;
@@ -269,8 +391,23 @@ function booleanOption(option: OptionConstraint | undefined, fallback: unknown) 
     return { supported, default: supported && String(fallback) === "true" };
 }
 
-export async function refreshFeatureAvailability() {
-    const payload = await getFeatureAvailability();
-    useUserStore.getState().setFeatures(payload.features);
-    return payload.features;
+let pendingFeatureRefresh: { generation: number; userId: string; promise: Promise<FeatureAvailability> } | null = null;
+
+export function refreshFeatureAvailability() {
+    const generation = sessionGeneration;
+    const userId = useUserStore.getState().user?.id || "";
+    if (pendingFeatureRefresh?.generation === generation && pendingFeatureRefresh.userId === userId) {
+        return pendingFeatureRefresh.promise;
+    }
+    const request = { generation, userId, promise: null! as Promise<FeatureAvailability> };
+    request.promise = getFeatureAvailability().then((payload) => {
+        const state = useUserStore.getState();
+        if (generation !== sessionGeneration || (state.user?.id || "") !== userId) return state.features;
+        state.setFeatures(payload.features);
+        return payload.features;
+    }).finally(() => {
+        if (pendingFeatureRefresh === request) pendingFeatureRefresh = null;
+    });
+    pendingFeatureRefresh = request;
+    return request.promise;
 }

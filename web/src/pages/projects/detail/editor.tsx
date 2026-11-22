@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     AlertTriangle,
     Check,
@@ -26,34 +26,26 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { normalizeTimelineProject } from "@/lib/timeline/timeline-tracks";
 import { formatTimelineTime } from "@/lib/timeline/timeline-view";
 import { useEditorStoreContext } from "@/components/editor/editor-context";
-import type { TimelineClip, TimelineProject } from "@/types/timeline";
+import type { TimelineProject } from "@/types/timeline";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 const EDITOR_TIMELINE_KEY = "editor-timeline";
 
-/** M2.4 演示种子：首次进入项目编辑器且无本地时间线时初始化一个可交互示例。
- *  M4 接入真实数据源（画布节点 / 后端项目时间线）后移除。 */
-function createEditorSeed(projectId: string): TimelineProject {
-    const clips: TimelineClip[] = [
-        { id: `${projectId}:demo-v1`, kind: "video", nodeId: "demo-node-a", trackId: "video-1", startMs: 0, durationMs: 5000, sourceStartMs: 0, sourceDurationMs: 5000 },
-        { id: `${projectId}:demo-v2`, kind: "video", nodeId: "demo-node-b", trackId: "video-1", startMs: 6000, durationMs: 3000, sourceStartMs: 1000, sourceDurationMs: 8000 },
-        { id: `${projectId}:demo-a1`, kind: "audio", nodeId: "demo-node-a", trackId: "audio-1", startMs: 0, durationMs: 5000, sourceStartMs: 0, sourceDurationMs: 5000, volume: 0.8 },
-        { id: `${projectId}:demo-s1`, kind: "subtitle", nodeId: "demo-node-a", trackId: "subtitle-1", startMs: 500, durationMs: 2000, subtitleEntryIndex: 0, text: "示例字幕" },
-    ];
-    return normalizeTimelineProject({
-        version: 2,
-        tracks: [
-            { id: "video-1", kind: "video", label: "视频 1", order: 0 },
-            { id: "audio-1", kind: "audio", label: "音频 1", order: 1 },
-            { id: "subtitle-1", kind: "subtitle", label: "字幕 1", order: 2 },
-        ],
-        clips,
-        durationMs: 9000,
-    });
+/**
+ * 为尚未产生本地时间线的项目建立一个可编辑的初始时间线。
+ * 该时间线只写入当前用户与项目作用域的本地存储，不代表服务端已有成片数据。
+ */
+function createEmptyEditorTimeline(): TimelineProject {
+    // 没有真实素材时返回空时间线，避免把不存在的 demo node 当成可剪辑资产。
+    // 用户添加素材后由编辑器命令创建轨道和片段；空项目不应被伪造为已有成片。
+    return normalizeTimelineProject({ version: 2, tracks: [], clips: [], durationMs: 0 });
 }
 
-/** 插槽堆叠：渲染该区域权限通过的插槽贡献（fail-closed，M5.2）；
+/** 插槽堆叠：只渲染通过权限检查的插件贡献；无可用插件时显示明确的缺失能力提示。
  *  缺权限插件不渲染，改为一行诊断提示；无贡献时显示空态（停用插件可见）。 */
 function SlotStack({ slots, emptyHint }: { slots: EditorSlotRegistration[]; emptyHint: string }) {
+    const { t } = useInterfaceTranslation();
     const allowed = slots.filter((slot) => pluginMayRenderEditorSlot(slot.pluginId, slot.slot).allowed);
     const denied = slots.filter((slot) => !pluginMayRenderEditorSlot(slot.pluginId, slot.slot).allowed);
     if (allowed.length === 0 && denied.length === 0) {
@@ -77,14 +69,14 @@ function SlotStack({ slots, emptyHint }: { slots: EditorSlotRegistration[]; empt
                 return (
                     <div
                         key={slot.id}
-                        title={`插件 ${slot.pluginId} 缺少 ${missing ?? "注册"}，已按 fail-closed 拒绝渲染`}
+                        title={t("projectUi.editorPluginRejected" as InterfaceMessageKey, { plugin: slot.pluginId, missing: missing || t("projectUi.pluginRegistration" as InterfaceMessageKey) })}
                         className="flex min-h-8 shrink-0 items-center gap-2 bg-[var(--director-danger)]/10 px-3 text-[11px] text-[var(--director-danger)]"
                     >
                         <AlertTriangle className="size-3 shrink-0" />
                         <span className="truncate">
                             {missing
-                                ? `插件 ${slot.pluginId} 缺少 ${missing} 权限，已停用该面板。`
-                                : `插件 ${slot.pluginId} 未注册，已停用该面板。`}
+                                ? t("projectUi.editorPluginMissingPermission" as InterfaceMessageKey, { plugin: slot.pluginId, permission: missing })
+                                : t("projectUi.editorPluginNotRegistered" as InterfaceMessageKey, { plugin: slot.pluginId })}
                         </span>
                     </div>
                 );
@@ -142,6 +134,7 @@ function EditorTopBar({
     onToggleAi: () => void;
 }) {
     const { project, history, isDirty, saving, saveError, undo, redo } = useEditorStoreContext();
+    const { t } = useInterfaceTranslation();
     const canUndo = (history?.undoStack.length ?? 0) > 0;
     const canRedo = (history?.redoStack.length ?? 0) > 0;
 
@@ -149,8 +142,8 @@ function EditorTopBar({
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3">
             <button
                 type="button"
-                aria-label="撤销"
-                title="撤销（Cmd/Ctrl+Z）"
+                aria-label={t("projectUi.undo" as InterfaceMessageKey)}
+                title={t("projectUi.undoShortcut" as InterfaceMessageKey)}
                 onClick={undo}
                 disabled={!canUndo}
                 className="grid size-8 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-35"
@@ -159,8 +152,8 @@ function EditorTopBar({
             </button>
             <button
                 type="button"
-                aria-label="重做"
-                title="重做（Cmd/Ctrl+Shift+Z）"
+                aria-label={t("projectUi.redo" as InterfaceMessageKey)}
+                title={t("projectUi.redoShortcut" as InterfaceMessageKey)}
                 onClick={redo}
                 disabled={!canRedo}
                 className="grid size-8 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-35"
@@ -169,22 +162,22 @@ function EditorTopBar({
             </button>
             <div className="flex-1" />
             <div className="flex items-center gap-1.5">
-                <span className="grid size-8 place-items-center" title={saveError ?? (saving ? "保存中" : isDirty ? "有未保存的更改" : "已保存")}>
+                <span className="grid size-8 place-items-center" title={saveError ?? (saving ? t("projectUi.saving" as InterfaceMessageKey) : isDirty ? t("projectUi.unsavedChanges" as InterfaceMessageKey) : t("projectUi.saved" as InterfaceMessageKey))}>
                     {saveError ? (
-                        <AlertTriangle className="size-4 text-[var(--director-danger)]" aria-label="保存失败" />
+                        <AlertTriangle className="size-4 text-[var(--director-danger)]" aria-label={t("projectUi.saveFailed" as InterfaceMessageKey)} />
                     ) : saving ? (
-                        <Loader2 className="size-4 animate-spin text-[var(--director-dock-fg)]" aria-label="保存中" />
+                        <Loader2 className="size-4 animate-spin text-[var(--director-dock-fg)]" aria-label={t("projectUi.saving" as InterfaceMessageKey)} />
                     ) : isDirty ? (
-                        <CircleDot className="size-3.5 text-[var(--director-warning)]" aria-label="未保存" />
+                        <CircleDot className="size-3.5 text-[var(--director-warning)]" aria-label={t("projectUi.unsaved" as InterfaceMessageKey)} />
                     ) : (
-                        <Check className="size-4 text-[var(--director-success)]" aria-label="已保存" />
+                        <Check className="size-4 text-[var(--director-success)]" aria-label={t("projectUi.saved" as InterfaceMessageKey)} />
                     )}
                 </span>
                 <button
                     type="button"
-                    aria-label="AI 剪辑助手"
+                    aria-label={t("projectUi.aiEditingAssistant" as InterfaceMessageKey)}
                     aria-pressed={aiOpen}
-                    title="AI 剪辑助手（编辑意图转时间线指令）"
+                    title={t("projectUi.aiEditingAssistantTitle" as InterfaceMessageKey)}
                     onClick={onToggleAi}
                     className={`grid size-8 place-items-center rounded-md transition-colors ${
                         aiOpen
@@ -196,8 +189,8 @@ function EditorTopBar({
                 </button>
                 <button
                     type="button"
-                    aria-label={isFullscreen ? "退出全屏" : "全屏编辑"}
-                    title={isFullscreen ? "退出全屏（Esc）" : "全屏编辑"}
+                    aria-label={t(isFullscreen ? "projectUi.exitFullscreen" as InterfaceMessageKey : "projectUi.fullscreenEdit" as InterfaceMessageKey)}
+                    title={t(isFullscreen ? "projectUi.exitFullscreenEscape" as InterfaceMessageKey : "projectUi.fullscreenEdit" as InterfaceMessageKey)}
                     onClick={onToggleFullscreen}
                     className="grid size-8 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
                 >
@@ -205,8 +198,8 @@ function EditorTopBar({
                 </button>
                 <button
                     type="button"
-                    aria-label="导出"
-                    title="导出"
+                    aria-label={t("projectUi.export" as InterfaceMessageKey)}
+                    title={t("projectUi.export" as InterfaceMessageKey)}
                     onClick={onExport}
 className="grid size-8 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] hover:text-[var(--director-dock-fg-strong)]"
                 >
@@ -220,6 +213,7 @@ className="grid size-8 place-items-center rounded-md text-[var(--director-dock-f
 /** 底部状态栏：时长 / 片段数 / 轨道数 / 快捷键提示。 */
 function EditorStatusBar({ projectName }: { projectName: string }) {
     const { project } = useEditorStoreContext();
+    const { locale, t } = useInterfaceTranslation();
     const clipCount = project?.clips.length ?? 0;
     const trackCount = project?.tracks.length ?? 0;
     const durationMs = project?.durationMs ?? 0;
@@ -227,16 +221,17 @@ function EditorStatusBar({ projectName }: { projectName: string }) {
     return (
         <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3 text-[10px] text-[var(--director-dock-fg)]">
             <span className="truncate text-[var(--director-dock-fg-strong)]">{projectName}</span>
-            <span className="tabular-nums">时长 {formatTimelineTime(durationMs)}</span>
-            <span>片段 {clipCount}</span>
-            <span>轨道 {trackCount}</span>
+            <span className="tabular-nums">{t("projectUi.editorDuration" as InterfaceMessageKey, { duration: formatTimelineTime(durationMs) })}</span>
+            <span>{t("projectUi.editorClipCount" as InterfaceMessageKey, { count: new Intl.NumberFormat(locale).format(clipCount) })}</span>
+            <span>{t("projectUi.editorTrackCount" as InterfaceMessageKey, { count: new Intl.NumberFormat(locale).format(trackCount) })}</span>
             <div className="flex-1" />
-            <span className="hidden sm:inline">⌘Z 撤销 · ⇧⌘Z 重做 · 拖拽移动 / 边缘裁剪片段</span>
+            <span className="hidden sm:inline">{t("projectUi.editorShortcutHint" as InterfaceMessageKey)}</span>
         </footer>
     );
 }
 
 export default function ProjectEditorView({ detail }: { detail: ProjectDetail }) {
+    const { t } = useInterfaceTranslation();
     // 插槽注册（全部 8 种始终注册；左/右栏 Tab 决定当前渲染哪个）。
     const previewSlots = useEditorSlots("preview-renderer");
     const timelineSlots = useEditorSlots("timeline-panel");
@@ -254,7 +249,7 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
     const [assets, setAssets] = useState<ProjectAsset[]>(detail.assets);
     const workbenchRef = useRef<HTMLDivElement | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    // AI 助手浮层（顶部工具按钮触发，M6.3；Esc / 点击遮罩关闭）。
+    // AI 助手浮层由顶栏按钮打开，支持 Esc 和遮罩点击关闭，避免长期遮挡编辑区。
     const [aiOpen, setAiOpen] = useState(false);
     useEffect(() => {
         if (!aiOpen) return;
@@ -268,17 +263,37 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
     // 底部时间线高度（px）：分隔条拖拽调整（120–480）。
     const [timelineH, setTimelineH] = useState(240);
     const splitterRef = useRef<{ startY: number; startH: number } | null>(null);
+    const scope = getActiveUserScope();
+    const projectId = detail.project.id;
+    const assetOwnerKey = JSON.stringify([scope, projectId]);
+    const activeAssetOwnerKeyRef = useRef(assetOwnerKey);
+    const assetRefreshSequenceRef = useRef(0);
+    activeAssetOwnerKeyRef.current = assetOwnerKey;
 
-    const refreshAssets = async (): Promise<ProjectAsset[] | null> => {
+    const refreshAssets = useCallback(async (): Promise<ProjectAsset[] | null> => {
+        const requestedOwnerKey = assetOwnerKey;
+        const requestSequence = assetRefreshSequenceRef.current + 1;
+        assetRefreshSequenceRef.current = requestSequence;
         try {
             const list = (await listProjectAssets(projectId)).assets;
+            // 项目、账号或刷新序号变化都说明当前响应已经过期；旧响应不得覆盖新上下文的素材快照。
+            if (
+                activeAssetOwnerKeyRef.current !== requestedOwnerKey ||
+                assetRefreshSequenceRef.current !== requestSequence
+            ) {
+                return null;
+            }
             setAssets(list);
             return list;
-        } catch {
-            // 刷新失败保留现有列表；调用方可据此决定是否重试
+        } catch (error) {
+            // 过期请求的错误不属于当前编辑器上下文，也不应产生误导性告警。
+            if (activeAssetOwnerKeyRef.current !== requestedOwnerKey) return null;
+            // 资产列表属于读展示路径：保留当前快照，避免网络抖动让编辑器清空素材。
+            // 但不能把快照当成同步成功；记录项目上下文，便于定位并在下次进入时重试。
+            console.warn("刷新项目素材列表失败，已保留当前快照", { projectId, scope, error });
             return null;
         }
-    };
+    }, [assetOwnerKey, projectId, scope]);
 
     useEffect(() => {
         const onFsChange = () => setIsFullscreen(document.fullscreenElement === workbenchRef.current);
@@ -287,59 +302,91 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
     }, []);
 
     const toggleFullscreen = () => {
-        if (document.fullscreenElement) {
-            void document.exitFullscreen().catch(() => {});
-        } else {
-            void workbenchRef.current?.requestFullscreen().catch(() => {});
-        }
+        const operation = document.fullscreenElement
+            ? document.exitFullscreen()
+            : workbenchRef.current?.requestFullscreen();
+        void operation?.catch((error) => {
+            console.warn("切换编辑器全屏状态失败", { projectId, error });
+        });
     };
 
-    const scope = getActiveUserScope();
-    const projectId = detail.project.id;
+    const detailAssetsRef = useRef(detail.assets);
+    detailAssetsRef.current = detail.assets;
 
-    // 挂载/切换项目时以服务端为准同步一次资产：detail.assets 只是详情页快照，
-    // 上个会话导入但详情未携带（或导入后未刷新）的素材会在进入编辑器后补现。
+    // 挂载、切换项目或切换账号时先恢复详情快照，再以服务端列表校准。
+    // detail.assets 只用于切换瞬间占位；refreshAssets 内部负责丢弃过期和乱序响应。
+    useEffect(() => {
+        setAssets(detailAssetsRef.current);
+        void refreshAssets();
+        return () => {
+            // 使当前 owner 下仍在途的请求失效，避免组件卸载后提交 state。
+            assetRefreshSequenceRef.current += 1;
+        };
+    }, [assetOwnerKey, refreshAssets]);
+
+    const store = useMemo(
+        () =>
+            createEditorStore({
+                saveTimeline: async (project: TimelineProject) => {
+                    await localForageStorageForScope(scope).setItem(`${EDITOR_TIMELINE_KEY}:${projectId}`, JSON.stringify(project));
+                },
+            }),
+        [projectId, scope],
+    );
+
+    // 进入编辑器时只加载当前用户和项目作用域的本地时间线；没有真实数据时保持空时间线，禁止注入虚构片段。
     useEffect(() => {
         let cancelled = false;
         void (async () => {
-            const list = await refreshAssets();
-            if (!cancelled && list) setAssets(list);
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [projectId]);
-
-    const store = useState(() =>
-        createEditorStore({
-            saveTimeline: async (project: TimelineProject) => {
-                await localForageStorageForScope(scope).setItem(`${EDITOR_TIMELINE_KEY}:${projectId}`, JSON.stringify(project));
-            },
-        }),
-    )[0];
-
-    // 进入编辑器时加载本地时间线；无则初始化演示种子（不触发保存，历史从该状态起步）。
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            const storage = localForageStorageForScope(scope);
-            const raw = await storage.getItem(`${EDITOR_TIMELINE_KEY}:${projectId}`);
-            const loaded = raw ? normalizeTimelineProject(JSON.parse(raw)) : createEditorSeed(projectId);
-            if (!cancelled) store.getState().load(loaded);
+            try {
+                const storage = localForageStorageForScope(scope);
+                const raw = await storage.getItem(`${EDITOR_TIMELINE_KEY}:${projectId}`);
+                let loaded = createEmptyEditorTimeline();
+                if (raw) {
+                    try {
+                        loaded = normalizeTimelineProject(JSON.parse(raw));
+                    } catch (error) {
+                        // 本地历史数据属于读展示路径：坏记录不能阻塞编辑器启动，
+                        // 但必须记录项目和存储键，后续可按键清理或迁移，而不是把坏数据伪装成有效时间线。
+                        console.warn("读取编辑器本地时间线失败，已使用空时间线", {
+                            projectId,
+                            storageKey: `${EDITOR_TIMELINE_KEY}:${projectId}`,
+                            error,
+                        });
+                    }
+                }
+                if (!cancelled) store.getState().load(loaded);
+            } catch (error) {
+                // IndexedDB/localforage 不可用时不写入空时间线，避免覆盖可能仍可恢复的本地数据。
+                console.error("读取编辑器本地时间线存储失败，保留编辑器初始状态", { projectId, error });
+            }
         })();
         return () => {
             cancelled = true;
             // 卸载前冲刷尚未落盘的改动（如切页发生在防抖窗口内），避免最后几次操作丢失。
-            void store.getState().flushSave?.().catch(() => {});
+            // flushSave 失败时 editor-store 会保留 isDirty；这里必须留下错误证据，不能假装已保存。
+            const flushSave = store.getState().flushSave;
+            if (flushSave) {
+                void flushSave().catch((error) => {
+                    console.error("编辑器卸载前保存时间线失败，待下次操作重试", { projectId, error });
+                });
+            }
         };
     }, [scope, projectId, store]);
 
     // 画布产物自动同步：detail.shotArtifacts 中当前采用(storyboard/action_board/
     // 分镜/导出成片，且 ready + 有资源)尚未作为素材进本项目时，自动
     // linkProjectAsset(source=canvas) 并入素材库 —— 剪辑器“素材选项”直接可用画布产物。
-    // 后端幂等(已链接直接返回)，失败静默，下次进入编辑器自动补同步；
-    // 已完成集合记录在 ref，避免同一会话重复请求。
+    // 后端幂等（已链接直接返回）；单个失败不阻塞其余资源，但会记录告警，
+    // 下次进入编辑器时再次尝试补同步。
+    // 该集合只表示“当前用户、当前项目会话已处理过”，切换账号或项目时必须清空，避免跨作用域复用 resource ID。
     const syncedCanvasResourcesRef = useRef<Set<string>>(new Set());
+    const syncedAssetOwnerKeyRef = useRef(assetOwnerKey);
+    useEffect(() => {
+        if (syncedAssetOwnerKeyRef.current === assetOwnerKey) return;
+        syncedAssetOwnerKeyRef.current = assetOwnerKey;
+        syncedCanvasResourcesRef.current.clear();
+    }, [assetOwnerKey]);
     const canvasSyncKeys = detail.shotArtifacts
         .filter(
             (a): a is ShotArtifact & { resourceId: string } =>
@@ -365,26 +412,24 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                 const resourceId = key.slice("resource:".length);
                 try {
                     await linkProjectAsset(projectId, { assetId: resourceId, category: "material", source: "canvas" });
+                    // 请求返回时组件可能已经切换项目；旧请求不能把结果记入新项目的会话集合。
+                    if (cancelled) break;
                     syncedCanvasResourcesRef.current.add(key);
-                } catch {
-                    // 单个同步失败不阻塞其余；留待下次进入编辑器重试
+                } catch (error) {
+                    // 单个资源同步失败不阻塞其他资源；失败项不加入已完成集合，
+                    // 这样下次进入编辑器仍会重试，而不是把未同步伪装成成功。
+                    console.warn("画布产物同步到项目素材失败", { projectId, resourceId, error });
                 }
             }
             if (!cancelled) {
-                // 直接拉取最新列表(setAssets 稳定)而非经 refreshAssets，
-                // 避免闭包依赖变化导致 effect 反复触发
-                try {
-                    const list = (await listProjectAssets(projectId)).assets;
-                    if (!cancelled) setAssets(list);
-                } catch {
-                    // 刷新失败保留现有列表，下次进入编辑器再同步
-                }
+                // 统一经过带 owner 与请求序号校验的刷新入口，防止同步后的旧请求覆盖新项目快照。
+                await refreshAssets();
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [canvasSyncKeys, projectId, assets]);
+    }, [assets, canvasSyncKeys, projectId, refreshAssets]);
 
     return (
         <EditorStoreProvider store={store} host={{ projectId, assets, refreshAssets }}>
@@ -400,7 +445,7 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                 <div className={aiOpen ? "contents" : "hidden"}>
                     <button
                         type="button"
-                        aria-label="关闭 AI 助手"
+                        aria-label={t("projectUi.closeAiAssistant" as InterfaceMessageKey)}
                         tabIndex={-1}
                         className="fixed inset-0 z-30 cursor-default bg-transparent"
                         onClick={() => setAiOpen(false)}
@@ -408,15 +453,15 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                     <div className="absolute right-2 top-14 z-40 flex h-[640px] max-h-[calc(100%-3.75rem)] w-[460px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface)] shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
                         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--director-sequencer-border)] px-3">
                             <Sparkles className="size-4 text-[var(--director-dock-fg)]/80" />
-                            <span className="text-xs font-medium text-[var(--director-dock-fg-strong)]">AI 剪辑助手</span>
+                            <span className="text-xs font-medium text-[var(--director-dock-fg-strong)]">{t("projectUi.aiEditingAssistant" as InterfaceMessageKey)}</span>
                             <span className="hidden truncate text-[10px] text-[var(--director-dock-fg)]/45 sm:inline">
-                                编辑意图 → 时间线指令（宿主校验）
+                                {t("projectUi.editorIntentToTimelineCommands" as InterfaceMessageKey)}
                             </span>
                             <div className="flex-1" />
                             <button
                                 type="button"
-                                aria-label="关闭"
-                                title="关闭（Esc）"
+                                aria-label={t("projectUi.close" as InterfaceMessageKey)}
+                                title={t("projectUi.closeEscape" as InterfaceMessageKey)}
                                 onClick={() => setAiOpen(false)}
                                 className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
                             >
@@ -424,7 +469,7 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                             </button>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                            <SlotStack slots={aiSlots} emptyHint="AI 助手插件未加载。" />
+                            <SlotStack slots={aiSlots} emptyHint={t("projectUi.aiAssistantPluginNotLoaded" as InterfaceMessageKey)} />
                         </div>
                     </div>
                 </div>
@@ -436,22 +481,22 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                         <aside className="flex h-full w-64 shrink-0 flex-col overflow-hidden rounded-xl bg-[var(--director-sequencer-surface)] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
                             <PanelTabs
                                 tabs={[
-                                    { id: "asset", label: "素材" },
-                                    { id: "transcription", label: "转写" },
+                                    { id: "asset", label: t("projectUi.assets" as InterfaceMessageKey) },
+                                    { id: "transcription", label: t("projectUi.transcription" as InterfaceMessageKey) },
                                 ]}
                                 active={leftTab}
                                 onChange={setLeftTab}
                             />
                             {leftTab === "asset" ? (
-                                <SlotStack slots={assetSlots} emptyHint="素材库插件未加载。" />
+                                <SlotStack slots={assetSlots} emptyHint={t("projectUi.assetLibraryPluginNotLoaded" as InterfaceMessageKey)} />
                             ) : (
-                                <SlotStack slots={transcriptionSlots} emptyHint="转写插件未加载。" />
+                                <SlotStack slots={transcriptionSlots} emptyHint={t("projectUi.transcriptionPluginNotLoaded" as InterfaceMessageKey)} />
                             )}
                         </aside>
 
                         {/* 中栏：预览（占满剩余高度） */}
                         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-[var(--director-sequencer-surface)] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
-                            <SlotStack slots={previewSlots} emptyHint="预览插件未加载。" />
+                            <SlotStack slots={previewSlots} emptyHint={t("projectUi.previewPluginNotLoaded" as InterfaceMessageKey)} />
                         </main>
 
                         {/* 右栏：检查 / 字幕 / 导出（Tab 化，可折叠为窄条；AI 助手已移至顶栏浮层） */}
@@ -459,8 +504,8 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                             <aside className="flex h-full w-9 shrink-0 flex-col items-center overflow-hidden rounded-xl bg-[var(--director-sequencer-surface)] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
                                 <button
                                     type="button"
-                                    aria-label="展开检查器"
-                                    title="展开检查器"
+                                    aria-label={t("projectUi.expandInspector" as InterfaceMessageKey)}
+                                    title={t("projectUi.expandInspector" as InterfaceMessageKey)}
                                     onClick={() => setRightCollapsed(false)}
                                     className="mt-1.5 grid size-8 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
                                 >
@@ -471,17 +516,17 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                             <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden rounded-xl bg-[var(--director-sequencer-surface)] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
                                 <PanelTabs
                                     tabs={[
-                                        { id: "inspector", label: "检查" },
-                                        { id: "subtitle", label: "字幕" },
-                                        { id: "export", label: "导出" },
+                                        { id: "inspector", label: t("projectUi.inspector" as InterfaceMessageKey) },
+                                        { id: "subtitle", label: t("projectUi.subtitles" as InterfaceMessageKey) },
+                                        { id: "export", label: t("projectUi.export" as InterfaceMessageKey) },
                                     ]}
                                     active={rightTab}
                                     onChange={setRightTab}
                                     trailing={
                                         <button
                                             type="button"
-                                            aria-label="折叠检查器"
-                                            title="折叠检查器"
+                                            aria-label={t("projectUi.collapseInspector" as InterfaceMessageKey)}
+                                            title={t("projectUi.collapseInspector" as InterfaceMessageKey)}
                                             onClick={() => setRightCollapsed(true)}
                                             className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
                                         >
@@ -490,11 +535,11 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                                     }
                                 />
                                 {rightTab === "inspector" ? (
-                                    <SlotStack slots={inspectorSlots} emptyHint="检查器插件未加载。" />
+                                    <SlotStack slots={inspectorSlots} emptyHint={t("projectUi.inspectorPluginNotLoaded" as InterfaceMessageKey)} />
                                 ) : rightTab === "subtitle" ? (
-                                    <SlotStack slots={subtitleSlots} emptyHint="字幕工具插件未加载。" />
+                                    <SlotStack slots={subtitleSlots} emptyHint={t("projectUi.subtitlePluginNotLoaded" as InterfaceMessageKey)} />
                                 ) : (
-                                    <SlotStack slots={exportSlots} emptyHint="导出插件未加载。" />
+                                    <SlotStack slots={exportSlots} emptyHint={t("projectUi.exportPluginNotLoaded" as InterfaceMessageKey)} />
                                 )}
                             </aside>
                         )}
@@ -505,7 +550,7 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
                         className="group relative z-10 -my-1 flex h-3 shrink-0 cursor-row-resize touch-none items-center justify-center"
                         role="separator"
                         aria-orientation="horizontal"
-                        aria-label="调整时间线高度"
+                        aria-label={t("projectUi.resizeTimeline" as InterfaceMessageKey)}
                         data-canvas-no-zoom
                         onPointerDown={(e) => {
                             splitterRef.current = { startY: e.clientY, startH: timelineH };
@@ -529,7 +574,7 @@ export default function ProjectEditorView({ detail }: { detail: ProjectDetail })
 
                     {/* 时间线：横跨编辑面板全宽（左栏到右栏） */}
                     <div className="flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-[var(--director-sequencer-surface)] shadow-[0_1px_2px_rgba(0,0,0,0.3)]" style={{ height: `${timelineH}px` }}>
-                        <SlotStack slots={timelineSlots} emptyHint="时间线面板插件未加载。" />
+                        <SlotStack slots={timelineSlots} emptyHint={t("projectUi.timelinePluginNotLoaded" as InterfaceMessageKey)} />
                     </div>
                 </div>
 

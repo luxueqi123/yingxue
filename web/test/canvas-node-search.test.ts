@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { canvasNodeMaterialSummary, canvasNodeSearchContext, canvasNodeSearchTimes, searchCanvasNodes } from "@/lib/canvas/canvas-node-search";
 import { normalizeCanvasNodeTimestamps, stampCanvasNodeChanges, updateCanvasNodes } from "@/lib/canvas/canvas-node-timestamps";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { interfaceLocales, interfaceTranslator, loadInterfaceLocale } from "@/lib/interface-locale";
+
+await Promise.all(interfaceLocales.map(loadInterfaceLocale));
 
 function node(id: string, patch: Partial<CanvasNodeData> = {}): CanvasNodeData {
     return {
@@ -53,14 +56,10 @@ describe("canvas node timestamps", () => {
         const first = node("first");
         const second = node("second");
         const nodes = [first, second];
-        const next = updateCanvasNodes(
-            nodes,
-            new Map([
-                ["first", (current) => ({ ...current, metadata: { ...current.metadata, naturalWidth: 1920 } })],
-                ["second", (current) => ({ ...current, metadata: { ...current.metadata, naturalHeight: 1080 } })],
-            ]),
-            "2026-08-28T03:00:00.000Z",
-        );
+        const next = updateCanvasNodes(nodes, new Map([
+            ["first", (current) => ({ ...current, metadata: { ...current.metadata, naturalWidth: 1920 } })],
+            ["second", (current) => ({ ...current, metadata: { ...current.metadata, naturalHeight: 1080 } })],
+        ]), "2026-08-28T03:00:00.000Z");
         expect(next).not.toBe(nodes);
         expect(next[0]).not.toBe(first);
         expect(next[1]).not.toBe(second);
@@ -70,6 +69,22 @@ describe("canvas node timestamps", () => {
 });
 
 describe("canvas node search", () => {
+    test("node summaries and shot context follow all eight UI languages without changing source content", () => {
+        const image = node("image", { metadata: { chapterTitle: "原始章节 {shot}", shotIndex: 2, durationMs: 65000 } });
+        const original = JSON.stringify(image);
+        for (const locale of [...interfaceLocales].reverse()) {
+            const t = interfaceTranslator(locale);
+            expect(canvasNodeSearchContext(image, t)).toBe(`原始章节 {shot} · ${t("creationPageShotNumber", { shot: 3 })}`);
+            expect(canvasNodeMaterialSummary(image, undefined, t)).toContain(t("tasksUi.durationMinutesSeconds", { minutes: 1, seconds: 5 }));
+        }
+        const en = interfaceTranslator("en-US");
+        expect(canvasNodeSearchContext(node("empty"), en)).toBe("Image node");
+        expect(searchCanvasNodes([image], "Image", 80, undefined, en)).toEqual([image]);
+        expect(searchCanvasNodes([image], "图片", 80, undefined, en)).toEqual([image]);
+        expect(searchCanvasNodes([image], "Shot 3", 80, undefined, en)).toEqual([image]);
+        expect(JSON.stringify(image)).toBe(original);
+    });
+
     test("defaults to recently edited order and searches model or tags", () => {
         const older = node("older", { updatedAt: "2026-08-20T01:00:00.000Z", metadata: { model: "wan-video", assetTags: ["夜景"] } });
         const newer = node("newer", { updatedAt: "2026-08-28T01:00:00.000Z", metadata: { model: "seedance" } });

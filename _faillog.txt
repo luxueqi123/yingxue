@@ -1,0 +1,316 @@
+
+
+========== FILE: test/app-theme.test.ts ==========
+
+--- FAIL: shared action colors and focus feedback > classic solid tokens remain monochrome beneath the button fill adapter in light mode [14.10ms]
+error: expect(received).toBe(expected)
+
+Expected: "#f5f5f5"
+Received: "#09caf5"
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\app-theme.test.ts:12:62
+
+--- FAIL: shared action colors and focus feedback > classic solid tokens remain monochrome beneath the button fill adapter in dark mode [0.33ms]
+
+
+========== FILE: test/appearance-bootstrap.test.ts ==========
+
+--- FAIL: initial HTML stays brand neutral until the public appearance is resolved [2.61ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "appearance.authVideoUrl"
+Received: "import { ConfigProvider, Tabs } from \"antd\";\r\nimport { ArrowLeft, ArrowUpRight } from \"lucide-react\";\r\nimport { Link, Outlet, useLocation, useNavigate } from \"react-router\";\r\n\r\nimport { CinematicBackground, CinematicCursor } from \"@/components/brand/cinematic-background\";\r\nimport { YingxueBrandLockup } from \"@/components/brand/yingxue-brand-lockup\";\r\nimport { getAntThemeConfig } from \"@/lib/app-theme\";\r\nimport \"./auth-scene.css\";\r\n\r\nconst AUTH_TABS = [\r\n    { key: \"login\", label: \"登录\" },\r\n    { key: \"register\", label: \"注册\" },\r\n];\r\n\r\nconst authCopy = {\n    login: { eyebrow: \"WELCOME BACK\", title: \"回到你的创作世界\", description: \"继续你的画布、故事与每一个未完成的灵感。\" },\n    register: { eyebrow: \"MAKE SOMETHING NEW\", title: \"开启你的创作空间\", description: \"
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\appearance-bootstrap.test.ts:71:20
+
+--- FAIL: auth scene consumes resolved appearance instead of hardcoded media constants [0.67ms]
+
+
+========== FILE: test/ark-video-execution.test.ts ==========
+
+--- FAIL: actual video executor retains search setting through result versions and JSON restore [6.73ms]
+
+
+========== FILE: test/canvas-angle-dialog.test.ts ==========
+
+--- FAIL: image angle editor (#432) > uses a centered dismissible modal instead of a node-anchored overlay [0.62ms]
+
+
+========== FILE: test/canvas-image-upload.test.tsx ==========
+
+--- FAIL: 图片上传占位 > 上传先占位再传输，完成替换同一节点，弹窗不等待传输完成 [2.82ms]
+
+
+========== FILE: test/canvas-node-config-reset.test.ts ==========
+
+--- FAIL: applyNodeConfigPatch 模型切换清理生成参数 > 导入工程切换模型保留制作要求，用户同时修改的参数正常生效 [2.31ms]
+
+
+========== FILE: test/create-canvas-handoff.test.ts ==========
+
+--- FAIL: Create forwards owned result assets through one new canvas and the project persists before clearing the handoff [4.36ms]
+
+
+========== FILE: test/create-library-button.test.ts ==========
+
+--- FAIL: creation library button > previews prompt reference images without removing them [2.15ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "import { defaultCreationMode, modeLabels,"
+Received: "import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from \"react\";\r\nimport { App, Button, Drawer, Modal, Popover, Spin, Tooltip } from \"antd\";\r\nimport { AnimatePresence, Reorder, motion, useReducedMotion } from \"motion/react\";\r\nimport { ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clock3, Copy, Download, FileText, Film, FolderOpen, History, Image as ImageIcon, LoaderCircle, Maximize2, MessageSquareText, Music2, Paperclip, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, WandSparkles, X } from \"lucide-react\";\r\nimport { Link, useSearchParams } 
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\create-library-button.test.ts:152:24
+
+--- FAIL: creation homepage default mode > opens the empty homepage on image generation instead of video [3.19ms]
+
+
+========== FILE: test/generation-task-local.test.ts ==========
+
+--- FAIL: task display does not claim a submitted Dreamina receipt is actively generating [1.15ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "if (currentTask && isGenerationTaskSubmissionUncertain(currentTask))"
+Received: "import { CollectionToolbar } from \"@/components/layout/collection-toolbar\";\r\nimport { App, Button, Drawer, Form, Input, Modal, Select, Typography } from \"antd\";\r\nimport { Switch } from \"@/components/ui/base/switch\";\r\nimport { SegmentedControl } from \"@/components/ui/base/segmented-control\";\r\nimport { Bug, LayoutGrid, List, Plus, RefreshCw, Search, Trash2 } from \"lucide-react\";\r\nimport { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\r\nimport { useNavigate, useSearchParams } from \"react-router\";\r\n\r\nimport { MediaPreview } from \"@/components/media-preview\";\r\nimport { PageHeader, PaginationBar, WorkspacePage } from \"@/components/layout/workspace-page\";\r\nimport { WorkspaceState } from \"@/co
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\generation-task-local.test.ts:222:30
+
+--- FAIL: Canvas task surfaces route Dreamina uncertainty through shared display semantics without cancellation [13.78ms]
+error: expect(received).toBeGreaterThanOrEqual(expected)
+
+Expected: >= 0
+Received: -1
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\generation-task-local.test.ts:38:19
+
+--- FAIL: task center deletion accepts only local Dreamina records [1.87ms]
+error: expect(received).toBeGreaterThanOrEqual(expected)
+
+Expected: >= 0
+Received: -1
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\generation-task-local.test.ts:38:19
+
+--- FAIL: submitted Dreamina records expose a manual one-shot status refresh action [1.65ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "官方状态采用最终一致轮询"
+Received: "import { CollectionToolbar } from \"@/components/layout/collection-toolbar\";\r\nimport { App, Button, Drawer, Form, Input, Modal, Select, Typography } from \"antd\";\r\nimport { Switch } from \"@/components/ui/base/switch\";\r\nimport { SegmentedControl } from \"@/components/ui/base/segmented-control\";\r\nimport { Bug, LayoutGrid, List, Plus, RefreshCw, Search, Trash2 } from \"lucide-react\";\r\nimport { useCallback, useEffect, useMemo, useRef, useState } from \"react\";\r\nimport { useNavigate, useSearchParams } from \"react-router\";\r\n\r\nimport { MediaPreview } from \"@/components/media-preview\";\r\nimport { PageHeader, PaginationBar, WorkspacePage } from \"@/components/layout/workspace-page\";\r\nimport { WorkspaceState } from \"@/components/layout/workspace-state\";\r\nimport { CONTENT_M
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\generation-task-local.test.ts:2639:24
+
+--- FAIL: local Dreamina product copy states eventual polling, background waiting, unsupported official cancel, and unknown entitlement honestly [7.40ms]
+
+--- FAIL: task display does not claim a submitted Dreamina receipt is actively generating [1.15ms]
+
+--- FAIL: Canvas task surfaces route Dreamina uncertainty through shared display semantics without cancellation [13.78ms]
+
+--- FAIL: task center deletion accepts only local Dreamina records [1.87ms]
+
+--- FAIL: submitted Dreamina records expose a manual one-shot status refresh action [1.65ms]
+
+--- FAIL: local Dreamina product copy states eventual polling, background waiting, unsupported official cancel, and unknown entitlement honestly [7.40ms]
+
+
+========== FILE: test/kling-native-execution.test.ts ==========
+
+--- FAIL: source kling-v3-omni quality reaches actual executor and saved result [19.68ms]
+error: 游客不能读取远程媒体缓存
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\src\services\resource-blob-cache.ts:229:42
+
+--- FAIL: source kling-video-o3 quality reaches actual executor and saved result [1.49ms]
+error: expect(received).toBeUndefined()
+
+Received: {
+  size: "16:9",
+  seconds: "5",
+  vquality: "1080p",
+  generateAudio: "false",
+  count: 1,
+  videoEditOperation: "text_to_video",
+  videoKling: {
+    mode: "pro",
+    multiShot: false,
+  },
+  ltvExecutionContract: "kling-omni-video",
+  strictGenerationOptions: [ "model", "size", "seconds", "vquality", "generateAudio", "count" ],
+}
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\kling-native-execution.test.ts:29:88
+
+--- FAIL: ordinary 3.0 uses its own contract; conflicting tiers and missing video semantics remain pending [0.68ms]
+
+
+========== FILE: test/local-channel-permission.test.ts ==========
+
+--- FAIL: 允许本机渠道前端请求合同 > 默认关闭，旧持久化记录回退 false，新记录 true 可回显并进入请求配置 [1.07ms]
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\local-channel-permission.test.ts:82:43
+
+--- FAIL: 允许本机渠道前端请求合同 > 实际生成配置与 relay 在运行时重新投影 forged persisted local flag [4.50ms]
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: undefined
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\local-channel-permission.test.ts:98:50
+
+--- FAIL: 允许本机渠道前端请求合同 > 登录态模型拉取同样消费运行时投影而不是 forged persisted flag [2.65ms]
+
+
+========== FILE: test/local-channel-runtime-projection.node.test.mjs ==========
+
+--- FAIL: actual generation request config reprojects forged persisted local permission at runtime [21.95ms]
+    AT node:test:1448:63
+
+--- FAIL: authenticated model fetch reprojects forged persisted local permission before backend request [11.01ms]
+
+
+========== FILE: test/local-channel-task-center.node.test.mjs ==========
+
+--- FAIL: task-center forwards explicit task/session provider config without inferring a channel from Zustand [375.38ms]
+
+
+========== FILE: test/local-channel-ui.node.test.mjs ==========
+
+--- FAIL: administrator default editor fields render the real Switch and feed the real save payload [2491.58ms]
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\local-channel-ui.node.test.mjs:14:16
+
+--- FAIL: user default channel fields render the real Switch and feed the real update patch [334.34ms]
+
+
+========== FILE: test/local-cli-settings.test.ts ==========
+
+--- FAIL: settings route recognizes local-cli as a first-class section [859.95ms]
+
+
+========== FILE: test/local-runtime-connection.test.ts ==========
+
+--- FAIL: the application root starts local Runtime discovery before provider catalogs bootstrap [1.34ms]
+
+
+========== FILE: test/ltv-audio-execution.test.ts ==========
+
+--- FAIL: audio execution preserves strict options and dependency plan through result application [3.25ms]
+
+
+========== FILE: test/project-document-persistence.test.ts ==========
+
+--- FAIL: 制作文档经过真实同步客户端保存回读，失败保留待保存，账号缓存隔离 [12.18ms]
+
+
+========== FILE: test/settings-preference-spacing.test.ts ==========
+
+--- FAIL: wallet tabs and preference blocks keep a visible gap from neighboring surfaces [14.57ms]
+
+
+========== FILE: test/topaz-video-execution.test.ts ==========
+
+--- FAIL: 视频增强实际首次执行器读取原片尺寸，提交和结果恢复保留增强合同 [9.57ms]
+
+
+========== FILE: test/ui-kit-retirement.test.ts ==========
+
+--- FAIL: flush modal and drawer spacing is owned by product shells [115.09ms]
+
+
+========== FILE: test/user-scoped-generation-persistence.test.ts ==========
+
+--- FAIL: incremental sessions leave cached entities untouched and fetch only the opened canvas [5.61ms]
+error: expect(received).toEqual(expected)
+
+  [
+    "get /canvas-projects/concurrent-open",
++   "get /canvas-projects/concurrent-open",
+  ]
+
+- Expected  - 0
++ Received  + 1
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4480:26
+
+--- FAIL: concurrent canvas opens share one remote detail request [4.54ms]
+error: expect(received).resolves.toBeUndefined()
+
+Expected promise that resolves
+Received promise that rejected: Promise { <rejected> }
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4511:56
+
+--- FAIL: remote canvas conflict refreshes the baseline and overwrites once without repeating detail reads [5.04ms]
+error: 模型目录响应来源无效
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\src\lib\user-session.ts:99:15
+
+--- FAIL: user session initializes without downloading the full remote snapshot [4.58ms]
+error: expect(received).toEqual(expected)
+
+- [
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "asset",
+-   "canvas",
+- ]
++ []
+
+- Expected  - 20
++ Received  + 1
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4841:51
+
+--- FAIL: login repair persists assets before canvas with bounded concurrency (failure=%s) [4.42ms]
+error: expect(received).rejects.toThrow(expected)
+
+Expected promise that rejects
+Received promise that resolved: Promise { <resolved> }
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\user-scoped-generation-persistence.test.ts:4837:78
+
+--- FAIL: login repair persists assets before canvas with bounded concurrency (failure=%s) [2.67ms]
+
+--- FAIL: incremental sessions leave cached entities untouched and fetch only the opened canvas [5.61ms]
+
+--- FAIL: concurrent canvas opens share one remote detail request [4.54ms]
+
+--- FAIL: remote canvas conflict refreshes the baseline and overwrites once without repeating detail reads [5.04ms]
+
+--- FAIL: user session initializes without downloading the full remote snapshot [4.58ms]
+
+--- FAIL: login repair persists assets before canvas with bounded concurrency (failure=%s) [4.42ms]
+
+--- FAIL: login repair persists assets before canvas with bounded concurrency (failure=%s) [2.67ms]
+
+
+========== FILE: test/workspace-route-loading.test.ts ==========
+
+--- FAIL: workspace route loading > uses the Yingxue brand on the authentication scene [1.14ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "yingxue-premium-v5-light.webp"
+Received: "import { cn } from \"@/lib/utils\";\r\nimport { useThemeStore } from \"@/stores/use-theme-store\";\r\n\r\ntype YingxueBrandLockupProps = {\r\n    className?: string;\r\n    variant?: \"adaptive\" | \"light\" | \"dark\";\r\n};\r\n\r\nexport function YingxueBrandLockup({ className, variant = \"dark\" }: YingxueBrandLockupProps) {\r\n    const theme = useThemeStore(state => state.theme);\r\n    const light = variant === \"light\" || (variant === \"adaptive\" && theme !== \"dark\");\r\n    return (\r\n        <span role=\"img\" aria-label=\"映雪\" data-variant={variant} className={cn(\"inline-flex shrink-0 items-center justify-center\", className)}>\r\n            <img\r\n                alt=\"映雪\"\r\n                className=\"h-full w-auto max-w-none object-contain\"\r\n             
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\workspace-route-loading.test.ts:23:24
+
+--- FAIL: workspace route loading > uses the complete Yingxue logo inside workspace and admin sidebars [0.70ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "const FolderPreviewLab = import.meta.env.DEV ? lazy(() => import(\"@/pages/dev/folder-preview-lab\")) : null;"
+Received: "import { lazy, Suspense, type ReactNode } from \"react\";\r\nimport { createBrowserRouter, Navigate, Outlet, useLocation } from \"react-router\";\r\n\r\nimport { FullScreenLoader, WorkspaceRouteLoader } from \"@/components/ui/aceternity/full-screen-loader\";\r\nimport { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadHomePage, loadProjectDetailPage, loadProjectsPage, loadWalletPage } from \"@/lib/workspace-route-modules\";\r\nimport { CanvasRefreshShell } from \"@/pages/canvas/canvas-refresh-shell\";\r\nconst AuthScene = lazy(() => import(\"@/pages/auth/auth-scene\").then(module => ({ default: module.AuthScene })));\r\nconst RouteErrorContent = lazy(() => import(\"@/pages/rou
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\workspace-route-loading.test.ts:46:24
+
+--- FAIL: workspace route loading > keeps voice recording diagnostics out of production routes [0.75ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "{ path: \"/\", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> }"
+Received: "import { lazy, Suspense, type ReactNode } from \"react\";\r\nimport { createBrowserRouter, Navigate, Outlet, useLocation } from \"react-router\";\r\n\r\nimport { FullScreenLoader, WorkspaceRouteLoader } from \"@/components/ui/aceternity/full-screen-loader\";\r\nimport { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadHomePage, loadProjectDetailPage, loadProjectsPage, loadWalletPage } from \"@/lib/workspace-route-modules\";\r\nimport { CanvasRefreshShell } from \"@/pages/canvas/canvas-refresh-shell\";\r\nconst AuthScene = lazy(() => import(\"@/pages/auth/auth-scene\").then(module => ({ default: module.AuthScene })));\r\nconst RouteErrorContent = lazy(() => import(\"@/pages/route-error\"));\r\n\r\nfunction 
+    AT 
+
+--- FAIL: workspace route loading > keeps the creation page at root and preserves the create compatibility route [1.03ms]
+error: expect(received).toContain(expected)
+
+Expected to contain: "element: <RequireAuth>{null}</RequireAuth>"
+Received: "import { lazy, Suspense, type ReactNode } from \"react\";\r\nimport { createBrowserRouter, Navigate, Outlet, useLocation } from \"react-router\";\r\n\r\nimport { FullScreenLoader, WorkspaceRouteLoader } from \"@/components/ui/aceternity/full-screen-loader\";\r\nimport { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadHomePage, loadProjectDetailPage, loadProjectsPage, loadWalletPage } from \"@/lib/workspace-route-modules\";\r\nimport { CanvasRefreshShell } from \"@/pages/canvas/canvas-refresh-shell\";\r\nconst AuthScene = lazy(() => import(\"@/pages/auth/auth-scene\").then(module => ({ default: module.AuthScene })));\r\nconst RouteErrorContent = lazy(() => import(\"@/pages/route-error\"));\r\n\r\nfunction RouteErrorPage() {\r\n    return <Sus
+    AT D:\天琊书客\项目\yingxue-upstream-v129-integration-20260912\web\test\workspace-route-loading.test.ts:166:24
+
+--- FAIL: workspace wallet entry > opens the credits modal instead of a dedicated wallet page [3.01ms]

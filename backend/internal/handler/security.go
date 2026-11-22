@@ -152,8 +152,10 @@ func enforceRateLimit(c *gin.Context, key string, limit int, window time.Duratio
 	if allowed {
 		return true
 	}
-	c.Header("Retry-After", "60")
-	fail(c, http.StatusTooManyRequests, errors.New("请求过于频繁，请稍后再试"))
+	wait := runtimeService.RequestRetryAfter(c.Request.Context(), key, window)
+	seconds := max(1, int((wait+time.Second-1)/time.Second))
+	c.Header("Retry-After", strconv.Itoa(seconds))
+	failService(c, service.RateLimited(fmt.Sprintf("请求次数已达上限，请在 %d 秒后重试", seconds)))
 	return false
 }
 
@@ -166,7 +168,9 @@ func loadRuntimePolicy(c *gin.Context, svc *service.Service) (service.RuntimePol
 	return policy, true
 }
 
-func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInterfaceType, method string, requestPath string, contentType string, body []byte) error {
+// authorizeSystemProxy 校验系统代理请求。declaredPaths 是已安装插件声明的 POST 路径
+// （见 SystemProxyDeclaredPostPaths），只用于内置合同之外的协议。
+func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInterfaceType, declaredPaths []string, method string, requestPath string, contentType string, body []byte) error {
 	requestPath, err := normalizedProxyPath(requestPath)
 	if err != nil {
 		return err
@@ -222,7 +226,7 @@ func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInt
 	if method != http.MethodPost || !openAIPostEndpoints[requestPath] {
 		return errors.New("系统渠道不允许访问该上游接口")
 	}
-	if protocol != "" && !interfaceAllowsProxyPath(protocol, requestPath) {
+	if protocol != "" && !interfaceAllowsProxyPath(protocol, requestPath, declaredPaths) {
 		return errors.New("当前接口类型不允许访问该上游接口")
 	}
 	modelName := proxyRequestModel(contentType, body)
@@ -232,7 +236,7 @@ func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInt
 	return nil
 }
 
-func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestPath string) bool {
+func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestPath string, declaredPaths []string) bool {
 	switch interfaceType {
 	case model.ChannelInterfaceChatCompletion:
 		return requestPath == "/chat/completions"
@@ -242,14 +246,20 @@ func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestP
 		return requestPath == "/messages"
 	case model.ChannelInterfaceOpenAIImage, model.ChannelInterfaceGrokImage:
 		return requestPath == "/images/generations" || requestPath == "/images/edits"
-	case model.ChannelInterfaceVolcengineArkImage:
+	case model.ChannelInterfaceVolcengineArkImage, model.ChannelInterfaceVolcengineArkAgentPlanImage:
 		return requestPath == "/images/generations"
 	case model.ChannelInterfaceOpenAIAudio:
 		return requestPath == "/audio/speech"
-	case model.ChannelInterfaceAsyncAudio, model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineJiMengImage, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceGeminiImage, model.ChannelInterfaceNovitaVideo, model.ChannelInterfaceMiniMaxVideo:
+	case model.ChannelInterfaceAsyncAudio, model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineArkAgentPlanVideo, model.ChannelInterfaceVolcengineJiMengImage, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceGeminiImage, model.ChannelInterfaceNovitaVideo, model.ChannelInterfaceMiniMaxVideo:
 		return false
 	default:
-		return true
+		// 内置合同之外的协议只能访问插件自己声明的 create / agent 路径；未安装插件时失败关闭。
+		for _, declared := range declaredPaths {
+			if declared == requestPath {
+				return true
+			}
+		}
+		return false
 	}
 }
 

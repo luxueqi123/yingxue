@@ -1,0 +1,28 @@
+.payment-method-choice.is-alipay {
+    --wallet-payment-brand: #1677ff;
+}
+
+.payment-method-choice.is-wxpay {
+    --wallet-payment-brand: #07c160;
+}
+
+.payment-method-choice:is(.is-alipay, .is-wxpay) {
+    border-color: color-mix(in srgb, var(--wallet-payment-brand) 36%, transparent);
+    color: var(--wallet-payment-brand);
+}
+
+.payment-method-choice:is(.is-alipay, .is-wxpay):is(:hover, .is-selected, [aria-pressed="true"]) {
+    border-color: var(--wallet-payment-brand);
+    background: color-mix(in srgb, var(--wallet-payment-brand) 14%, var(--user-surface));
+    color: var(--wallet-payment-brand);
+}
+
+.payment-method-choice:focus-visible {
+    outline: 2px solid var(--wallet-payment-brand, var(--control-focus-ring));
+    outline-offset: 2px;
+}
+
+.payment-method-choice:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}

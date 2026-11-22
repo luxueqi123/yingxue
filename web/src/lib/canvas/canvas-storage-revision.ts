@@ -1,6 +1,7 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import { normalizeAssetCategory } from "@/lib/asset-category";
+import { sameCanvasContent } from "@/lib/canvas/canvas-content";
 
 export type CanvasStorageTombstones = {
     projects: Record<string, number>;
@@ -14,6 +15,8 @@ export type CanvasStorageDocument = {
     state: { projects: CanvasProject[] };
     version: number;
     storageRevision: number;
+    savedAt?: string;
+    journalTokens?: Record<string, number>;
     tombstones: CanvasStorageTombstones;
 };
 
@@ -72,6 +75,8 @@ export function parseCanvasStorageDocument(value: string | null, fallback: Canva
         state?: { projects?: unknown };
         version?: unknown;
         storageRevision?: unknown;
+        savedAt?: unknown;
+        journalTokens?: unknown;
         tombstones?: unknown;
     };
     if (!Array.isArray(parsed.state?.projects)) throw new Error("画布持久状态无效");
@@ -79,6 +84,8 @@ export function parseCanvasStorageDocument(value: string | null, fallback: Canva
         state: { projects: normalizeProjectAssetCategories(parsed.state.projects as CanvasProject[]) },
         version: typeof parsed.version === "number" ? parsed.version : 0,
         storageRevision: typeof parsed.storageRevision === "number" && Number.isFinite(parsed.storageRevision) ? parsed.storageRevision : 0,
+        savedAt: typeof parsed.savedAt === "string" && parsed.savedAt ? parsed.savedAt : undefined,
+        journalTokens: recordOfNumbers(parsed.journalTokens),
         tombstones: normalizeTombstones(parsed.tombstones),
     };
 }
@@ -129,9 +136,10 @@ function mergeRecord(base: Record<string, unknown>, local: Record<string, unknow
     const merged: Record<string, unknown> = {};
     for (const key of new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(durable)])) {
         if (excluded.has(key)) continue;
-        const baseHas = Object.prototype.hasOwnProperty.call(base, key);
-        const localHas = Object.prototype.hasOwnProperty.call(local, key);
-        const durableHas = Object.prototype.hasOwnProperty.call(durable, key);
+        // JSON 会省略 undefined 字段；内存快照必须按相同的字段存在语义合并。
+        const baseHas = Object.prototype.hasOwnProperty.call(base, key) && base[key] !== undefined;
+        const localHas = Object.prototype.hasOwnProperty.call(local, key) && local[key] !== undefined;
+        const durableHas = Object.prototype.hasOwnProperty.call(durable, key) && durable[key] !== undefined;
         if (!localHas && baseHas) {
             if (durableHas && !deepEqual(durable[key], base[key])) {
                 onConflict?.();
@@ -218,6 +226,12 @@ function mergeEntities<T extends { id: string }>(input: {
         const durable = durableById.get(id);
 
         if (base && !local) {
+            // A concurrent durable edit must not be erased by a stale local delete.
+            // Keep the durable branch and surface a conflict for the caller.
+            if (durable && !deepEqual(base, durable)) {
+                input.conflicts.push(input.conflict(id));
+                continue;
+            }
             remove(id);
             input.tombstones[id] = input.nextRevision;
             continue;
@@ -225,7 +239,10 @@ function mergeEntities<T extends { id: string }>(input: {
         if (!local || (base && deepEqual(base, local))) continue;
 
         if (!durable) {
-            if (base || (input.tombstones[id] ?? 0) > input.baseRevision) {
+            // base 中存在只能证明本地此前读过它；跨写入者删除由更新的墓碑证明。
+            if ((input.tombstones[id] ?? 0) > input.baseRevision) {
+                // Keep the explicit deletion authoritative. The caller retains
+                // the conflicting local branch in recovery history.
                 input.conflicts.push(input.conflict(id));
                 continue;
             }
@@ -302,6 +319,7 @@ function mergeSessions(input: {
 }
 
 function mergeProject(base: CanvasProject | undefined, local: CanvasProject, durable: CanvasProject, document: CanvasStorageDocument, baseRevision: number, nextRevision: number, conflicts: CanvasStorageConflict[]) {
+    if (local.revision !== durable.revision && local.revision === base?.revision && sameCanvasContent(base, local)) return { ...durable, viewport: local.viewport };
     const common = {
         projectId: local.id,
         tombstones: document.tombstones,
@@ -313,7 +331,7 @@ function mergeProject(base: CanvasProject | undefined, local: CanvasProject, dur
         (base || {}) as unknown as Record<string, unknown>,
         local as unknown as Record<string, unknown>,
         durable as unknown as Record<string, unknown>,
-        new Set(["nodes", "connections", "chatSessions"]),
+        new Set(["nodes", "connections", "chatSessions", "revision", "remoteContentHash", "viewport"]),
         concurrentConflictRecorder(conflicts, { kind: "project", id: local.id }),
     ) as unknown as CanvasProject;
     merged.nodes = mergeEntities<CanvasNodeData>({
@@ -354,6 +372,9 @@ function mergeProject(base: CanvasProject | undefined, local: CanvasProject, dur
         local: local.chatSessions,
         durable: durable.chatSessions,
     });
+    merged.revision = local.revision ?? durable.revision;
+    merged.viewport = local.viewport;
+    merged.remoteContentHash = undefined;
     return merged;
 }
 

@@ -1,0 +1,48 @@
+{"Time":"2026-09-20T17:49:14.483975+08:00","Action":"start","Package":"infinite-canvas/backend/internal/protocol"}
+{"Time":"2026-09-20T17:49:16.8991692+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts"}
+{"Time":"2026-09-20T17:49:16.900872+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts","Output":"=== RUN   TestArkSearchContracts\n"}
+{"Time":"2026-09-20T17:49:16.9096324+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/builtin"}
+{"Time":"2026-09-20T17:49:16.9133076+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/builtin","Output":"=== RUN   TestArkSearchContracts/builtin\n"}
+{"Time":"2026-09-20T17:49:16.9190762+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/builtin","Output":"--- PASS: TestArkSearchContracts/builtin (0.00s)\n"}
+{"Time":"2026-09-20T17:49:16.9195883+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/builtin","Elapsed":0}
+{"Time":"2026-09-20T17:49:16.9202341+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/package"}
+{"Time":"2026-09-20T17:49:16.920829+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/package","Output":"=== RUN   TestArkSearchContracts/package\n"}
+{"Time":"2026-09-20T17:49:16.920829+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/package","Output":"--- PASS: TestArkSearchContracts/package (0.00s)\n"}
+{"Time":"2026-09-20T17:49:16.9214072+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts/package","Elapsed":0}
+{"Time":"2026-09-20T17:49:16.9219797+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts","Output":"--- PASS: TestArkSearchContracts (0.02s)\n"}
+{"Time":"2026-09-20T17:49:16.9225428+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestArkSearchContracts","Elapsed":0.02}
+{"Time":"2026-09-20T17:49:16.92371+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestAutoDLPluginArtifact"}
+{"Time":"2026-09-20T17:49:16.9254764+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestAutoDLPluginArtifact","Output":"=== RUN   TestAutoDLPluginArtifact\n"}
+{"Time":"2026-09-20T17:49:16.9265835+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestAutoDLPluginArtifact","Output":"--- PASS: TestAutoDLPluginArtifact (0.01s)\n"}
+{"Time":"2026-09-20T17:49:16.9271406+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestAutoDLPluginArtifact","Elapsed":0.01}
+{"Time":"2026-09-20T17:49:16.931697+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins"}
+{"Time":"2026-09-20T17:49:16.9336776+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins","Output":"=== RUN   TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins\n"}
+{"Time":"2026-09-20T17:49:20.1220981+08:00","Action":"start","Package":"infinite-canvas/backend/internal/skills"}
+{"Time":"2026-09-20T17:49:20.836376+08:00","Action":"run","Package":"infinite-canvas/backend/internal/skills","Test":"TestProductionSkillsSeedAndUserState"}
+{"Time":"2026-09-20T17:49:20.8370513+08:00","Action":"output","Package":"infinite-canvas/backend/internal/skills","Test":"TestProductionSkillsSeedAndUserState","Output":"=== RUN   TestProductionSkillsSeedAndUserState\n"}
+{"Time":"2026-09-20T17:49:21.4932886+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins","Output":"--- PASS: TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins (4.56s)\n"}
+{"Time":"2026-09-20T17:49:21.4964407+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins","Elapsed":4.56}
+{"Time":"2026-09-20T17:49:21.4999301+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults"}
+{"Time":"2026-09-20T17:49:21.5034912+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults","Output":"=== RUN   TestNewAPIVideoGenerationsParsesNestedVideoResults\n"}
+{"Time":"2026-09-20T17:49:21.5058127+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL"}
+{"Time":"2026-09-20T17:49:21.5080912+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL","Output":"=== RUN   TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL\n"}
+{"Time":"2026-09-20T17:49:21.5098+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL","Output":"--- PASS: TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL (0.00s)\n"}
+{"Time":"2026-09-20T17:49:21.5132331+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/channel_result_URL","Elapsed":0}
+{"Time":"2026-09-20T17:49:21.5168607+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL"}
+{"Time":"2026-09-20T17:49:21.5240871+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL","Output":"=== RUN   TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL\n"}
+{"Time":"2026-09-20T17:49:21.5297022+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL","Output":"--- PASS: TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL (0.00s)\n"}
+{"Time":"2026-09-20T17:49:21.5331846+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_nested_video_URL","Elapsed":0}
+{"Time":"2026-09-20T17:49:21.53677+08:00","Action":"run","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL"}
+{"Time":"2026-09-20T17:49:21.5387404+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL","Output":"=== RUN   TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL\n"}
+{"Time":"2026-09-20T17:49:21.5443304+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL","Output":"--- PASS: TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL (0.00s)\n"}
+{"Time":"2026-09-20T17:49:21.5517106+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults/provider_data_array_URL","Elapsed":0}
+{"Time":"2026-09-20T17:49:21.5587552+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults","Output":"--- PASS: TestNewAPIVideoGenerationsParsesNestedVideoResults (0.01s)\n"}
+{"Time":"2026-09-20T17:49:21.5616534+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Test":"TestNewAPIVideoGenerationsParsesNestedVideoResults","Elapsed":0.01}
+{"Time":"2026-09-20T17:49:21.5640678+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Output":"PASS\n"}
+{"Time":"2026-09-20T17:49:21.566405+08:00","Action":"output","Package":"infinite-canvas/backend/internal/protocol","Output":"ok  \tinfinite-canvas/backend/internal/protocol\t7.077s\n"}
+{"Time":"2026-09-20T17:49:21.5697+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/protocol","Elapsed":7.086}
+{"Time":"2026-09-20T17:49:22.5600493+08:00","Action":"output","Package":"infinite-canvas/backend/internal/skills","Test":"TestProductionSkillsSeedAndUserState","Output":"--- PASS: TestProductionSkillsSeedAndUserState (1.73s)\n"}
+{"Time":"2026-09-20T17:49:22.5624118+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/skills","Test":"TestProductionSkillsSeedAndUserState","Elapsed":1.73}
+{"Time":"2026-09-20T17:49:22.5639289+08:00","Action":"output","Package":"infinite-canvas/backend/internal/skills","Output":"PASS\n"}
+{"Time":"2026-09-20T17:49:22.5816572+08:00","Action":"output","Package":"infinite-canvas/backend/internal/skills","Output":"ok  \tinfinite-canvas/backend/internal/skills\t2.459s\n"}
+{"Time":"2026-09-20T17:49:22.5822118+08:00","Action":"pass","Package":"infinite-canvas/backend/internal/skills","Elapsed":2.46}

@@ -1,0 +1,1028 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "volcengine-ark-seedance",
+  "name": "火山方舟 Seedance 官方视频生成",
+  "version": "2.0.0",
+  "author": "Volcengine / 影策",
+  "description": "火山方舟官方 Seedance 视频生成接口，使用普通 /api/v3 Contents Generations Tasks 和方舟推理 API Key；不是 Agent Plan 专用线路。",
+  "documentation": "# 火山方舟 Seedance 官方视频生成\n\n火山方舟官方声明式协议插件，面向普通 `/api/v3` Contents Generations Tasks 视频生成接口。使用普通方舟 API Key 和 Endpoint，可接入 Seedance 视频模型。\n\n后端从生成的 `volcengine-ark-seedance.yingce-plugin` 包加载，不依赖系统内置 `host:` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# 火山方舟 Seedance 官方视频生成 接口字段\n\n## 协议身份\n\n- 插件 ID：`volcengine-ark-seedance`。\n- Provider ID：`volcengine-ark-video`。\n- 能力：`video`。\n- 默认 Base URL：`https://ark.cn-beijing.volces.com`。\n- 鉴权驱动：`bearer`。\n- 创建：`POST /api/v3/contents/generations/tasks`。\n- 查询：`GET /api/v3/contents/generations/tasks/{{taskId}}`。\n- 取消：`DELETE /api/v3/contents/generations/tasks/{{taskId}}`。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | API Key |\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n| `model` | string | 是 | `model` | 视频模型 ID。 |\n| `prompt` | string | 是 | `prompt/content/input` | 视频提示词。 |\n| `images` | media[] | 否 | `first/last/reference image` | 显式 role 图片输入。 |\n| `videos` | media[] | 否 | `reference video` | 参考视频。 |\n| `audios` | media[] | 否 | `reference audio/voice` | 参考音频或音色。 |\n| `duration` | integer | 否 | `duration/seconds` | 时长秒数。 |\n| `aspectRatio` | string | 否 | `ratio/aspect_ratio/size` | 画幅比例或尺寸。 |\n| `resolution` | string | 否 | `resolution` | 分辨率档位。 |\n| `generateAudio` | boolean | 否 | `generate_audio` | 是否生成音频。 |\n| `watermark` | boolean | 否 | `watermark` | 水印开关。 |\n| `providerOptions` | object | 否 | `provider-specific fields` | 插件命名空间内的厂商扩展字段。 |\n| `seed` | integer | 否 | `seed` | providerOptions seed。 |\n| `camera_fixed` | boolean | 否 | `camera_fixed` | providerOptions camera_fixed。 |\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n| `create.method` | `\"POST\"` |\n| `create.path` | `\"/api/v3/contents/generations/tasks\"` |\n| `create.contentType` | `\"application/json\"` |\n| `create.body.model` | `{\"$ref\":\"request.model\"}` |\n| `create.body.content` | `{\"$concatArrays\":[{\"$if\":{\"condition\":{\"$ref\":\"request.prompt\"},\"then\":[{\"type\":\"text\",\"text\":{\"$ref\":\"request.prompt\"}}],\"else\":[]}},{\"$map\":{\"from\":{\"$sortByOrder\":{\"$ref\":\"request.images\"}},\"as\":\"media\",\"in\":{\"type\":\"image_url\",\"image_url\":{\"url\":{\"$ref\":\"media.value\"}},\"role\":{\"$coalesce\":[{\"$ref\":\"media.role\"},\"reference_image\"]}}}},{\"$map\":{\"from\":{\"$sortByOrder\":{\"$ref\":\"request.videos\"}},\"as\":\"media\",\"in\":{\"type\":\"video_url\",\"video_url\":{\"url\":{\"$ref\":\"media.value\"}},\"role\":{\"$coalesce\":[{\"$ref\":\"media.role\"},\"reference_video\"]}}}},{\"$map\":{\"from\":{\"$sortByOrder\":{\"$ref\":\"request.audios\"}},\"as\":\"media\",\"in\":{\"type\":\"audio_url\",\"audio_url\":{\"url\":{\"$ref\":\"media.value\"}},\"role\":{\"$coalesce\":[{\"$ref\":\"media.role\"},\"reference_audio\"]}}}}]}` |\n| `create.body.ratio` | `{\"$coalesce\":[{\"$ref\":\"request.aspectRatio\"},\"16:9\"]}` |\n| `create.body.resolution` | `{\"$if\":{\"condition\":{\"$eq\":[{\"$lower\":{\"$ref\":\"request.resolution\"}},\"2160p\"]},\"then\":\"4k\",\"else\":{\"$coalesce\":[{\"$ref\":\"request.resolution\"},\"720p\"]}}}` |\n| `create.body.duration` | `{\"$coalesce\":[{\"$ref\":\"request.duration\"},5]}` |\n| `create.body.generate_audio` | `{\"$coalesce\":[{\"$ref\":\"request.generateAudio\"},false]}` |\n| `create.body.watermark` | `{\"$coalesce\":[{\"$ref\":\"request.watermark\"},false]}` |\n| `create.body.seed` | `{\"$omitEmpty\":{\"$ref\":\"request.providerOptions.volcengine-ark-video.seed\"}}` |\n| `create.body.camera_fixed` | `{\"$omitEmpty\":{\"$ref\":\"request.providerOptions.volcengine-ark-video.camera_fixed\"}}` |\n| `create.body.tools` | `{\"$omitEmpty\":{\"$if\":{\"condition\":{\"$eq\":[{\"$ref\":\"request.providerOptions.volcengine-ark-video.webSearch\"},true]},\"then\":[{\"type\":\"web_search\"}],\"else\":null}}}` |\n| `poll.method` | `\"GET\"` |\n| `poll.path` | `\"/api/v3/contents/generations/tasks/{{taskId}}\"` |\n| `cancel.method` | `\"DELETE\"` |\n| `cancel.path` | `\"/api/v3/contents/generations/tasks/{{taskId}}\"` |\n\n## Provider 扩展键\n\n- `providerOptions.volcengine-ark-video.camera_fixed`\n- `providerOptions.volcengine-ark-video.seed`\n- `providerOptions.volcengine-ark-video.webSearch`\n\n动态模型或工作流允许使用文档声明的完整 `parameters/input/extra_body` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n| `response.taskId` | `{\"$coalesce\":[{\"$ref\":\"response.id\"},{\"$ref\":\"response.task_id\"},{\"$ref\":\"response.taskId\"},{\"$ref\":\"response.data.id\"},{\"$ref\":\"taskId\"}]}` |\n| `response.status` | `{\"$coalesce\":[{\"$ref\":\"response.status\"},{\"$ref\":\"response.state\"},{\"$ref\":\"response.data.status\"},\"pending\"]}` |\n| `response.message` | `{\"$coalesce\":[{\"$ref\":\"response.error.message\"},{\"$ref\":\"response.message\"},{\"$ref\":\"response.fail_reason\"}]}` |\n| `response.videos` | `{\"$coalesce\":[{\"$ref\":\"response.content.video_url\"},{\"$ref\":\"response.video_url\"},{\"$ref\":\"response.output.video_url\"},{\"$ref\":\"response.data.video_url\"}]}` |\n| `response.errorPaths[0]` | `\"error.code\"` |\n| `response.resultEphemeral` | `true` |\n| `response.usage` | `{\"$ref\":\"response.usage\"}` |\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n依据 https://docs.volcengine.com/docs/82379/1520757 。Seedance 2.0系列与2.5支持webSearch开关，映射tools:[{type:web_search}]；关闭时不调用搜索工具。usage.tool_usage.web_search是实际搜索次数，0不代表请求失败。原始参考角色和顺序保留。2.5最多30图/10视频/10音频，2.0最多9图/3视频/3音频；具体媒体时长、尺寸、肖像素材和模型规格仍由配置及供应商校验。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"volcengine-ark-seedance\",\n  \"name\": \"火山方舟 Seedance 官方视频生成\",\n  \"version\": \"2.0.0\",\n  \"author\": \"Volcengine / 影策\",\n  \"description\": \"火山方舟官方 Seedance 视频生成接口，使用普通 /api/v3 Contents Generations Tasks 和方舟推理 API Key；不是 Agent Plan 专用线路。\",\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"volcengine-ark-video\",\n        \"label\": \"火山方舟 Seedance 官方视频生成\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://ark.cn-beijing.volces.com\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt/content/input\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"first/last/reference image\",\n            \"description\": \"显式 role 图片输入。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference video\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference audio/voice\",\n            \"description\": \"参考音频或音色。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration/seconds\",\n            \"description\": \"时长秒数。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio/aspect_ratio/size\",\n            \"description\": \"画幅比例或尺寸。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否生成音频。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"水印开关。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"插件命名空间内的厂商扩展字段。\"\n          },\n          {\n            \"name\": \"seed\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"seed\",\n            \"description\": \"providerOptions seed。\"\n          },\n          {\n            \"name\": \"camera_fixed\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"camera_fixed\",\n            \"description\": \"providerOptions camera_fixed。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-ark-video.webSearch\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$in\": [\n                    {\n                      \"$ref\": \"request.providerOptions.volcengine-ark-video.webSearch\"\n                    },\n                    [\n                      true,\n                      false\n                    ]\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频联网参数必须是布尔值\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.providerOptions.volcengine-ark-video.webSearch\"\n                  }\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$at\": [\n                            {\n                              \"$split\": [\n                                {\n                                  \"$ref\": \"request.model\"\n                                },\n                                \"-\"\n                              ]\n                            },\n                            0\n                          ]\n                        },\n                        \"doubao\"\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$at\": [\n                            {\n                              \"$split\": [\n                                {\n                                  \"$ref\": \"request.model\"\n                                },\n                                \"-\"\n                              ]\n                            },\n                            1\n                          ]\n                        },\n                        \"seedance\"\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$at\": [\n                            {\n                              \"$split\": [\n                                {\n                                  \"$ref\": \"request.model\"\n                                },\n                                \"-\"\n                              ]\n                            },\n                            2\n                          ]\n                        },\n                        \"2\"\n                      ]\n                    },\n                    {\n                      \"$in\": [\n                        {\n                          \"$at\": [\n                            {\n                              \"$split\": [\n                                {\n                                  \"$ref\": \"request.model\"\n                                },\n                                \"-\"\n                              ]\n                            },\n                            3\n                          ]\n                        },\n                        [\n                          \"0\",\n                          \"5\"\n                        ]\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频联网搜索需要Seedance 2.0系列或2.5模型\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$and\": [\n                            {\n                              \"$and\": [\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        0\n                                      ]\n                                    },\n                                    \"doubao\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        1\n                                      ]\n                                    },\n                                    \"seedance\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        2\n                                      ]\n                                    },\n                                    \"2\"\n                                  ]\n                                },\n                                {\n                                  \"$in\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        3\n                                      ]\n                                    },\n                                    [\n                                      \"0\",\n                                      \"5\"\n                                    ]\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$at\": [\n                                    {\n                                      \"$split\": [\n                                        {\n                                          \"$ref\": \"request.model\"\n                                        },\n                                        \"-\"\n                                      ]\n                                    },\n                                    3\n                                  ]\n                                },\n                                \"5\"\n                              ]\n                            }\n                          ]\n                        },\n                        \"then\": 30,\n                        \"else\": 9\n                      }\n                    }\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$and\": [\n                            {\n                              \"$and\": [\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        0\n                                      ]\n                                    },\n                                    \"doubao\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        1\n                                      ]\n                                    },\n                                    \"seedance\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        2\n                                      ]\n                                    },\n                                    \"2\"\n                                  ]\n                                },\n                                {\n                                  \"$in\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        3\n                                      ]\n                                    },\n                                    [\n                                      \"0\",\n                                      \"5\"\n                                    ]\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$at\": [\n                                    {\n                                      \"$split\": [\n                                        {\n                                          \"$ref\": \"request.model\"\n                                        },\n                                        \"-\"\n                                      ]\n                                    },\n                                    3\n                                  ]\n                                },\n                                \"5\"\n                              ]\n                            }\n                          ]\n                        },\n                        \"then\": 10,\n                        \"else\": 3\n                      }\n                    }\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$and\": [\n                            {\n                              \"$and\": [\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        0\n                                      ]\n                                    },\n                                    \"doubao\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        1\n                                      ]\n                                    },\n                                    \"seedance\"\n                                  ]\n                                },\n                                {\n                                  \"$eq\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        2\n                                      ]\n                                    },\n                                    \"2\"\n                                  ]\n                                },\n                                {\n                                  \"$in\": [\n                                    {\n                                      \"$at\": [\n                                        {\n                                          \"$split\": [\n                                            {\n                                              \"$ref\": \"request.model\"\n                                            },\n                                            \"-\"\n                                          ]\n                                        },\n                                        3\n                                      ]\n                                    },\n                                    [\n                                      \"0\",\n                                      \"5\"\n                                    ]\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$at\": [\n                                    {\n                                      \"$split\": [\n                                        {\n                                          \"$ref\": \"request.model\"\n                                        },\n                                        \"-\"\n                                      ]\n                                    },\n                                    3\n                                  ]\n                                },\n                                \"5\"\n                              ]\n                            }\n                          ]\n                        },\n                        \"then\": 10,\n                        \"else\": 3\n                      }\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"参考数量超过当前Seedance版本限制\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$and\": [\n                        {\n                          \"$eq\": [\n                            {\n                              \"$at\": [\n                                {\n                                  \"$split\": [\n                                    {\n                                      \"$ref\": \"request.model\"\n                                    },\n                                    \"-\"\n                                  ]\n                                },\n                                0\n                              ]\n                            },\n                            \"doubao\"\n                          ]\n                        },\n                        {\n                          \"$eq\": [\n                            {\n                              \"$at\": [\n                                {\n                                  \"$split\": [\n                                    {\n                                      \"$ref\": \"request.model\"\n                                    },\n                                    \"-\"\n                                  ]\n                                },\n                                1\n                              ]\n                            },\n                            \"seedance\"\n                          ]\n                        },\n                        {\n                          \"$eq\": [\n                            {\n                              \"$at\": [\n                                {\n                                  \"$split\": [\n                                    {\n                                      \"$ref\": \"request.model\"\n                                    },\n                                    \"-\"\n                                  ]\n                                },\n                                2\n                              ]\n                            },\n                            \"2\"\n                          ]\n                        },\n                        {\n                          \"$in\": [\n                            {\n                              \"$at\": [\n                                {\n                                  \"$split\": [\n                                    {\n                                      \"$ref\": \"request.model\"\n                                    },\n                                    \"-\"\n                                  ]\n                                },\n                                3\n                              ]\n                            },\n                            [\n                              \"0\",\n                              \"5\"\n                            ]\n                          ]\n                        }\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$at\": [\n                            {\n                              \"$split\": [\n                                {\n                                  \"$ref\": \"request.model\"\n                                },\n                                \"-\"\n                              ]\n                            },\n                            3\n                          ]\n                        },\n                        \"5\"\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"Seedance 2.0的音频参考需要同时提供图片或视频\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/api/v3/contents/generations/tasks\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"content\": {\n              \"$concatArrays\": [\n                {\n                  \"$if\": {\n                    \"condition\": {\n                      \"$ref\": \"request.prompt\"\n                    },\n                    \"then\": [\n                      {\n                        \"type\": \"text\",\n                        \"text\": {\n                          \"$ref\": \"request.prompt\"\n                        }\n                      }\n                    ],\n                    \"else\": []\n                  }\n                },\n                {\n                  \"$map\": {\n                    \"from\": {\n                      \"$sortByOrder\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    \"as\": \"media\",\n                    \"in\": {\n                      \"type\": \"image_url\",\n                      \"image_url\": {\n                        \"url\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      },\n                      \"role\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"media.role\"\n                          },\n                          \"reference_image\"\n                        ]\n                      }\n                    }\n                  }\n                },\n                {\n                  \"$map\": {\n                    \"from\": {\n                      \"$sortByOrder\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    \"as\": \"media\",\n                    \"in\": {\n                      \"type\": \"video_url\",\n                      \"video_url\": {\n                        \"url\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      },\n                      \"role\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"media.role\"\n                          },\n                          \"reference_video\"\n                        ]\n                      }\n                    }\n                  }\n                },\n                {\n                  \"$map\": {\n                    \"from\": {\n                      \"$sortByOrder\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    \"as\": \"media\",\n                    \"in\": {\n                      \"type\": \"audio_url\",\n                      \"audio_url\": {\n                        \"url\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      },\n                      \"role\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"media.role\"\n                          },\n                          \"reference_audio\"\n                        ]\n                      }\n                    }\n                  }\n                }\n              ]\n            },\n            \"ratio\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.aspectRatio\"\n                },\n                \"16:9\"\n              ]\n            },\n            \"resolution\": {\n              \"$if\": {\n                \"condition\": {\n                  \"$eq\": [\n                    {\n                      \"$lower\": {\n                        \"$ref\": \"request.resolution\"\n                      }\n                    },\n                    \"2160p\"\n                  ]\n                },\n                \"then\": \"4k\",\n                \"else\": {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.resolution\"\n                    },\n                    \"720p\"\n                  ]\n                }\n              }\n            },\n            \"duration\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.duration\"\n                },\n                5\n              ]\n            },\n            \"generate_audio\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.generateAudio\"\n                },\n                false\n              ]\n            },\n            \"watermark\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.watermark\"\n                },\n                false\n              ]\n            },\n            \"seed\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.volcengine-ark-video.seed\"\n              }\n            },\n            \"camera_fixed\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.volcengine-ark-video.camera_fixed\"\n              }\n            },\n            \"tools\": {\n              \"$omitEmpty\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"request.providerOptions.volcengine-ark-video.webSearch\"\n                      },\n                      true\n                    ]\n                  },\n                  \"then\": [\n                    {\n                      \"type\": \"web_search\"\n                    }\n                  ],\n                  \"else\": null\n                }\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/api/v3/contents/generations/tasks/{{taskId}}\"\n        },\n        \"cancel\": {\n          \"method\": \"DELETE\",\n          \"path\": \"/api/v3/contents/generations/tasks/{{taskId}}\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"response.taskId\"\n              },\n              {\n                \"$ref\": \"response.data.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.status\"\n              },\n              {\n                \"$ref\": \"response.state\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.fail_reason\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.content.video_url\"\n              },\n              {\n                \"$ref\": \"response.video_url\"\n              },\n              {\n                \"$ref\": \"response.output.video_url\"\n              },\n              {\n                \"$ref\": \"response.data.video_url\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"resultEphemeral\": true,\n          \"usage\": {\n            \"$ref\": \"response.usage\"\n          }\n        },\n        \"videoReferences\": {\n          \"layout\": \"content\",\n          \"token\": \"参考图{n}\"\n        }\n      }\n    ]\n  }\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "volcengine-ark-video",
+        "label": "火山方舟 Seedance 官方视频生成",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://ark.cn-beijing.volces.com",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "视频模型 ID。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt/content/input",
+            "description": "视频提示词。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "first/last/reference image",
+            "description": "显式 role 图片输入。"
+          },
+          {
+            "name": "videos",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference video",
+            "description": "参考视频。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference audio/voice",
+            "description": "参考音频或音色。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "mapping": "duration/seconds",
+            "description": "时长秒数。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "required": false,
+            "mapping": "ratio/aspect_ratio/size",
+            "description": "画幅比例或尺寸。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "mapping": "resolution",
+            "description": "分辨率档位。"
+          },
+          {
+            "name": "generateAudio",
+            "type": "boolean",
+            "required": false,
+            "mapping": "generate_audio",
+            "description": "是否生成音频。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "水印开关。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "插件命名空间内的厂商扩展字段。"
+          },
+          {
+            "name": "seed",
+            "type": "integer",
+            "required": false,
+            "mapping": "seed",
+            "description": "providerOptions seed。"
+          },
+          {
+            "name": "camera_fixed",
+            "type": "boolean",
+            "required": false,
+            "mapping": "camera_fixed",
+            "description": "providerOptions camera_fixed。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-ark-video.webSearch"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$in": [
+                    {
+                      "$ref": "request.providerOptions.volcengine-ark-video.webSearch"
+                    },
+                    [
+                      true,
+                      false
+                    ]
+                  ]
+                }
+              ]
+            },
+            "message": "视频联网参数必须是布尔值"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$not": {
+                    "$ref": "request.providerOptions.volcengine-ark-video.webSearch"
+                  }
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$at": [
+                            {
+                              "$split": [
+                                {
+                                  "$ref": "request.model"
+                                },
+                                "-"
+                              ]
+                            },
+                            0
+                          ]
+                        },
+                        "doubao"
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$at": [
+                            {
+                              "$split": [
+                                {
+                                  "$ref": "request.model"
+                                },
+                                "-"
+                              ]
+                            },
+                            1
+                          ]
+                        },
+                        "seedance"
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$at": [
+                            {
+                              "$split": [
+                                {
+                                  "$ref": "request.model"
+                                },
+                                "-"
+                              ]
+                            },
+                            2
+                          ]
+                        },
+                        "2"
+                      ]
+                    },
+                    {
+                      "$in": [
+                        {
+                          "$at": [
+                            {
+                              "$split": [
+                                {
+                                  "$ref": "request.model"
+                                },
+                                "-"
+                              ]
+                            },
+                            3
+                          ]
+                        },
+                        [
+                          "0",
+                          "5"
+                        ]
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "视频联网搜索需要Seedance 2.0系列或2.5模型"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$and": [
+                            {
+                              "$and": [
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        0
+                                      ]
+                                    },
+                                    "doubao"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        1
+                                      ]
+                                    },
+                                    "seedance"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        2
+                                      ]
+                                    },
+                                    "2"
+                                  ]
+                                },
+                                {
+                                  "$in": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        3
+                                      ]
+                                    },
+                                    [
+                                      "0",
+                                      "5"
+                                    ]
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "$eq": [
+                                {
+                                  "$at": [
+                                    {
+                                      "$split": [
+                                        {
+                                          "$ref": "request.model"
+                                        },
+                                        "-"
+                                      ]
+                                    },
+                                    3
+                                  ]
+                                },
+                                "5"
+                              ]
+                            }
+                          ]
+                        },
+                        "then": 30,
+                        "else": 9
+                      }
+                    }
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$and": [
+                            {
+                              "$and": [
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        0
+                                      ]
+                                    },
+                                    "doubao"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        1
+                                      ]
+                                    },
+                                    "seedance"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        2
+                                      ]
+                                    },
+                                    "2"
+                                  ]
+                                },
+                                {
+                                  "$in": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        3
+                                      ]
+                                    },
+                                    [
+                                      "0",
+                                      "5"
+                                    ]
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "$eq": [
+                                {
+                                  "$at": [
+                                    {
+                                      "$split": [
+                                        {
+                                          "$ref": "request.model"
+                                        },
+                                        "-"
+                                      ]
+                                    },
+                                    3
+                                  ]
+                                },
+                                "5"
+                              ]
+                            }
+                          ]
+                        },
+                        "then": 10,
+                        "else": 3
+                      }
+                    }
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$and": [
+                            {
+                              "$and": [
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        0
+                                      ]
+                                    },
+                                    "doubao"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        1
+                                      ]
+                                    },
+                                    "seedance"
+                                  ]
+                                },
+                                {
+                                  "$eq": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        2
+                                      ]
+                                    },
+                                    "2"
+                                  ]
+                                },
+                                {
+                                  "$in": [
+                                    {
+                                      "$at": [
+                                        {
+                                          "$split": [
+                                            {
+                                              "$ref": "request.model"
+                                            },
+                                            "-"
+                                          ]
+                                        },
+                                        3
+                                      ]
+                                    },
+                                    [
+                                      "0",
+                                      "5"
+                                    ]
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "$eq": [
+                                {
+                                  "$at": [
+                                    {
+                                      "$split": [
+                                        {
+                                          "$ref": "request.model"
+                                        },
+                                        "-"
+                                      ]
+                                    },
+                                    3
+                                  ]
+                                },
+                                "5"
+                              ]
+                            }
+                          ]
+                        },
+                        "then": 10,
+                        "else": 3
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "参考数量超过当前Seedance版本限制"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$and": [
+                    {
+                      "$and": [
+                        {
+                          "$eq": [
+                            {
+                              "$at": [
+                                {
+                                  "$split": [
+                                    {
+                                      "$ref": "request.model"
+                                    },
+                                    "-"
+                                  ]
+                                },
+                                0
+                              ]
+                            },
+                            "doubao"
+                          ]
+                        },
+                        {
+                          "$eq": [
+                            {
+                              "$at": [
+                                {
+                                  "$split": [
+                                    {
+                                      "$ref": "request.model"
+                                    },
+                                    "-"
+                                  ]
+                                },
+                                1
+                              ]
+                            },
+                            "seedance"
+                          ]
+                        },
+                        {
+                          "$eq": [
+                            {
+                              "$at": [
+                                {
+                                  "$split": [
+                                    {
+                                      "$ref": "request.model"
+                                    },
+                                    "-"
+                                  ]
+                                },
+                                2
+                              ]
+                            },
+                            "2"
+                          ]
+                        },
+                        {
+                          "$in": [
+                            {
+                              "$at": [
+                                {
+                                  "$split": [
+                                    {
+                                      "$ref": "request.model"
+                                    },
+                                    "-"
+                                  ]
+                                },
+                                3
+                              ]
+                            },
+                            [
+                              "0",
+                              "5"
+                            ]
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$at": [
+                            {
+                              "$split": [
+                                {
+                                  "$ref": "request.model"
+                                },
+                                "-"
+                              ]
+                            },
+                            3
+                          ]
+                        },
+                        "5"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "Seedance 2.0的音频参考需要同时提供图片或视频"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/api/v3/contents/generations/tasks",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "content": {
+              "$concatArrays": [
+                {
+                  "$if": {
+                    "condition": {
+                      "$ref": "request.prompt"
+                    },
+                    "then": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "$ref": "request.prompt"
+                        }
+                      }
+                    ],
+                    "else": []
+                  }
+                },
+                {
+                  "$map": {
+                    "from": {
+                      "$sortByOrder": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "type": "image_url",
+                      "image_url": {
+                        "url": {
+                          "$ref": "media.value"
+                        }
+                      },
+                      "role": {
+                        "$coalesce": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "reference_image"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "$map": {
+                    "from": {
+                      "$sortByOrder": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "type": "video_url",
+                      "video_url": {
+                        "url": {
+                          "$ref": "media.value"
+                        }
+                      },
+                      "role": {
+                        "$coalesce": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "reference_video"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "$map": {
+                    "from": {
+                      "$sortByOrder": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "type": "audio_url",
+                      "audio_url": {
+                        "url": {
+                          "$ref": "media.value"
+                        }
+                      },
+                      "role": {
+                        "$coalesce": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "reference_audio"
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "ratio": {
+              "$coalesce": [
+                {
+                  "$ref": "request.aspectRatio"
+                },
+                "16:9"
+              ]
+            },
+            "resolution": {
+              "$if": {
+                "condition": {
+                  "$eq": [
+                    {
+                      "$lower": {
+                        "$ref": "request.resolution"
+                      }
+                    },
+                    "2160p"
+                  ]
+                },
+                "then": "4k",
+                "else": {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.resolution"
+                    },
+                    "720p"
+                  ]
+                }
+              }
+            },
+            "duration": {
+              "$coalesce": [
+                {
+                  "$ref": "request.duration"
+                },
+                5
+              ]
+            },
+            "generate_audio": {
+              "$coalesce": [
+                {
+                  "$ref": "request.generateAudio"
+                },
+                false
+              ]
+            },
+            "watermark": {
+              "$coalesce": [
+                {
+                  "$ref": "request.watermark"
+                },
+                false
+              ]
+            },
+            "seed": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.volcengine-ark-video.seed"
+              }
+            },
+            "camera_fixed": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.volcengine-ark-video.camera_fixed"
+              }
+            },
+            "tools": {
+              "$omitEmpty": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$ref": "request.providerOptions.volcengine-ark-video.webSearch"
+                      },
+                      true
+                    ]
+                  },
+                  "then": [
+                    {
+                      "type": "web_search"
+                    }
+                  ],
+                  "else": null
+                }
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/api/v3/contents/generations/tasks/{{taskId}}"
+        },
+        "cancel": {
+          "method": "DELETE",
+          "path": "/api/v3/contents/generations/tasks/{{taskId}}"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.id"
+              },
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "response.taskId"
+              },
+              {
+                "$ref": "response.data.id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$coalesce": [
+              {
+                "$ref": "response.status"
+              },
+              {
+                "$ref": "response.state"
+              },
+              {
+                "$ref": "response.data.status"
+              },
+              "pending"
+            ]
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              },
+              {
+                "$ref": "response.fail_reason"
+              }
+            ]
+          },
+          "videos": {
+            "$coalesce": [
+              {
+                "$ref": "response.content.video_url"
+              },
+              {
+                "$ref": "response.video_url"
+              },
+              {
+                "$ref": "response.output.video_url"
+              },
+              {
+                "$ref": "response.data.video_url"
+              }
+            ]
+          },
+          "errorPaths": [
+            "error.code"
+          ],
+          "resultEphemeral": true,
+          "usage": {
+            "$ref": "response.usage"
+          }
+        },
+        "videoReferences": {
+          "layout": "content",
+          "token": "参考图{n}"
+        }
+      }
+    ]
+  }
+}

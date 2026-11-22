@@ -1,40 +1,11 @@
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
+import { handleEntryLoadError, installChunkRecovery } from "@/lib/chunk-recovery";
+import "./styles/bootstrap-error.css";
 import { runLocalRuntimeBootstrap } from "@/services/local-runtime-bootstrap";
-import { bootstrapAppearance } from "@/services/appearance-bootstrap";
+import { isIsolatedPrevisRepro } from "@/lib/dev-repro";
 
-const staleReleaseRecoveryKey = "yingxue:stale-release-recovery-at";
-const staleReleaseRecoveryWindowMs = 60_000;
-
-window.addEventListener("vite:preloadError", (event) => {
-    event.preventDefault();
-
-    const now = Date.now();
-    let lastRecoveryAt = 0;
-    try {
-        lastRecoveryAt = Number(window.sessionStorage.getItem(staleReleaseRecoveryKey) || "0");
-    } catch {
-        // Storage may be unavailable in restricted browser contexts; reload recovery must still work.
-    }
-    if (Number.isFinite(lastRecoveryAt) && now - lastRecoveryAt < staleReleaseRecoveryWindowMs) {
-        return;
-    }
-
-    try {
-        window.sessionStorage.setItem(staleReleaseRecoveryKey, String(now));
-    } catch {
-        // The reload below remains the safe fallback when the marker cannot be persisted.
-    }
-    window.location.reload();
-});
-
-window.setTimeout(() => {
-    try {
-        window.sessionStorage.removeItem(staleReleaseRecoveryKey);
-    } catch {
-        // Ignore storage cleanup failures in restricted browser contexts.
-    }
-}, staleReleaseRecoveryWindowMs);
+installChunkRecovery();
 
 runLocalRuntimeBootstrap(
     {
@@ -49,6 +20,20 @@ runLocalRuntimeBootstrap(
         },
     },
     () => {
-        void bootstrapAppearance().finally(() => import("./application"));
+        // Appearance updates the shared store independently; a slow backend must not block either entry.
+        if (!isIsolatedPrevisRepro(import.meta.env.DEV, window.location.pathname)) {
+            void import("@/services/appearance-bootstrap").then(module => module.bootstrapAppearance()).catch(console.warn);
+        }
+        if (/^\/welcome\/?$/.test(window.location.pathname)) window.history.replaceState(window.history.state, "", "/home");
+        {
+            // Start the lobby and its shell alongside the application, avoiding nested import waterfalls.
+            if (/^\/(?:home\/?)?$/.test(window.location.pathname)) {
+                void import("@/layouts/user-layout").catch(handleEntryLoadError);
+                void import("@/pages/home").catch(handleEntryLoadError);
+                void import("@/pages/create").catch(console.warn);
+            }
+            const applicationReady = import("./application");
+            void applicationReady.then(module => module.mountApplication()).catch(handleEntryLoadError);
+        }
     },
 );

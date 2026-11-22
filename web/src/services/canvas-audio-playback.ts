@@ -1,5 +1,4 @@
-import { cacheResourceObjectUrl } from "@/services/resource-blob-cache";
-import { resourceIdFromStorageKey } from "@/services/api/resources";
+import { getResourceAccess, resolveResourceAccessURL, resourceIdFromStorageKey } from "@/services/api/resources";
 
 export type CanvasAudioSource = {
     nodeId: string;
@@ -155,7 +154,7 @@ class CanvasAudioPlaybackController {
         }
 
         const audio = this.ensureAudio();
-        audio.preload = "metadata";
+        audio.preload = "auto";
         audio.src = url;
         audio.load();
         if (!autoplay && this.autoplayToken !== token) return;
@@ -182,11 +181,18 @@ class CanvasAudioPlaybackController {
         }
     }
 
+    getCurrentTimeMs(nodeId: string): number {
+        if (this.activeSource?.nodeId === nodeId && this.audio) {
+            return Math.round(Math.max(0, this.audio.currentTime) * 1000);
+        }
+        return this.snapshots.get(nodeId)?.currentTimeMs || 0;
+    }
+
     private ensureAudio() {
         if (this.audio) return this.audio;
         if (typeof Audio === "undefined") throw new Error("当前环境不支持音频播放");
         const audio = new Audio();
-        audio.preload = "metadata";
+        audio.preload = "auto";
         audio.addEventListener("loadedmetadata", () => {
             const active = this.activeSource;
             if (!active) return;
@@ -254,10 +260,10 @@ function sameSource(left: CanvasAudioSource, right: CanvasAudioSource) {
     return left.content === right.content && left.storageKey === right.storageKey && left.mimeType === right.mimeType;
 }
 
-async function resolveAudioSource(source: CanvasAudioSource) {
-    if (source.storageKey && resourceIdFromStorageKey(source.storageKey)) {
-        const cached = await cacheResourceObjectUrl(source.storageKey).catch(() => "");
-        return cached || source.content;
+export async function resolveAudioSource(source: CanvasAudioSource) {
+    if (source.storageKey) {
+        const resourceId = resourceIdFromStorageKey(source.storageKey);
+        if (resourceId) return resolveResourceAccessURL((await getResourceAccess(source.storageKey, "display", "playback")).url);
     }
     return source.content;
 }
@@ -279,3 +285,4 @@ export const toggleCanvasAudio = (source: CanvasAudioSource) => canvasAudioPlayb
 export const pauseCanvasAudio = (nodeId?: string) => canvasAudioPlayback.pause(nodeId);
 export const stopCanvasAudio = (nodeId?: string) => canvasAudioPlayback.stop(nodeId);
 export const seekCanvasAudio = (nodeId: string, timeMs: number, source?: CanvasAudioSource) => canvasAudioPlayback.seek(nodeId, timeMs, source);
+export const getCanvasAudioCurrentTimeMs = (nodeId: string) => canvasAudioPlayback.getCurrentTimeMs(nodeId);

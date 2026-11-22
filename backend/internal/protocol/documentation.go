@@ -40,7 +40,7 @@ func renderBuiltinDocumentation(info Metadata, document string) string {
 
 func renderOperations(info Metadata) string {
 	var b strings.Builder
-	b.WriteString("| 阶段 | 方法与相对路径 | 请求类型 | 宿主行为 |\n| --- | --- | --- | --- |\n")
+	b.WriteString("| 阶段 | 方法与相对路径 | 请求类型 | 映雪行为 |\n| --- | --- | --- | --- |\n")
 	writeOperation(&b, "创建", info.Create, firstNonEmpty(info.ContentType, "application/json"), "提交请求；同步协议直接解析结果，异步协议读取任务 ID")
 	if strings.TrimSpace(info.Poll) != "" {
 		writeOperation(&b, "轮询", info.Poll, "application/json", "查询状态，成功后提取媒体地址")
@@ -53,10 +53,10 @@ func renderOperations(info Metadata) string {
 
 func renderParameters(parameters []Parameter) string {
 	if len(parameters) == 0 {
-		return "> 当前适配器没有声明可配置参数；这不表示上游没有参数，只表示宿主尚未建立稳定映射。"
+		return "> 当前适配器没有声明可配置参数；这不表示上游没有参数，只表示映雪尚未建立稳定映射。"
 	}
 	var b strings.Builder
-	b.WriteString("| 宿主字段 | 类型 | 必填 | 实际上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n")
+	b.WriteString("| 映雪字段 | 类型 | 必填 | 实际上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n")
 	for _, parameter := range parameters {
 		description := strings.TrimSpace(parameter.Description)
 		if len(parameter.Values) > 0 {
@@ -76,10 +76,10 @@ func renderRuntimeContract(info Metadata) string {
 	b.WriteString("- HTTP 非 2xx、非 JSON 响应、缺少任务 ID、成功状态却没有可识别结果都会作为真实错误向上返回。\n")
 	if strings.TrimSpace(info.Poll) != "" {
 		b.WriteString("- 异步状态统一为：`queued/pending/created/submitted` -> 等待，`running/processing/in_progress` -> 处理中，`succeeded/completed/done` -> 成功，`failed/error/expired/cancelled` -> 失败。\n")
-		b.WriteString("- 轮询频率应遵守上游速率限制；媒体 URL 通常有有效期，成功后应立即进入宿主资源保存流程。\n")
+		b.WriteString("- 轮询频率应遵守上游速率限制；媒体 URL 通常有有效期，成功后应立即进入映雪资源保存流程。\n")
 	}
 	b.WriteString("- 参考素材只接受上游可访问的 HTTP(S) URL 或带 MIME 前缀的 data URL；裸 Base64、登录后才能访问的链接和 Cookie 保护地址不可用。\n")
-	b.WriteString("- 插件只保证下方“当前实现”明确列出的字段。上游新增能力不会自动获得宿主支持，必须补适配、解析和测试。\n")
+	b.WriteString("- 插件只保证下方“当前实现”明确列出的字段。上游新增能力不会自动获得映雪支持，必须补适配、解析和测试。\n")
 	return strings.TrimSpace(b.String())
 }
 

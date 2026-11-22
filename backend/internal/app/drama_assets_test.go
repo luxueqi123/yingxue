@@ -1,0 +1,229 @@
+package app
+
+import (
+	"strings"
+	"testing"
+
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/production"
+)
+
+// 线上实际出现的模型合同：只有 16:9 / 9:16 / 1:1 三档像素值，没有 3:4。
+func pixelOnlyImageSpec() CapabilitySpec {
+	return CapabilitySpec{
+		Capability: "image",
+		Options:    map[string]OptionConstraint{"size": {Values: []any{"auto", "1824x1024", "1024x1824", "1024x1024"}}},
+		ImageSize: &CapabilityImageSize{Parameter: "size", Presets: []CapabilityImageSizePreset{
+			{Tier: "1k", Ratio: "16:9", Size: "1824x1024", Width: 1824, Height: 1024},
+			{Tier: "1k", Ratio: "9:16", Size: "1024x1824", Width: 1024, Height: 1824},
+			{Tier: "1k", Ratio: "1:1", Size: "1024x1024", Width: 1024, Height: 1024},
+		}},
+	}
+}
+
+func TestDramaImageSizeSnapsToDeclaredPreset(t *testing.T) {
+	spec := pixelOnlyImageSpec()
+	defaults := map[string]any{"size": "1824x1024"}
+	cases := map[string]string{"9:16": "1024x1824", "16:9": "1824x1024", "1:1": "1024x1024"}
+	for ratio, want := range cases {
+		if got := dramaImageRequestForSpec(spec, defaults, ratio, ""); got.Size != want || got.Issue != "" {
+			t.Fatalf("%s => %+v, want %q", ratio, got, want)
+		}
+	}
+	// 没有接近的档位（4:3、3:4 离 1:1 与 16:9/9:16 都超过容差）时报错，绝不悄悄出方图。
+	for _, ratio := range []string{"4:3", "3:4"} {
+		if got := dramaImageRequestForSpec(spec, defaults, ratio, ""); got.Issue == "" || got.Size != "" {
+			t.Fatalf("%s must be rejected, got %+v", ratio, got)
+		}
+	}
+	if got := dramaImageRequestForSpec(spec, defaults, "16:9", "2k"); got.Issue == "" {
+		t.Fatalf("unsupported tier must be rejected, got %+v", got)
+	}
+}
+
+func TestDramaImageSizeKeepsRatioModelsAndRejectsUndeclaredDefaults(t *testing.T) {
+	ratioSpec := CapabilitySpec{Capability: "image", Options: map[string]OptionConstraint{"size": {Values: []any{"1:1", "3:4", "9:16"}}}}
+	if got := dramaImageRequestForSpec(ratioSpec, nil, "3:4", "").Size; got != "3:4" {
+		t.Fatalf("declared ratio must pass through, got %q", got)
+	}
+	if got := dramaImageRequestForSpec(ratioSpec, nil, "16:9", ""); got.Size != "" || got.Issue == "" {
+		t.Fatalf("undeclared landscape ratio must not become portrait or square: %+v", got)
+	}
+	if got := dramaImageRequestForSpec(CapabilitySpec{Capability: "image"}, nil, "9:16", "").Size; got != "" {
+		t.Fatalf("models without a size option use their own default, got %q", got)
+	}
+}
+
+// 声明为大写档位时，短剧参考图也按声明原值下发，不能把小写档位透传给上游。
+func TestDramaImageResolutionUsesDeclaredCasing(t *testing.T) {
+	spec := CapabilitySpec{Capability: "image", Options: map[string]OptionConstraint{
+		"size":            {Values: []any{"16:9"}},
+		"imageResolution": {Values: []any{"1K", "2K", "4K"}},
+	}}
+	for tier, want := range map[string]string{"2k": "2K", "4K": "4K"} {
+		got := dramaImageRequestForSpec(spec, nil, "16:9", tier)
+		if got.Issue != "" || got.Resolution != want {
+			t.Fatalf("tier %q => %+v, want resolution %q", tier, got, want)
+		}
+		config := map[string]any{}
+		got.apply(config)
+		if config["imageResolution"] != want {
+			t.Fatalf("tier %q applied %#v, want %q", tier, config["imageResolution"], want)
+		}
+	}
+	// 模型默认档位同样按声明原值下发。
+	if got := dramaImageRequestForSpec(spec, map[string]any{"imageResolution": "2K"}, "16:9", ""); got.Resolution != "2K" {
+		t.Fatalf("default tier => %+v, want declared 2K", got)
+	}
+}
+
+func TestDramaAssetSchemesRenderWithoutPlaceholders(t *testing.T) {
+	for _, scheme := range production.AssetSchemes() {
+		assets := production.AssetSettings{Mode: scheme.Mode}.Normalized()
+		if assets.CharacterRatio != scheme.Ratio || assets.CharacterPrompt == "" || assets.ScenePrompt == "" {
+			t.Fatalf("scheme %s should fill defaults: %+v", scheme.Mode, assets)
+		}
+		for _, kind := range []string{"character", "scene"} {
+			prompt := production.CastImagePrompt(assets, kind, "林逸", "黑发少年，青色道袍", "国风动画", "冷色调")
+			if strings.Contains(prompt, "{{") || !strings.Contains(prompt, "林逸") || !strings.Contains(prompt, "国风动画") {
+				t.Fatalf("%s/%s rendered badly: %s", scheme.Mode, kind, prompt)
+			}
+		}
+	}
+	custom := production.AssetSettings{Mode: production.AssetModeCustom, CharacterPrompt: "{{角色名称}} {{未知变量}}"}.Normalized()
+	if problem := production.ValidateAssetPrompts(custom); !strings.Contains(problem, "{{未知变量}}") {
+		t.Fatalf("unknown placeholder must be rejected: %q", problem)
+	}
+	if custom.CharacterRatio != production.AssetImageRatio {
+		t.Fatalf("custom scheme keeps a valid ratio: %q", custom.CharacterRatio)
+	}
+}
+
+func TestDramaAssetPromptsEnforceRatio(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	// 竖屏作品的画风写着竖屏构图：设定图（16:9）的提示词里不能再出现竖屏要求，其余画风保留。
+	settings := DramaSettings{ReviewMode: DramaReviewAuto, MediaMode: DramaMediaAuto, Concurrency: 16, Models: fakeDramaModels}
+	settings.EpisodeSeconds = 60
+	settings.StylePrompt = "真人实拍质感，9:16 竖屏构图，主体居中"
+	summary, err := svc.CreateDrama("usr-drama", CreateDramaRequest{Name: "画幅", Start: true, Settings: settings, Chapters: []DramaChapterInput{{Title: "第一章", Text: "萧炎……"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := summary.Project.ID
+	runDramaTicks(t, svc, projectID, 20)
+	seen := map[string]bool{}
+	for _, req := range fake.requests {
+		if req.Type != "canvas_image" {
+			continue
+		}
+		if strings.Contains(req.Prompt, "9:16") || strings.Contains(req.Prompt, "竖屏") {
+			t.Fatalf("conflicting visual rule survived submission: %s", req.Prompt)
+		}
+		if !strings.Contains(req.Prompt, "真人实拍质感") || !strings.Contains(req.Prompt, "主体居中") {
+			t.Fatalf("non-frame style text was dropped: %s", req.Prompt)
+		}
+		if !strings.Contains(req.Prompt, "最终输出画幅必须为 16:9，横版，宽度大于高度") {
+			t.Fatalf("asset ratio missing from submission: %s", req.Prompt)
+		}
+		for kind, marker := range map[string]string{"character": "角色四格资产参考图", "prop": "道具设定图", "scene": "场景概念设定图"} {
+			if strings.Contains(req.Prompt, marker) {
+				seen[kind] = true
+			}
+		}
+	}
+	for _, kind := range []string{"character", "prop", "scene"} {
+		if !seen[kind] {
+			t.Fatalf("no %s image request was submitted", kind)
+		}
+	}
+}
+
+func TestDramaJobDetailKeepsEveryAttempt(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	fake.fail = func(req CreateTaskRequest) bool { return req.Type == "canvas_video" }
+	projectID := createTestDrama(t, svc, DramaReviewAuto).Project.ID
+	runDramaTicks(t, svc, projectID, 14)
+	jobs, err := svc.DramaJobs("usr-drama", projectID, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failed, succeeded *DramaJobView
+	for index := range jobs {
+		if jobs[index].Kind == model.DramaJobSegmentVideo && jobs[index].Status == model.DramaJobFailed && failed == nil {
+			failed = &jobs[index]
+		}
+		if jobs[index].Kind == model.DramaJobCastImage && jobs[index].Status == model.DramaJobSucceeded && succeeded == nil {
+			succeeded = &jobs[index]
+		}
+	}
+	if failed == nil || succeeded == nil {
+		t.Fatalf("expected a failed video job and a finished frame job: %+v", jobs)
+	}
+	detail, err := svc.DramaJobDetail("usr-drama", projectID, failed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Attempts) == 0 || !strings.Contains(detail.Attempts[0].Error, "上游拒绝") || detail.Target == "" {
+		t.Fatalf("failed job must list its rejected submissions: %+v", detail)
+	}
+	detail, err = svc.DramaJobDetail("usr-drama", projectID, succeeded.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Attempts) != 1 || detail.Attempts[0].Task == nil || len(detail.Attempts[0].Task.ResourceIDs) != 1 || detail.Attempts[0].Task.Prompt == "" {
+		t.Fatalf("finished job must show its task, prompt and output: %+v", detail.Attempts)
+	}
+	if _, err := svc.DramaJobDetail("someone-else", projectID, succeeded.ID); err == nil {
+		t.Fatal("job detail must be scoped to the project owner")
+	}
+}
+
+func TestDramaListFiltersAndCountsByStatus(t *testing.T) {
+	svc, _ := newDramaTestService(t)
+	createTestDrama(t, svc, DramaReviewAuto)
+	page, err := svc.ListDramas("usr-drama", DramaListRequest{Page: 1, PageSize: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := page["items"].([]DramaListItem)
+	counts := page["statusCounts"].(map[string]int64)
+	if len(items) != 1 || page["total"].(int64) != 1 || counts["all"] != 1 {
+		t.Fatalf("list must only count drama projects: %+v", page)
+	}
+	page, _ = svc.ListDramas("usr-drama", DramaListRequest{Page: 1, PageSize: 24, Query: "不存在的书名"})
+	if len(page["items"].([]DramaListItem)) != 0 {
+		t.Fatalf("search must filter by name: %+v", page)
+	}
+	page, _ = svc.ListDramas("usr-drama", DramaListRequest{Page: 1, PageSize: 24, Status: model.DramaStatusCompleted})
+	if page["total"].(int64) != 0 {
+		t.Fatalf("status filter must apply: %+v", page)
+	}
+	if _, err := svc.ListDramas("usr-drama", DramaListRequest{Page: 1, PageSize: 24, Status: "bogus"}); err == nil {
+		t.Fatal("unknown status must be rejected")
+	}
+}
+func TestDramaImageSizeKeepsRatioModelsAndRejectsUndeclared(t *testing.T) {
+	ratioSpec := CapabilitySpec{Capability: "image", Options: map[string]OptionConstraint{"size": {Values: []any{"1:1", "3:4", "9:16"}}}}
+	if got := dramaImageRequestForSpec(ratioSpec, nil, "3:4", ""); got.Size != "3:4" {
+		t.Fatalf("declared ratio must pass through, got %+v", got)
+	}
+	if got := dramaImageRequestForSpec(ratioSpec, nil, "16:9", ""); got.Issue == "" {
+		t.Fatalf("16:9 on a portrait-only model must be rejected, got %+v", got)
+	}
+	if got := dramaImageRequestForSpec(CapabilitySpec{Capability: "image"}, nil, "9:16", ""); got.Issue == "" {
+		t.Fatalf("models without a size option cannot honour the ratio, got %+v", got)
+	}
+
+	tiered := CapabilitySpec{Capability: "image", Options: map[string]OptionConstraint{"size": {Values: []any{"16:9", "1:1"}}, "imageResolution": {Values: []any{"1k", "2k"}}}, ImageSize: &CapabilityImageSize{Parameter: "aspect_ratio", Presets: []CapabilityImageSizePreset{
+		{Tier: "1k", Ratio: "16:9", Size: "1824x1024"}, {Tier: "2k", Ratio: "16:9", Size: "2752x1536"}, {Tier: "1k", Ratio: "1:1", Size: "1024x1024"}, {Tier: "2k", Ratio: "1:1", Size: "2048x2048"},
+	}}}
+	if got := dramaImageRequestForSpec(tiered, map[string]any{"imageResolution": "2k"}, "16:9", ""); got.Size != "16:9" || got.Resolution != "2k" {
+		t.Fatalf("default tier must be sent explicitly, got %+v", got)
+	}
+	if got := dramaImageRequestForSpec(tiered, map[string]any{"imageResolution": "2k"}, "16:9", "1k"); got.Resolution != "1k" {
+		t.Fatalf("chosen tier must win over the model default, got %+v", got)
+	}
+	if !dramaImageRatioMismatch(1024, 1024, "16:9") || dramaImageRatioMismatch(1824, 1024, "16:9") || dramaImageRatioMismatch(0, 0, "16:9") {
+		t.Fatal("result ratio check must flag square images only")
+	}
+}

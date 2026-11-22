@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { act } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot } from "react-dom/client";
+import { Window } from "happy-dom";
+import { AssetCard } from "@/pages/assets/asset-library-cards";
+import { AssetImageZoom, AssetsBatchBar } from "@/pages/assets/asset-library-panels";
+import { selectAssetIds } from "@/pages/assets/asset-library-selection";
+import type { Asset } from "@/stores/use-asset-store";
+
+const asset: Asset = { id: "remote-page-2", kind: "text", title: "第二页素材", coverUrl: "", tags: [], createdAt: "2026-10-01", updatedAt: "2026-10-01", data: { content: "正文" } };
+const dom = new Window({ url: "https://assets.example/" });
+for (const [key, value] of Object.entries({ window: dom, document: dom.document, navigator: dom.navigator, HTMLElement: dom.HTMLElement, SVGElement: dom.SVGElement, Element: dom.Element, Node: dom.Node, Event: dom.Event, getComputedStyle: dom.getComputedStyle.bind(dom), IS_REACT_ACT_ENVIRONMENT: true })) {
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+}
+const mounts: Array<{ root: ReturnType<typeof createRoot>; host: HTMLDivElement }> = [];
+afterEach(async () => {
+    for (const { root, host } of mounts.splice(0)) {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
+const click = (keys: MouseEventInit = {}) => new dom.MouseEvent("click", { bubbles: true, ...keys });
+
+test.each(["/api/resources/detail-image/file", "https://old.example/expired-original.png"])("素材详情通过资源标识加载原图，解析历史地址 %s", (dataUrl) => {
+    const image = {
+        ...asset,
+        kind: "image" as const,
+        coverUrl: "https://old.example/expired-cover.png",
+        data: { dataUrl, storageKey: "resource:detail-image", width: 1024, height: 1024, bytes: 100, mimeType: "image/png" },
+    };
+    const html = renderToStaticMarkup(<AssetImageZoom asset={image} />);
+    expect(html).toContain("cached-resource-image-shell");
+    expect(html).not.toContain("https://old.example/");
+    expect(html).not.toContain(dataUrl);
+    expect(html).toContain('aria-label="放大"');
+});
+
+async function card(selected: boolean, selectionMode: boolean) {
+    const onSelect = mock(() => {});
+    const onOpen = mock(() => {});
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host); mounts.push({ root, host });
+    await act(async () => root.render(<AssetCard asset={asset} selected={selected} selectionMode={selectionMode} onSelect={onSelect} onOpen={onOpen} onEdit={() => {}} onCopy={() => {}} onDownload={() => {}} onDelete={() => {}} folderOptions={[]} onMoveToFolder={() => {}} />));
+    const cover = host.querySelector<HTMLButtonElement>(".assets-cover-link")!;
+    const body = host.querySelector<HTMLButtonElement>(".asset-collection-body")!;
+    expect(cover).not.toBeNull(); expect(body).not.toBeNull();
+    return { onSelect, onOpen, cover, body };
+}
+
+describe("素材库分页多选", () => {
+    test.each(["image", "video", "audio", "model", "text", "entity"] as const)("%s 素材有独立名称编辑入口", (kind) => {
+        const onRename = mock(() => {});
+        const element = AssetCard({
+            asset: { ...asset, kind, data: kind === "entity" ? { definition: {}, visualStatus: "draft" } : asset.data } as Asset,
+            selected: false,
+            onSelect: () => {},
+            onOpen: () => {},
+            onEdit: () => {},
+            onRename,
+            onCopy: () => {},
+            onDownload: () => {},
+            onDelete: () => {},
+            folderOptions: [],
+            onMoveToFolder: () => {},
+        });
+        const nameButton = element.props.children[1].props.children[1];
+        expect(nameButton.props["aria-label"]).toBe("修改素材名称：第二页素材");
+        nameButton.props.onClick();
+        expect(onRename).toHaveBeenCalledTimes(1);
+    });
+    test("跨页选择合并去重，取消只影响指定素材", () => {
+        let ids = selectAssetIds([], ["page-1"], "page-1", true);
+        ids = selectAssetIds(ids, ["page-2-a", "page-2-b"], "page-2-a", true);
+        ids = selectAssetIds(ids, ["page-2-a", "page-2-b"], "page-2-a", true);
+        expect(ids).toEqual(["page-1", "page-2-a"]);
+        expect(selectAssetIds(ids, ["page-2-a"], "page-2-a", false)).toEqual(["page-1"]);
+    });
+
+    test("Shift 正向反向连选和连取消，保留其他页的选择", () => {
+        const visible = ["a", "b", "c", "d"];
+        expect(selectAssetIds(["other-page", "a"], visible, "d", true, "a")).toEqual(["other-page", "a", "b", "c", "d"]);
+        expect(selectAssetIds(["other-page"], visible, "a", true, "d")).toEqual(["other-page", "a", "b", "c", "d"]);
+        expect(selectAssetIds(["other-page", ...visible], visible, "d", false, "b")).toEqual(["other-page", "a"]);
+    });
+
+    test("翻页后锚点不在当前页时仅切换目标", () => {
+        expect(selectAssetIds(["previous"], ["a", "b"], "b", true, "previous")).toEqual(["previous", "b"]);
+    });
+
+    test("普通模式点击封面和文字仍打开预览", async () => {
+        const entry = await card(false, false);
+        entry.cover.dispatchEvent(click());
+        entry.body.dispatchEvent(click());
+        expect(entry.onOpen).toHaveBeenCalledTimes(2);
+        expect(entry.onSelect).not.toHaveBeenCalled();
+    });
+
+    test.each([false, true])("多选模式封面和文字直接切换选择（原选中：%s）", async (selected) => {
+        const entry = await card(selected, true);
+        entry.cover.dispatchEvent(click());
+        entry.body.dispatchEvent(click());
+        expect(entry.onSelect.mock.calls).toEqual([
+            [!selected, false],
+            [!selected, false],
+        ]);
+        expect(entry.onOpen).not.toHaveBeenCalled();
+    });
+
+    test("Shift 或 Ctrl 点击卡片可直接开始多选", async () => {
+        const entry = await card(false, false);
+        entry.cover.dispatchEvent(click({ shiftKey: true }));
+        entry.body.dispatchEvent(click({ ctrlKey: true }));
+        entry.body.dispatchEvent(click({ metaKey: true }));
+        expect(entry.onSelect.mock.calls).toEqual([
+            [true, true],
+            [true, false],
+            [true, false],
+        ]);
+        expect(entry.onOpen).not.toHaveBeenCalled();
+    });
+
+    test("选择为空或操作中时禁用写按钮，并明确全选范围", () => {
+        const props = { isTrash: false, allSelected: false, onSelectAll: () => {}, onClear: () => {}, onExport: () => {}, onDelete: () => {} };
+        const empty = renderToStaticMarkup(<AssetsBatchBar {...props} count={0} />);
+        expect(empty).toContain("全选本页");
+        expect(empty.match(/disabled=""/g)).toHaveLength(3);
+        const busy = renderToStaticMarkup(<AssetsBatchBar {...props} count={3} busy />);
+        expect(busy.match(/disabled=""/g)).toHaveLength(5);
+    });
+});

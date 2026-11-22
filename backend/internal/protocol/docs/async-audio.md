@@ -24,10 +24,10 @@ Content-Type: application/json
 当前创建正文只包含：
 
 ```json
-{"model":"YOUR_ASYNC_AUDIO_MODEL","prompt":"低沉克制的男声旁白：风暴即将到来。"}
+{"model":"YOUR_ASYNC_AUDIO_MODEL","input":"风暴即将到来。","voice":"YOUR_VOICE","response_format":"mp3","speed":1,"instructions":"低沉克制的男声旁白"}
 ```
 
-没有映射 `voice`、`format`、`speed`、参考音频、歌词或音乐结构。若模型依赖这些字段，当前插件不适用。
+当前映射音色、格式、语速与配音要求；没有映射参考音频、歌词或音乐结构。异步接口只是任务提交方式，不代表已经支持音乐作曲或声音克隆。
 
 ## 创建、轮询与结果
 
@@ -35,7 +35,7 @@ Content-Type: application/json
 curl "{channel_base_url}/v1/audio/tasks" \
   -H "Authorization: Bearer <CHANNEL_API_KEY>" \
   -H "Content-Type: application/json" \
-  -d '{"model":"YOUR_ASYNC_AUDIO_MODEL","prompt":"雨声环境音，逐渐增强"}'
+  -d '{"model":"YOUR_ASYNC_AUDIO_MODEL","input":"风暴即将到来。","voice":"YOUR_VOICE","response_format":"mp3","speed":1}'
 ```
 
 创建响应需包含任务 ID，查询路径使用该 ID。轮询 parser 按音频类型提取 `audios`、`audio_url`、`audioUrl`、`result_url` 或 `url`，不会把音频误写入视频结果。若部署返回其他深层结构，必须增加该渠道 fixture 和明确映射。
@@ -46,7 +46,7 @@ curl "{channel_base_url}/v1/audio/tasks" \
 
 ## 官方资料与边界
 
-- 本页以宿主当前 adapter 为唯一字段事实源。
+- 本页以映雪当前 adapter 为唯一字段事实源。
 - 渠道部署方必须提供真实的模型、声音、错误码和计费文档；没有这些资料时不能对用户承诺能力。
 
 {{CONTRACT}}

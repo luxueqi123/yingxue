@@ -1,4 +1,4 @@
-import { apiClient, request } from "./request";
+import { http } from "./request";
 
 export type DatabasePoolStats = {
     maxOpenConnections: number;
@@ -105,7 +105,21 @@ export type SystemPerformance = {
         cacheGroups: SystemPerformanceCacheGroup[];
         statusMessage?: string;
     };
+    agents: SystemPerformanceAgent[];
     build: { version: string; commit: string; buildTime: string; goVersion: string };
+};
+
+export type SystemPerformanceAgent = {
+    id: string;
+    name: string;
+    mode: "remote" | "embedded";
+    endpoint: string;
+    healthy: boolean;
+    active: number;
+    limit: number;
+    queued: number;
+    configuredLimit: number;
+    statusMessage?: string;
 };
 
 export type RuntimeCacheClearResult = {
@@ -117,9 +131,13 @@ export type RuntimeCacheClearResult = {
 };
 
 export function getSystemPerformance(signal?: AbortSignal) {
-    return request<SystemPerformance>(apiClient.get("/admin/system-performance", { signal }));
+    return http.get<SystemPerformance>("/admin/system-performance", { signal });
+}
+
+export function updateAgentSessionLimit(maxSessions: number) {
+    return http.put<SystemPerformanceAgent>("/admin/system-performance/agent-limit", { maxSessions });
 }
 
 export function clearRuntimeCache() {
-    return request<RuntimeCacheClearResult>(apiClient.post("/admin/system-performance/cache/clear", { scope: "runtime" }));
+    return http.post<RuntimeCacheClearResult>("/admin/system-performance/cache/clear", { scope: "runtime" });
 }

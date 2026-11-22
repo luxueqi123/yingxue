@@ -1,4 +1,9 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { cn } from "@/lib/utils";
+import { useThemeStore } from "@/stores/use-theme-store";
+import lightLogo from "../../../public/brand/yingxue-art-tv-20261107-light.svg?url";
+import darkLogo from "../../../public/brand/yingxue-art-tv-20261107-dark.svg?url";
+import "./yingxue-brand-lockup.css";
 
 type YingxueBrandLockupProps = {
     className?: string;
@@ -6,25 +11,18 @@ type YingxueBrandLockupProps = {
 };
 
 export function YingxueBrandLockup({ className, variant = "dark" }: YingxueBrandLockupProps) {
-    if (variant === "adaptive") {
-        return (
-            <span role="img" aria-label="映雪" className={cn("inline-flex shrink-0 items-center", className)}>
-                <img aria-hidden className="h-full w-auto max-w-none object-contain dark:hidden" src="/brand/yingxue-premium-v5-light.webp" alt="" draggable={false} />
-                <img aria-hidden className="hidden h-full w-auto max-w-none object-contain drop-shadow-[0_0_7px_rgba(255,255,255,0.18)] dark:block" src="/brand/yingxue-premium-v5-dark.webp" alt="" draggable={false} />
-            </span>
-        );
-    }
-
+    const { t } = useInterfaceTranslation();
+    const theme = useThemeStore(state => state.theme);
+    const light = variant === "light" || (variant === "adaptive" && theme !== "dark");
     return (
-        <img
-            alt="映雪"
-            className={cn(
-                "block h-auto max-w-none object-contain",
-                className,
-            )}
-            draggable={false}
-            fetchPriority="high"
-            src={variant === "dark" ? "/brand/yingxue-premium-v5-dark.webp" : "/brand/yingxue-premium-v5-light.webp"}
-        />
+        <span role="img" aria-label={t("brand")} data-variant={variant} data-tone={light ? "light" : "dark"} className={cn("yingxue-brand-lockup inline-flex shrink-0 items-center justify-center", className)}>
+            <img
+                alt={t("brand")}
+                className="yingxue-brand-lockup-image h-full w-auto max-w-full object-contain"
+                draggable={false}
+                fetchPriority="high"
+                src={light ? lightLogo : darkLogo}
+            />
+        </span>
     );
 }

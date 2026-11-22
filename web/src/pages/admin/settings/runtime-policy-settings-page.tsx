@@ -1,5 +1,5 @@
 import { App, Button, Form, InputNumber, Skeleton } from "antd";
-import { AlertTriangle, Database, Gauge, Infinity as InfinityIcon, Network, RefreshCw, RotateCcw, Save, ShieldCheck, TimerReset } from "lucide-react";
+import { AlertTriangle, Database, Gauge, Infinity as InfinityIcon, Network, RefreshCw, RotateCcw, Save, ShieldCheck, TimerReset, Orbit } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBlocker } from "react-router";
 
@@ -9,8 +9,8 @@ import { useAdminContext } from "../admin-context";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatTile, AdminStatusBadge, SettingsSectionCard } from "../components/admin-ui";
 
-type PolicyGroup = "resource" | "task" | "request";
-type RuntimePolicyDraft = Pick<RuntimePolicySetting, "resource" | "task" | "request">;
+type PolicyGroup = "resource" | "storage" | "task" | "request";
+type RuntimePolicyDraft = Pick<RuntimePolicySetting, "resource" | "storage" | "task" | "request">;
 type PolicyField = { group: PolicyGroup; name: string; label: string; extra: string; unit: string; min?: number; max: number };
 type PolicySectionDefinition = {
     id: string;
@@ -28,7 +28,7 @@ const resourceFields: PolicyField[] = [
     { group: "resource", name: "generatedFileMB", label: "单个生成资源", extra: "上游生成响应和落库资源的单文件上限。", unit: "MB", max: 999 },
     { group: "resource", name: "dailyUploadMB", label: "每日上传总量", extra: "按 UTC 自然日累计资源与附件上传。", unit: "MB", max: 999_999 },
     { group: "resource", name: "storedFileGB", label: "账号文件总量", extra: "资源文件与 Agent 会话附件合计。", unit: "GB", max: 999 },
-    { group: "resource", name: "structuredDataMB", label: "结构化数据总量", extra: "画布、素材和 Agent 会话结构化数据合计。", unit: "MB", max: 999_999 },
+    { group: "resource", name: "structuredDataMB", label: "结构化数据总量", extra: "仅计入画布和素材。Agent 历史单独设置；MCP 配置与调用记录另有每账号 64 MiB 上限。", unit: "MB", max: 999_999 },
     { group: "resource", name: "taskDataGB", label: "任务数据总量", extra: "任务历史、结果和上游请求日志合计。", unit: "GB", max: 999 },
     { group: "resource", name: "assetCount", label: "素材数量", extra: "单账号可保存的素材记录数。", unit: "条", max: 999_999_999 },
     { group: "resource", name: "canvasCount", label: "画布数量", extra: "单账号可保存的画布数量。", unit: "个", max: 999_999_999 },
@@ -38,6 +38,13 @@ const resourceFields: PolicyField[] = [
     { group: "resource", name: "recycleBinRetentionDays", label: "回收站自动清理时间", extra: "素材移入回收站后自动彻底删除的天数，0 表示不自动清理。", unit: "天", min: 0, max: 365 },
 ];
 
+const storageFields: PolicyField[] = [
+    { group: "storage", name: "transferTimeoutSeconds", label: "对象存储传输超时", extra: "对象存储上传、下载、删除与连接测试的最长等待时间。", unit: "秒", min: 10, max: 3_600 },
+    { group: "storage", name: "accessURLTTLSeconds", label: "访问地址有效期", extra: "浏览器访问对象资源时使用的签名地址有效期。", unit: "秒", min: 60, max: 86_400 },
+    { group: "storage", name: "providerAccessURLTTLSeconds", label: "厂商访问地址有效期", extra: "模型或其他外部厂商读取对象资源时使用的地址有效期。", unit: "秒", min: 300, max: 86_400 },
+    { group: "storage", name: "nonSeekableBufferMB", label: "非可寻址上传缓冲", extra: "S3 兼容存储接收不可重复读取请求体时的最大内存缓冲。", unit: "MB", max: 999 },
+    { group: "storage", name: "errorBodyKB", label: "错误响应保留", extra: "对象存储错误响应中最多保留的诊断内容。", unit: "KB", max: 1_024 },
+];
 const concurrencyFields: PolicyField[] = [
     { group: "task", name: "workerConcurrency", label: "Worker 并发", extra: "集群同时执行的后台任务数。", unit: "个", max: 999 },
     { group: "task", name: "channelConcurrency", label: "全局渠道并发", extra: "渠道选择跟随系统时采用的并发上限。", unit: "个", max: 999 },
@@ -53,6 +60,45 @@ const timeoutFields: PolicyField[] = [
     { group: "task", name: "defaultTimeoutMinutes", label: "默认任务超时", extra: "未匹配专用类型时使用的最长执行时间。", unit: "分钟", max: 9_999 },
 ];
 
+const agentFields: PolicyField[] = [
+    { group: "resource", name: "agentHistoryMB", label: "每账号 Agent 历史容量", extra: "包括会话、消息、事件和撤销快照。调低不会删除历史；购买文件空间不改变此上限。", unit: "MiB", max: 999_999 },
+    {
+        group: "task",
+        name: "agentStepMaxOutputTokens",
+        label: "单步输出上限",
+        extra: "画布 Agent 每次模型调用的输出上限，含思考、正文与工具调用参数。0 表示不限制，此时只有单步超时兜底；抬高可以避免长思考模型被截断后返回空内容。",
+        unit: "token",
+        min: 0,
+        max: 131_072,
+    },
+    {
+        group: "task",
+        name: "agentStepTimeoutSeconds",
+        label: "单步超时",
+        extra: "画布 Agent 单步模型调用的最长等待时间，到点会中止这一步并自动关思考重试一次。0 表示沿用“文本任务超时”，不再单独计时。",
+        unit: "秒",
+        min: 0,
+        max: 3_600,
+    },
+    {
+        group: "task",
+        name: "agentMaxSessions",
+        label: "全局执行上限",
+        extra: "同时执行的 Agent 轮次，新安装默认 8。审批等待不占全局执行名额，降低上限不会中断已开始的对话；实际执行还受 Agent 服务容量约束。",
+        unit: "个",
+        max: 64,
+    },
+    {
+        group: "task",
+        name: "agentMaxRunsPerUser",
+        label: "账号进行中对话",
+        extra: "每个账号跨项目的 Agent 轮次上限，默认 5。排队、等待确认和等待清理的轮次均占名额。",
+        unit: "个",
+        min: 1,
+        max: 64,
+    },
+];
+
 const rateFields: PolicyField[] = [
     { group: "request", name: "taskCreatePerMinute", label: "任务创建", extra: "每账号每分钟允许创建的任务数。", unit: "次/分钟", max: 999_999 },
     { group: "request", name: "sessionCreatePerMinute", label: "会话创建", extra: "每账号每分钟允许创建的会话数。", unit: "次/分钟", max: 999_999 },
@@ -61,8 +107,8 @@ const rateFields: PolicyField[] = [
     { group: "request", name: "sessionFilePerMinute", label: "会话附件", extra: "每账号每分钟上传会话附件的次数。", unit: "次/分钟", max: 999_999 },
     { group: "request", name: "assetWritePerMinute", label: "素材写入", extra: "每账号每分钟写入素材的次数。", unit: "次/分钟", max: 999_999 },
     { group: "request", name: "canvasWritePerMinute", label: "画布写入", extra: "每账号每分钟写入画布的次数。", unit: "次/分钟", max: 999_999 },
-    { group: "request", name: "registerPerHour", label: "账号注册", extra: "每 IP 每小时允许注册的次数。", unit: "次/小时", max: 999_999 },
-    { group: "request", name: "emailCodePerHour", label: "邮箱验证码", extra: "每 IP 每小时允许请求验证码的次数。", unit: "次/小时", max: 999_999 },
+    { group: "request", name: "registerPerHour", label: "账号注册", extra: "每 IP 每小时允许的注册请求次数，包含失败尝试；多人共用网络时建议至少 30 次。", unit: "次/小时", max: 999_999 },
+    { group: "request", name: "emailCodePerHour", label: "邮箱验证码", extra: "每 IP 每小时的验证码请求次数，建议至少 60 次；单邮箱另限每小时 10 次，发送后需间隔 60 秒。", unit: "次/小时", max: 999_999 },
     { group: "request", name: "loginIPPerTenMinutes", label: "登录 IP", extra: "每 IP 每 10 分钟允许登录的次数。", unit: "次/10分钟", max: 999_999 },
     { group: "request", name: "loginAccountPerTenMinutes", label: "登录账号组合", extra: "同一 IP 与账号组合每 10 分钟的登录次数。", unit: "次/10分钟", max: 999_999 },
     { group: "request", name: "systemRelayPerMinute", label: "系统渠道中转", extra: "每账号每分钟使用系统渠道的请求数。", unit: "次/分钟", max: 999_999 },
@@ -83,6 +129,15 @@ const relayFields: PolicyField[] = [
 const policySections: PolicySectionDefinition[] = [
     { id: "policy-resource", icon: <Database className="size-4" aria-hidden="true" />, title: "资源与账号配额", shortTitle: "资源配额", description: "上传、文件容量、结构化数据和历史记录上限。", fields: resourceFields },
     {
+        id: "policy-storage",
+        icon: <Database className="size-4" aria-hidden="true" />,
+        title: "对象存储运行时",
+        shortTitle: "对象存储",
+        description: "对象存储传输、签名地址和上传缓冲策略。",
+        fields: storageFields,
+        status: <AdminStatusBadge label="保存后热更新" tone="info" />,
+    },
+    {
         id: "policy-concurrency",
         icon: <Gauge className="size-4" aria-hidden="true" />,
         title: "任务与并发",
@@ -92,6 +147,15 @@ const policySections: PolicySectionDefinition[] = [
         status: <AdminStatusBadge label="保存后热更新" tone="info" />,
     },
     { id: "policy-timeout", icon: <TimerReset className="size-4" aria-hidden="true" />, title: "任务超时", shortTitle: "任务超时", description: "不同生成类型的最长执行时间。", fields: timeoutFields },
+    {
+        id: "policy-agent",
+        icon: <Orbit className="size-4" aria-hidden="true" />,
+        title: "画布 Agent",
+        shortTitle: "Agent",
+        description: "每账号历史容量、进行中的对话数量，以及单步模型调用的输出上限和时限。",
+        fields: agentFields,
+        status: <AdminStatusBadge label="保存后热更新" tone="info" />,
+    },
     { id: "policy-rate", icon: <ShieldCheck className="size-4" aria-hidden="true" />, title: "业务频控", shortTitle: "业务频控", description: "账号与 IP 维度的固定窗口请求限制。", fields: rateFields },
     { id: "policy-relay", icon: <Network className="size-4" aria-hidden="true" />, title: "渠道中转与熔断", shortTitle: "中转与熔断", description: "请求体、响应体、并发、超时和上游故障保护。", fields: relayFields },
 ];
@@ -500,7 +564,7 @@ function PolicySection({ icon, title, description, fields, status }: PolicySecti
 }
 
 function toPolicyDraft(value: RuntimePolicyDraft): RuntimePolicyDraft {
-    return { resource: { ...value.resource }, task: { ...value.task }, request: { ...value.request } };
+    return { resource: { ...value.resource }, storage: { ...value.storage }, task: { ...value.task }, request: { ...value.request } };
 }
 
 function readPolicyValue(value: RuntimePolicyDraft, field: PolicyField) {

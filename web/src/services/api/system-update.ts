@@ -1,13 +1,15 @@
-import { apiClient, request } from "./request";
+import { http } from "./request";
 
 export type UpdatePhase =
     | "idle"
     | "checking"
     | "ready"
     | "no_update"
+    | "waiting_release"
     | "preflight"
     | "backing_up"
     | "pulling"
+    | "warming"
     | "draining"
     | "migrating"
     | "switching"
@@ -51,6 +53,7 @@ export type SystemUpdateLog = {
 };
 
 export type SystemUpdateOperation = {
+    sources?: SystemUpdateSources;
     id?: string;
     phase: UpdatePhase;
     fromVersion?: string;
@@ -64,11 +67,15 @@ export type SystemUpdateOperation = {
 };
 
 export type SystemUpdateStatus = {
+    sources?: SystemUpdateSources;
+    sourceProbe?: SystemUpdateSourceProbe;
     supported: boolean;
     connected: boolean;
     repository: string;
     deployment: string;
+    rolling?: boolean;
     currentVersion: string;
+    upstreamVersion?: string;
     latestRelease?: SystemUpdateRelease;
     updateAvailable: boolean;
     checks: SystemUpdateCheck[];
@@ -77,18 +84,41 @@ export type SystemUpdateStatus = {
     operation: SystemUpdateOperation;
 };
 
+export type SystemUpdateSources = {
+    githubSource: "direct" | "gh_proxy";
+    imageSource: "ghcr" | "nju";
+};
+
+export type SystemUpdateSourceProbe = {
+    id: string;
+    status: "running" | "succeeded" | "failed";
+    sources: SystemUpdateSources;
+    targetVersion?: string;
+    checks: SystemUpdateCheck[];
+    startedAt: string;
+    finishedAt?: string;
+};
+
+export function saveSystemUpdateSources(sources: SystemUpdateSources) {
+    return http.put<SystemUpdateStatus>("/admin/system-update/sources", sources);
+}
+
+export function testSystemUpdateSources() {
+    return http.post<SystemUpdateStatus>("/admin/system-update/sources/test");
+}
+
 export function getSystemUpdateStatus(signal?: AbortSignal) {
-    return request<SystemUpdateStatus>(apiClient.get("/admin/system-update", { signal }));
+    return http.get<SystemUpdateStatus>("/admin/system-update", { signal });
 }
 
 export function checkSystemUpdate() {
-    return request<SystemUpdateStatus>(apiClient.post("/admin/system-update/check"));
+    return http.post<SystemUpdateStatus>("/admin/system-update/check");
 }
 
 export function startSystemUpdate(targetVersion: string) {
-    return request<SystemUpdateStatus>(apiClient.post("/admin/system-update/start", { targetVersion }));
+    return http.post<SystemUpdateStatus>("/admin/system-update/start", { targetVersion });
 }
 
 export function rollbackSystemUpdate(reason: string) {
-    return request<SystemUpdateStatus>(apiClient.post("/admin/system-update/rollback", { reason }));
+    return http.post<SystemUpdateStatus>("/admin/system-update/rollback", { reason });
 }

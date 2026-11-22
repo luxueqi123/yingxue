@@ -5,19 +5,24 @@ import { lazy, useState } from "react";
 import { useAdminContext } from "./admin-context";
 import { AdminPageFrame } from "./components/admin-shell";
 import { readAnnouncementPendingReview } from "./components/admin-announcement-safety";
+import { AdminSegmented } from "./ui/controls";
+import { BillingAutoRefundToggle } from "./components/billing-auto-refund-toggle";
 
 const AnalyticsPanel = lazy(() => import("./components/analytics-panel"));
 const AdminAnnouncementsPanel = lazy(() => import("./components/admin-announcements-panel"));
+const AdminBannerAnnouncementsPanel = lazy(() => import("./components/admin-banner-announcements-panel"));
 const CreditOperationsPanel = lazy(() => import("./components/credit-operations-panel"));
 const AccessSettingsPanel = lazy(() => import("./components/access-settings-panel"));
 const EmailSettingsPanel = lazy(() => import("./components/email-settings-panel"));
 const FeatureAvailabilityPanel = lazy(() => import("./components/feature-availability-panel"));
 const StorageResourcesPanel = lazy(() => import("./components/storage-resources-panel"));
+const AgentLessonsPanel = lazy(() => import("./components/agent-lessons-panel"));
+const AgentMemoryDocumentsPanel = lazy(() => import("./components/agent-memory-documents-panel"));
 
 export function AnalyticsPage() {
     const { references } = useAdminContext();
     return (
-        <AdminPageFrame title="数据概览" description="用户、任务、质量与成本健康度" scroll>
+        <AdminPageFrame title="运行总览" description="请求质量、任务队列与成本 · 趋势按自然日统计" scroll>
             <AnalyticsPanel users={references.users} channels={references.channels} />
         </AdminPageFrame>
     );
@@ -52,17 +57,35 @@ export function AnnouncementsPage() {
     );
 }
 
+export function BannerAnnouncementsPage() {
+    const [createOpen, setCreateOpen] = useState(false);
+    return (
+        <AdminPageFrame
+            title="常驻通知"
+            description="配置首页顶部常驻展示的通知，支持标题、状态与有效期"
+            actions={
+                <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setCreateOpen(true)}>
+                    新增常驻通知
+                </Button>
+            }
+        >
+            <AdminBannerAnnouncementsPanel createOpen={createOpen} onCreateOpenChange={setCreateOpen} />
+        </AdminPageFrame>
+    );
+}
+
 export function CreditOperationsPage() {
     const { references } = useAdminContext();
     const [activeOperation, setActiveOperation] = useState<"policy" | "adjustment" | null>(null);
     return (
         <AdminPageFrame
             title="积分运营"
-            description="异常计费核对、积分策略与人工调账"
+            description="异常计费核对、注册与签到赠送管理及人工调账"
             actions={
                 <>
+                    <BillingAutoRefundToggle />
                     <Button icon={<Settings2 className="size-4" />} onClick={() => setActiveOperation("policy")}>
-                        积分策略
+                        注册与签到赠送
                     </Button>
                     <Button type="primary" icon={<UserRoundCog className="size-4" />} onClick={() => setActiveOperation("adjustment")}>
                         人工调账
@@ -77,7 +100,7 @@ export function CreditOperationsPage() {
 
 export function AccessSettingsPage() {
     return (
-        <AdminPageFrame title="登录与注册" description="先控制账号创建，再配置第三方登录入口" scroll>
+        <AdminPageFrame title="登录与注册" description="先控制账号创建，再配置第三方登录入口、服务协议与登录打开方式" scroll>
             <AccessSettingsPanel />
         </AdminPageFrame>
     );
@@ -93,7 +116,7 @@ export function EmailSettingsPage() {
 
 export function FeatureAvailabilityPage() {
     return (
-        <AdminPageFrame title="功能开放" description="按用户使用路径控制工作台、插件与模型能力" scroll>
+        <AdminPageFrame title="功能开放" description="决定前台用户能看到和使用哪些功能" scroll>
             <FeatureAvailabilityPanel />
         </AdminPageFrame>
     );
@@ -101,8 +124,24 @@ export function FeatureAvailabilityPage() {
 
 export function StorageResourcesPage() {
     return (
-        <AdminPageFrame title="存储资源" description="只读查看资源记录、容量分布与文件预览" scroll>
+        <AdminPageFrame title="存储资源" description="查看资源记录、容量分布与文件预览，可删除单个或批量资源" scroll>
             <StorageResourcesPanel />
+        </AdminPageFrame>
+    );
+}
+
+export function AgentLessonsPage() {
+    const [view, setView] = useState<"documents" | "lessons">("documents");
+    return (
+        <AdminPageFrame title="Agent 记忆" actions={
+            <AdminSegmented<"documents" | "lessons">
+                ariaLabel="记忆视图"
+                value={view}
+                onChange={setView}
+                options={[{ value: "documents", label: "记忆文件" }, { value: "lessons", label: "旧版经验" }]}
+            />
+        } scroll>
+            {view === "documents" ? <AgentMemoryDocumentsPanel /> : <AgentLessonsPanel />}
         </AdminPageFrame>
     );
 }

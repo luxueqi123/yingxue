@@ -1,5 +1,11 @@
 import { ScrollText } from "lucide-react";
 import { lazy, Suspense, useState, type CSSProperties, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { updateAnnouncementVersion } from "@/lib/update-announcement";
+import { refreshPublicAppearance } from "@/services/appearance-bootstrap";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 const AppChangelogDialog = lazy(() => import("@/components/layout/app-changelog-dialog").then((module) => ({ default: module.AppChangelogDialog })));
 
@@ -16,17 +22,39 @@ type AppChangelogButtonProps = {
     label?: ReactNode;
 };
 
-export function AppChangelogButton({ className, style, showVersion = false, showLabel = false, labelClassName, versionClassName, icon, label = "更新日志" }: AppChangelogButtonProps) {
+export function AppChangelogButton({ className, style, showVersion = false, showLabel = false, labelClassName, versionClassName, icon, label }: AppChangelogButtonProps) {
+    
     const [open, setOpen] = useState(false);
+    const updates = useAppearanceStore((state) => state.appearance.updates);
+    const { t } = useInterfaceTranslation();
+    const title = t((updates?.enabled ? "layoutExtrasUi.releaseAnnouncements" : "layoutExtrasUi.changelog") as InterfaceMessageKey);
 
     return (
         <>
-            <button type="button" className={className} style={style} onClick={() => setOpen(true)} aria-label="查看更新日志" title="更新日志">
+            <button
+                type="button"
+                className={className}
+                style={style}
+                onClick={() => {
+                    void refreshPublicAppearance();
+                    setOpen(true);
+                }}
+                aria-label={t("account.layout.changelog.view", { title })}
+                title={title}
+            >
                 {icon ?? <ScrollText className="size-4 shrink-0" />}
-                {showLabel ? <span className={`whitespace-nowrap ${labelClassName || ""}`}>{label}</span> : null}
-                {showVersion ? <span className={versionClassName}>v{APP_VERSION.replace(/^v/, "")}</span> : null}
+                {showLabel ? <span className={`whitespace-nowrap ${labelClassName || ""}`}>{label ?? title}</span> : null}
+                {showVersion ? (
+                    <span className={`${versionClassName || ""} min-w-0 truncate`} title={updateAnnouncementVersion(updates, APP_VERSION)}>
+                        {updateAnnouncementVersion(updates, APP_VERSION)}
+                    </span>
+                ) : null}
             </button>
-            {open ? <Suspense fallback={null}><AppChangelogDialog open onClose={() => setOpen(false)} /></Suspense> : null}
+            {open ? (
+                <Suspense fallback={null}>
+                    <AppChangelogDialog open onClose={() => setOpen(false)} />
+                </Suspense>
+            ) : null}
         </>
     );
 }

@@ -1,14 +1,15 @@
-import { App, Button, Progress, Skeleton, Switch } from "antd";
-import { Activity, AlertTriangle, Cpu, Database, Gauge, HardDrive, MemoryStick, RefreshCw, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { App, Button, InputNumber, Progress, Skeleton, Switch } from "antd";
+import { Activity, AlertTriangle, Cpu, Database, Gauge, HardDrive, MemoryStick, RefreshCw, Server, ShieldCheck, Trash2, Wifi, Orbit } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { clearRuntimeCache, getSystemPerformance, type SystemPerformance } from "@/services/api/system-performance";
+import { clearRuntimeCache, getSystemPerformance, updateAgentSessionLimit, type SystemPerformance } from "@/services/api/system-performance";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge, SettingsSectionCard } from "../components/admin-ui";
 
 const refreshIntervalMs = 15_000;
 
 function formatBytes(value?: number) {
+    if (value === undefined || !Number.isFinite(value)) return "--";
     if (!value || value < 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
     const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
@@ -17,6 +18,7 @@ function formatBytes(value?: number) {
 }
 
 function formatDuration(seconds?: number) {
+    if (seconds === undefined || !Number.isFinite(seconds)) return "--";
     if (!seconds) return "不足 1 分钟";
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -25,7 +27,7 @@ function formatDuration(seconds?: number) {
 }
 
 function formatNumber(value?: number) {
-    return new Intl.NumberFormat("zh-CN").format(value || 0);
+    return value === undefined || !Number.isFinite(value) ? "--" : new Intl.NumberFormat("zh-CN").format(value);
 }
 
 function metricTone(value: number) {
@@ -59,23 +61,27 @@ export default function SystemPerformancePage() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [clearing, setClearing] = useState(false);
+    const [savingAgentLimit, setSavingAgentLimit] = useState(false);
+    const [agentLimitDraft, setAgentLimitDraft] = useState<number | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [loadError, setLoadError] = useState("");
     const mountedRef = useRef(true);
+    const requestSequence = useRef(0);
 
     const load = useCallback(async (initial = false) => {
+        const sequence = ++requestSequence.current;
         if (initial) setLoading(true);
         else setRefreshing(true);
         try {
             const next = await getSystemPerformance();
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || sequence !== requestSequence.current) return;
             setData(next);
             setLoadError("");
         } catch (error) {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || sequence !== requestSequence.current) return;
             setLoadError(error instanceof Error ? error.message : "读取系统性能失败");
         } finally {
-            if (mountedRef.current) {
+            if (mountedRef.current && sequence === requestSequence.current) {
                 setLoading(false);
                 setRefreshing(false);
             }
@@ -85,7 +91,7 @@ export default function SystemPerformancePage() {
     useEffect(() => {
         mountedRef.current = true;
         void load(true);
-        return () => { mountedRef.current = false; };
+        return () => { mountedRef.current = false; requestSequence.current += 1; };
     }, [load]);
 
     useEffect(() => {
@@ -129,6 +135,12 @@ export default function SystemPerformancePage() {
         return <AdminPageFrame title="系统性能" description="服务器、数据库与运行时缓存状态。" scroll><div className="admin-settings-stack admin-system-performance"><Skeleton active paragraph={{ rows: 14 }} /></div></AdminPageFrame>;
     }
 
+    if (!data) {
+        return <AdminPageFrame title="系统性能" description="运行状态未知；尚未取得有效采集数据。" scroll>
+            <div className="admin-performance-alert" role="alert"><AlertTriangle className="size-4" /><span>{loadError || "性能数据不可用"}</span><Button size="small" loading={refreshing} onClick={() => void load(false)}>重试</Button></div>
+        </AdminPageFrame>;
+    }
+
     const memoryPercent = data?.memory.systemAvailable ? data.memory.usagePercent : undefined;
     const databaseConnections = data?.database.postgres?.connections ?? data?.database.pool.openConnections ?? 0;
     const databaseLimit = data?.database.postgres?.maxConnections || data?.database.pool.maxOpenConnections || 0;
@@ -139,14 +151,14 @@ export default function SystemPerformancePage() {
     return (
         <AdminPageFrame
             title="系统性能"
-            description="紧凑查看主机、数据库、Redis 和安全运行时缓存；敏感连接信息不会在此展示。"
+            description="紧凑查看主机、数据库、Redis、画布 Agent 和安全运行时缓存；敏感连接信息不会在此展示。"
             scroll
             actions={<><label className="admin-performance-auto"><Switch size="small" checked={autoRefresh} onChange={setAutoRefresh} /><span>15 秒刷新</span></label><Button icon={<RefreshCw className="size-4" />} loading={refreshing} onClick={() => void load(false)}>刷新</Button></>}
         >
             <div className="admin-settings-stack admin-system-performance">
-                {loadError ? <div className="admin-performance-alert"><AlertTriangle className="size-4" /><span>{loadError}</span><Button size="small" onClick={() => void load(false)}>重试</Button></div> : null}
+                {loadError ? <div className="admin-performance-alert" role="alert"><AlertTriangle className="size-4" /><span>刷新失败，以下为上次采集的快照，非当前状态：{loadError}</span><Button size="small" onClick={() => void load(false)}>重试</Button></div> : null}
                 <div className="admin-performance-statusbar">
-                    <div><AdminStatusBadge label={data?.status === "healthy" ? "系统运行正常" : "部分服务降级"} tone={data?.status === "healthy" ? "success" : "warning"} /><span>采集于 {data ? new Date(data.collectedAt).toLocaleString("zh-CN", { hour12: false }) : "--"}</span></div>
+                    <div><AdminStatusBadge label={loadError ? "快照已过期" : data.status === "healthy" ? "系统运行正常" : "部分服务降级"} tone={loadError ? "warning" : data.status === "healthy" ? "success" : "warning"} /><span>采集于 {new Date(data.collectedAt).toLocaleString("zh-CN", { hour12: false })}</span></div>
                     <span>进程已运行 {formatDuration(data?.host.uptimeSeconds)}</span>
                 </div>
 
@@ -202,6 +214,30 @@ export default function SystemPerformancePage() {
                         </SettingsSectionCard>
                     </div>
                 </div>
+
+                {(data.agents || []).map((agent) => {
+                    const draft = agentLimitDraft ?? agent.configuredLimit;
+                    return <SettingsSectionCard key={agent.id} layout="stacked" icon={<Orbit className="size-4" />} title="画布 Agent 服务" description="同时进行中的对话占用一个名额。审批等待不占用。降低上限不会中断已经开始的对话，也不会在这台机器上再启动容器。" status={{ label: agent.healthy ? "服务可连接" : "服务不可达", color: agent.healthy ? "success" : "error" }} footer={<><span className="admin-performance-cache-note"><Gauge className="size-3.5" />新安装默认 30，一般不用再改</span><span style={{ display: "flex", gap: 8, alignItems: "center" }}><InputNumber min={1} max={64} precision={0} value={draft} onChange={(value) => setAgentLimitDraft(typeof value === "number" ? value : draft)} /><Button type="primary" loading={savingAgentLimit} disabled={draft === agent.configuredLimit} onClick={() => {
+                        setSavingAgentLimit(true);
+                        void updateAgentSessionLimit(draft).then(() => {
+                            message.success("已应用 Agent 同时对话上限");
+                            setAgentLimitDraft(null);
+                            return load(false);
+                        }).catch((error: unknown) => {
+                            message.error(error instanceof Error ? error.message : "保存 Agent 上限失败");
+                        }).finally(() => setSavingAgentLimit(false));
+                    }}>保存上限</Button></span></>}>
+                        <FactGrid>
+                            <Fact label="服务" value={agent.name} />
+                            <Fact label="运行位置" value={agent.mode === "remote" ? "独立服务" : "后端进程"} />
+                            <Fact label="地址" value={agent.endpoint} mono />
+                            <Fact label="进行中 / 上限" value={`${formatNumber(agent.active)} / ${formatNumber(agent.limit)}`} />
+                            <Fact label="排队" value={formatNumber(agent.queued)} />
+                            <Fact label="已保存上限" value={formatNumber(agent.configuredLimit)} />
+                            <Fact label="说明" value={agent.statusMessage || "同一台机器提高上限即可，不需要再启动容器。"} />
+                        </FactGrid>
+                    </SettingsSectionCard>;
+                })}
 
                 <SettingsSectionCard layout="stacked" icon={<ShieldCheck className="size-4" />} title="缓存维护" description="只清理可安全重建的运行时状态，保留业务数据与活动并发租约。" status={<AdminStatusBadge label="白名单清理" tone="success" />} footer={<><span className="admin-performance-cache-note"><Gauge className="size-3.5" />清理后频控与线路健康状态会重新计算</span><Button danger icon={<Trash2 className="size-4" />} loading={clearing} onClick={requestClear}>清理运行时缓存</Button></>}>
                     <div className="admin-performance-cache-groups">

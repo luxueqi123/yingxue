@@ -1,0 +1,221 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "elevenlabs-music",
+  "name": "ElevenLabs Music",
+  "version": "2.0.0",
+  "author": "ElevenLabs / 影策",
+  "description": "ElevenLabs Music 独立请求协议插件。",
+  "documentation": "# ElevenLabs Music\n\n该目录是独立官方协议插件源码。后端从生成的 `elevenlabs-music.yingce-plugin` 包加载，不依赖系统内置 `host:` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# ElevenLabs Music 接口字段\n\n## 协议身份\n\n- 插件 ID：`elevenlabs-music`。\n- Provider ID：`elevenlabs-music`。\n- 能力：`audio`。\n- 默认 Base URL：`https://api.elevenlabs.io`。\n- 鉴权驱动：`header`。\n- 创建：`POST /v1/music`。\n- 生命周期：同步响应。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | API Key |\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n| `model` | string | 是 | `model_id` | 明确选择当前渠道支持的音乐模型版本。 |\n| `prompt` | string | 是 | `prompt` | 完整音乐描述，不能当作配音文本提交。 |\n| `providerOptions` | object | 否 | `music_length_ms/force_instrumental` | elevenlabs-music 命名空间；曲长为毫秒。 |\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n| `create.method` | `\"POST\"` |\n| `create.path` | `\"/v1/music\"` |\n| `create.contentType` | `\"application/json\"` |\n| `create.body.model_id` | `{\"$ref\":\"request.model\"}` |\n| `create.body.prompt` | `{\"$ref\":\"request.prompt\"}` |\n| `create.body.music_length_ms` | `{\"$omitEmpty\":{\"$ref\":\"request.providerOptions.elevenlabs-music.music_length_ms\"}}` |\n| `create.body.force_instrumental` | `{\"$coalesce\":[{\"$ref\":\"request.providerOptions.elevenlabs-music.force_instrumental\"},false]}` |\n| `create.query.output_format` | `\"auto\"` |\n\n## Provider 扩展键\n\n- `providerOptions.elevenlabs-music.force_instrumental`\n- `providerOptions.elevenlabs-music.music_length_ms`\n\n动态模型或工作流允许使用文档声明的完整 `parameters/input/extra_body` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n| `response.binaryPayload` | `true` |\n| `response.resultKind` | `\"audio\"` |\n| `response.status` | `\"succeeded\"` |\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n协议依据 https://elevenlabs.io/docs/api-reference/music/compose 。POST /v1/music 返回音频文件。音乐曲长保留毫秒，未指定时交由模型决定。仅承接描述作曲，不冒充参考音频、声音克隆或音乐编辑。模型版本必须由用户选择，不根据 LTV 显示名称猜测。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"elevenlabs-music\",\n  \"name\": \"ElevenLabs Music\",\n  \"version\": \"2.0.0\",\n  \"author\": \"ElevenLabs / 影策\",\n  \"description\": \"ElevenLabs Music 独立请求协议插件。\",\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"elevenlabs-music\",\n        \"label\": \"ElevenLabs Music\",\n        \"capabilities\": [\n          \"audio\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.elevenlabs.io\",\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"header\",\n          \"field\": \"apiKey\",\n          \"header\": \"xi-api-key\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model_id\",\n            \"description\": \"明确选择当前渠道支持的音乐模型版本。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"完整音乐描述，不能当作配音文本提交。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"music_length_ms/force_instrumental\",\n            \"description\": \"elevenlabs-music 命名空间；曲长为毫秒。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                [\n                  \"music_v1\",\n                  \"music_v2\",\n                  \"music_v2_5\"\n                ]\n              ]\n            },\n            \"message\": \"请选择文档支持的 ElevenLabs 音乐模型版本\"\n          },\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"请填写音乐描述\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"描述作曲接口不承接参考素材，不能忽略已连接素材\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$gte\": [\n                        {\n                          \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n                        },\n                        3000\n                      ]\n                    },\n                    {\n                      \"$lte\": [\n                        {\n                          \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n                        },\n                        600000\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$toInt\": {\n                            \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n                          }\n                        },\n                        {\n                          \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"音乐时长必须为 3000 至 600000 的整数毫秒\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/music\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model_id\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"music_length_ms\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.elevenlabs-music.music_length_ms\"\n              }\n            },\n            \"force_instrumental\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.providerOptions.elevenlabs-music.force_instrumental\"\n                },\n                false\n              ]\n            }\n          },\n          \"query\": {\n            \"output_format\": \"auto\"\n          }\n        },\n        \"response\": {\n          \"binaryPayload\": true,\n          \"resultKind\": \"audio\",\n          \"status\": \"succeeded\"\n        }\n      }\n    ]\n  }\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "elevenlabs-music",
+        "label": "ElevenLabs Music",
+        "capabilities": [
+          "audio"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.elevenlabs.io",
+        "requiresPublicMediaUrls": false,
+        "auth": {
+          "type": "header",
+          "field": "apiKey",
+          "header": "xi-api-key"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model_id",
+            "description": "明确选择当前渠道支持的音乐模型版本。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "完整音乐描述，不能当作配音文本提交。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "music_length_ms/force_instrumental",
+            "description": "elevenlabs-music 命名空间；曲长为毫秒。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.model"
+                },
+                [
+                  "music_v1",
+                  "music_v2",
+                  "music_v2_5"
+                ]
+              ]
+            },
+            "message": "请选择文档支持的 ElevenLabs 音乐模型版本"
+          },
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "请填写音乐描述"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "描述作曲接口不承接参考素材，不能忽略已连接素材"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gte": [
+                        {
+                          "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+                        },
+                        3000
+                      ]
+                    },
+                    {
+                      "$lte": [
+                        {
+                          "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+                        },
+                        600000
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$toInt": {
+                            "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+                          }
+                        },
+                        {
+                          "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "音乐时长必须为 3000 至 600000 的整数毫秒"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/music",
+          "contentType": "application/json",
+          "body": {
+            "model_id": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "music_length_ms": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.elevenlabs-music.music_length_ms"
+              }
+            },
+            "force_instrumental": {
+              "$coalesce": [
+                {
+                  "$ref": "request.providerOptions.elevenlabs-music.force_instrumental"
+                },
+                false
+              ]
+            }
+          },
+          "query": {
+            "output_format": "auto"
+          }
+        },
+        "response": {
+          "binaryPayload": true,
+          "resultKind": "audio",
+          "status": "succeeded"
+        }
+      }
+    ]
+  }
+}

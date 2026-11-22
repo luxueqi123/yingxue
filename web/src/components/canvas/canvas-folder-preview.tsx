@@ -1,19 +1,23 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import React, { useEffect, useMemo, useState } from "react";
-import { Dropdown } from "antd";
-import { FileAudio, FileText, MoreHorizontal, Pencil, Plus, SlidersHorizontal, Sparkles, Video } from "lucide-react";
+import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
+import { useTranslation } from "react-i18next";
+import { FileAudio, FileText, MoreHorizontal, Pencil, Plus, SlidersHorizontal, Video, Blocks } from "lucide-react";
 
+import { CanvasVideoPreviewImage } from "@/components/canvas/canvas-video-preview-image";
 import { CANVAS_FOLDER_THEME_OPTIONS, resolveCanvasFolderTheme, resolveCanvasFolderThemeCover } from "@/lib/canvas/canvas-folder-theme";
-import { canvasNodeVideoPreviewUrl } from "@/lib/canvas/canvas-media-preview";
 import type { CanvasFolderStyle, CanvasFolderTheme, CanvasNodeData } from "@/types/canvas";
 import { CanvasNodeType } from "@/types/canvas";
+import { currentLocale, translate } from "@/i18n";
 
-const FOLDER_STYLE_OPTIONS: Array<{ key: CanvasFolderStyle; label: string }> = [
-    { key: "glass", label: "流光玻璃" },
-    { key: "stacked", label: "内容陈列" },
-    { key: "midnight", label: "午夜封面" },
-    { key: "paper", label: "纸感收藏" },
-    { key: "cinema", label: "电影胶片" },
-    { key: "compact", label: "紧凑资料" },
+const FOLDER_STYLE_OPTIONS: Array<{ key: CanvasFolderStyle; labelKey: string }> = [
+    { key: "glass", labelKey: "canvasB.folderPreview.styleGlass" },
+    { key: "stacked", labelKey: "canvasB.folderPreview.styleStacked" },
+    { key: "midnight", labelKey: "canvasB.folderPreview.styleMidnight" },
+    { key: "paper", labelKey: "canvasB.folderPreview.stylePaper" },
+    { key: "cinema", labelKey: "canvasB.folderPreview.styleCinema" },
+    { key: "compact", labelKey: "canvasB.folderPreview.styleCompact" },
 ];
 
 export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
@@ -37,6 +41,7 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
     onStyleChange: (nodeId: string, style: CanvasFolderStyle) => void;
     onThemeChange: (nodeId: string, theme: CanvasFolderTheme) => void;
 }) {
+    const { t } = useTranslation();
     const style = data.metadata?.folder?.style || "glass";
     const theme = resolveCanvasFolderTheme(data.metadata?.folder?.theme);
     const [editing, setEditing] = useState(false);
@@ -49,13 +54,13 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
         items: [
             {
                 key: "styles",
-                label: "文件夹样式",
-                children: FOLDER_STYLE_OPTIONS.map((item) => ({ key: `style:${item.key}`, label: item.label })),
+                label: t("canvasB.folderPreview.folderStyle"),
+                children: FOLDER_STYLE_OPTIONS.map((item) => ({ key: `style:${item.key}`, label: t(item.labelKey) })),
             },
             {
                 key: "themes",
-                label: "主题皮肤",
-                children: CANVAS_FOLDER_THEME_OPTIONS.map((item) => ({ key: `theme:${item.key}`, label: item.label })),
+                label: t("canvasCompleteUi.folderTheme"),
+                children: CANVAS_FOLDER_THEME_OPTIONS.map((item) => ({ key: `theme:${item.key}`, label: t(item.labelKey) })),
             },
         ],
         onClick: ({ key }: { key: string }) => {
@@ -67,7 +72,7 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
     useEffect(() => setTitle(data.title), [data.title]);
 
     const commitTitle = () => {
-        const next = title.trim() || "未命名文件夹";
+        const next = title.trim() || t("canvasB.common.untitledFolder");
         setTitle(next);
         setEditing(false);
         onTitleChange(data.id, next);
@@ -116,7 +121,7 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
                         <button
                             type="button"
                             className="canvas-folder-title"
-                            title={readOnly ? data.title : `${data.title} · 点击重命名`}
+                            title={readOnly ? data.title : t("canvasB.folderPreview.clickToRename", { title: data.title })}
                             onClick={(event) => {
                                 event.stopPropagation();
                                 if (!readOnly) setEditing(true);
@@ -130,7 +135,7 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
                             {!readOnly ? <Pencil aria-hidden /> : null}
                         </button>
                     )}
-                    <span className="canvas-folder-meta">{style === "midnight" ? formatFolderDate(data.metadata?.folder?.createdAt) : `${childNodes.length} 项内容`}</span>
+                    <span className="canvas-folder-meta">{style === "midnight" ? formatFolderDate(data.metadata?.folder?.createdAt) : t("canvasB.folderPreview.itemCount", { count: childNodes.length })}</span>
                 </div>
 
                 {!readOnly ? (
@@ -138,8 +143,8 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
                         <button
                             type="button"
                             className="canvas-folder-action canvas-folder-add"
-                            aria-label="展开文件夹并添加内容"
-                            title="展开文件夹并添加内容"
+                            aria-label={t("canvasB.folderPreview.expandAndAdd")}
+                            title={t("canvasB.folderPreview.expandAndAdd")}
                             onMouseDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -153,8 +158,8 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
                             <button
                                 type="button"
                                 className="canvas-folder-action canvas-folder-options"
-                                aria-label={`文件夹选项，当前 ${childNodes.length} 项`}
-                                title="切换文件夹样式与主题"
+                                aria-label={t("canvasB.folderPreview.optionsLabel", { count: childNodes.length })}
+                                title={t("canvasB.folderPreview.switchStyle")}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={(event) => event.stopPropagation()}
                             >
@@ -166,7 +171,14 @@ export const CanvasFolderPreview = React.memo(function CanvasFolderPreview({
 
                 {!readOnly && showAdd ? (
                     <Dropdown trigger={["click"]} menu={folderMenu}>
-                        <button type="button" className="canvas-folder-style-trigger" aria-label="切换文件夹样式与主题" title="切换文件夹样式与主题" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                        <button
+                            type="button"
+                            className="canvas-folder-style-trigger"
+                            aria-label={t("canvasB.folderPreview.switchStyle")}
+                            title={t("canvasB.folderPreview.switchStyle")}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
+                        >
                             <MoreHorizontal />
                         </button>
                     </Dropdown>
@@ -190,16 +202,12 @@ function FolderNodeMedia({ node }: { node?: CanvasNodeData }) {
     if (node?.type === CanvasNodeType.Image && node.metadata?.content) {
         return <img src={node.metadata.content} alt="" loading="lazy" decoding="async" draggable={false} />;
     }
-    const videoPreview = node ? canvasNodeVideoPreviewUrl(node) : "";
-    if (videoPreview) {
-        return <img src={videoPreview} alt="" loading="lazy" decoding="async" draggable={false} />;
-    }
+    if (node?.type === CanvasNodeType.Video) return <CanvasVideoPreviewImage node={node} alt="" loading="lazy" decoding="async" draggable={false} fallback={<Video className="canvas-folder-file-icon" />} />;
     if (node?.type === CanvasNodeType.Drawing && (node.metadata?.drawingPreviewUrl || node.metadata?.content)) {
         return <img src={node.metadata.drawingPreviewUrl || node.metadata.content} alt="" loading="lazy" decoding="async" draggable={false} />;
     }
-    if (node?.type === CanvasNodeType.Video) return <Video className="canvas-folder-file-icon" />;
     if (node?.type === CanvasNodeType.Audio) return <FileAudio className="canvas-folder-file-icon" />;
-    if (node?.type === CanvasNodeType.Skill) return <Sparkles className="canvas-folder-file-icon" />;
+    if (node?.type === CanvasNodeType.Skill) return <Blocks className="canvas-folder-file-icon" />;
     if (node?.type === CanvasNodeType.Config) return <SlidersHorizontal className="canvas-folder-file-icon" />;
     if (node?.type === CanvasNodeType.Text || node?.type === CanvasNodeType.Script) {
         return <span className="canvas-folder-text-preview">{node.metadata?.content || node.title}</span>;
@@ -210,6 +218,6 @@ function FolderNodeMedia({ node }: { node?: CanvasNodeData }) {
 
 function formatFolderDate(value?: string) {
     const date = value ? new Date(value) : new Date();
-    if (Number.isNaN(date.getTime())) return "刚刚创建";
-    return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(date);
+    if (Number.isNaN(date.getTime())) return translate("canvasB.folderPreview.justCreated");
+    return new Intl.DateTimeFormat(currentLocale(), { month: "short", day: "numeric" }).format(date);
 }

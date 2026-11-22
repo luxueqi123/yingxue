@@ -17,6 +17,35 @@ func TestAutoDLPluginArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 2.4.0 保留十五个专用视频工作流，并新增通用工作流。
+	if pkg.Manifest.Metadata.Version != "2.4.0" || len(pkg.Manifest.Contributes.Workflows) != 16 {
+		t.Fatalf("plugin manifest = version:%q workflows:%d, want 2.4.0 and 16", pkg.Manifest.Metadata.Version, len(pkg.Manifest.Contributes.Workflows))
+	}
+	providers := pkg.Manifest.Contributes.Providers
+	if len(providers) != 1 || providers[0].ID != "autodl-comfyui" || len(providers[0].Capabilities) != 1 || providers[0].Capabilities[0] != CapabilityVideo {
+		t.Fatalf("2.4.0 provider contract = %#v", providers)
+	}
+	workflows := map[string]bool{
+		"*": false,
+		"minimax_h3_b99_002": false, "minimax_h3_b99_001": false, "minimax_h3_b99_003_12s": false,
+		"minimax_h3_image_audio_to_video_v2_15s": false, "minimax_h3_lightx2v_v5_15s": false,
+		"minimax_h3_image_audio_to_video_v2": false, "minimax_h3_image_audio_to_video": false,
+		"minimax_h3_lightx2v_v5": false, "minimax_h3_lightx2v_no_pic": false, "minimax_h3_lightx2v": false,
+		"minimax_h3_zm_u24": false, "minimax_h3_zm_u08": false,
+		"minimax_h3_z0901": false, "minimax_h3_z0902": false, "minimax_h3_z0903": false,
+	}
+	for _, workflow := range pkg.Manifest.Contributes.Workflows {
+		seen, exists := workflows[workflow.ID]
+		if !exists || seen || workflow.ProviderID != "autodl-comfyui" || workflow.Capability != CapabilityVideo {
+			t.Fatalf("2.4.0 workflow contract = %#v", workflow)
+		}
+		workflows[workflow.ID] = true
+	}
+	for workflow, seen := range workflows {
+		if !seen {
+			t.Fatalf("2.4.0 video workflow missing: %s", workflow)
+		}
+	}
 	adapters, err := LoadInstalledProviders(pkg.ManifestRaw, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -180,6 +209,26 @@ func TestAutoDLPluginArtifact(t *testing.T) {
 	}
 	if _, exists := bodyB99003["first_frame"]; exists {
 		t.Fatalf("b99_003 must not send first_frame: %#v", bodyB99003)
+	}
+
+	// Undeclared workflow IDs are passed through and use the generic mapping.
+	createPassthrough, err := adapter.BuildCreate(context.Background(), RequestContext{BaseURL: "https://autodl.art", Request: GenerationRequest{
+		Model: "minimax_h3_zm_nono", Prompt: "new workflow", Duration: 7, Resolution: "960P横",
+		Images: []MediaReference{{URL: "https://cdn.example/b.png", Role: "first_frame", Order: 2}, {URL: "https://cdn.example/a.png", Order: 1}},
+		Audios: []MediaReference{{URL: "https://cdn.example/a.mp3"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodyPassthrough := createPassthrough.Body.(map[string]any)
+	if createPassthrough.Path != "/api/v1/comfyui/comfyui_workflow/minimax_h3_zm_nono" || bodyPassthrough["prompt"] != "new workflow" || bodyPassthrough["duration"] != 7 || bodyPassthrough["resolution"] != "960p横" ||
+		bodyPassthrough["ref_image_0"] != "https://cdn.example/a.png" || bodyPassthrough["ref_image_1"] != "https://cdn.example/b.png" || bodyPassthrough["ref_audio_0"] != "https://cdn.example/a.mp3" {
+		t.Fatalf("passthrough create = %#v, body = %#v", createPassthrough, bodyPassthrough)
+	}
+	for _, key := range []string{"first_frame", "last_frame", "audio_duration"} {
+		if _, exists := bodyPassthrough[key]; exists {
+			t.Fatalf("passthrough workflow must not send %s: %#v", key, bodyPassthrough)
+		}
 	}
 
 	failed, err := adapter.ParseCreate(context.Background(), []byte(`{"code":"RequestParameterIsWrong","data":null,"msg":"参数: resolution 的值: 768P 不在 options 列表中"}`))

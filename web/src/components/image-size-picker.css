@@ -62,6 +62,13 @@
     border-radius: 2px;
     opacity: 0.6;
 }
+.image-size-ratio-hint {
+    margin-top: -4px;
+    font-size: var(--fs-label);
+    line-height: 1.2;
+    opacity: 0.58;
+    white-space: nowrap;
+}
 .image-size-output {
     padding: 9px 10px;
     border-radius: var(--r-md);
@@ -99,7 +106,7 @@
 }
 .image-size-preset-group {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: minmax(96px, 112px) minmax(0, 1fr);
     min-width: 0;
     gap: 16px;
     padding: 16px;
@@ -122,14 +129,35 @@
     gap: 4px;
     padding-top: 4px;
 }
+.image-size-preset-bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+}
+.image-size-preset-bulk-actions .ant-btn {
+    min-height: 24px;
+    padding-inline: 4px;
+}
+.image-size-preset-heading > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+}
 .image-size-preset-heading strong {
+    display: block;
     font-size: var(--fs-body);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
-.image-size-preset-heading > span,
+.image-size-preset-heading div > span,
 .image-size-defaults-heading > span {
+    display: block;
     color: var(--muted-foreground);
     font-size: var(--fs-label);
+    white-space: nowrap;
 }
 .image-size-preset-body {
     display: grid;
@@ -262,3 +290,49 @@
         gap: 8px;
     }
 }
+
+.image-size-preset-group.is-ungrouped {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.image-size-preset-option-wrap {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.image-size-preset-dimensions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-foreground);
+    font-size: var(--fs-label);
+    font-variant-numeric: tabular-nums;
+}
+
+.image-size-preset-dimensions label {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.image-size-preset-dimensions label > span {
+    padding-inline: 2px;
+}
+
+.image-size-preset-dimensions .ant-input-number {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 0;
+}
+
+.image-size-preset-dimensions .ant-input-number-input {
+    padding-inline: 8px;
+    color: var(--foreground);
+    font-size: var(--fs-body);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+

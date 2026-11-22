@@ -86,6 +86,187 @@ func TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins(t *testing.T
 	}
 }
 
+func TestOfficialAtlasCloudChatProfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "atlascloud-chat.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := pkg.Manifest.Contributes.Providers[0]
+	if provider.ID != "atlascloud-chat" || provider.BaseURL != "https://api.atlascloud.ai" || provider.Auth.Type != "bearer" {
+		t.Fatalf("Atlas Cloud provider metadata = %#v", provider)
+	}
+
+	adapter := officialPackageAdapter(t, "atlascloud-chat.yingce-plugin", "atlascloud-chat")
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:    "openai/gpt-5.6-luna",
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Method != "POST" || spec.Path != "/v1/chat/completions" || body["model"] != "openai/gpt-5.6-luna" {
+		t.Fatalf("Atlas Cloud request = %#v, body = %#v", spec, body)
+	}
+	result, err := adapter.ParseCreate(context.Background(), []byte(`{"choices":[{"message":{"content":"atlas ok"}}],"usage":{"total_tokens":3}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || result.Result.Text != "atlas ok" {
+		t.Fatalf("Atlas Cloud response = %#v", result)
+	}
+}
+
+func TestOfficialCheaperInferenceChatProfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "cheaperinference-chat.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := pkg.Manifest.Contributes.Providers[0]
+	if provider.ID != "cheaperinference-chat" || provider.BaseURL != "https://api.cheaperinference.com" || provider.Auth.Type != "bearer" {
+		t.Fatalf("Cheaper Inference provider metadata = %#v", provider)
+	}
+
+	adapter := officialPackageAdapter(t, "cheaperinference-chat.yingce-plugin", "cheaperinference-chat")
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:    "gpt-5.4-mini",
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Method != "POST" || spec.Path != "/v1/chat/completions" || body["model"] != "gpt-5.4-mini" {
+		t.Fatalf("Cheaper Inference request = %#v, body = %#v", spec, body)
+	}
+	result, err := adapter.ParseCreate(context.Background(), []byte(`{"choices":[{"message":{"content":"cheaper inference ok"}}],"usage":{"total_tokens":3}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || result.Result.Text != "cheaper inference ok" {
+		t.Fatalf("Cheaper Inference response = %#v", result)
+	}
+}
+
+func TestOfficialRuncrateChatProfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "runcrate-chat.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := pkg.Manifest.Contributes.Providers[0]
+	if provider.ID != "runcrate-chat" || provider.BaseURL != "https://api.runcrate.ai" || provider.Auth.Type != "bearer" {
+		t.Fatalf("Runcrate provider metadata = %#v", provider)
+	}
+
+	adapter := officialPackageAdapter(t, "runcrate-chat.yingce-plugin", "runcrate-chat")
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:    "deepseek-ai/DeepSeek-V4-Flash",
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Method != "POST" || spec.Path != "/v1/chat/completions" || body["model"] != "deepseek-ai/DeepSeek-V4-Flash" {
+		t.Fatalf("Runcrate request = %#v, body = %#v", spec, body)
+	}
+	result, err := adapter.ParseCreate(context.Background(), []byte(`{"choices":[{"message":{"content":"runcrate ok"}}],"usage":{"total_tokens":3}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || result.Result.Text != "runcrate ok" {
+		t.Fatalf("Runcrate response = %#v", result)
+	}
+}
+
+func TestOfficialUberLLMChatProfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "uberllm-chat.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := pkg.Manifest.Contributes.Providers[0]
+	if provider.ID != "uberllm-chat" || provider.BaseURL != "https://api.uberllm.dev" || provider.Auth.Type != "bearer" {
+		t.Fatalf("UberLLM provider metadata = %#v", provider)
+	}
+
+	adapter := officialPackageAdapter(t, "uberllm-chat.yingce-plugin", "uberllm-chat")
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model:    "deepseek/deepseek-v4-flash",
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Method != "POST" || spec.Path != "/v1/chat/completions" || body["model"] != "deepseek/deepseek-v4-flash" {
+		t.Fatalf("UberLLM request = %#v, body = %#v", spec, body)
+	}
+	result, err := adapter.ParseCreate(context.Background(), []byte(`{"choices":[{"message":{"content":"uberllm ok"}}],"usage":{"total_tokens":3}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || result.Result.Text != "uberllm ok" {
+		t.Fatalf("UberLLM response = %#v", result)
+	}
+}
+
+func TestOfficialMiniMaxH3ImageProfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "minimax-h3-image.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Manifest.Metadata.ID != "minimax-h3-image" || len(pkg.Manifest.Contributes.Providers) != 1 {
+		t.Fatalf("MiniMax H3 Image manifest = %#v", pkg.Manifest.Metadata)
+	}
+	provider := pkg.Manifest.Contributes.Providers[0]
+	// 独立 provider ID，与旧 minimax-image（/v1/image_generation）和 openai-image 共存。
+	if provider.ID != "minimax-h3-image" || provider.BaseURL != "https://api.minimax.cn" || provider.Auth.Type != "bearer" || provider.Auth.Field != "apiKey" || provider.RequiresPublicMediaURLs {
+		t.Fatalf("MiniMax H3 Image provider metadata = %#v", provider)
+	}
+	legacy := officialPackageAdapter(t, "minimax-image.yingce-plugin", "minimax-image")
+	if legacy.Metadata().Create != "POST /v1/image_generation" {
+		t.Fatalf("legacy minimax-image create = %q, 旧协议必须保持不变", legacy.Metadata().Create)
+	}
+
+	adapter := officialPackageAdapter(t, "minimax-h3-image.yingce-plugin", "minimax-h3-image")
+	for _, model := range []string{"MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"} {
+		spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: model, Prompt: "hello", AspectRatio: "1:1"}})
+		if err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+		if body := manifestTestBody(t, spec); spec.Path != "/v1/images/generations" || body["model"] != model || body["area"] != "2K" {
+			t.Fatalf("%s request = %#v, body = %#v", model, spec, body)
+		}
+	}
+	result, err := adapter.ParseCreate(context.Background(), []byte(`{"data":[{"url":"https://example.com/h3.jpg"}],"output_format":"jpeg"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || len(result.Result.Images) != 1 || !result.Result.Images[0].Ephemeral {
+		t.Fatalf("MiniMax H3 Image response = %#v", result)
+	}
+}
+
 func assertManifestContractMatchesPackage(t *testing.T, packageName string, manifestRaw []byte, interfaceDocs string) {
 	t.Helper()
 	start := strings.Index(interfaceDocs, manifestContractStart)
@@ -199,7 +380,7 @@ func TestOfficialVideoProfilesPreserveExplicitMediaRoles(t *testing.T) {
 		assert      func(t *testing.T, spec RequestSpec)
 	}{
 		{
-			packageName: "minimax-hailuo-video-v2.yingce-plugin", providerID: "minimax-video", model: "MiniMax-H3", resolution: "1080P",
+			packageName: "minimax-hailuo-video-v2.yingce-plugin", providerID: "minimax-video", model: "MiniMax-H3", resolution: "768P",
 			assert: func(t *testing.T, spec RequestSpec) {
 				body := manifestTestBody(t, spec)
 				content, _ := body["content"].([]any)
@@ -208,7 +389,7 @@ func TestOfficialVideoProfilesPreserveExplicitMediaRoles(t *testing.T) {
 				}
 				first, _ := content[1].(map[string]any)
 				last, _ := content[2].(map[string]any)
-				if first["role"] != "first_frame" || last["role"] != "last_frame" || body["ratio"] != "adaptive" || body["resolution"] != "1080P" {
+				if first["role"] != "first_frame" || last["role"] != "last_frame" || body["ratio"] != "adaptive" || body["resolution"] != "768P" {
 					t.Fatalf("MiniMax role payload = %#v", body)
 				}
 			},
@@ -406,9 +587,11 @@ func TestNewAPIVideoGenerationsParsesNestedVideoResults(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload string
+		wantURL string
 	}{
-		{name: "channel result URL", payload: `{"code":"success","data":{"task_id":"task-upstream","status":"SUCCESS","result_url":"https://cdn.example/channel-result.mp4"}}`},
-		{name: "provider nested video URL", payload: `{"code":"success","data":{"task_id":"task-upstream","status":"SUCCESS","data":{"status":"completed","video_url":"https://cdn.example/provider-result.mp4"}}}`},
+		{name: "channel result URL", payload: `{"code":"success","data":{"task_id":"task-upstream","status":"SUCCESS","result_url":"https://cdn.example/channel-result.mp4"}}`, wantURL: "https://cdn.example/channel-result.mp4"},
+		{name: "provider nested video URL", payload: `{"code":"success","data":{"task_id":"task-upstream","status":"SUCCESS","data":{"status":"completed","video_url":"https://cdn.example/provider-result.mp4"}}}`, wantURL: "https://cdn.example/provider-result.mp4"},
+		{name: "provider data array URL", payload: `{"created":1789773326,"data":[{"url":"https://cdn.example/seedance-result.mp4?preview=1"}],"id":"task-upstream","object":"video.generation","status":"completed","usage":{"completion_tokens":108872,"total_tokens":108872}}`, wantURL: "https://cdn.example/seedance-result.mp4?preview=1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -419,8 +602,174 @@ func TestNewAPIVideoGenerationsParsesNestedVideoResults(t *testing.T) {
 			if state.Status != StatusSucceeded || state.Result == nil || len(state.Result.Videos) != 1 {
 				t.Fatalf("state = %#v, want one completed video", state)
 			}
-			if state.Result.Videos[0].URL == "" {
-				t.Fatalf("video = %#v, want a result URL", state.Result.Videos[0])
+			if state.Result.Videos[0].URL != test.wantURL {
+				t.Fatalf("video = %#v, want URL %q", state.Result.Videos[0], test.wantURL)
+			}
+		})
+	}
+}
+
+func TestNewAPITaskFailureKeepsUpstreamReason(t *testing.T) {
+	// NewAPI 失败任务的外层是 code=success、message 为空，原因只在 data.fail_reason。
+	payload := `{"code":"success","message":"","data":{"task_id":"task-upstream","status":"FAILURE","fail_reason":"内容审核未通过","progress":"100%"}}`
+	for _, profile := range []struct{ packageName, providerID string }{
+		{"newapi-video-generations-v1.yingce-plugin", "newapi-channel-2"},
+		{"newapi-media-task-v1.yingce-plugin", "newapi-channel-1"},
+	} {
+		t.Run(profile.providerID, func(t *testing.T) {
+			state, err := officialPackageAdapter(t, profile.packageName, profile.providerID).ParsePoll(context.Background(), PollContext{TaskID: "task-upstream"}, []byte(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Status != StatusFailed || state.Message != "内容审核未通过" {
+				t.Fatalf("state = %#v, want failed with upstream reason", state)
+			}
+		})
+	}
+}
+
+func TestOfficialNovitaVideoParsesTaskResultEnvelope(t *testing.T) {
+	adapter := officialPackageAdapter(t, "novita-video.yingce-plugin", "novita-video")
+	tests := []struct {
+		name, payload, wantURL, wantMessage string
+		wantStatus                          Status
+	}{
+		{name: "queued", payload: `{"extra":{},"task":{"task_id":"novita-1","status":"TASK_STATUS_QUEUED","reason":""},"videos":[]}`, wantStatus: StatusPending},
+		{name: "processing", payload: `{"task":{"task_id":"novita-1","status":"TASK_STATUS_PROCESSING","progress_percent":40},"videos":[]}`, wantStatus: StatusProcessing},
+		{name: "succeeded", payload: `{"task":{"task_id":"novita-1","status":"TASK_STATUS_SUCCEED"},"videos":[{"video_url":"https://cdn.example/novita.mp4","video_url_ttl":"3600","video_type":"mp4"}]}`, wantStatus: StatusSucceeded, wantURL: "https://cdn.example/novita.mp4"},
+		{name: "failed", payload: `{"task":{"task_id":"novita-1","status":"TASK_STATUS_FAILED","reason":"image is not accessible"},"videos":[]}`, wantStatus: StatusFailed, wantMessage: "image is not accessible"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: "novita-1"}, []byte(test.payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Status != test.wantStatus || state.TaskID != "novita-1" || state.Message != test.wantMessage {
+				t.Fatalf("state = %#v, want %s with message %q", state, test.wantStatus, test.wantMessage)
+			}
+			if test.wantURL != "" && (state.Result == nil || len(state.Result.Videos) != 1 || state.Result.Videos[0].URL != test.wantURL) {
+				t.Fatalf("result = %#v, want %s", state.Result, test.wantURL)
+			}
+		})
+	}
+}
+
+func TestOfficialJimengTreatsVolcengineSuccessCodeAsSuccess(t *testing.T) {
+	for _, profile := range []struct{ packageName, providerID, results string }{
+		{"volcengine-jimeng-video.yingce-plugin", "volcengine-jimeng-video", `"video_url":"https://cdn.example/jimeng.mp4"`},
+		{"volcengine-jimeng-image.yingce-plugin", "volcengine-jimeng-image", `"image_urls":["https://cdn.example/jimeng.png"]`},
+	} {
+		t.Run(profile.providerID, func(t *testing.T) {
+			adapter := officialPackageAdapter(t, profile.packageName, profile.providerID)
+			// 火山视觉 OpenAPI 成功信封：code=10000、顶层 status 也是 10000。
+			created, err := adapter.ParseCreate(context.Background(), []byte(`{"code":10000,"data":{"task_id":"jimeng-1"},"message":"Success","request_id":"req-1","status":10000,"time_elapsed":"20ms"}`))
+			if err != nil || created.Status != StatusPending || created.TaskID != "jimeng-1" {
+				t.Fatalf("created = %#v err=%v, want pending jimeng-1", created, err)
+			}
+			for _, test := range []struct {
+				name, payload, wantMessage string
+				wantStatus                 Status
+			}{
+				{name: "in queue", payload: `{"code":10000,"data":{"status":"in_queue"},"message":"Success","status":10000}`, wantStatus: StatusPending},
+				{name: "done", payload: `{"code":10000,"data":{"status":"done",` + profile.results + `},"message":"Success","status":10000}`, wantStatus: StatusSucceeded},
+				{name: "business failure", payload: `{"code":50411,"data":null,"message":"Pre Img Risk Not Pass","status":50411}`, wantStatus: StatusFailed, wantMessage: "Pre Img Risk Not Pass"},
+				{name: "done with failure code", payload: `{"code":50413,"data":{"status":"done"},"message":"Post Text Risk Not Pass","status":50413}`, wantStatus: StatusFailed, wantMessage: "Post Text Risk Not Pass"},
+				{name: "task gone", payload: `{"code":10000,"data":{"status":"not_found"},"message":"Success","status":10000}`, wantStatus: StatusFailed, wantMessage: "即梦任务不存在或已过期，请重新生成"},
+			} {
+				state, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: "jimeng-1"}, []byte(test.payload))
+				if err != nil {
+					t.Fatalf("%s: %v", test.name, err)
+				}
+				if state.Status != test.wantStatus || (test.wantMessage != "" && state.Message != test.wantMessage) {
+					t.Fatalf("%s: state = %#v, want %s %q", test.name, state, test.wantStatus, test.wantMessage)
+				}
+				if test.wantStatus == StatusSucceeded && (state.Result == nil || len(state.Result.Videos)+len(state.Result.Images) != 1) {
+					t.Fatalf("%s: result = %#v, want one media", test.name, state.Result)
+				}
+			}
+		})
+	}
+}
+
+func TestOfficialMaxForAIVideoProfilesUseDocumentedFields(t *testing.T) {
+	profiles := []struct {
+		id, createPath, pollPath string
+	}{
+		{id: "maxforai-videos", createPath: "/videos", pollPath: "/videos/task-maxforai"},
+		{id: "maxforai-video-generations", createPath: "/video/generations", pollPath: "/video/generations/task-maxforai"},
+	}
+	request := GenerationRequest{
+		Model: "官转sd2.5", Prompt: "角色 @image1 动作 @video1 配音 @audio1", Duration: 6,
+		AspectRatio: "16:9", Resolution: "720p", GenerateAudio: false,
+		Images: []MediaReference{{URL: "https://cdn.example/image.png", Order: 1}},
+		Videos: []MediaReference{{URL: "https://cdn.example/video.mp4", Order: 1}},
+		Audios: []MediaReference{{URL: "https://cdn.example/audio.mp3", Order: 1}},
+		Extra:  map[string]any{"idempotencyKey": "request-maxforai-1"},
+	}
+	for _, profile := range profiles {
+		t.Run(profile.id, func(t *testing.T) {
+			adapter := officialPackageAdapter(t, "maxforai-video.yingce-plugin", profile.id)
+			create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if create.Method != "POST" || create.Path != profile.createPath || create.Headers["Idempotency-Key"] != "request-maxforai-1" {
+				t.Fatalf("create spec = %#v", create)
+			}
+			body := manifestTestBody(t, create)
+			if body["model"] != request.Model || body["prompt"] != request.Prompt || body["duration"] != float64(6) || body["ratio"] != "16:9" || body["resolution"] != "720p" || body["generate_audio"] != false {
+				t.Fatalf("request body = %#v", body)
+			}
+			for key, want := range map[string]string{"images": request.Images[0].URL, "videos": request.Videos[0].URL, "audios": request.Audios[0].URL} {
+				values, ok := body[key].([]any)
+				if !ok || len(values) != 1 || values[0] != want {
+					t.Errorf("%s = %#v, want [%q]", key, body[key], want)
+				}
+			}
+			for _, forbidden := range []string{"input", "parameters", "image_urls", "video_urls", "audio_urls", "seconds", "aspect_ratio"} {
+				if _, exists := body[forbidden]; exists {
+					t.Errorf("request contains unsupported wrapper field %q: %#v", forbidden, body)
+				}
+			}
+
+			poll, err := adapter.BuildPoll(context.Background(), PollContext{Request: request, TaskID: "task-maxforai"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if poll.Method != "GET" || poll.Path != profile.pollPath {
+				t.Fatalf("poll spec = %#v", poll)
+			}
+			pollPayload := `{"id":"task-maxforai","status":"completed","metadata":{"url":"https://cdn.example/result.mp4"}}`
+			if profile.id == "maxforai-video-generations" {
+				pollPayload = `{"code":"success","data":{"task_id":"task-maxforai","status":"completed","result_url":"https://cdn.example/result.mp4"}}`
+			}
+			state, err := adapter.ParsePoll(context.Background(), PollContext{Request: request, TaskID: "task-maxforai"}, []byte(pollPayload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Status != StatusSucceeded || state.Result == nil || len(state.Result.Videos) != 1 || state.Result.Videos[0].URL != "https://cdn.example/result.mp4" {
+				t.Fatalf("poll result = %#v", state)
+			}
+
+			invalid := request
+			invalid.Images = make([]MediaReference, 31)
+			if _, err := adapter.BuildCreate(context.Background(), RequestContext{Request: invalid}); err == nil {
+				t.Fatal("accepted more than 30 images")
+			}
+			invalid = request
+			invalid.Duration = 21
+			if _, err := adapter.BuildCreate(context.Background(), RequestContext{Request: invalid}); err == nil {
+				t.Fatal("accepted a duration over 20 seconds with a video reference")
+			}
+			defaultDuration := request
+			defaultDuration.Duration = 0
+			dft, err := adapter.BuildCreate(context.Background(), RequestContext{Request: defaultDuration})
+			if err != nil {
+				t.Fatalf("omitted duration should use the upstream default: %v", err)
+			}
+			if got := manifestTestBody(t, dft)["duration"]; got != float64(6) {
+				t.Fatalf("default duration = %#v, want 6", got)
 			}
 		})
 	}
@@ -442,6 +791,55 @@ func TestOfficialOpenAIVideosDeclaresAuthenticatedResultDownload(t *testing.T) {
 	}
 	if spec.Method != "GET" || spec.Path != "/v1/videos/video-1/content" || spec.Headers["Accept"] != "video/mp4" || spec.Auth.Type != "bearer" {
 		t.Fatalf("result request = %#v", spec)
+	}
+}
+
+// 系统指令必须真正到达上游：只映射 messages 的协议要收到 system 消息，
+// 有独立 system 字段的协议要用该字段且不能在消息数组里重复发送。
+func TestOfficialTextProtocolsDeliverInstructions(t *testing.T) {
+	tests := []struct {
+		name, packageName, providerID, messagesField, instructionField string
+	}{
+		{name: "openai-chat", packageName: "openai-chat-completions.yingce-plugin", providerID: "chat-completion", messagesField: "messages"},
+		{name: "deepseek", packageName: "deepseek-chat.yingce-plugin", providerID: "deepseek-chat", messagesField: "messages"},
+		{name: "atlascloud", packageName: "atlascloud-chat.yingce-plugin", providerID: "atlascloud-chat", messagesField: "messages"},
+		{name: "openai-responses", packageName: "openai-responses.yingce-plugin", providerID: "openai-response", messagesField: "input", instructionField: "instructions"},
+		{name: "anthropic", packageName: "anthropic-messages.yingce-plugin", providerID: "claude-api", messagesField: "messages", instructionField: "system"},
+		{name: "gemini", packageName: "google-gemini-generate-content.yingce-plugin", providerID: "gemini-generate-content", messagesField: "contents", instructionField: "systemInstruction"},
+	}
+	const instructions = "只输出一个 JSON 对象"
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := officialPackageAdapter(t, test.packageName, test.providerID)
+			spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+				Capability: CapabilityText, Model: "model-test", Prompt: "一句话故事", Instructions: instructions,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := manifestTestBody(t, spec)
+			encodedMessages, err := json.Marshal(body[test.messagesField])
+			if err != nil {
+				t.Fatal(err)
+			}
+			carriesInstructions := strings.Contains(string(encodedMessages), instructions)
+			if test.instructionField == "" {
+				if !carriesInstructions {
+					t.Fatalf("%s dropped the system instruction: %s", test.providerID, encodedMessages)
+				}
+				return
+			}
+			if carriesInstructions {
+				t.Fatalf("%s duplicated the system instruction into %s: %s", test.providerID, test.messagesField, encodedMessages)
+			}
+			encodedInstruction, err := json.Marshal(body[test.instructionField])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(encodedInstruction), instructions) {
+				t.Fatalf("%s did not map the system instruction to %s: %s", test.providerID, test.instructionField, encodedInstruction)
+			}
+		})
 	}
 }
 
@@ -512,5 +910,247 @@ func TestOfficialArkSeedreamMapsAspectRatioToPixelSize(t *testing.T) {
 	}
 	if _, ok := manifestTestBody(t, create)["size"]; ok {
 		t.Fatalf("Seedream must omit size when no ratio is requested")
+	}
+}
+
+func TestOfficialArkSeedreamPreservesSequentialSize(t *testing.T) {
+	adapter := officialPackageAdapter(t, "volcengine-ark-seedream.yingce-plugin", "volcengine-ark-image")
+	for _, size := range []string{"4k", "3840x2160", "5504x3040"} {
+		t.Run(size, func(t *testing.T) {
+			create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+				Model: "doubao-seedream-4-5-251128", Prompt: "local contract", AspectRatio: size,
+				ProviderOptions: map[string]map[string]any{"volcengine-ark-image": {
+					"sequential_image_generation":         "auto",
+					"sequential_image_generation_options": map[string]any{"max_images": 15},
+				}},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := manifestTestBody(t, create)
+			if body["size"] != size || body["sequential_image_generation"] != "auto" {
+				t.Fatalf("size or group mode lost: %#v", body)
+			}
+			raw, err := json.Marshal(body["sequential_image_generation_options"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var options struct {
+				MaxImages int `json:"max_images"`
+			}
+			if err := json.Unmarshal(raw, &options); err != nil || options.MaxImages != 15 {
+				t.Fatalf("group limit lost: %s, %v", raw, err)
+			}
+		})
+	}
+}
+
+func TestOfficialArkAgentPlanPluginsUsePlanPaths(t *testing.T) {
+	image := officialPackageAdapter(t, "volcengine-ark-agent-plan-seedream.yingce-plugin", "volcengine-ark-agent-plan-image")
+	imageCreate, err := image.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "doubao-seedream-5-0-260128", Prompt: "circle", AspectRatio: "1:1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageCreate.Path != "/api/plan/v3/images/generations" {
+		t.Fatalf("agent plan image create = %#v", imageCreate)
+	}
+	if body := manifestTestBody(t, imageCreate); body["size"] != "2048x2048" {
+		t.Fatalf("agent plan image size = %#v", body["size"])
+	}
+
+	video := officialPackageAdapter(t, "volcengine-ark-agent-plan-seedance.yingce-plugin", "volcengine-ark-agent-plan-video")
+	videoCreate, err := video.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "doubao-seedance-2-0-260128", Prompt: "walk", AspectRatio: "16:9", Resolution: "720p", Duration: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if videoCreate.Path != "/api/plan/v3/contents/generations/tasks" {
+		t.Fatalf("agent plan video create = %#v", videoCreate)
+	}
+	poll, err := video.BuildPoll(context.Background(), PollContext{TaskID: "task-1", Model: "doubao-seedance-2-0-260128"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if poll.Path != "/api/plan/v3/contents/generations/tasks/task-1" {
+		t.Fatalf("agent plan video poll = %#v", poll)
+	}
+}
+
+func TestOfficialGeminiImageMapsQualityToImageSize(t *testing.T) {
+	adapter := officialPackageAdapter(t, "google-gemini-image.yingce-plugin", "gemini-image")
+	tests := []struct {
+		name, quality, wantSize string
+		wantOmitted             bool
+	}{
+		{name: "4k becomes 4K", quality: "4k", wantSize: "4K"},
+		{name: "high becomes 4K", quality: "high", wantSize: "4K"},
+		{name: "2k becomes 2K", quality: "2k", wantSize: "2K"},
+		{name: "1k becomes 1K", quality: "1k", wantSize: "1K"},
+		{name: "video 720 omitted", quality: "720", wantOmitted: true},
+		{name: "auto omitted", quality: "auto", wantOmitted: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+				Model: "gemini-3-pro-image-preview", Prompt: "landscape", AspectRatio: "16:9", Quality: tt.quality,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if create.Path != "/v1beta/models/gemini-3-pro-image-preview:generateContent" {
+				t.Fatalf("create path = %q", create.Path)
+			}
+			body := manifestTestBody(t, create)
+			generationConfig, _ := body["generationConfig"].(map[string]any)
+			if _, ok := generationConfig["candidateCount"]; ok {
+				t.Fatalf("candidateCount must not be mapped from imageCount, got %#v", generationConfig["candidateCount"])
+			}
+			imageConfig, _ := generationConfig["imageConfig"].(map[string]any)
+			if imageConfig["aspectRatio"] != "16:9" {
+				t.Fatalf("aspectRatio = %#v", imageConfig["aspectRatio"])
+			}
+			if tt.wantOmitted {
+				if imageConfig["imageSize"] != nil {
+					t.Fatalf("imageSize should be omitted, got %#v", imageConfig["imageSize"])
+				}
+				return
+			}
+			if imageConfig["imageSize"] != tt.wantSize {
+				t.Fatalf("imageSize = %#v, want %q", imageConfig["imageSize"], tt.wantSize)
+			}
+		})
+	}
+}
+
+func TestOfficialGeminiImagePrefersQualityOverVideoResolution(t *testing.T) {
+	adapter := officialPackageAdapter(t, "google-gemini-image.yingce-plugin", "gemini-image")
+	tests := []struct {
+		name, quality, resolution, wantSize string
+		wantOmitted                         bool
+	}{
+		{name: "canvas 4k keeps imageSize when vquality is 720", quality: "4k", resolution: "720", wantSize: "4K"},
+		{name: "empty quality still maps resolution 4k", quality: "", resolution: "4k", wantSize: "4K"},
+		{name: "video 720 alone is omitted", quality: "", resolution: "720", wantOmitted: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+				Model: "gemini-3-pro-image-preview", Prompt: "landscape", AspectRatio: "16:9", Quality: tt.quality, Resolution: tt.resolution,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := manifestTestBody(t, create)
+			generationConfig, _ := body["generationConfig"].(map[string]any)
+			imageConfig, _ := generationConfig["imageConfig"].(map[string]any)
+			if tt.wantOmitted {
+				if imageConfig["imageSize"] != nil {
+					t.Fatalf("imageSize should be omitted, got %#v", imageConfig["imageSize"])
+				}
+				return
+			}
+			if imageConfig["imageSize"] != tt.wantSize {
+				t.Fatalf("imageSize = %#v, want %q", imageConfig["imageSize"], tt.wantSize)
+			}
+		})
+	}
+}
+
+func TestOfficialGrokImageMapsAspectAndResolution(t *testing.T) {
+	adapter := officialPackageAdapter(t, "xai-grok-images.yingce-plugin", "grok-image")
+	create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "grok-imagine-image", Prompt: "a cat", AspectRatio: "1280x720", Quality: "high",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if create.Path != "/v1/images/generations" {
+		t.Fatalf("path = %q", create.Path)
+	}
+	body := manifestTestBody(t, create)
+	if body["aspect_ratio"] != "16:9" || body["resolution"] != "2k" {
+		t.Fatalf("body = %#v", body)
+	}
+	if _, ok := body["size"]; ok {
+		t.Fatalf("size must be omitted: %#v", body)
+	}
+}
+
+func TestOfficialJimengImageSplitsPixelSize(t *testing.T) {
+	adapter := officialPackageAdapter(t, "volcengine-jimeng-image.yingce-plugin", "volcengine-jimeng-image")
+	create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "jimeng_t2i_v40", Prompt: "still", AspectRatio: "1024x768",
+		Images: []MediaReference{{DataURL: "data:image/png;base64,aGVsbG8="}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, create)
+	if body["width"] != float64(1024) || body["height"] != float64(768) {
+		t.Fatalf("dimensions = %#v %#v", body["width"], body["height"])
+	}
+	binary, ok := body["binary_data_base64"].([]any)
+	if !ok || len(binary) != 1 || binary[0] != "aGVsbG8=" {
+		t.Fatalf("binary_data_base64 = %#v", body["binary_data_base64"])
+	}
+}
+
+func TestOfficialOpenAIAudioUsesBinaryPayload(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-audio.yingce-plugin", "openai-audio")
+	result, err := adapter.ParseCreate(context.Background(), []byte("ID3fake-mp3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSucceeded || result.Result == nil || len(result.Result.Audios) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestOfficialOpenAIAudioSpeedDefaultsInvalidAndZeroValues(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-audio.yingce-plugin", "openai-audio")
+	for _, test := range []struct {
+		name  string
+		value any
+		want  float64
+	}{
+		{name: "invalid", value: "not-a-number", want: 1},
+		{name: "zero", value: "0", want: 1},
+		{name: "valid", value: "1.25", want: 1.25},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+				Model: "gpt-4o-mini-tts", Prompt: "hello", Extra: map[string]any{"audioSpeed": test.value},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := manifestTestBody(t, spec)
+			if got := body["speed"]; !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("speed = %#v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestOfficialArkSeedreamParsesB64JSONAsDataURL(t *testing.T) {
+	for _, tc := range []struct {
+		packageName, providerID string
+	}{
+		{"volcengine-ark-seedream.yingce-plugin", "volcengine-ark-image"},
+		{"volcengine-ark-agent-plan-seedream.yingce-plugin", "volcengine-ark-agent-plan-image"},
+	} {
+		t.Run(tc.providerID, func(t *testing.T) {
+			adapter := officialPackageAdapter(t, tc.packageName, tc.providerID)
+			result, err := adapter.ParseCreate(context.Background(), []byte(`{"created":1,"data":[{"b64_json":"aW1hZ2U=","output_format":"jpeg","size":"1824x1024"}]}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Result == nil || len(result.Result.Images) != 1 {
+				t.Fatalf("result = %#v", result.Result)
+			}
+			dataURL := result.Result.Images[0].DataURL
+			if dataURL != "data:image/jpeg;base64,aW1hZ2U=" {
+				t.Fatalf("DataURL = %q, want jpeg data URL from b64_json + output_format", dataURL)
+			}
+		})
 	}
 }

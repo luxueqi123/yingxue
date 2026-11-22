@@ -1,60 +1,64 @@
-import { useQuery } from "@tanstack/react-query";
 import { HardDrive } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
-import { formatBytes } from "@/lib/image-utils";
-import { getAccountFileStorageUsage } from "@/services/api/resources";
+import { useAccountFileStorageUsage } from "@/hooks/use-account-file-storage-usage";
+import { accountFileStorageUsageQueryKey, accountStorageMeter, accountStorageStateMessage, formatStorageBytes } from "@/lib/account-storage-usage";
+import { openStoragePurchase } from "@/lib/workspace-storage";
+import { progressFillStyle } from "@/lib/progress-fill";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
-export const assetStorageUsageQueryKey = ["account-file-storage-usage"] as const;
+export const assetStorageUsageQueryKey = accountFileStorageUsageQueryKey;
 
 export function AssetStorageUsage() {
-    const query = useQuery({
-        queryKey: assetStorageUsageQueryKey,
-        queryFn: getAccountFileStorageUsage,
-        refetchOnMount: "always",
-    });
+    const { locale, t } = useInterfaceTranslation();
+    const query = useAccountFileStorageUsage();
     const usage = query.data;
-    const percent = usage?.totalBytes ? Math.min(100, (usage.usedBytes / usage.totalBytes) * 100) : 0;
-    const percentLabel = usage?.usedBytes && percent < 0.1 ? "<0.1%" : `${Math.round(percent * 10) / 10}%`;
-    const full = Boolean(usage && usage.usedBytes >= usage.totalBytes);
+    const meter = accountStorageMeter(usage, locale);
+    const stateMessage = accountStorageStateMessage(meter, t);
+    const showUpsell = meter.state !== "ok" || meter.tone !== "ok";
 
     return (
-        <section className={`assets-storage-usage${full ? " is-full" : ""}${usage?.usedBytes ? " has-usage" : ""}`} aria-label="账号文件容量" aria-busy={query.isPending} title="包含素材文件和 Agent 会话附件">
+        <section
+            className={`assets-storage-usage${meter.full || meter.state !== "ok" ? " is-full" : ""}${usage?.usedBytes ? " has-usage" : ""}`}
+            aria-label={t("library.assets.storage.label")}
+            aria-busy={query.isPending}
+            title={stateMessage ? t("library.assets.storage.hintWithState", { state: stateMessage }) : t("library.assets.storage.hint")}
+        >
             <span className="assets-storage-usage-icon" aria-hidden="true">
                 <HardDrive />
             </span>
-            <span className="assets-storage-usage-title">账号容量</span>
+            <span className="assets-storage-usage-title">{meter.state === "read_only" ? t("storageUi.readOnlyText") : meter.state === "grace" ? t("storageUi.overCapacityText") : t("storageUi.accountStorage")}</span>
             {usage ? (
                 <>
                     <span className="assets-storage-usage-value">
-                        {storageBytes(usage.usedBytes)} / {storageBytes(usage.totalBytes)}
+                        {formatStorageBytes(usage.usedBytes)} / {formatStorageBytes(usage.totalBytes)}
                     </span>
                     <span
                         className="assets-storage-usage-track"
                         role="progressbar"
-                        aria-label="账号文件容量使用进度"
+                        aria-label={t("library.assets.storage.progress")}
                         aria-valuemin={0}
                         aria-valuemax={usage.totalBytes}
                         aria-valuenow={Math.min(usage.usedBytes, usage.totalBytes)}
-                        aria-valuetext={`已使用 ${storageBytes(usage.usedBytes)}，总容量 ${storageBytes(usage.totalBytes)}`}
+                        aria-valuetext={t("library.assets.storage.valueText", { used: formatStorageBytes(usage.usedBytes), total: formatStorageBytes(usage.totalBytes) })}
                     >
-                        <span style={{ width: `${percent}%` }} />
+                        <span style={progressFillStyle(meter.percent)} />
                     </span>
-                    <span className="assets-storage-usage-percent">{percentLabel}</span>
+                    <span className="assets-storage-usage-percent">{meter.percentLabel}</span>
+                    <button type="button" className="assets-storage-usage-action" onClick={() => openStoragePurchase()}>
+                        {showUpsell ? t("library.assets.storage.expand") : t("library.assets.storage.buy")}
+                    </button>
                 </>
             ) : query.isError ? (
                 <span className="assets-storage-usage-status">
-                    容量统计暂时不可用。
+                    {t("library.assets.storage.unavailable")}
                     <button type="button" onClick={() => void query.refetch()}>
-                        重试
+                        {t("common.retry")}
                     </button>
                 </span>
             ) : (
-                <span className="assets-storage-usage-status">正在统计已用容量…</span>
+                <span className="assets-storage-usage-status">{t("library.assets.storage.loading")}</span>
             )}
         </section>
     );
-}
-
-function storageBytes(value: number) {
-    return formatBytes(value) || "0 B";
 }

@@ -1,0 +1,167 @@
+[
+ {
+  "file": "backend/internal/app/platform_bridge.go",
+  "lost": 0,
+  "added": 14
+ },
+ {
+  "file": "backend/internal/app/upload_quota.go",
+  "lost": 0,
+  "added": 8
+ },
+ {
+  "file": "backend/internal/handler/routes.go",
+  "lost": 0,
+  "added": 80
+ },
+ {
+  "file": "backend/internal/platform/host.go",
+  "lost": 0,
+  "added": 9
+ },
+ {
+  "file": "backend/internal/service/aliases_consts.go",
+  "lost": 0,
+  "added": 5
+ },
+ {
+  "file": "backend/internal/service/aliases_funcs.go",
+  "lost": 0,
+  "added": 4
+ },
+ {
+  "file": "backend/internal/service/aliases_types.go",
+  "lost": 0,
+  "added": 9
+ },
+ {
+  "file": "web/src/components/canvas/canvas-node-action-context.ts",
+  "lost": 0,
+  "added": 1
+ },
+ {
+  "file": "web/src/pages/admin/components/feature-availability-panel.tsx",
+  "lost": 0,
+  "added": 1
+ },
+ {
+  "file": "web/src/pages/admin/settings/runtime-policy-settings-page.tsx",
+  "lost": 0,
+  "added": 4
+ },
+ {
+  "file": "web/src/pages/admin/channels/channels-page.tsx",
+  "lost": 24,
+  "added": 49
+ },
+ {
+  "file": "web/src/pages/settings/index.tsx",
+  "lost": 24,
+  "added": 80
+ },
+ {
+  "file": "backend/internal/handler/custom_proxy_test.go",
+  "lost": 20,
+  "added": 136
+ },
+ {
+  "file": "web/src/pages/tasks/index.tsx",
+  "lost": 19,
+  "added": 74
+ },
+ {
+  "file": "web/src/components/layout/workspace-wallet-modal.tsx",
+  "lost": 14,
+  "added": 6
+ },
+ {
+  "file": "backend/internal/platform/runtime_policy.go",
+  "lost": 10,
+  "added": 20
+ },
+ {
+  "file": "web/src/pages/settings/channel-settings-pane.tsx",
+  "lost": 10,
+  "added": 64
+ },
+ {
+  "file": "web/src/services/api/custom-channel-relay.ts",
+  "lost": 10,
+  "added": 17
+ },
+ {
+  "file": "web/src/pages/canvas/use-canvas-assistant-visibility.ts",
+  "lost": 8,
+  "added": 35
+ },
+ {
+  "file": "backend/internal/app/service.go",
+  "lost": 7,
+  "added": 75
+ },
+ {
+  "file": "web/src/services/api/task-center.ts",
+  "lost": 7,
+  "added": 181
+ },
+ {
+  "file": "backend/internal/handler/custom_proxy.go",
+  "lost": 6,
+  "added": 11
+ },
+ {
+  "file": "web/src/services/api/image-models.ts",
+  "lost": 6,
+  "added": 9
+ },
+ {
+  "file": "backend/internal/app/workflow_provider.go",
+  "lost": 5,
+  "added": 80
+ },
+ {
+  "file": "backend/internal/platform/feature_availability.go",
+  "lost": 5,
+  "added": 13
+ },
+ {
+  "file": "web/src/lib/generation-workflow-execution.ts",
+  "lost": 5,
+  "added": 30
+ },
+ {
+  "file": "web/src/lib/generation-task-display.ts",
+  "lost": 3,
+  "added": 17
+ },
+ {
+  "file": "web/src/stores/use-user-store.ts",
+  "lost": 3,
+  "added": 6
+ },
+ {
+  "file": "web/src/components/workflow-test-workbench.tsx",
+  "lost": 2,
+  "added": 4
+ },
+ {
+  "file": "web/src/lib/canvas/canvas-workflow.ts",
+  "lost": 2,
+  "added": 3
+ },
+ {
+  "file": "web/src/lib/plugins/builtin/workflows.ts",
+  "lost": 2,
+  "added": 22
+ },
+ {
+  "file": "web/src/lib/canvas/canvas-workflow-builder.ts",
+  "lost": 1,
+  "added": 24
+ },
+ {
+  "file": "web/src/lib/generation-error.ts",
+  "lost": 1,
+  "added": 12
+ }
+]

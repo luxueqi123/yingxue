@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrPaymentOrderStateConflict = errors.New("payment order state conflict")
-	ErrPaymentEvidenceMismatch   = errors.New("payment evidence does not match order")
-	ErrPaymentTradeNoConflict    = errors.New("payment provider trade number is already used")
-	ErrPaymentCreditOverflow     = errors.New("payment credit balance would overflow")
+	ErrPaymentOrderStateConflict = errors.New("订单状态已变化，请刷新后重试")
+	ErrPaymentEvidenceMismatch   = errors.New("支付凭证与订单不一致")
+	ErrPaymentTradeNoConflict    = errors.New("该支付流水号已被使用")
+	ErrPaymentCreditOverflow     = errors.New("积分余额超出上限，无法入账")
+	ErrTopupUnavailable          = errors.New("充值商品当前不可购买")
 )
 
 // Credit balances are serialized to JavaScript clients as JSON numbers.
@@ -50,12 +51,31 @@ func (r *Repository) CreateTopupProduct(product *model.TopupProduct) error {
 	return r.db.Create(product).Error
 }
 
-func (r *Repository) UpdateTopupProduct(product *model.TopupProduct) error {
-	return r.db.Model(&model.TopupProduct{}).Where("id = ?", product.ID).Updates(map[string]any{
-		"name": product.Name, "description": product.Description, "amount_fen": product.AmountFen,
-		"credits_microcredits": product.CreditsMicrocredits, "enabled": product.Enabled,
-		"sort_order": product.SortOrder, "updated_by": product.UpdatedBy, "updated_at": time.Now(),
-	}).Error
+// UpdateTopupProduct locks the product row and derives the new values from the
+// locked state. Orders reserve and release stock with stock_remaining ± 1 on the
+// same row, so computing the remaining stock outside the lock would overwrite a
+// concurrent reservation or release.
+func (r *Repository) UpdateTopupProduct(id string, build func(existing *model.TopupProduct) (*model.TopupProduct, error)) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var existing model.TopupProduct
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existing, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+			return err
+		}
+		product, err := build(&existing)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&model.TopupProduct{}).Where("id = ?", existing.ID).Updates(map[string]any{
+			"name": product.Name, "description": product.Description, "amount_fen": product.AmountFen, "currency": product.Currency,
+			"kind": product.Kind, "storage_bytes": product.StorageBytes, "storage_duration_days": product.StorageDurationDays,
+			"credits_microcredits": product.CreditsMicrocredits, "enabled": product.Enabled,
+			"sort_order": product.SortOrder, "sale_strategy": product.SaleStrategy,
+			"period_days": product.PeriodDays, "period_purchase_limit": product.PeriodPurchaseLimit,
+			"stock_total": product.StockTotal, "stock_remaining": product.StockRemaining,
+			"sale_start_at": product.SaleStartAt, "sale_end_at": product.SaleEndAt,
+			"updated_by": product.UpdatedBy, "updated_at": time.Now(),
+		}).Error
+	})
 }
 
 func (r *Repository) CreatePaymentProviderConfig(config *model.PaymentProviderConfig) error {
@@ -80,22 +100,90 @@ func (r *Repository) PaymentProviderConfig(id string) (*model.PaymentProviderCon
 	return &config, r.db.First(&config, "id = ?", strings.TrimSpace(id)).Error
 }
 
-// CreatePaymentOrder claims the user idempotency key before contacting a
-// provider. The returned created flag is false when a retry found its order.
-func (r *Repository) CreatePaymentOrder(order *model.PaymentOrder) (*model.PaymentOrder, bool, error) {
-	created := r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "idempotency_key"}},
-		DoNothing: true,
-	}).Create(order)
-	if created.Error != nil {
-		return nil, false, created.Error
-	}
-	if created.RowsAffected == 1 {
-		return order, true, nil
-	}
+// CreatePaymentOrderWithProductReservation claims the user's idempotency key and,
+// for inventory products, reserves one unit in the same transaction.
+func (r *Repository) CreatePaymentOrderWithProductReservation(order *model.PaymentOrder) (*model.PaymentOrder, bool, error) {
 	var existing model.PaymentOrder
-	err := r.db.Where("user_id = ? AND idempotency_key = ?", order.UserID, order.IdempotencyKey).First(&existing).Error
-	return &existing, false, err
+	created := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var product model.TopupProduct
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&product, "id = ?", order.ProductID).Error; err != nil {
+			return err
+		}
+		strategy := product.SaleStrategy
+		if strategy == "" {
+			strategy = model.TopupSaleStrategyUnlimited
+		}
+		// 同一幂等键的重试直接返回原订单：不能被下面的限购/库存检查拦下，
+		// 尤其是周期限购已把这笔待付款订单计入名额。
+		if err := tx.First(&existing, "user_id = ? AND idempotency_key = ?", order.UserID, order.IdempotencyKey).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		now := time.Now()
+		if !product.Enabled {
+			return ErrTopupUnavailable
+		}
+		if product.Kind == model.TopupProductKindMembership {
+			if product.AmountFen != order.AmountFen || product.Currency != order.Currency || product.CreditsMicrocredits != order.CreditsMicrocredits {
+				return ErrTopupUnavailable
+			}
+			order.MembershipSnapshotJSON = product.MembershipSnapshotJSON
+			order.MembershipMonths = product.MembershipMonths
+		}
+		if strategy == model.TopupSaleStrategyTimed && ((product.SaleStartAt != nil && now.Before(*product.SaleStartAt)) || (product.SaleEndAt != nil && !now.Before(*product.SaleEndAt))) {
+			return ErrTopupUnavailable
+		}
+		if strategy == model.TopupSaleStrategyPeriodic && product.PeriodDays > 0 && product.PeriodPurchaseLimit > 0 {
+			// 未关闭的订单都占用周期名额：只数已入账订单的话，用户可以先建多笔
+			// 待付款订单再逐笔付款，全部入账。订单关闭（含超时关单）后名额释放。
+			// 商品行已加锁，同一商品的下单在这里串行。
+			var count int64
+			if err := tx.Model(&model.PaymentOrder{}).Where("user_id = ? AND product_id = ? AND status IN ? AND created_at >= ?", order.UserID, order.ProductID, []model.PaymentOrderStatus{
+				model.PaymentOrderCreated, model.PaymentOrderPending, model.PaymentOrderClosing, model.PaymentOrderCreateFailed, model.PaymentOrderCredited,
+			}, now.Add(-time.Duration(product.PeriodDays)*24*time.Hour)).Count(&count).Error; err != nil {
+				return err
+			}
+			if count >= int64(product.PeriodPurchaseLimit) {
+				return ErrTopupUnavailable
+			}
+		}
+		if strategy == model.TopupSaleStrategyInventory {
+			updated := tx.Model(&model.TopupProduct{}).Where("id = ? AND stock_remaining > 0", product.ID).Updates(map[string]any{"stock_remaining": gorm.Expr("stock_remaining - 1"), "updated_at": now})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if updated.RowsAffected != 1 {
+				return ErrTopupUnavailable
+			}
+			order.StockReserved = true
+		}
+		result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}, {Name: "idempotency_key"}}, DoNothing: true}).Create(order)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			created = true
+			return nil
+		}
+		if err := tx.First(&existing, "user_id = ? AND idempotency_key = ?", order.UserID, order.IdempotencyKey).Error; err != nil {
+			return err
+		}
+		if order.StockReserved {
+			if err := tx.Model(&model.TopupProduct{}).Where("id = ?", order.ProductID).Updates(map[string]any{"stock_remaining": gorm.Expr("stock_remaining + 1"), "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if !created {
+		return &existing, false, nil
+	}
+	return order, true, nil
 }
 
 func (r *Repository) SetPaymentOrderCheckout(id string, checkoutMode, checkoutValue string, checkoutExpiresAt time.Time) error {
@@ -115,7 +203,7 @@ func (r *Repository) SetPaymentOrderCheckout(id string, checkoutMode, checkoutVa
 }
 
 func (r *Repository) SetPaymentOrderCreateFailure(id, message string) error {
-	return r.db.Model(&model.PaymentOrder{}).Where("id = ? AND status = ?", id, model.PaymentOrderCreated).Updates(map[string]any{
+	return r.db.Model(&model.PaymentOrder{}).Where("id = ? AND status IN ?", id, []model.PaymentOrderStatus{model.PaymentOrderCreated, model.PaymentOrderCreateFailed}).Updates(map[string]any{
 		"status": model.PaymentOrderCreateFailed, "last_error": message, "updated_at": time.Now(),
 	}).Error
 }
@@ -214,10 +302,12 @@ func (r *Repository) CompletePaymentOrder(providerID, merchantOrderNo string, ev
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "provider_id = ? AND merchant_order_no = ?", providerID, merchantOrderNo).Error; err != nil {
 			return err
 		}
-		if order.AmountFen != evidence.AmountFen || order.Currency != evidence.Currency || strings.TrimSpace(evidence.ProviderTradeNo) == "" {
+		// 渠道凭据只证明实收金额；商品金额可能经过汇率换算，不能拿来比对。
+		if order.ChargeAmountFen != evidence.AmountFen || order.ChargeCurrency != evidence.Currency || strings.TrimSpace(evidence.ProviderTradeNo) == "" {
 			return ErrPaymentEvidenceMismatch
 		}
-		if order.AmountFen <= 0 || order.CreditsMicrocredits <= 0 {
+		storageOrder := order.ProductKind == model.TopupProductKindStorage
+		if order.AmountFen <= 0 || (storageOrder && order.StorageBytes <= 0) || (!storageOrder && order.CreditsMicrocredits <= 0) {
 			return ErrPaymentOrderStateConflict
 		}
 		if order.Status == model.PaymentOrderCredited {
@@ -234,46 +324,16 @@ func (r *Repository) CompletePaymentOrder(providerID, merchantOrderNo string, ev
 			return ErrPaymentTradeNoConflict
 		}
 		referenceKey := "payment:" + providerID + ":" + merchantOrderNo
-		entry := model.CreditLedgerEntry{
-			ID: newRepositoryID(), UserID: order.UserID, Type: model.CreditLedgerPaymentTopup,
-			AmountMicrocredits: order.CreditsMicrocredits, PaymentOrderID: order.ID,
-			ReferenceKey: &referenceKey, Note: order.ProductName + " · 在线支付充值",
-		}
-		created := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "reference_key"}}, DoNothing: true}).Create(&entry)
-		if created.Error != nil {
-			return created.Error
-		}
-		if created.RowsAffected == 0 {
-			// A credited order is handled above. Reaching this branch means a
-			// ledger row exists while the order is still non-terminal, so treating
-			// the operation as successful would hide an inconsistent credit state.
-			return ErrPaymentOrderStateConflict
-		}
-		account := model.CreditAccount{UserID: order.UserID}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
-			return err
-		}
 		now := time.Now()
-		accountUpdate := tx.Model(&model.CreditAccount{}).
-			Where("user_id = ? AND available_microcredits <= ?", order.UserID, maxPaymentCreditBalance-order.CreditsMicrocredits).
-			Updates(map[string]any{
-				"available_microcredits": gorm.Expr("available_microcredits + ?", order.CreditsMicrocredits),
-				"version":                gorm.Expr("version + 1"), "updated_at": now,
-			})
-		if accountUpdate.Error != nil {
-			return accountUpdate.Error
-		}
-		if accountUpdate.RowsAffected != 1 {
-			return ErrPaymentCreditOverflow
-		}
-		if err := tx.First(&account, "user_id = ?", order.UserID).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&entry).Updates(map[string]any{
-			"available_delta_microcredits": order.CreditsMicrocredits,
-			"available_after_microcredits": account.AvailableMicrocredits,
-			"reserved_after_microcredits":  account.ReservedMicrocredits,
-		}).Error; err != nil {
+		if order.ProductKind == model.TopupProductKindMembership {
+			if err := activateMembership(tx, &order, now); err != nil {
+				return err
+			}
+		} else if storageOrder {
+			if err := grantPaymentStorage(tx, &order, referenceKey, now); err != nil {
+				return err
+			}
+		} else if err := creditPaymentTopup(tx, &order, referenceKey, now); err != nil {
 			return err
 		}
 		paidAt := evidence.PaidAt
@@ -282,7 +342,7 @@ func (r *Repository) CompletePaymentOrder(providerID, merchantOrderNo string, ev
 		}
 		tradeNo := evidence.ProviderTradeNo
 		updated := tx.Model(&model.PaymentOrder{}).Where("id = ? AND status <> ?", order.ID, model.PaymentOrderCredited).Updates(map[string]any{
-			"status": model.PaymentOrderCredited, "provider_trade_no": &tradeNo,
+			"status": model.PaymentOrderCredited, "stock_reserved": false, "provider_trade_no": &tradeNo,
 			"provider_status": evidence.ProviderStatus, "provider_paid_at": &paidAt,
 			"credited_at": &now, "last_error": "", "updated_at": now,
 		})
@@ -303,6 +363,66 @@ func (r *Repository) CompletePaymentOrder(providerID, merchantOrderNo string, ev
 	return &order, granted, err
 }
 
+func grantPaymentStorage(tx *gorm.DB, order *model.PaymentOrder, referenceKey string, now time.Time) error {
+	grant := model.UserStorageGrant{
+		ID: newRepositoryID(), UserID: order.UserID, Source: model.UserStorageGrantSourcePayment,
+		PaymentOrderID: order.ID, ProductID: order.ProductID, ProductName: order.ProductName,
+		Bytes: order.StorageBytes, DurationDays: order.StorageDurationDays, StartsAt: now,
+		ReferenceKey: &referenceKey, Note: order.ProductName + " · 在线购买存储空间", CreatedAt: now,
+	}
+	if order.StorageDurationDays > 0 {
+		expires := now.Add(time.Duration(order.StorageDurationDays) * 24 * time.Hour)
+		grant.ExpiresAt = &expires
+	}
+	created := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "reference_key"}}, DoNothing: true}).Create(&grant)
+	if created.Error != nil {
+		return created.Error
+	}
+	if created.RowsAffected == 0 {
+		return ErrPaymentOrderStateConflict
+	}
+	return nil
+}
+
+func creditPaymentTopup(tx *gorm.DB, order *model.PaymentOrder, referenceKey string, now time.Time) error {
+	entry := model.CreditLedgerEntry{
+		ID: newRepositoryID(), UserID: order.UserID, Type: model.CreditLedgerPaymentTopup,
+		AmountMicrocredits: order.CreditsMicrocredits, PaymentOrderID: order.ID,
+		ReferenceKey: &referenceKey, Note: order.ProductName + " · 在线支付充值",
+	}
+	created := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "reference_key"}}, DoNothing: true}).Create(&entry)
+	if created.Error != nil {
+		return created.Error
+	}
+	if created.RowsAffected == 0 {
+		return ErrPaymentOrderStateConflict
+	}
+	account := model.CreditAccount{UserID: order.UserID}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&account).Error; err != nil {
+		return err
+	}
+	accountUpdate := tx.Model(&model.CreditAccount{}).
+		Where("user_id = ? AND available_microcredits <= ?", order.UserID, maxPaymentCreditBalance-order.CreditsMicrocredits).
+		Updates(map[string]any{
+			"available_microcredits": gorm.Expr("available_microcredits + ?", order.CreditsMicrocredits),
+			"version":                gorm.Expr("version + 1"), "updated_at": now,
+		})
+	if accountUpdate.Error != nil {
+		return accountUpdate.Error
+	}
+	if accountUpdate.RowsAffected != 1 {
+		return ErrPaymentCreditOverflow
+	}
+	if err := tx.First(&account, "user_id = ?", order.UserID).Error; err != nil {
+		return err
+	}
+	return tx.Model(&entry).Updates(map[string]any{
+		"available_delta_microcredits": order.CreditsMicrocredits,
+		"available_after_microcredits": account.AvailableMicrocredits,
+		"reserved_after_microcredits":  account.ReservedMicrocredits,
+	}).Error
+}
+
 func (r *Repository) RecordPaymentQuery(id, providerStatus string) error {
 	now := time.Now()
 	return r.db.Model(&model.PaymentOrder{}).Where("id = ?", id).Updates(map[string]any{
@@ -312,25 +432,27 @@ func (r *Repository) RecordPaymentQuery(id, providerStatus string) error {
 
 func (r *Repository) MarkPaymentOrderClosed(id, providerStatus string) error {
 	now := time.Now()
-	updated := r.db.Model(&model.PaymentOrder{}).Where("id = ? AND status IN ?", id, []model.PaymentOrderStatus{
-		model.PaymentOrderCreated, model.PaymentOrderPending, model.PaymentOrderClosing, model.PaymentOrderCreateFailed,
-	}).Updates(map[string]any{
-		"status": model.PaymentOrderClosed, "provider_status": providerStatus,
-		"closed_at": &now, "last_error": "", "updated_at": now,
-	})
-	if updated.Error != nil {
-		return updated.Error
-	}
-	if updated.RowsAffected == 0 {
+	return r.db.Transaction(func(tx *gorm.DB) error {
 		var order model.PaymentOrder
-		if err := r.db.First(&order, "id = ?", id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", id).Error; err != nil {
 			return err
 		}
-		if order.Status != model.PaymentOrderCredited && order.Status != model.PaymentOrderClosed {
+		if order.Status == model.PaymentOrderCredited || order.Status == model.PaymentOrderClosed {
+			return nil
+		}
+		if order.Status != model.PaymentOrderCreated && order.Status != model.PaymentOrderPending && order.Status != model.PaymentOrderClosing && order.Status != model.PaymentOrderCreateFailed {
 			return ErrPaymentOrderStateConflict
 		}
-	}
-	return nil
+		if order.StockReserved {
+			if err := tx.Model(&model.TopupProduct{}).Where("id = ?", order.ProductID).Updates(map[string]any{"stock_remaining": gorm.Expr("stock_remaining + 1"), "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.PaymentOrder{}).Where("id = ?", id).Updates(map[string]any{
+			"status": model.PaymentOrderClosed, "stock_reserved": false, "provider_status": providerStatus,
+			"closed_at": &now, "last_error": "", "updated_at": now,
+		}).Error
+	})
 }
 
 func (r *Repository) RestoreClosingPaymentOrder(id, message string) error {
@@ -382,22 +504,58 @@ func (r *Repository) PaymentOrdersNeedingQuery(cutoff time.Time, limit int) ([]m
 	return items, err
 }
 
-func (r *Repository) AdminPaymentOrders(status, keyword string, limit, offset int) ([]model.PaymentOrder, int64, error) {
+func (r *Repository) PaymentOrdersForUser(userID, status string, limit, offset int) ([]model.PaymentOrder, int64, error) {
 	var items []model.PaymentOrder
 	var total int64
-	query := r.db.Model(&model.PaymentOrder{})
-	if normalized := strings.TrimSpace(status); normalized != "" && normalized != "all" {
-		query = query.Where("status = ?", normalized)
-	}
-	if normalized := strings.TrimSpace(keyword); normalized != "" {
-		like := "%" + normalized + "%"
-		query = query.Where("merchant_order_no LIKE ? OR provider_trade_no LIKE ? OR user_id LIKE ?", like, like, like)
+	query := r.db.Model(&model.PaymentOrder{}).Where("user_id = ?", userID)
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Order("created_at desc").Limit(limit).Offset(offset).Find(&items).Error
+	err := query.Order("created_at desc").Order("id desc").Limit(limit).Offset(offset).Find(&items).Error
 	return items, total, err
+}
+
+func (r *Repository) AdminPaymentOrders(filter PaymentOrderFilter, limit, offset int) ([]model.PaymentOrder, int64, error) {
+	var items []model.PaymentOrder
+	var total int64
+	query := r.paymentOrderQuery(filter)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.Order("created_at desc, id desc").Limit(limit).Offset(offset).Find(&items).Error
+	return items, total, err
+}
+
+func (r *Repository) paymentOrderQuery(filter PaymentOrderFilter) *gorm.DB {
+	query := r.db.Model(&model.PaymentOrder{})
+	if normalized := strings.TrimSpace(filter.Status); normalized != "" && normalized != "all" {
+		query = query.Where("status = ?", normalized)
+	}
+	if normalized := strings.TrimSpace(filter.Keyword); normalized != "" {
+		like := "%" + normalized + "%"
+		users := r.db.Model(&model.User{}).Select("id").Where("LOWER(username) LIKE ? OR LOWER(display_name) LIKE ? OR LOWER(email) LIKE ?", strings.ToLower(like), strings.ToLower(like), strings.ToLower(like))
+		query = query.Where("merchant_order_no LIKE ? OR provider_trade_no LIKE ? OR user_id = ? OR user_id IN (?)", like, like, normalized, users)
+	}
+	if filter.ProviderID != "" && filter.ProviderID != "all" {
+		query = query.Where("provider_id = ?", filter.ProviderID)
+	}
+	column := "created_at"
+	switch filter.TimeField {
+	case "paid":
+		column = "provider_paid_at"
+	case "credited":
+		column = "credited_at"
+	}
+	if !filter.From.IsZero() {
+		query = query.Where(column+" >= ?", filter.From)
+	}
+	if !filter.Until.IsZero() {
+		query = query.Where(column+" < ?", filter.Until)
+	}
+	return query
 }
 
 // BeginPaymentReconciliation creates or safely reuses the single daily run
@@ -502,34 +660,42 @@ func (r *Repository) PaymentReconciliationRunByDate(providerID, billDate string)
 	return &run, r.db.First(&run, "provider_id = ? AND bill_date = ?", strings.TrimSpace(providerID), strings.TrimSpace(billDate)).Error
 }
 
-func (r *Repository) AdminPaymentReconciliationRuns(providerID, status string, limit, offset int) ([]model.PaymentReconciliationRun, int64, error) {
+func (r *Repository) AdminPaymentReconciliationRuns(filter PaymentReconciliationFilter, limit, offset int) ([]model.PaymentReconciliationRun, int64, error) {
 	var runs []model.PaymentReconciliationRun
 	var total int64
-	query := r.db.Model(&model.PaymentReconciliationRun{})
-	if normalized := strings.TrimSpace(providerID); normalized != "" && normalized != "all" {
-		query = query.Where("provider_id = ?", normalized)
-	}
-	if normalized := strings.TrimSpace(status); normalized != "" && normalized != "all" {
-		query = query.Where("status = ?", normalized)
-	}
+	query := r.paymentReconciliationQuery(filter)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Order("bill_date desc, started_at desc").Limit(limit).Offset(offset).Find(&runs).Error
+	err := query.Order("bill_date desc, started_at desc, id desc").Limit(limit).Offset(offset).Find(&runs).Error
 	return runs, total, err
+}
+
+func (r *Repository) paymentReconciliationQuery(filter PaymentReconciliationFilter) *gorm.DB {
+	query := r.db.Model(&model.PaymentReconciliationRun{})
+	if normalized := strings.TrimSpace(filter.ProviderID); normalized != "" && normalized != "all" {
+		query = query.Where("provider_id = ?", normalized)
+	}
+	if normalized := strings.TrimSpace(filter.Status); normalized != "" && normalized != "all" {
+		query = query.Where("status = ?", normalized)
+	}
+	if filter.From != "" {
+		query = query.Where("bill_date >= ?", filter.From)
+	}
+	if filter.To != "" {
+		query = query.Where("bill_date <= ?", filter.To)
+	}
+	return query
 }
 
 func (r *Repository) PaymentReconciliationItems(runID, result string, limit, offset int) ([]model.PaymentReconciliationItem, int64, error) {
 	var items []model.PaymentReconciliationItem
 	var total int64
-	query := r.db.Model(&model.PaymentReconciliationItem{}).Where("run_id = ?", strings.TrimSpace(runID))
-	if normalized := strings.TrimSpace(result); normalized != "" && normalized != "all" {
-		query = query.Where("result = ?", normalized)
-	}
+	query := r.paymentReconciliationItemsQuery(runID, result)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Order("resolved asc, created_at asc").Limit(limit).Offset(offset).Find(&items).Error
+	err := query.Order("resolved asc, created_at asc, id asc").Limit(limit).Offset(offset).Find(&items).Error
 	return items, total, err
 }
 

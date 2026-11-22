@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -59,7 +60,11 @@ func autoDLH3CreateFields(workflowID string, request GenerationRequest) (map[str
 	if len(request.Audios) > workflow.MaxAudios {
 		return nil, fmt.Errorf("%s 最多支持 %d 段参考音频", workflow.Label, workflow.MaxAudios)
 	}
-	body := map[string]any{"resolution": autoDLH3Resolution(request.Resolution, request.AspectRatio)}
+	resolution, err := autoDLH3Resolution(workflow, request.Resolution, request.AspectRatio)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"resolution": resolution}
 	if workflowID != "minimax_h3_image_audio_to_video" {
 		if strings.TrimSpace(request.Prompt) == "" {
 			return nil, fmt.Errorf("%s 需要视频生成提示词", workflow.Label)
@@ -90,4 +95,37 @@ func autoDLH3CreateFields(workflowID string, request GenerationRequest) (map[str
 		body["seed"] = seed
 	}
 	return body, nil
+}
+
+func autoDLH3Resolution(workflow AutoDLH3Workflow, resolution, ratio string) (string, error) {
+	tier := strings.ToLower(strings.TrimSpace(resolution))
+	switch tier {
+	case "":
+		tier = "768p"
+	case "480", "low":
+		tier = "480p"
+	case "768":
+		tier = "768p"
+	case "1080":
+		tier = "1080p"
+	}
+	if !slices.Contains(workflow.Resolutions, tier) {
+		return "", fmt.Errorf("%s 不支持分辨率 %q，支持 %s", workflow.Label, resolution, strings.Join(workflow.Resolutions, "/"))
+	}
+	aspectRatio := strings.TrimSpace(ratio)
+	if aspectRatio == "" {
+		aspectRatio = "16:9"
+	}
+	// Only omitted dimensions use defaults; explicit source dimensions must not be approximated.
+	if !slices.Contains(workflow.Ratios, aspectRatio) {
+		return "", fmt.Errorf("%s 不支持画幅 %q，支持 %s", workflow.Label, ratio, strings.Join(workflow.Ratios, "/"))
+	}
+	switch aspectRatio {
+	case "1:1":
+		return tier + "(1:1)", nil
+	case "9:16":
+		return tier + "竖", nil
+	default:
+		return tier + "横", nil
+	}
 }

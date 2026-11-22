@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"infinite-canvas/backend/internal/logging"
+
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -31,13 +34,16 @@ func Open(config Config) (*gorm.DB, error) {
 			}
 			dsn = config.DataDir + "/open_ai_canvas.db?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&_synchronous=NORMAL"
 		}
-		return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+		return gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logging.GormLogger()})
 	case "postgres", "postgresql":
 		dsn := strings.TrimSpace(config.DSN)
 		if dsn == "" {
 			return nil, errors.New("PostgreSQL 模式必须配置 DATABASE_URL")
 		}
-		return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		return gorm.Open(postgres.New(postgres.Config{
+			DSN:          dsn,
+			OptionOpenDB: []stdlib.OptionOpenDB{stdlib.OptionBeforeConnect(configurePostgresConnection)},
+		}), &gorm.Config{Logger: logging.GormLogger()})
 	default:
 		return nil, fmt.Errorf("不支持的数据库驱动：%s", driver)
 	}

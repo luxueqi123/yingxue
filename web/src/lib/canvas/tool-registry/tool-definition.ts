@@ -1,27 +1,16 @@
 import type { ReactNode } from "react";
+import type { InterfaceLocale, InterfaceMessageKey } from "@/lib/interface-locale";
 import type { MouseEvent } from "react";
-
 import type { CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
-
+/** 工具栏标识——每个工具栏有独立的注册表与偏好 */
 /** 工具栏标识——每个工具栏有独立的注册表与偏好 */
 export type ToolbarId = "main" | "selection" | "node-hover" | "add-node-menu";
-export type NodeToolbarGroup = "primary" | "portrait" | "viewpoint" | "process" | "workspace" | "utility" | "more";
-
+/** adjust 改当前画面、camera 换镜头或时间点、sheet 输出宫格/设定联系表、process 非生成类处理。 */
+export type NodeToolbarGroup = "primary" | "adjust" | "camera" | "sheet" | "process" | "workspace" | "utility" | "more";
 /** 工具分类——用于分组渲染、危险隔离与 separator 自动插入 */
-export type ToolCategory =
-    | "navigation"
-    | "history"
-    | "create"
-    | "appearance"
-    | "selection"
-    | "layout"
-    | "arrange"
-    | "danger"
-    | "node-state"
-    | "resource";
-
+export type ToolCategory = "navigation" | "history" | "create" | "appearance" | "selection" | "layout" | "arrange" | "danger" | "node-state" | "resource";
 /** 所有工具栏回调的聚合类型。工具定义通过 ctx.handlers.onXxx 访问 */
 export type ToolbarHandlers = {
     // 主工具栏——画布操作
@@ -47,11 +36,14 @@ export type ToolbarHandlers = {
      */
     onAddExtensionNode: (type: CanvasNodeTypeId) => void;
     onChooseStyle: () => void;
-    onOpenDirector: () => void;
+    onOpenPrevis: () => void;
     // 主工具栏——资源
     onUpload: () => void;
+    onOpenWorkspace?: () => void;
     onOpenMyAssets: () => void;
     onOpenProjectCharacters: () => void;
+    /** 站点姿势库；只读分享页等不提供时入口自动隐藏。 */
+    onOpenPoseLibrary?: () => void;
     // 主工具栏——外观
     onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
     onShowImageInfoChange: (show: boolean) => void;
@@ -67,7 +59,8 @@ export type ToolbarHandlers = {
     onCreateStoryboard: () => void;
     onCreateReferenceGroup: () => void;
     onBatchConnect: () => void;
-    onMergeVideos: () => void;
+    onCompareImages?: () => void;
+    onSendSelectionToAgent: () => void;
     // 节点悬停工具栏——节点操作（均接收当前节点）
     onNodeInfo: (node: CanvasNodeData) => void;
     onNodeDelete: (node: CanvasNodeData) => void;
@@ -81,10 +74,14 @@ export type ToolbarHandlers = {
     onNodeUpload: (node: CanvasNodeData) => void;
     onNodeDownload: (node: CanvasNodeData) => void;
     onNodeSaveAsset: (node: CanvasNodeData) => void;
-    onNodeMaskEdit: (node: CanvasNodeData) => void;
+    onNodeRegionEdit: (node: CanvasNodeData) => void;
+    onNodeImageEdit: (node: CanvasNodeData) => void;
+    onNodeRemoveBackground: (node: CanvasNodeData) => void;
     onNodeEmotion: (node: CanvasNodeData) => void;
     onNodePortraitTexture: (node: CanvasNodeData) => void;
     onNodeCrop: (node: CanvasNodeData) => void;
+    onNodeCreateEditCopy?: (node: CanvasNodeData) => void;
+    onNodeRotateImage?: (node: CanvasNodeData, direction: -1 | 0 | 1) => void;
     onNodeSplit: (node: CanvasNodeData) => void;
     onNodeUpscale: (node: CanvasNodeData) => void;
     onNodeSuperResolve: (node: CanvasNodeData) => void;
@@ -93,14 +90,22 @@ export type ToolbarHandlers = {
     onNodeExtractVideoFrames: (node: CanvasNodeData) => void;
     onNodeExtractAudioFromVideo: (node: CanvasNodeData) => void;
     onNodeTrimVideoSegments: (node: CanvasNodeData) => void;
-    onNodeSubtitles: (node: CanvasNodeData) => void;
-    onNodeTimeline: (node: CanvasNodeData) => void;
+    onNodeTimeline?: (node: CanvasNodeData) => void;
+    /** 视频画质增强；只在存在 processing 视频模型时由项目页提供。 */
+    onNodeEnhanceVideo?: (node: CanvasNodeData) => void;
+    onNodeDepthVideo?: (node: CanvasNodeData) => void;
+    onNodeDownloadSubtitles?: (node: CanvasNodeData) => void;
+    /** 打开媒体版本面板；只读分享页不提供。 */
+    onNodeVersions?: (node: CanvasNodeData) => void;
+    /** 采用到短剧（设定参考图或剧情段视频）；只在关联短剧的精修画布上提供。 */
+    onNodeAdoptToDrama?: (node: CanvasNodeData) => void;
+    /** 短剧侧已有更新的版本时才提供：把节点换成短剧当前的媒体。 */
+    onNodeRefreshFromDrama?: (node: CanvasNodeData) => void;
     onNodeReversePrompt: (node: CanvasNodeData) => void;
     onNodeToggleFreeResize: (node: CanvasNodeData) => void;
     onNodeToggleLocked: (node: CanvasNodeData) => void;
     onNodeCopyPrompt: (node: CanvasNodeData) => void;
 };
-
 /** 工具运行时可见的上下文。工具定义通过纯函数读取状态 */
 export type ToolContext = {
     selectedCount: number;
@@ -120,6 +125,7 @@ export type ToolContext = {
     /** 视频音频提取/片段截取进行中（节点悬停工具栏用） */
     extractingAudio: boolean;
     trimmingVideo: boolean;
+    rotatingImage?: boolean;
     /** 合并视频中（多选工具栏用） */
     mergingVideos: boolean;
     /** 主工具栏面板开关状态（仅主工具栏使用） */
@@ -127,15 +133,16 @@ export type ToolContext = {
     appearancePanelOpen: boolean;
     settingsPanelOpen: boolean;
     handlers: ToolbarHandlers;
+    locale?: InterfaceLocale;
 };
-
 /** 添加节点菜单只依赖创建动作，避免右键菜单为工具栏状态补无意义字段。 */
 export type AddNodeMenuContext = {
     workspaceMode: CanvasWorkspaceMode;
     isProjectLinked: boolean;
     /** 内置应用插件的启用状态；未声明时视为未提供 gating 信息。 */
     enabledPluginIds?: ReadonlySet<string>;
-    handlers: Pick<ToolbarHandlers,
+    handlers: Pick<
+        ToolbarHandlers,
         | "onAddText"
         | "onAddImage"
         | "onAddVideo"
@@ -147,13 +154,14 @@ export type AddNodeMenuContext = {
         | "onAddWorkflow"
         | "onAddExtensionNode"
         | "onChooseStyle"
-        | "onOpenDirector"
+        | "onOpenPrevis"
         | "onUpload"
         | "onOpenMyAssets"
         | "onOpenProjectCharacters"
+        | "onOpenPoseLibrary"
     >;
+    locale?: InterfaceLocale;
 };
-
 /** 工具定义——注册表的基本单元 */
 export type ToolDefinition = {
     id: string;
@@ -171,8 +179,8 @@ export type ToolDefinition = {
     nodeToolbar?: {
         group: NodeToolbarGroup | ((ctx: ToolContext) => NodeToolbarGroup);
         order?: number | ((ctx: ToolContext) => number);
-        section?: string;
-        description?: string;
+        section?: string | ((ctx: ToolContext) => string);
+        description?: string | ((ctx: ToolContext) => string);
     };
     active?: (ctx: ToolContext) => boolean;
     disabled?: (ctx: ToolContext) => boolean;
@@ -180,12 +188,24 @@ export type ToolDefinition = {
     danger?: boolean;
     /** 面板展开型工具——使用 aria-expanded 而非 aria-pressed */
     expands?: boolean;
+    /** 互斥开关：在 dock 中渲染为分段切换，而不是两个独立按钮 */
+    switchGroup?: {
+        value: (ctx: ToolContext) => string;
+        options: Array<{
+            id: string;
+            label: string;
+            labelKey?: InterfaceMessageKey;
+            displayLabel?: string;
+            icon: ReactNode;
+            value: string;
+        }>;
+        onChange: (ctx: ToolContext, value: string) => void;
+    };
     /** 上下文可见性谓词——返回 false 时工具不渲染（不受 prefs 控制） */
     applicable?: (ctx: ToolContext) => boolean;
     /** 执行动作。event 来自 Dock 按钮点击 */
     run: (ctx: ToolContext, event?: MouseEvent<HTMLElement>) => void;
 };
-
 /** 添加节点菜单命令：项目级动作与真正的节点创建分开呈现。 */
 export type AddNodeMenuCommand = {
     id: string;
@@ -197,8 +217,9 @@ export type AddNodeMenuCommand = {
     defaultOrder: number;
     applicable?: (ctx: AddNodeMenuContext) => boolean;
     run: (ctx: AddNodeMenuContext) => void;
+    labelKey?: InterfaceMessageKey;
+    badgeKey?: InterfaceMessageKey;
 };
-
 /** 用户偏好——排序与显隐 */
 export type ToolbarPrefs = {
     /** 工具 id 按显示顺序排列 */

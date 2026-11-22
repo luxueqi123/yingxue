@@ -1,0 +1,573 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "minimax-hailuo-video-v1",
+  "name": "MiniMax Hailuo 2.3 V1",
+  "version": "1.0.0",
+  "author": "Yingxue",
+  "description": "海螺2.3及2.3-Fast单图视频声明式Provider；保留旧版本，按查询文件ID获取结果。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "minimax-video-v1",
+        "label": "MiniMax Hailuo 2.3 V1",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.minimax.io",
+        "requiresPublicMediaUrls": false,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "values": [
+              "MiniMax-Hailuo-2.3",
+              "MiniMax-Hailuo-2.3-Fast"
+            ],
+            "mapping": "model",
+            "description": "原生MiniMax海螺2.3或2.3-Fast模型ID，不替换版本。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "mapping": "prompt",
+            "description": "完整创作正文，最多2000字符，不截断。"
+          },
+          {
+            "name": "images",
+            "type": "array",
+            "required": true,
+            "mapping": "images",
+            "description": "唯一原始首帧，按媒体角色读取宿主准备的URL或DataURL。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": true,
+            "values": [
+              "6",
+              "10"
+            ],
+            "mapping": "duration",
+            "description": "768P支持6或10秒，1080P仅支持6秒。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": true,
+            "values": [
+              "768P",
+              "1080P"
+            ],
+            "mapping": "resolution",
+            "description": "原始像素档位768P或1080P，不能改成其他清晰度。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.model"
+                },
+                [
+                  "MiniMax-Hailuo-2.3",
+                  "MiniMax-Hailuo-2.3-Fast"
+                ]
+              ]
+            },
+            "message": "MiniMax V1单图Provider只接海螺2.3或2.3-Fast，不能替换版本。"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$in": [
+                    {
+                      "$upper": {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.output.resolution"
+                          },
+                          {
+                            "$ref": "request.resolution"
+                          }
+                        ]
+                      }
+                    },
+                    [
+                      "768P",
+                      "1080P"
+                    ]
+                  ]
+                },
+                {
+                  "$in": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.duration"
+                        },
+                        {
+                          "$ref": "request.duration"
+                        }
+                      ]
+                    },
+                    [
+                      6,
+                      10
+                    ]
+                  ]
+                },
+                {
+                  "$or": [
+                    {
+                      "$eq": [
+                        {
+                          "$upper": {
+                            "$coalesce": [
+                              {
+                                "$ref": "request.output.resolution"
+                              },
+                              {
+                                "$ref": "request.resolution"
+                              }
+                            ]
+                          }
+                        },
+                        "768P"
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "request.output.duration"
+                            },
+                            {
+                              "$ref": "request.duration"
+                            }
+                          ]
+                        },
+                        6
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "海螺V1仅支持768P的6/10秒和1080P的6秒，不能自动修改规格。"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$in": [
+                    {
+                      "$ref": "request.images.0.role"
+                    },
+                    [
+                      "first_frame",
+                      "reference_image",
+                      ""
+                    ]
+                  ]
+                }
+              ]
+            },
+            "message": "海螺V1单图接口需要一张首帧或普通参考图，不接首尾帧、视频或音频。"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.operation"
+                },
+                [
+                  "",
+                  "image_to_video"
+                ]
+              ]
+            },
+            "message": "该海螺V1 Provider仅接单图生视频。"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.aspectRatio"
+                    },
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    ""
+                  ]
+                },
+                [
+                  "",
+                  "auto",
+                  "adaptive"
+                ]
+              ]
+            },
+            "message": "海螺单图接口以原图决定比例，不能忽略固定画幅要求。"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$not": {
+                    "$ref": "request.generateAudio"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.output.generateAudio"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.watermark"
+                  }
+                },
+                {
+                  "$not": {
+                    "$ref": "request.output.watermark"
+                  }
+                }
+              ]
+            },
+            "message": "此海螺V1接口没有同步声音和水印开关，不能丢弃要求。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.prompt"
+                  }
+                },
+                2000
+              ]
+            },
+            "message": "海螺提示词上限2000字符，不能截断原文。"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/video_generation",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "first_frame_image": {
+              "$ref": "request.images.0.value"
+            },
+            "duration": {
+              "$coalesce": [
+                {
+                  "$ref": "request.output.duration"
+                },
+                {
+                  "$ref": "request.duration"
+                }
+              ]
+            },
+            "resolution": {
+              "$upper": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.resolution"
+                  },
+                  {
+                    "$ref": "request.resolution"
+                  }
+                ]
+              }
+            },
+            "prompt_optimizer": false
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/query/video_generation",
+          "query": {
+            "task_id": {
+              "$ref": "taskId"
+            }
+          }
+        },
+        "response": {
+          "taskIdPaths": [
+            "task_id"
+          ],
+          "status": {
+            "$if": {
+              "condition": {
+                "$or": [
+                  {
+                    "$not": {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.task_id"
+                        },
+                        {
+                          "$ref": "taskId"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$lower": {
+                              "$ref": "response.status"
+                            }
+                          },
+                          "success"
+                        ]
+                      },
+                      {
+                        "$not": {
+                          "$ref": "response.file_id"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$ref": "taskId"
+                      },
+                      {
+                        "$not": {
+                          "$eq": [
+                            {
+                              "$ref": "taskId"
+                            },
+                            {
+                              "$ref": "response.task_id"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$ref": "response.status"
+                      },
+                      {
+                        "$not": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$ref": "response.status"
+                              }
+                            },
+                            [
+                              "preparing",
+                              "queueing",
+                              "processing",
+                              "success",
+                              "fail"
+                            ]
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "then": "failed",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$lower": {
+                          "$ref": "response.status"
+                        }
+                      },
+                      "success"
+                    ]
+                  },
+                  "then": "succeeded",
+                  "else": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$lower": {
+                              "$ref": "response.status"
+                            }
+                          },
+                          "fail"
+                        ]
+                      },
+                      "then": "failed",
+                      "else": {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$lower": {
+                                  "$ref": "response.status"
+                                }
+                              },
+                              "processing"
+                            ]
+                          },
+                          "then": "processing",
+                          "else": "pending"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "errorPaths": [
+            "base_resp.status_code"
+          ],
+          "messagePaths": [
+            "base_resp.status_msg"
+          ],
+          "metadata": {
+            "file_id": {
+              "$if": {
+                "condition": {
+                  "$eq": [
+                    {
+                      "$lower": {
+                        "$ref": "response.status"
+                      }
+                    },
+                    "success"
+                  ]
+                },
+                "then": {
+                  "$ref": "response.file_id"
+                },
+                "else": null
+              }
+            }
+          }
+        },
+        "result": {
+          "method": "GET",
+          "path": "/v1/files/retrieve",
+          "query": {
+            "file_id": {
+              "$ref": "metadata.file_id"
+            }
+          },
+          "validations": [
+            {
+              "assert": {
+                "$ref": "metadata.file_id"
+              },
+              "message": "成功任务未返回文件ID，不能用任务ID替代。"
+            }
+          ],
+          "response": {
+            "status": {
+              "$if": {
+                "condition": {
+                  "$eq": [
+                    {
+                      "$ref": "response.file.file_id"
+                    },
+                    {
+                      "$ref": "metadata.file_id"
+                    }
+                  ]
+                },
+                "then": "succeeded",
+                "else": "failed"
+              }
+            },
+            "errorPaths": [
+              "base_resp.status_code"
+            ],
+            "messagePaths": [
+              "base_resp.status_msg"
+            ],
+            "resultPaths": [
+              "file.download_url"
+            ],
+            "resultKind": "video",
+            "resultEphemeral": true
+          }
+        }
+      }
+    ]
+  },
+  "documentation": "# MiniMax Hailuo 2.3 V1\n\n按影策统一声明式Provider合同接入MiniMax官方V1单图视频接口。Provider ID为`minimax-video-v1`，模型仅`MiniMax-Hailuo-2.3`、`MiniMax-Hailuo-2.3-Fast`。V2 H3、源站o2别名、首尾帧及文生视频不属于本包。\n\n版本1.0.0；需宿主支持response.metadata、result.validations和result.response。包内不携带代码、账号、渠道配置或密钥。上传与当前运行服务加载、真实生成和完整案例验收是独立步骤。\n\n架构依据：[影策插件架构与接入说明](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)第6/7/12/13/14/15章。供应商线协议见包内接口合同；不通过更换模型、改时长或隐式重提任务兜底。\n\n---\n\n# MiniMax V1 单图视频接口合同\n\n创建`POST /v1/video_generation`，Bearer认证由宿主从渠道秘密字段读取。统一输入model/prompt/images/duration/resolution映射为同名字段和first_frame_image；单张参考图允许first_frame或reference_image角色，media.value由宿主提供。不得使用本地文件路径。仅768P的6/10秒或1080P的6秒；画幅取原图，固定画幅要求不准入。提示词完整保留且不超过2000字符，prompt_optimizer为false。共用图片quality不进入视频正文。\n\n图片支持JPG/JPEG/PNG/WebP、公网URL或Base64 DataURL，小于20MB、短边大于300像素、比例2:5至5:2。这些字节和尺寸约束须在实际资源验收中独立核对；Manifest数量/角色通过不等于素材通过。无音频生成和水印参数，要求这些开关时拒绝，不丢弃。\n\n查询`GET /v1/query/video_generation?task_id=...`。响应Preparing/Queueing为等待，Processing为处理中，Success必须含非空file_id，Fail或未知状态为失败。原task_id保持；不以它替代file_id。只有查询的成功响应提供临时metadata.file_id。\n\n获取文件`GET /v1/files/retrieve?file_id=...`返回JSON，响应file.file_id须与查询文件ID一致，file.download_url为视频地址；base_resp.status_code非零即失败。宿主随后经现有出站安全与资源下载/归档路径保存媒体，JSON本身不作为视频。缺文件ID、空视频、错误/非JSON或过期下载均失败。没有取消API或收费重提兜底。\n\n官方线协议：[单图创建](https://platform.minimax.io/docs/api-reference/video-generation-i2v)、[任务查询](https://platform.minimax.io/docs/api-reference/video-generation-query)、[文件获取](https://platform.minimax.io/docs/api-reference/video-generation-download)。源站cameraMovement独立字段、o2别名及首尾帧仍缺消费映射，不在此包推断。真实生成、重启恢复、完整视听、权利/元数据和生产尚待验收。\n\n## Manifest 完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"minimax-hailuo-video-v1\",\n  \"name\": \"MiniMax Hailuo 2.3 V1\",\n  \"version\": \"1.0.0\",\n  \"author\": \"Yingxue\",\n  \"description\": \"海螺2.3及2.3-Fast单图视频声明式Provider；保留旧版本，按查询文件ID获取结果。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"minimax-video-v1\",\n        \"label\": \"MiniMax Hailuo 2.3 V1\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.minimax.io\",\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"values\": [\n              \"MiniMax-Hailuo-2.3\",\n              \"MiniMax-Hailuo-2.3-Fast\"\n            ],\n            \"mapping\": \"model\",\n            \"description\": \"原生MiniMax海螺2.3或2.3-Fast模型ID，不替换版本。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"mapping\": \"prompt\",\n            \"description\": \"完整创作正文，最多2000字符，不截断。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"array\",\n            \"required\": true,\n            \"mapping\": \"images\",\n            \"description\": \"唯一原始首帧，按媒体角色读取宿主准备的URL或DataURL。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": true,\n            \"values\": [\n              \"6\",\n              \"10\"\n            ],\n            \"mapping\": \"duration\",\n            \"description\": \"768P支持6或10秒，1080P仅支持6秒。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"values\": [\n              \"768P\",\n              \"1080P\"\n            ],\n            \"mapping\": \"resolution\",\n            \"description\": \"原始像素档位768P或1080P，不能改成其他清晰度。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                [\n                  \"MiniMax-Hailuo-2.3\",\n                  \"MiniMax-Hailuo-2.3-Fast\"\n                ]\n              ]\n            },\n            \"message\": \"MiniMax V1单图Provider只接海螺2.3或2.3-Fast，不能替换版本。\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$in\": [\n                    {\n                      \"$upper\": {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.output.resolution\"\n                          },\n                          {\n                            \"$ref\": \"request.resolution\"\n                          }\n                        ]\n                      }\n                    },\n                    [\n                      \"768P\",\n                      \"1080P\"\n                    ]\n                  ]\n                },\n                {\n                  \"$in\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.duration\"\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        }\n                      ]\n                    },\n                    [\n                      6,\n                      10\n                    ]\n                  ]\n                },\n                {\n                  \"$or\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$upper\": {\n                            \"$coalesce\": [\n                              {\n                                \"$ref\": \"request.output.resolution\"\n                              },\n                              {\n                                \"$ref\": \"request.resolution\"\n                              }\n                            ]\n                          }\n                        },\n                        \"768P\"\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$coalesce\": [\n                            {\n                              \"$ref\": \"request.output.duration\"\n                            },\n                            {\n                              \"$ref\": \"request.duration\"\n                            }\n                          ]\n                        },\n                        6\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"海螺V1仅支持768P的6/10秒和1080P的6秒，不能自动修改规格。\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$in\": [\n                    {\n                      \"$ref\": \"request.images.0.role\"\n                    },\n                    [\n                      \"first_frame\",\n                      \"reference_image\",\n                      \"\"\n                    ]\n                  ]\n                }\n              ]\n            },\n            \"message\": \"海螺V1单图接口需要一张首帧或普通参考图，不接首尾帧、视频或音频。\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.operation\"\n                },\n                [\n                  \"\",\n                  \"image_to_video\"\n                ]\n              ]\n            },\n            \"message\": \"该海螺V1 Provider仅接单图生视频。\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.aspectRatio\"\n                    },\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    \"\"\n                  ]\n                },\n                [\n                  \"\",\n                  \"auto\",\n                  \"adaptive\"\n                ]\n              ]\n            },\n            \"message\": \"海螺单图接口以原图决定比例，不能忽略固定画幅要求。\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.generateAudio\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.output.generateAudio\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.watermark\"\n                  }\n                },\n                {\n                  \"$not\": {\n                    \"$ref\": \"request.output.watermark\"\n                  }\n                }\n              ]\n            },\n            \"message\": \"此海螺V1接口没有同步声音和水印开关，不能丢弃要求。\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                2000\n              ]\n            },\n            \"message\": \"海螺提示词上限2000字符，不能截断原文。\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/video_generation\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"first_frame_image\": {\n              \"$ref\": \"request.images.0.value\"\n            },\n            \"duration\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.output.duration\"\n                },\n                {\n                  \"$ref\": \"request.duration\"\n                }\n              ]\n            },\n            \"resolution\": {\n              \"$upper\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.resolution\"\n                  },\n                  {\n                    \"$ref\": \"request.resolution\"\n                  }\n                ]\n              }\n            },\n            \"prompt_optimizer\": false\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/query/video_generation\",\n          \"query\": {\n            \"task_id\": {\n              \"$ref\": \"taskId\"\n            }\n          }\n        },\n        \"response\": {\n          \"taskIdPaths\": [\n            \"task_id\"\n          ],\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$or\": [\n                  {\n                    \"$not\": {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"response.task_id\"\n                        },\n                        {\n                          \"$ref\": \"taskId\"\n                        }\n                      ]\n                    }\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$lower\": {\n                              \"$ref\": \"response.status\"\n                            }\n                          },\n                          \"success\"\n                        ]\n                      },\n                      {\n                        \"$not\": {\n                          \"$ref\": \"response.file_id\"\n                        }\n                      }\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$ref\": \"taskId\"\n                      },\n                      {\n                        \"$not\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"taskId\"\n                            },\n                            {\n                              \"$ref\": \"response.task_id\"\n                            }\n                          ]\n                        }\n                      }\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$ref\": \"response.status\"\n                      },\n                      {\n                        \"$not\": {\n                          \"$in\": [\n                            {\n                              \"$lower\": {\n                                \"$ref\": \"response.status\"\n                              }\n                            },\n                            [\n                              \"preparing\",\n                              \"queueing\",\n                              \"processing\",\n                              \"success\",\n                              \"fail\"\n                            ]\n                          ]\n                        }\n                      }\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$lower\": {\n                          \"$ref\": \"response.status\"\n                        }\n                      },\n                      \"success\"\n                    ]\n                  },\n                  \"then\": \"succeeded\",\n                  \"else\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$lower\": {\n                              \"$ref\": \"response.status\"\n                            }\n                          },\n                          \"fail\"\n                        ]\n                      },\n                      \"then\": \"failed\",\n                      \"else\": {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"response.status\"\n                                }\n                              },\n                              \"processing\"\n                            ]\n                          },\n                          \"then\": \"processing\",\n                          \"else\": \"pending\"\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            }\n          },\n          \"errorPaths\": [\n            \"base_resp.status_code\"\n          ],\n          \"messagePaths\": [\n            \"base_resp.status_msg\"\n          ],\n          \"metadata\": {\n            \"file_id\": {\n              \"$if\": {\n                \"condition\": {\n                  \"$eq\": [\n                    {\n                      \"$lower\": {\n                        \"$ref\": \"response.status\"\n                      }\n                    },\n                    \"success\"\n                  ]\n                },\n                \"then\": {\n                  \"$ref\": \"response.file_id\"\n                },\n                \"else\": null\n              }\n            }\n          }\n        },\n        \"result\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/files/retrieve\",\n          \"query\": {\n            \"file_id\": {\n              \"$ref\": \"metadata.file_id\"\n            }\n          },\n          \"validations\": [\n            {\n              \"assert\": {\n                \"$ref\": \"metadata.file_id\"\n              },\n              \"message\": \"成功任务未返回文件ID，不能用任务ID替代。\"\n            }\n          ],\n          \"response\": {\n            \"status\": {\n              \"$if\": {\n                \"condition\": {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"response.file.file_id\"\n                    },\n                    {\n                      \"$ref\": \"metadata.file_id\"\n                    }\n                  ]\n                },\n                \"then\": \"succeeded\",\n                \"else\": \"failed\"\n              }\n            },\n            \"errorPaths\": [\n              \"base_resp.status_code\"\n            ],\n            \"messagePaths\": [\n              \"base_resp.status_msg\"\n            ],\n            \"resultPaths\": [\n              \"file.download_url\"\n            ],\n            \"resultKind\": \"video\",\n            \"resultEphemeral\": true\n          }\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->"
+}

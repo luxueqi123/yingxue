@@ -1,3 +1,4 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { ChoiceBrowser } from "./choice-browser";
 import type { ModelProtocolDefinition, ProtocolCapability } from "@/lib/model-protocols";
 
@@ -15,6 +16,7 @@ export function ModelProtocolBrowser({
     disabled?: boolean;
     id?: string;
 }) {
+    const { t } = useInterfaceTranslation();
     const options = protocols
         .filter((protocol) => (!capability || protocol.capability === capability) && protocol.enabled !== false)
         .map((protocol) => ({
@@ -28,8 +30,9 @@ export function ModelProtocolBrowser({
                 { label: "请求体", value: protocol.contentType },
                 { label: "响应", value: protocol.poll ? "异步轮询" : "同步响应" },
                 { label: "来源", value: protocol.media },
+                ...(protocol.imageParameters ? [{ label: "图片参数", value: protocol.imageParameters.map((p) => p.label).join("、") }] : []),
             ],
         }));
 
-    return <ChoiceBrowser key={capability || "all"} {...props} label="调用协议" placeholder="搜索协议名称、厂商或请求路径" options={options} />;
+    return <ChoiceBrowser key={capability || "all"} {...props} label={t("modelUi.protocol")} placeholder={t("modelUi.searchProtocol")} options={options} />;
 }

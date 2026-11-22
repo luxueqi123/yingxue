@@ -1,5 +1,7 @@
 import type { InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import type { Asset } from "@/stores/use-asset-store";
+import { compileCharacterReferencePrompt } from "./canvas-character-reference";
+import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 
 const ASSET_PARAM = "asset";
 const unique = (values: Iterable<string>) => Array.from(new Set(Array.from(values, (value) => value.trim()).filter(Boolean)));
@@ -30,6 +32,20 @@ export function canvasAssetHandoffPayloads(assets: Asset[], assetIds: Iterable<s
 
     unique(assetIds).forEach((assetId) => {
         const asset = byId.get(assetId);
+        if (asset?.kind === "text") {
+            payloads.push({ kind: "text", content: asset.data.content, title: asset.title, assetId: asset.id });
+            return;
+        }
+        if (asset?.kind === "entity" && asset.primaryVersionId) {
+            const definition = asset.data.definition;
+            const coverId = resourceIdFromStorageKey(asset.data.coverStorageKey);
+            payloads.push({ kind: "character", assetId: asset.id, title: asset.title, versionId: asset.primaryVersionId, definition, prompt: compileCharacterReferencePrompt(asset.title, definition), aliases: Array.isArray(definition.aliases) ? definition.aliases.filter((value): value is string => typeof value === "string") : [], coverUrl: coverId ? resourceFileUrl(coverId) : undefined, visualStatus: asset.data.visualStatus || "missing", voiceStatus: asset.data.voiceStatus || "missing", voiceName: asset.data.voiceName });
+            return;
+        }
+        if (asset?.kind === "audio") {
+            payloads.push({ kind: "audio", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, assetId: asset.id, durationMs: asset.data.durationMs, bytes: asset.data.bytes, mimeType: asset.data.mimeType });
+            return;
+        }
         if (asset?.kind === "image") {
             payloads.push({ kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title, assetId: asset.id });
             return;
@@ -67,7 +83,7 @@ export function uninsertedCanvasAssetHandoffPayloads(nodes: Iterable<{ metadata?
     return payloads.filter((payload) => !payload.assetId || !insertedAssetIds.has(payload.assetId));
 }
 
-export function creationResultAssetIds(assets: Asset[], input: { messageId: string; taskIds: string[]; resultUrls: string[] }) {
+export function creationResultAssetIds(assets: Asset[], input: { messageId: string; taskIds: string[]; resultUrls: string[]; resultStorageKeys?: string[] }) {
     const taskOrder = new Map(input.taskIds.map((taskId, index) => [taskId, index]));
     const candidates = assets
         .filter((asset) => asset.kind === "image" || asset.kind === "video")
@@ -82,13 +98,25 @@ export function creationResultAssetIds(assets: Asset[], input: { messageId: stri
             return leftResult - rightResult;
         });
     const unused = new Set(candidates.map((asset) => asset.id));
-    const allowOrderedFallback = candidates.length === input.resultUrls.length;
-    return input.resultUrls.flatMap((url) => {
-        const exact = candidates.find((asset) => unused.has(asset.id) && (asset.coverUrl === url || (asset.kind === "image" ? asset.data.dataUrl === url : asset.data.url === url)));
+    const stableKeys = input.resultStorageKeys || [];
+    const allowOrderedFallback = candidates.length === Math.max(input.resultUrls.length, stableKeys.length);
+    return Array.from({ length: Math.max(input.resultUrls.length, stableKeys.length) }, (_, index) => {
+        const storageKey = stableKeys[index];
+        const url = input.resultUrls[index] || "";
+        const exact =
+            candidates.find((asset) => unused.has(asset.id) && Boolean(storageKey) && asset.data.storageKey === storageKey) ||
+            candidates.find((asset) => unused.has(asset.id) && (asset.coverUrl === url || (asset.kind === "image" ? asset.data.dataUrl === url : asset.data.url === url)));
         const fallback = exact || (allowOrderedFallback ? candidates.find((asset) => unused.has(asset.id)) : undefined);
-        if (!fallback) return [];
+        if (!fallback) return undefined;
         unused.delete(fallback.id);
-        return [fallback.id];
+        return fallback.id;
+    }).filter((id): id is string => Boolean(id));
+}
+
+export function creationResultStorageKeys(assets: Asset[], input: { messageId: string; taskIds: string[]; resultUrls: string[]; resultStorageKeys?: string[] }) {
+    return creationResultAssetIds(assets, input).flatMap((assetId) => {
+        const asset = assets.find((candidate) => candidate.id === assetId);
+        return asset && (asset.kind === "image" || asset.kind === "video") && asset.data.storageKey ? [asset.data.storageKey] : [];
     });
 }
 

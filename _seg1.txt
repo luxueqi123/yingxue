@@ -1,0 +1,128 @@
+=== HEAD 45-125
+45|import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+46|import { useUserStore } from "@/stores/use-user-store";
+47|import { useCanvasAgentStore } from "@/stores/canvas/use-canvas-agent-store";
+48|import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
+49|import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
+50|import { createPluginHostContext } from "@/services/plugin-host";
+51|import { usePluginStore } from "@/stores/use-plugin-store";
+52|import { buildCreationMentionReferences, creationReferenceMetadata, displayCreationPrompt, expandCreationPrompt, removeCreationReferenceTokens, selectedCreationReferences, type CreationReference } from "./creation-references";
+53|import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
+54|import { creationInputIssues, creationInputLimits } from "./creation-input-policy";
+55|import { CreationSkillPicker } from "@/components/creation-skill-picker";
+56|import "./creation-entry.css";
+57|
+58|type CreationMode = "text" | "image" | "video";
+59|type CreationViewMode = "chat" | "storyboard";
+60|type CreationStatus = "streaming" | "pending" | "done" | "error" | "cancelled";
+61|type CreationSettings = { ratio: string; seconds: string; quality: string; videoQuality: string; count: string };
+62|type CreationRetryContext = GenerationRetryContext & { retryContextsByBatchIndex?: GenerationRetryContext[] };
+63|type CreationMessage = {
+64|    id: string;
+65|    role: "user" | "assistant";
+66|    mode?: CreationMode;
+67|    content: string;
+68|    reasoning?: string;
+69|    createdAt: string;
+70|    status?: CreationStatus;
+71|    model?: string;
+72|    resultUrls?: string[];
+73|    error?: string;
+74|    generationErrorCode?: string;
+75|    generationOperation?: string;
+76|    attachments?: CreationAttachment[];
+77|    references?: CreationReference[];
+78|    settings?: CreationSettings;
+79|    taskIds?: string[];
+80|    clientOperationId?: string;
+81|    retryOf?: string;
+82|    attemptGroupId?: string;
+83|    generationStage?: string;
+84|    generationEffectKeys?: string[];
+85|};
+86|type CreationConversation = { id: string; title: string; updatedAt: string; messages: CreationMessage[] };
+87|
+88|const modeLabels: Record<CreationMode, string> = { text: "文本", image: "图片", video: "视频" };
+89|const shotScriptLabels: Record<CreationMode, string> = { text: "创作思路", image: "画面指令", video: "镜头脚本" };
+90|const ratioOptions = [
+91|    { value: "1:1", label: "方形" },
+92|    { value: "16:9", label: "横屏" },
+93|    { value: "9:16", label: "竖屏" },
+94|    { value: "4:3", label: "标准横屏" },
+95|    { value: "3:4", label: "标准竖屏" },
+96|    { value: "21:9", label: "宽银幕" },
+97|];
+98|const qualityOptions = [
+99|    { value: "auto", label: "自动", description: "由模型决定" },
+100|    { value: "low", label: "低", description: "更快生成" },
+101|    { value: "medium", label: "中", description: "均衡模式" },
+102|    { value: "high", label: "高", description: "优先细节" },
+103|    // grok2api / xAI Imagine：quality 映射 resolution
+104|    { value: "1k", label: "1K", description: "标准清晰度" },
+105|    { value: "2k", label: "2K", description: "更高清晰度" },
+106|];
+107|const resolutionOptions = VIDEO_RESOLUTION_OPTIONS.map((value) => ({ value: String(value), label: videoResolutionLabel(value) }));
+108|const countOptions = ["1", "2", "3", "4"];
+109|const TEXT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+110|const conversationTimeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+111|const messageTimeFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+112|
+113|function newConversation(): CreationConversation {
+114|    return { id: createClientId(), title: "新创作", updatedAt: new Date().toISOString(), messages: [] };
+115|}
+116|
+117|function newMessage(role: CreationMessage["role"], content: string, extra: Partial<CreationMessage> = {}): CreationMessage {
+118|    return { id: createClientId(), role, content, createdAt: new Date().toISOString(), ...extra };
+119|}
+120|
+121|type CreationShot = { user?: CreationMessage; result?: CreationMessage };
+122|
+123|function shotsFromMessages(messages: CreationMessage[]): CreationShot[] {
+124|    const shots: CreationShot[] = [];
+125|    for (const message of messages) {
+=== ORIG 18-62
+18|import type { GenerationTask } from "@/services/api/task-center";
+19|import { loadCreationConversations, pendingCreationTaskIds, removeCreationConversationSnapshot, saveCreationConversations, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
+20|import { resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+21|import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
+22|import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+23|import { useAppearanceStore } from "@/stores/use-appearance-store";
+24|import { cn } from "@/lib/utils";
+25|import { useUserStore } from "@/stores/use-user-store";
+26|import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
+27|import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
+28|import { createPluginHostContext } from "@/services/plugin-host";
+29|import { usePluginStore } from "@/stores/use-plugin-store";
+30|import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+31|import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
+32|import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
+33|import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages } from "./creation-conversations";
+34|import { CreationComposer, CreationEmptySuggest, CreationFeaturedWorks, CreationHistoryDrawer, CreationMessageView, CreationModeTabs, CreationWorkspaceToolbar, creationAssetCategoryLabels } from "./creation-workspace";
+35|import { CreationAgentEntry } from "./creation-agent-entry";
+36|import { createCreationSubmitGate } from "./creation-submit-gate";
+37|
+38|const AssetLibraryPickerModal = lazy(() => import("@/components/assets/asset-library-picker-modal").then((module) => ({ default: module.AssetLibraryPickerModal })));
+39|const loadCreationRuntime = () => import("./creation-runtime");
+40|type CreationRuntime = Awaited<ReturnType<typeof loadCreationRuntime>>;
+41|
+42|const TEXT_STREAMING_PREF_KEY = "creation.composer.text-streaming";
+43|const TEXT_THINKING_PREF_KEY = "creation.composer.text-thinking";
+44|function readComposerPref(key: string, fallback: boolean): boolean {
+45|    try {
+46|        const stored = window.localStorage.getItem(key);
+47|        return stored === null ? fallback : stored === "1";
+48|    } catch {
+49|        return fallback;
+50|    }
+51|}
+52|function writeComposerPref(key: string, value: boolean) {
+53|    try {
+54|        window.localStorage.setItem(key, value ? "1" : "0");
+55|    } catch {
+56|        // 存储不可用（隐私模式/禁用）：仅当前会话生效，忽略
+57|    }
+58|}
+59|
+60|export default function CreatePage() {
+61|    const [agentMode, setAgentMode] = useState(false);
+62|    const { message: toast, modal } = App.useApp();

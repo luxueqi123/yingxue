@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,12 +22,14 @@ type builtinAdapter struct {
 }
 
 func (a builtinAdapter) Metadata() Metadata { return a.info }
+
 func (a builtinAdapter) BuildCreate(_ context.Context, c RequestContext) (RequestSpec, error) {
 	if a.create == nil {
 		return RequestSpec{}, unavailable(a.info)
 	}
 	return a.create(c.Request)
 }
+
 func (a builtinAdapter) ParseCreate(_ context.Context, body []byte) (CreateResult, error) {
 	if a.parseCreate == nil {
 		return CreateResult{}, unavailable(a.info)
@@ -37,12 +40,14 @@ func (a builtinAdapter) ParseCreate(_ context.Context, body []byte) (CreateResul
 	}
 	return a.parseCreate(payload)
 }
+
 func (a builtinAdapter) BuildPoll(_ context.Context, c PollContext) (RequestSpec, error) {
 	if a.poll == nil {
 		return RequestSpec{}, unavailable(a.info)
 	}
 	return a.poll(c)
 }
+
 func (a builtinAdapter) ParsePoll(_ context.Context, c PollContext, body []byte) (PollResult, error) {
 	if a.parsePoll == nil {
 		return PollResult{}, unavailable(a.info)
@@ -53,6 +58,7 @@ func (a builtinAdapter) ParsePoll(_ context.Context, c PollContext, body []byte)
 	}
 	return a.parsePoll(c, payload)
 }
+
 func (a builtinAdapter) BuildCancel(_ context.Context, c PollContext) (RequestSpec, error) {
 	if a.cancel == nil {
 		return RequestSpec{}, fmt.Errorf("protocol %s does not support cancellation", a.info.ID)
@@ -61,6 +67,7 @@ func (a builtinAdapter) BuildCancel(_ context.Context, c PollContext) (RequestSp
 }
 
 var builtinRegistry *Registry
+
 var builtinRegistryMu sync.Mutex
 
 // Builtins returns the immutable process-wide registry of shipped protocol plugins.
@@ -73,9 +80,8 @@ func Builtins() *Registry {
 	}
 	registry, err := NewRegistry(
 		openAIChatAdapter(), openAIResponsesAdapter(), claudeAdapter(),
-		openAIImagesAdapter(), grokImagesAdapter(), arkImagesAdapter(), jimengImagesAdapter(), geminiImagesAdapter(),
-		openAIVideosAdapter(), newAPIChannel1Adapter(), newAPIVideosAdapter(), xAIVideosAdapter(), arkVideosAdapter(), jimengVideosAdapter(), geminiVeoAdapter(), novitaVideosAdapter(), miniMaxVideosAdapter(), autoDLH3VideosAdapter(),
-		openAIAudioAdapter(), asyncAudioAdapter(), agnesAdapter(),
+		openAIVideosAdapter(), newAPIChannel1Adapter(), newAPIVideosAdapter(), xAIVideosAdapter(), arkVideosAdapter(), jimengVideosAdapter(), geminiVeoAdapter(), novitaVideosAdapter(), miniMaxVideosAdapter(),
+		agnesAdapter(), autoDLH3VideosAdapter(), ctmoVideoAdapter(), wan968VideoAdapter(),
 	)
 	if err != nil {
 		panic(err)
@@ -104,7 +110,11 @@ func allSurfaces() []Surface {
 }
 
 func metadata(id, name, vendor string, capability Capability, create, poll, contentType string) Metadata {
-	return Metadata{ID: id, Version: "1.0.0", Name: name, Vendor: vendor, Categories: []Capability{capability}, Scopes: allSurfaces(), Create: create, Poll: poll, ContentType: contentType, Enabled: true, Installable: true}
+	info := Metadata{ID: id, Version: "1.0.0", Name: name, Vendor: vendor, Categories: []Capability{capability}, Scopes: allSurfaces(), Create: create, Poll: poll, ContentType: contentType, Enabled: true, Installable: true}
+	if capability == CapabilityText {
+		info.TextWire = TextWireForOperation(create)
+	}
+	return info
 }
 
 func mediaParams() []Parameter {
@@ -181,102 +191,6 @@ func claudeAdapter() Adapter {
 	}
 }
 
-func openAIImagesAdapter() Adapter {
-	info := metadata("openai-image", "OpenAI Images", "OpenAI", CapabilityImage, "POST /v1/images/generations", "", "application/json or multipart/form-data")
-	info.Parameters = mediaParams()
-	return builtinAdapter{info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			body := map[string]any{"model": r.Model, "prompt": r.Prompt}
-			if r.ImageCount > 0 {
-				body["n"] = r.ImageCount
-			}
-			copyIf(body, "size", r.AspectRatio)
-			copyIf(body, "quality", r.Quality)
-			mergeExtra(body, r.Extra, "size", "quality", "background", "response_format", "output_format", "style", "n")
-			return jsonSpec(http.MethodPost, "/v1/images/generations", body), nil
-		},
-		parseCreate: parseImageResponse,
-	}
-}
-
-func grokImagesAdapter() Adapter {
-	info := metadata("grok-image", "Grok Images", "xAI", CapabilityImage, "POST /v1/images/generations", "", "application/json")
-	info.Parameters = mediaParams()
-	return builtinAdapter{info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			body := map[string]any{"model": r.Model, "prompt": r.Prompt, "aspect_ratio": defaultValue(r.AspectRatio, "1:1"), "resolution": defaultValue(r.Quality, "2k")}
-			if len(r.Images) > 0 {
-				body["image"] = mediaValue(r.Images[0])
-			}
-			return jsonSpec(http.MethodPost, "/v1/images/generations", body), nil
-		},
-		parseCreate: parseImageResponse,
-	}
-}
-
-func arkImagesAdapter() Adapter {
-	info := metadata("volcengine-ark-image", "火山方舟图片", "Volcengine Ark", CapabilityImage, "POST /api/v3/images/generations", "", "application/json")
-	info.Parameters = mediaParams()
-	return builtinAdapter{info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			body := map[string]any{"model": r.Model, "prompt": r.Prompt}
-			if size := strings.TrimSpace(r.AspectRatio); size != "" {
-				body["size"] = size
-			}
-			if len(r.Images) > 0 {
-				body["image"] = mediaValues(r.Images)
-			}
-			mergeExtra(body, r.Extra, "size", "sequential_image_generation", "sequential_image_generation_options", "watermark")
-			return jsonSpec(http.MethodPost, "/api/v3/images/generations", body), nil
-		},
-		parseCreate: parseImageResponse,
-	}
-}
-
-func jimengImagesAdapter() Adapter {
-	info := metadata("volcengine-jimeng-image", "即梦官方图片", "Volcengine Jimeng", CapabilityImage, "POST CVSync2AsyncSubmitTask", "POST CVSync2AsyncGetResult", "application/json + AK/SK signature")
-	info.Parameters = mediaParams()
-	return builtinAdapter{info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			body := map[string]any{"req_key": r.Model, "prompt": r.Prompt}
-			if len(r.Images) > 0 {
-				body["image_urls"] = mediaValues(r.Images)
-			}
-			mergeExtra(body, r.Extra, "req_key", "prompt", "image_urls", "seed", "width", "height")
-			return jsonSpec(http.MethodPost, "/CVSync2AsyncSubmitTask", body), nil
-		},
-		parseCreate: parseJiMengCreate,
-		poll: func(c PollContext) (RequestSpec, error) {
-			return jsonSpec(http.MethodPost, "/CVSync2AsyncGetResult", map[string]any{"req_key": c.Model, "task_id": c.TaskID}), nil
-		},
-		parsePoll: parseJiMengPoll,
-	}
-}
-
-func geminiImagesAdapter() Adapter {
-	info := metadata("gemini-image", "Gemini Images", "Google", CapabilityImage, "POST /v1beta/models/{model}:generateContent", "", "application/json")
-	info.Parameters = mediaParams()
-	return builtinAdapter{info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			parts := []any{map[string]any{"text": r.Prompt}}
-			for _, image := range r.Images {
-				if image.DataURL != "" {
-					parts = append(parts, map[string]any{"inline_data": map[string]any{"mime_type": dataMIME(image.DataURL), "data": dataPayload(image.DataURL)}})
-				} else if image.URL != "" {
-					parts = append(parts, map[string]any{"file_data": map[string]any{"file_uri": image.URL}})
-				}
-			}
-			body := map[string]any{"contents": []any{map[string]any{"role": "user", "parts": parts}}}
-			if r.AspectRatio != "" || r.Quality != "" {
-				body["generationConfig"] = map[string]any{"imageConfig": compactMap(map[string]any{"aspectRatio": r.AspectRatio, "imageSize": r.Quality})}
-			}
-			mergeExtra(body, r.Extra, "generationConfig", "safetySettings", "systemInstruction")
-			return jsonSpec(http.MethodPost, "/v1beta/models/"+url.PathEscape(r.Model)+":generateContent", body), nil
-		},
-		parseCreate: parseGeminiImageResponse,
-	}
-}
-
 func openAIVideosAdapter() Adapter {
 	info := metadata("newapi", "OpenAI Videos", "OpenAI compatible", CapabilityVideo, "POST /v1/videos", "GET /v1/videos/{task_id}", "multipart/form-data")
 	info.LegacyAliases = []string{"openai-video", "openai-videos"}
@@ -317,6 +231,45 @@ func newAPIVideosAdapter() Adapter {
 	info.Parameters = videoParams()
 	return videoAdapter(info, func(r GenerationRequest) (RequestSpec, error) {
 		body := map[string]any{"model": r.Model, "prompt": r.Prompt, "seconds": strconv.Itoa(defaultInt(r.Duration, 6)), "aspect_ratio": defaultValue(r.AspectRatio, "16:9")}
+		fixedResolution := ""
+		switch r.Model {
+		case "Artdance 2.5-480p", "Artdance 2.5-720p", "Artdance 2.5-1080p":
+			fixedResolution = strings.Split(r.Model, "-")[1]
+		}
+		if fixedResolution != "" {
+			if r.Resolution != "" && strings.ToLower(r.Resolution) != fixedResolution {
+				return RequestSpec{}, fmt.Errorf("Artdance 模型名称已固定分辨率，请选择匹配档位")
+			}
+			if len(r.Images) > 30 || len(r.Videos) > 10 || len(r.Audios) > 10 {
+				return RequestSpec{}, fmt.Errorf("Artdance 2.5 最多支持30图、10视频、10音频")
+			}
+			ordered := func(items []MediaReference) []MediaReference {
+				result := append([]MediaReference(nil), items...)
+				sort.SliceStable(result, func(i, j int) bool { return result[i].Order < result[j].Order })
+				return result
+			}
+			images := make([]MediaReference, 0, len(r.Images))
+			for _, image := range ordered(r.Images) {
+				key := ""
+				if image.Role == "first_frame" {
+					key = "start_image_url"
+				}
+				if image.Role == "last_frame" {
+					key = "end_image_url"
+				}
+				if key == "" {
+					images = append(images, image)
+					continue
+				}
+				if _, exists := body[key]; exists {
+					return RequestSpec{}, fmt.Errorf("首帧和尾帧各只能绑定一张图片")
+				}
+				body[key] = mediaValue(image)
+			}
+			r.Images, r.Videos, r.Audios = images, ordered(r.Videos), ordered(r.Audios)
+			r.Resolution = ""
+			body["generate_audio"] = r.GenerateAudio
+		}
 		copyIf(body, "resolution", r.Resolution)
 		if r.GenerateAudio {
 			body["generate_audio"] = true
@@ -397,10 +350,16 @@ func arkVideosAdapter() Adapter {
 	info := metadata("volcengine-ark-video", "火山方舟视频", "Volcengine Ark", CapabilityVideo, "POST /api/v3/contents/generations/tasks", "GET /api/v3/contents/generations/tasks/{task_id}", "application/json")
 	info.Parameters = videoParams()
 	return videoAdapter(info, func(r GenerationRequest) (RequestSpec, error) {
-		if len(r.Images) > 9 || len(r.Videos) > 3 || len(r.Audios) > 3 {
-			return RequestSpec{}, fmt.Errorf("火山方舟全模态参考最多支持 9 张图片、3 个视频和 3 个音频")
+		expanded := strings.HasPrefix(r.Model, "doubao-seedance-2-5-")
+		secondGeneration := expanded || strings.HasPrefix(r.Model, "doubao-seedance-2-0-")
+		maxImages, maxMedia := 9, 3
+		if expanded {
+			maxImages, maxMedia = 30, 10
 		}
-		if len(r.Audios) > 0 && len(r.Images) == 0 && len(r.Videos) == 0 {
+		if len(r.Images) > maxImages || len(r.Videos) > maxMedia || len(r.Audios) > maxMedia {
+			return RequestSpec{}, fmt.Errorf("当前火山方舟模型最多支持 %d 张图片、%d 个视频和 %d 个音频", maxImages, maxMedia, maxMedia)
+		}
+		if !expanded && len(r.Audios) > 0 && len(r.Images) == 0 && len(r.Videos) == 0 {
 			return RequestSpec{}, fmt.Errorf("火山方舟全模态参考不支持纯音频或文本+音频，请同时添加参考图片或参考视频")
 		}
 		content := []any{map[string]any{"type": "text", "text": r.Prompt}}
@@ -414,8 +373,23 @@ func arkVideosAdapter() Adapter {
 			content = append(content, map[string]any{"type": "audio_url", "audio_url": map[string]any{"url": mediaValue(audio)}, "role": "reference_audio"})
 		}
 		body := map[string]any{"model": r.Model, "content": content, "ratio": defaultValue(r.AspectRatio, "16:9"), "resolution": defaultValue(r.Resolution, "720p"), "duration": defaultInt(r.Duration, 5)}
-		if r.GenerateAudio {
-			body["generate_audio"] = true
+		if strings.EqualFold(r.Resolution, "2160p") {
+			body["resolution"] = "4k"
+		}
+		if secondGeneration || r.GenerateAudio {
+			body["generate_audio"] = r.GenerateAudio
+		}
+		if value, exists := r.ProviderOptions["volcengine-ark-video"]["webSearch"]; exists {
+			search, ok := value.(bool)
+			if !ok {
+				return RequestSpec{}, fmt.Errorf("视频联网参数必须是布尔值")
+			}
+			if search {
+				if !secondGeneration {
+					return RequestSpec{}, fmt.Errorf("视频联网搜索需要Seedance 2.0系列或2.5模型")
+				}
+				body["tools"] = []any{map[string]any{"type": "web_search"}}
+			}
 		}
 		if r.Watermark {
 			body["watermark"] = true
@@ -427,6 +401,8 @@ func arkVideosAdapter() Adapter {
 func jimengVideosAdapter() Adapter {
 	info := metadata("volcengine-jimeng-video", "即梦官方视频", "Volcengine Jimeng", CapabilityVideo, "POST CVSync2AsyncSubmitTask", "POST CVSync2AsyncGetResult", "application/json + AK/SK signature")
 	info.Parameters = videoParams()
+	// 与官方插件同一鉴权声明：宿主据此要求渠道同时配置 Access Key 和 Secret Key。
+	info.Auth = ManifestAuth{Type: "volcengine-v4", Field: "apiKey", SecretField: "secretKey", Service: "cv", Region: "cn-north-1"}
 	return videoAdapterWithPoll(info, func(r GenerationRequest) (RequestSpec, error) {
 		body := map[string]any{"req_key": r.Model, "prompt": r.Prompt}
 		if len(r.Images) > 0 {
@@ -499,413 +475,6 @@ func miniMaxVideosAdapter() Adapter {
 	})
 }
 
-func autoDLH3VideosAdapter() Adapter {
-	info := metadata("autodl-h3-video", "AutoDL H3 工作流视频", "AutoDL", CapabilityVideo, "POST /api/v1/comfyui/comfyui_workflow/{workflow_id}", "GET /api/v1/comfyui/comfyui_workflow/result/{task_id}", "application/json")
-	info.Parameters = videoParams()
-	return builtinAdapter{
-		info: info,
-		create: func(r GenerationRequest) (RequestSpec, error) {
-			workflowID := strings.TrimSpace(r.Model)
-			body, err := autoDLH3CreateFields(workflowID, r)
-			if err != nil {
-				return RequestSpec{}, err
-			}
-			for _, item := range append(append([]MediaReference{}, r.Images...), r.Audios...) {
-				mediaURL := strings.TrimSpace(mediaValue(item))
-				if !strings.HasPrefix(mediaURL, "https://") && !strings.HasPrefix(mediaURL, "http://") {
-					return RequestSpec{}, fmt.Errorf("AutoDL H3 参考素材必须是上游可访问的 HTTP(S) URL")
-				}
-			}
-			return RequestSpec{Method: http.MethodPost, Path: "/api/v1/comfyui/comfyui_workflow/" + url.PathEscape(workflowID), ContentType: "application/json", Auth: ManifestAuth{Type: "header", Field: "apiKey", Header: "Authorization"}, Body: body}, nil
-		},
-		parseCreate: parseAutoDLH3Create,
-		poll: func(c PollContext) (RequestSpec, error) {
-			if strings.TrimSpace(c.TaskID) == "" {
-				return RequestSpec{}, fmt.Errorf("AutoDL H3 查询任务缺少 task_id")
-			}
-			return RequestSpec{Method: http.MethodGet, Path: "/api/v1/comfyui/comfyui_workflow/result/" + url.PathEscape(c.TaskID), Auth: ManifestAuth{Type: "header", Field: "apiKey", Header: "Authorization"}}, nil
-		},
-		parsePoll: parseAutoDLH3Poll,
-	}
-}
-
-func autoDLH3Duration(value int) int {
-	if value < 1 || value > 10 {
-		return 5
-	}
-	return value
-}
-
-func autoDLH3Resolution(resolution, ratio string) string {
-	tier := strings.ToLower(strings.TrimSpace(resolution))
-	switch tier {
-	case "480", "480p", "low":
-		tier = "480p"
-	case "1080", "1080p":
-		tier = "1080p"
-	default:
-		tier = "768p"
-	}
-	switch strings.TrimSpace(ratio) {
-	case "1:1":
-		return tier + "(1:1)"
-	case "9:16", "3:4":
-		return tier + "竖"
-	default:
-		return tier + "横"
-	}
-}
-
-func parseAutoDLH3Create(payload map[string]any) (CreateResult, error) {
-	data, err := autoDLH3ResponseData(payload)
-	if err != nil {
-		return CreateResult{}, err
-	}
-	status := normalizeStatus(firstString(data, "status"))
-	if status == "" {
-		status = StatusPending
-	}
-	return CreateResult{TaskID: firstString(data, "task_id"), Status: status, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
-}
-
-func parseAutoDLH3Poll(c PollContext, payload map[string]any) (PollResult, error) {
-	data, err := autoDLH3ResponseData(payload)
-	if err != nil {
-		return PollResult{}, err
-	}
-	status := normalizeStatus(firstString(data, "status"))
-	result := &Result{Videos: mediaFromArray(data["results"], CapabilityVideo)}
-	if len(result.Videos) > 0 && status == "" {
-		status = StatusSucceeded
-	}
-	if status == "" {
-		status = StatusPending
-	}
-	if len(result.Videos) == 0 {
-		result = nil
-	}
-	return PollResult{TaskID: defaultValue(firstString(data, "task_id"), c.TaskID), Status: status, Result: result, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
-}
-
-func autoDLH3ResponseData(payload map[string]any) (map[string]any, error) {
-	code := firstString(payload, "code")
-	if code != "" && !strings.EqualFold(code, "success") {
-		return nil, fmt.Errorf("AutoDL H3 接口返回失败：%s", firstNonEmpty(firstString(payload, "msg", "message", "error"), code))
-	}
-	data := object(payload["data"])
-	if data == nil {
-		return nil, fmt.Errorf("AutoDL H3 接口响应缺少 data")
-	}
-	return data, nil
-}
-
-func openAIAudioAdapter() Adapter {
-	info := metadata("openai-audio", "OpenAI Audio", "OpenAI", CapabilityAudio, "POST /v1/audio/speech", "", "application/json")
-	return builtinAdapter{info: info, create: func(r GenerationRequest) (RequestSpec, error) {
-		return jsonSpec(http.MethodPost, "/v1/audio/speech", map[string]any{"model": r.Model, "input": r.Prompt}), nil
-	}, parseCreate: parseAudioResponse}
-}
-
-func asyncAudioAdapter() Adapter {
-	info := metadata("async-audio", "异步音频任务", "OpenAI compatible", CapabilityAudio, "POST /v1/audio/tasks", "GET /v1/audio/tasks/{task_id}", "application/json")
-	return asyncMediaAdapter(info, CapabilityAudio, func(r GenerationRequest) (RequestSpec, error) {
-		return jsonSpec(http.MethodPost, "/v1/audio/tasks", map[string]any{"model": r.Model, "prompt": r.Prompt}), nil
-	})
-}
-
-func agnesAdapter() Adapter {
-	info := metadata("agnes-video", "Agnes 视频", "Agnes AI", CapabilityVideo, "POST /v1/videos", "GET /agnesapi?video_id={id}&model_name={model}", "application/json")
-	info.Version = "1.2.0"
-	info.Description = "Agnes AI 官方异步视频协议，支持 Agnes Video V2.0、2.5 与 2.5 Flash。"
-	info.RequiresPublicMediaURLs = true
-	info.Parameters = []Parameter{
-		{Name: "model", Type: "string", Required: true, Mapping: "model", Description: "官方模型 ID：agnes-video-v2.0、agnes-video-2.5 或 agnes-video-2.5-flash。"},
-		{Name: "prompt", Type: "string", Required: true, Mapping: "prompt", Description: "视频生成提示词。"},
-		{Name: "images", Type: "media[]", Mapping: "first_frame/last_frame/images/image/extra_body.image", Description: "2.5 系列按 mode 映射为关键帧或参考图；V2.0 映射为 image 或关键帧数组。"},
-		{Name: "videos", Type: "media[]", Mapping: "videos", Description: "仅 Agnes Video 2.5 reference 模式支持，Flash 与 V2.0 不支持。"},
-		{Name: "audios", Type: "media[]", Mapping: "audios", Description: "Agnes Video 2.5 系列 reference 模式支持。"},
-		{Name: "duration", Type: "integer", Mapping: "seconds/num_frames", Description: "2.5 系列映射为字符串 seconds；V2.0 按帧率换算 num_frames。"},
-		{Name: "aspectRatio", Type: "string", Values: []string{"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}, Mapping: "aspect_ratio", Description: "2.5 系列画幅比例；历史像素尺寸会在插件边界转换为对应比例。"},
-		{Name: "resolution", Type: "string", Values: []string{"720P", "960P", "2K"}, Mapping: "size", Description: "通用层分辨率档位，映射为 Agnes 的 size；Flash 固定 720P。"},
-	}
-	return builtinAdapter{
-		info:        info,
-		create:      buildAgnesCreate,
-		parseCreate: parseAgnesCreate,
-		poll: func(c PollContext) (RequestSpec, error) {
-			model := strings.TrimSpace(c.Model)
-			if model == "" {
-				model = strings.TrimSpace(c.Request.Model)
-			}
-			path := "/agnesapi?video_id=" + url.QueryEscape(c.TaskID)
-			if model != "" {
-				path += "&model_name=" + url.QueryEscape(model)
-			}
-			return RequestSpec{Method: http.MethodGet, Path: path, OriginPath: true}, nil
-		},
-		parsePoll: parseAgnesPoll,
-	}
-}
-
-func buildAgnesCreate(r GenerationRequest) (RequestSpec, error) {
-	model := strings.TrimSpace(r.Model)
-	switch model {
-	case "agnes-video-v2.0":
-		body, err := buildAgnesV20Body(r)
-		if err != nil {
-			return RequestSpec{}, err
-		}
-		return jsonSpec(http.MethodPost, "/v1/videos", body), nil
-	case "agnes-video-2.5", "agnes-video-2.5-flash":
-		body, err := buildAgnesV25Body(r)
-		if err != nil {
-			return RequestSpec{}, err
-		}
-		return jsonSpec(http.MethodPost, "/v1/videos", body), nil
-	default:
-		return RequestSpec{}, fmt.Errorf("Agnes 不支持模型 %q", model)
-	}
-}
-
-func buildAgnesV25Body(r GenerationRequest) (map[string]any, error) {
-	frameImages, referenceImages, _ := splitVideoImages(r.Images)
-	if len(frameImages) > 0 && (len(referenceImages) > 0 || len(r.Videos)+len(r.Audios) > 0) {
-		return nil, fmt.Errorf("Agnes 2.5 不能同时混用首尾帧和角色、视频或音频参考素材")
-	}
-	mode := firstString(r.Extra, "mode")
-	if mode == "" {
-		switch strings.TrimSpace(r.Operation) {
-		case "reference_to_video", "audio_to_video":
-			mode = "reference"
-		case "image_to_video":
-			mode = "keyframe"
-		default:
-			switch {
-			case len(r.Videos) > 0 || len(r.Audios) > 0 || len(referenceImages) > 0:
-				mode = "reference"
-			case len(frameImages) > 0:
-				mode = "keyframe"
-			case len(r.Images) > 2:
-				mode = "reference"
-			case len(r.Images) > 0:
-				mode = "keyframe"
-			default:
-				mode = "text"
-			}
-		}
-	}
-	if mode != "text" && mode != "keyframe" && mode != "reference" {
-		return nil, fmt.Errorf("Agnes 2.5 mode 必须是 text、keyframe 或 reference")
-	}
-	seconds := defaultInt(r.Duration, 5)
-	if seconds < 4 || seconds > 12 {
-		return nil, fmt.Errorf("Agnes 2.5 seconds 必须在 4 到 12 秒之间")
-	}
-	size, err := normalizeAgnesV25Resolution(defaultValue(r.Resolution, firstString(r.Extra, "size")))
-	if err != nil {
-		return nil, err
-	}
-	aspectRatio, err := normalizeAgnesV25AspectRatio(defaultValue(r.AspectRatio, firstString(r.Extra, "aspect_ratio")))
-	if err != nil {
-		return nil, err
-	}
-	if r.Model == "agnes-video-2.5-flash" {
-		if size != "720P" {
-			return nil, fmt.Errorf("Agnes Video 2.5 Flash 仅支持 720P")
-		}
-		if len(r.Images) > 5 {
-			return nil, fmt.Errorf("Agnes Video 2.5 Flash 最多支持 5 张参考图")
-		}
-		if len(r.Videos) > 0 {
-			return nil, fmt.Errorf("Agnes Video 2.5 Flash 不支持参考视频")
-		}
-	} else if size != "720P" && size != "960P" && size != "2K" {
-		return nil, fmt.Errorf("Agnes Video 2.5 size 必须是 720P、960P 或 2K")
-	}
-	body := map[string]any{
-		"model":        r.Model,
-		"prompt":       r.Prompt,
-		"mode":         mode,
-		"seconds":      strconv.Itoa(seconds),
-		"size":         size,
-		"aspect_ratio": aspectRatio,
-		"n":            1,
-	}
-	if seed, ok := r.Extra["seed"]; ok {
-		body["seed"] = seed
-	}
-	switch mode {
-	case "text":
-		if len(r.Images)+len(r.Videos)+len(r.Audios) > 0 {
-			return nil, fmt.Errorf("Agnes 2.5 text 模式不接受参考媒体")
-		}
-	case "keyframe":
-		if len(r.Images) == 0 || len(r.Images) > 2 || len(r.Videos)+len(r.Audios) > 0 {
-			return nil, fmt.Errorf("Agnes 2.5 keyframe 模式需要 1 到 2 张图片，且不接受音视频参考")
-		}
-		_, referenceImages, _ := splitVideoImages(r.Images)
-		if len(referenceImages) > 0 {
-			return nil, fmt.Errorf("Agnes 2.5 keyframe 模式不能混用角色或风格参考图")
-		}
-		frameImages := orderedFrameImages(r.Images)
-		if len(frameImages) == 0 {
-			return nil, fmt.Errorf("Agnes 2.5 keyframe 模式缺少首帧图片")
-		}
-		body["first_frame"] = mediaValue(frameImages[0])
-		if len(frameImages) > 1 {
-			body["last_frame"] = mediaValue(frameImages[1])
-		}
-	case "reference":
-		if len(r.Images)+len(r.Videos)+len(r.Audios) == 0 {
-			return nil, fmt.Errorf("Agnes 2.5 reference 模式至少需要一种参考媒体")
-		}
-		if len(r.Images) > 0 {
-			body["images"] = mediaValues(r.Images)
-		}
-		if len(r.Audios) > 0 {
-			body["audios"] = mediaValues(r.Audios)
-		}
-		if len(r.Videos) > 0 {
-			videos := make([]any, 0, len(r.Videos))
-			for _, video := range r.Videos {
-				videos = append(videos, map[string]any{"url": mediaValue(video)})
-			}
-			body["videos"] = videos
-		}
-	}
-	return compactMap(body), nil
-}
-
-func normalizeAgnesV25Resolution(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "auto", "720", "720p":
-		return "720P", nil
-	case "960", "960p":
-		return "960P", nil
-	case "2k", "1440", "1440p":
-		return "2K", nil
-	default:
-		return "", fmt.Errorf("Agnes Video 2.5 分辨率必须是 720P、960P 或 2K")
-	}
-}
-
-func normalizeAgnesV25AspectRatio(value string) (string, error) {
-	normalized := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, "×", "x")))
-	if normalized == "" || normalized == "auto" {
-		return "16:9", nil
-	}
-	ratios := []string{"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
-	for _, ratio := range ratios {
-		if normalized == ratio {
-			return ratio, nil
-		}
-	}
-	dimensions := strings.Split(normalized, "x")
-	if len(dimensions) == 2 {
-		width, widthErr := strconv.ParseInt(dimensions[0], 10, 64)
-		height, heightErr := strconv.ParseInt(dimensions[1], 10, 64)
-		if widthErr == nil && heightErr == nil && width > 0 && height > 0 && width <= 1_000_000 && height <= 1_000_000 {
-			for _, ratio := range ratios {
-				parts := strings.Split(ratio, ":")
-				ratioWidth, _ := strconv.ParseInt(parts[0], 10, 64)
-				ratioHeight, _ := strconv.ParseInt(parts[1], 10, 64)
-				if width*ratioHeight == height*ratioWidth {
-					return ratio, nil
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("Agnes Video 2.5 画幅必须是 21:9、16:9、4:3、1:1、3:4 或 9:16")
-}
-
-func buildAgnesV20Body(r GenerationRequest) (map[string]any, error) {
-	if len(r.Videos)+len(r.Audios) > 0 {
-		return nil, fmt.Errorf("Agnes Video V2.0 不支持参考视频或音频")
-	}
-	_, referenceImages, _ := splitVideoImages(r.Images)
-	if r.Operation == "reference_to_video" || len(referenceImages) > 0 {
-		return nil, fmt.Errorf("Agnes Video V2.0 不支持角色或风格参考图模式，请改用 Agnes Video 2.5")
-	}
-	body := map[string]any{"model": r.Model, "prompt": r.Prompt}
-	mergeExtra(body, r.Extra, "mode", "width", "height", "num_frames", "frame_rate", "num_inference_steps", "seed", "negative_prompt")
-	if r.Duration > 0 {
-		frameRate := 24
-		if value, ok := r.Extra["frame_rate"].(float64); ok && value >= 1 && value <= 60 {
-			frameRate = int(value)
-		}
-		if value, ok := r.Extra["frame_rate"].(int); ok && value >= 1 && value <= 60 {
-			frameRate = value
-		}
-		if _, supplied := r.Extra["frame_rate"]; !supplied {
-			body["frame_rate"] = frameRate
-		}
-		if _, supplied := r.Extra["num_frames"]; !supplied {
-			target := r.Duration * frameRate
-			frames := ((target-1+4)/8)*8 + 1
-			if frames > 441 {
-				frames = 441
-			}
-			body["num_frames"] = frames
-		}
-	}
-	orderedImages := orderedFrameImages(r.Images)
-	if len(orderedImages) == 1 {
-		body["image"] = mediaValue(orderedImages[0])
-	} else if len(orderedImages) > 1 {
-		extraBody := map[string]any{}
-		if configured := object(r.Extra["extra_body"]); configured != nil {
-			for key, value := range configured {
-				extraBody[key] = value
-			}
-		}
-		extraBody["image"] = mediaValues(orderedImages)
-		extraBody["mode"] = "keyframes"
-		body["extra_body"] = extraBody
-	} else if configured := object(r.Extra["extra_body"]); configured != nil {
-		body["extra_body"] = configured
-	}
-	return compactMap(body), nil
-}
-
-func parseAgnesCreate(payload map[string]any) (CreateResult, error) {
-	id := firstString(payload, "video_id", "task_id", "id")
-	if id == "" {
-		return CreateResult{}, fmt.Errorf("Agnes 创建响应没有 video_id")
-	}
-	status := normalizeStatus(firstString(payload, "status"))
-	if status == "" {
-		status = StatusPending
-	}
-	return CreateResult{TaskID: id, Status: status}, nil
-}
-
-func parseAgnesPoll(c PollContext, payload map[string]any) (PollResult, error) {
-	id := defaultValue(firstString(payload, "video_id", "task_id", "id"), c.TaskID)
-	status := normalizeStatus(firstString(payload, "status"))
-	if status == "" {
-		status = StatusProcessing
-	}
-	message := firstString(payload, "message", "detail")
-	if failure := object(payload["error"]); failure != nil {
-		message = defaultValue(firstString(failure, "message", "detail", "code"), message)
-	}
-	if status == StatusFailed {
-		return PollResult{TaskID: id, Status: status, Message: defaultValue(message, "Agnes 视频生成失败")}, nil
-	}
-	if status != StatusSucceeded {
-		return PollResult{TaskID: id, Status: status, Message: message}, nil
-	}
-	metadata := object(payload["metadata"])
-	videoURL := firstString(metadata, "url")
-	if videoURL == "" {
-		videoURL = firstString(payload, "url")
-	}
-	if videoURL == "" {
-		return PollResult{}, fmt.Errorf("Agnes 完成响应没有返回视频 URL")
-	}
-	return PollResult{TaskID: id, Status: status, Result: &Result{Videos: []MediaReference{{URL: videoURL, Kind: string(CapabilityVideo)}}}}, nil
-}
-
 func videoAdapter(info Metadata, create func(GenerationRequest) (RequestSpec, error)) Adapter {
 	return asyncMediaAdapterWithPoll(info, CapabilityVideo, create, func(c PollContext) (RequestSpec, error) {
 		path := strings.TrimSpace(info.Poll)
@@ -959,20 +528,7 @@ func parseChatResponse(payload map[string]any) (CreateResult, error) {
 }
 
 func parseResponsesResponse(payload map[string]any) (CreateResult, error) {
-	text := firstString(payload, "output_text", "text")
-	if text == "" {
-		if output, ok := payload["output"].([]any); ok {
-			for _, item := range output {
-				if m, ok := item.(map[string]any); ok {
-					text = firstString(m, "text", "content")
-					if text != "" {
-						break
-					}
-				}
-			}
-		}
-	}
-	return CreateResult{Status: StatusSucceeded, Result: &Result{Text: text, Usage: object(payload["usage"])}}, nil
+	return CreateResult{Status: StatusSucceeded, Result: &Result{Text: responsesOutputText(payload), Usage: object(payload["usage"])}}, nil
 }
 
 func parseClaudeResponse(payload map[string]any) (CreateResult, error) {
@@ -1008,33 +564,6 @@ func parseImageResponse(payload map[string]any) (CreateResult, error) {
 	return CreateResult{Status: StatusSucceeded, Result: &Result{Images: images}}, nil
 }
 
-func parseGeminiImageResponse(payload map[string]any) (CreateResult, error) {
-	images := make([]MediaReference, 0)
-	if candidates, ok := payload["candidates"].([]any); ok {
-		for _, candidate := range candidates {
-			if c, ok := candidate.(map[string]any); ok {
-				content, _ := c["content"].(map[string]any)
-				parts, _ := content["parts"].([]any)
-				for _, part := range parts {
-					if p, ok := part.(map[string]any); ok {
-						data, _ := p["inlineData"].(map[string]any)
-						if data == nil {
-							data, _ = p["inline_data"].(map[string]any)
-						}
-						if data != nil {
-							images = append(images, MediaReference{DataURL: "data:" + firstString(data, "mimeType", "mime_type") + ";base64," + firstString(data, "data")})
-						}
-					}
-				}
-			}
-		}
-	}
-	if len(images) == 0 {
-		return CreateResult{}, fmt.Errorf("Gemini response has no inline image data")
-	}
-	return CreateResult{Status: StatusSucceeded, Result: &Result{Images: images}}, nil
-}
-
 func parseJiMengCreate(payload map[string]any) (CreateResult, error) {
 	id := firstString(payload, "task_id", "taskId", "id")
 	if data := object(payload["data"]); data != nil {
@@ -1045,6 +574,7 @@ func parseJiMengCreate(payload map[string]any) (CreateResult, error) {
 	}
 	return CreateResult{TaskID: id, Status: StatusPending}, nil
 }
+
 func parseJiMengPoll(c PollContext, payload map[string]any) (PollResult, error) {
 	return parseAsyncMediaPoll(c, payload, CapabilityImage)
 }
@@ -1109,14 +639,14 @@ func geminiVeoVideos(response map[string]any) []MediaReference {
 
 func parseAsyncCreate(payload map[string]any) (CreateResult, error) {
 	id := firstString(payload, "id", "task_id", "taskId", "request_id")
-	status := normalizeStatus(firstString(payload, "status", "state"))
+	status := NormalizeStatus(firstString(payload, "status", "state"))
 	if task := object(payload["task"]); task != nil {
 		id = defaultValue(firstString(task, "id", "task_id", "taskId", "request_id"), id)
-		status = normalizeStatus(defaultValue(firstString(task, "status", "state"), string(status)))
+		status = NormalizeStatus(defaultValue(firstString(task, "status", "state"), string(status)))
 	}
 	if data := object(payload["data"]); data != nil {
 		id = defaultValue(firstString(data, "id", "task_id", "taskId", "request_id"), id)
-		status = normalizeStatus(defaultValue(firstString(data, "status", "state"), string(status)))
+		status = NormalizeStatus(defaultValue(firstString(data, "status", "state"), string(status)))
 	}
 	if id == "" {
 		return CreateResult{}, fmt.Errorf("async response has no task id")
@@ -1128,47 +658,95 @@ func parseAsyncCreate(payload map[string]any) (CreateResult, error) {
 }
 
 func parseAsyncMediaPoll(c PollContext, payload map[string]any, capability Capability) (PollResult, error) {
+
 	if capability != CapabilityImage && capability != CapabilityVideo && capability != CapabilityAudio {
+
 		return PollResult{}, fmt.Errorf("unsupported async media capability %q", capability)
+
 	}
-	status := normalizeStatus(firstString(payload, "status", "state", "task_status"))
+
+	status := NormalizeStatus(firstString(payload, "status", "state", "task_status"))
+
 	if task := object(payload["task"]); task != nil {
-		status = normalizeStatus(defaultValue(firstString(task, "status", "state"), string(status)))
+
+		status = NormalizeStatus(defaultValue(firstString(task, "status", "state"), string(status)))
+
 		payload = mergeMaps(task, payload)
+
 	}
+
 	if data := object(payload["data"]); data != nil {
+
 		payload = mergeMaps(data, payload)
-		status = normalizeStatus(defaultValue(firstString(data, "status", "state"), string(status)))
+
+		status = NormalizeStatus(defaultValue(firstString(data, "status", "state"), string(status)))
+
 	}
+
 	if status == "" {
+
 		status = StatusProcessing
+
 	}
-	result := &Result{}
+
+	result := &Result{Usage: object(payload["usage"])}
+
 	resultKind := string(capability)
+
 	references := mediaFromArray(payload[resultKind+"s"], capability)
+
 	references = append(references, mediaFromArray(payload["data"], capability)...)
+
+	if mediaObj := object(payload[resultKind]); mediaObj != nil {
+
+		references = append(references, mediaFromArray([]any{mediaObj}, capability)...)
+
+	}
+
 	if content := object(payload["content"]); content != nil {
+
 		references = append(references, mediaFromArray([]any{content}, capability)...)
+
 	}
+
 	keys := []string{resultKind + "_url", resultKind + "Url", "result_url", "url"}
+
 	if resultKind == "video" {
+
 		keys = append(keys, "object")
+
 	}
+
 	if value := firstString(payload, keys...); value != "" {
+
 		references = append(references, MediaReference{URL: value, Kind: resultKind})
+
 	}
+
 	switch capability {
+
 	case CapabilityImage:
+
 		result.Images = references
+
 	case CapabilityAudio:
+
 		result.Audios = references
+
 	case CapabilityVideo:
+
 		result.Videos = references
+
 	}
+
 	if status == StatusSucceeded && len(references) == 0 {
+
 		result = nil
+
 	}
+
 	return PollResult{TaskID: defaultValue(firstString(payload, "id", "task_id", "taskId"), c.TaskID), Status: status, Result: result, Message: firstString(payload, "message", "error", "fail_reason")}, nil
+
 }
 
 func parseAudioResponse(payload map[string]any) (CreateResult, error) {
@@ -1179,17 +757,19 @@ func parseAudioResponse(payload map[string]any) (CreateResult, error) {
 	return CreateResult{Status: StatusSucceeded, Result: &Result{Audios: []MediaReference{{URL: value, Kind: "audio"}}}}, nil
 }
 
-func normalizeStatus(raw string) Status {
+// NormalizeStatus 是上游任务状态词表的唯一来源。宿主的调用日志、取消回查等旁路判断必须复用它，
+// 不能各自维护一份 failed/cancelled 列表，否则同一份响应会被任务和账单判成不同终态。
+func NormalizeStatus(raw string) Status {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "queued", "pending", "created", "submitted", "in_queue", "task_status_queued":
 		return StatusPending
-	case "running", "processing", "in_progress", "executing", "task_status_running":
+	case "running", "processing", "in_progress", "executing", "task_status_running", "task_status_processing":
 		return StatusProcessing
 	case "succeeded", "success", "completed", "complete", "done", "task_status_succeed":
 		return StatusSucceeded
 	case "cancelled", "canceled", "aborted":
 		return StatusCancelled
-	case "failed", "failure", "error", "expired":
+	case "failed", "failure", "error", "expired", "task_status_failed":
 		return StatusFailed
 	default:
 		return ""
@@ -1203,7 +783,9 @@ func decodeObject(body []byte) (map[string]any, error) {
 	}
 	return payload, nil
 }
+
 func object(value any) map[string]any { result, _ := value.(map[string]any); return result }
+
 func mergeMaps(primary, fallback map[string]any) map[string]any {
 	result := make(map[string]any, len(fallback)+len(primary))
 	for k, v := range fallback {
@@ -1214,6 +796,7 @@ func mergeMaps(primary, fallback map[string]any) map[string]any {
 	}
 	return result
 }
+
 func firstString(payload map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
@@ -1222,23 +805,108 @@ func firstString(payload map[string]any, keys ...string) string {
 	}
 	return ""
 }
+
 func defaultValue(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
 	}
 	return value
 }
+
+func autoDLH3VideosAdapter() Adapter {
+	info := metadata("autodl-h3-video", "AutoDL H3 工作流视频", "AutoDL", CapabilityVideo, "POST /api/v1/comfyui/comfyui_workflow/{workflow_id}", "GET /api/v1/comfyui/comfyui_workflow/result/{task_id}", "application/json")
+	info.Parameters = videoParams()
+	info.RequiresPublicMediaURLs = true
+	return builtinAdapter{
+		info: info,
+		create: func(r GenerationRequest) (RequestSpec, error) {
+			workflowID := strings.TrimSpace(r.Model)
+			body, err := autoDLH3CreateFields(workflowID, r)
+			if err != nil {
+				return RequestSpec{}, err
+			}
+			for _, item := range append(append([]MediaReference{}, r.Images...), r.Audios...) {
+				mediaURL := strings.TrimSpace(mediaValue(item))
+				if !strings.HasPrefix(mediaURL, "https://") && !strings.HasPrefix(mediaURL, "http://") {
+					return RequestSpec{}, fmt.Errorf("AutoDL H3 参考素材必须是上游可访问的 HTTP(S) URL")
+				}
+			}
+			return RequestSpec{Method: http.MethodPost, Path: "/api/v1/comfyui/comfyui_workflow/" + url.PathEscape(workflowID), ContentType: "application/json", Auth: ManifestAuth{Type: "header", Header: "Authorization", Field: "apiKey"}, Body: body}, nil
+		},
+		parseCreate: parseAutoDLH3Create,
+		poll: func(c PollContext) (RequestSpec, error) {
+			if strings.TrimSpace(c.TaskID) == "" {
+				return RequestSpec{}, fmt.Errorf("AutoDL H3 查询任务缺少 task_id")
+			}
+			return RequestSpec{Method: http.MethodGet, Path: "/api/v1/comfyui/comfyui_workflow/result/" + url.PathEscape(c.TaskID), Auth: ManifestAuth{Type: "header", Header: "Authorization", Field: "apiKey"}}, nil
+		},
+		parsePoll: parseAutoDLH3Poll,
+	}
+}
+
+func autoDLH3Duration(value int) int {
+	if value < 1 || value > 10 {
+		return 5
+	}
+	return value
+}
+
+func parseAutoDLH3Create(payload map[string]any) (CreateResult, error) {
+	data, err := autoDLH3ResponseData(payload)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	status := NormalizeStatus(firstString(data, "status"))
+	if status == "" {
+		status = StatusPending
+	}
+	return CreateResult{TaskID: firstString(data, "task_id"), Status: status, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
+}
+
+func parseAutoDLH3Poll(c PollContext, payload map[string]any) (PollResult, error) {
+	data, err := autoDLH3ResponseData(payload)
+	if err != nil {
+		return PollResult{}, err
+	}
+	status := NormalizeStatus(firstString(data, "status"))
+	result := &Result{Videos: mediaFromArray(data["results"], CapabilityVideo)}
+	if len(result.Videos) > 0 && status == "" {
+		status = StatusSucceeded
+	}
+	if status == "" {
+		status = StatusPending
+	}
+	if len(result.Videos) == 0 {
+		result = nil
+	}
+	return PollResult{TaskID: defaultValue(firstString(data, "task_id"), c.TaskID), Status: status, Result: result, Message: firstNonEmpty(firstString(data, "msg", "message", "error"), firstString(payload, "msg"))}, nil
+}
+
+func autoDLH3ResponseData(payload map[string]any) (map[string]any, error) {
+	code := firstString(payload, "code")
+	if code != "" && !strings.EqualFold(code, "success") {
+		return nil, fmt.Errorf("AutoDL H3 接口返回失败：%s", firstNonEmpty(firstString(payload, "msg", "message", "error"), code))
+	}
+	data := object(payload["data"])
+	if data == nil {
+		return nil, fmt.Errorf("AutoDL H3 接口响应缺少 data")
+	}
+	return data, nil
+}
+
 func defaultInt(value, fallback int) int {
 	if value <= 0 {
 		return fallback
 	}
 	return value
 }
+
 func copyIf(body map[string]any, key, value string) {
 	if strings.TrimSpace(value) != "" {
 		body[key] = value
 	}
 }
+
 func mergeExtra(body map[string]any, extra map[string]any, keys ...string) {
 	for _, key := range keys {
 		if value, ok := extra[key]; ok {
@@ -1246,6 +914,7 @@ func mergeExtra(body map[string]any, extra map[string]any, keys ...string) {
 		}
 	}
 }
+
 func compactMap(body map[string]any) map[string]any {
 	result := make(map[string]any)
 	for key, value := range body {
@@ -1267,7 +936,9 @@ func compactMap(body map[string]any) map[string]any {
 	}
 	return result
 }
+
 func mediaValue(media MediaReference) string { return defaultValue(media.URL, media.DataURL) }
+
 func mediaRole(media MediaReference, fallback string) string {
 	return defaultValue(strings.TrimSpace(media.Role), fallback)
 }
@@ -1318,6 +989,7 @@ func mediaValues(values []MediaReference) []string {
 	}
 	return result
 }
+
 func mediaFromArray(value any, capability Capability) []MediaReference {
 	values, _ := value.([]any)
 	result := make([]MediaReference, 0, len(values))
@@ -1344,12 +1016,14 @@ func mediaFromArray(value any, capability Capability) []MediaReference {
 	}
 	return result
 }
+
 func dataMIME(value string) string {
 	if index := strings.Index(value, ";"); strings.HasPrefix(value, "data:") && index > 5 {
 		return strings.TrimPrefix(value[5:index], "")
 	}
 	return "application/octet-stream"
 }
+
 func dataPayload(value string) string {
 	if index := strings.Index(value, ","); strings.HasPrefix(value, "data:") && index >= 0 {
 		return value[index+1:]

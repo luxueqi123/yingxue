@@ -1,0 +1,242 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+// @ 引用在可编辑区域里的行内胶囊（chip）与预览缩略图。
+//
+// 胶囊是 contentEditable 内的 DOM 节点，序列化时还原成 @[kind:id] 令牌；这里只负责渲染。
+
+import {
+    Brush,
+    Camera,
+    Clapperboard,
+    Clock,
+    Contrast,
+    FastForward,
+    Globe2,
+    Grid2x2,
+    Grid3x3,
+    Image as ImageIcon,
+    Music2,
+    Package,
+    Palette,
+    PenLine,
+    PersonStanding,
+    Play,
+    Rewind,
+    Route,
+    ScanFace,
+    SlidersHorizontal,
+    Sun,
+    Wrench,
+    X,
+    Blocks,
+    Aperture,
+} from "lucide-react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
+import { CanvasNodeType } from "@/types/canvas";
+import { reportResourcePreviewFailure } from "./use-resolved-canvas-resource-references";
+
+export const TOOL_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+    Brush,
+    Camera,
+    Clapperboard,
+    Clock,
+    Contrast,
+    FastForward,
+    Globe2,
+    Grid2x2,
+    Grid3x3,
+    Package,
+    Palette,
+    PersonStanding,
+    Rewind,
+    Route,
+    ScanFace,
+    SlidersHorizontal,
+    Aperture,
+    // 旧提及数据里保存的图标名，渲染为光圈，不再显示 AI 星光。
+    Sparkles: Aperture,
+    Sun,
+};
+
+export function toolIconSvg(iconName: string): string {
+    const Icon = TOOL_ICON_MAP[iconName] ?? Wrench;
+    return renderToStaticMarkup(<Icon className="size-3" />);
+}
+
+function inlineIconSvg(Icon: React.ComponentType<{ className?: string }>): string {
+    return renderToStaticMarkup(<Icon className="size-3" />);
+}
+
+function syncInlineMentionPresentation(chip: HTMLElement, reference: CanvasResourceReference) {
+    if (reference.assetKind) chip.dataset.assetKind = reference.assetKind;
+    else delete chip.dataset.assetKind;
+    chip.setAttribute("aria-label", reference.title || reference.displayLabel || reference.label);
+    const label = chip.querySelector(".canvas-resource-inline-label");
+    const displayLabel = reference.displayLabel || reference.label;
+    if (label && label.textContent !== displayLabel) label.textContent = displayLabel;
+    let kind = chip.querySelector<HTMLElement>(".canvas-resource-inline-kind");
+    if (reference.assetKindLabel) {
+        if (!kind) {
+            kind = document.createElement("span");
+            kind.className = "canvas-resource-inline-kind";
+            chip.appendChild(kind);
+        }
+        kind.textContent = reference.assetKindLabel;
+    } else kind?.remove();
+}
+
+export function createInlineMentionChip(reference: CanvasResourceReference, token: string) {
+    const chip = document.createElement("span");
+    chip.contentEditable = "false";
+    chip.dataset.mentionToken = token;
+    chip.dataset.mentionReferenceId = reference.id;
+    const isDecorated = reference.kind === "skill" || reference.kind === "tool";
+    chip.className = `canvas-resource-inline-mention ${isDecorated ? `is-${reference.kind}` : ""}`;
+    // 图片、视频、角色悬停时有预览卡（卡里提示双击放大），不再叠一层原生 title。
+    if (!MEDIA_PREVIEW_KINDS.has(reference.kind)) chip.title = reference.title || reference.label;
+    if (reference.kind === "skill") chip.style.setProperty("--canvas-skill-mention-color", skillMentionColor(reference));
+    if (reference.kind === "tool") chip.style.setProperty("--canvas-skill-mention-color", skillMentionColor(reference));
+
+    const prefix = document.createElement("span");
+    prefix.className = isDecorated ? "canvas-resource-inline-skill-icon" : "canvas-resource-inline-at";
+    if (reference.kind === "skill") {
+        prefix.innerHTML = inlineIconSvg(Blocks);
+    } else if (reference.kind === "tool") {
+        prefix.innerHTML = toolIconSvg(reference.toolIcon ?? "Grid3x3");
+    } else {
+        prefix.textContent = "@";
+    }
+    chip.appendChild(prefix);
+
+    // Skill/tool chip 的前缀已经承担图标职责，不再追加 fallback preview，避免出现两个图标。
+    if (!isDecorated) chip.appendChild(createInlinePreview(reference));
+
+    const label = document.createElement("span");
+    label.className = "canvas-resource-inline-label";
+    chip.appendChild(label);
+    syncInlineMentionPresentation(chip, reference);
+
+    return chip;
+}
+
+export const SKILL_MENTION_COLORS = ["#8b5cf6", "#0ea5e9", "#14b8a6", "#f59e0b", "#ec4899", "#84cc16", "#f97316", "#06b6d4"];
+
+export function skillMentionColor(reference: CanvasResourceReference) {
+    const key = reference.skill?.skillId || reference.id;
+    let hash = 0;
+    for (const character of key) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+    return SKILL_MENTION_COLORS[Math.abs(hash) % SKILL_MENTION_COLORS.length];
+}
+
+/** 带画面的引用类型：胶囊显示缩略图，悬停显示预览卡，双击放大。 */
+export const MEDIA_PREVIEW_KINDS: ReadonlySet<CanvasResourceReference["kind"]> = new Set(["image", "video", "character"]);
+
+export function referencePreviewUrl(reference: CanvasResourceReference) {
+    return reference.previewUrl || (reference.kind === "video" ? reference.mediaUrl : "") || "";
+}
+
+export function InlineReferencePreview({ reference, onClose }: { reference: CanvasResourceReference; onClose: () => void }) {
+    const { t } = useTranslation();
+    const url = referencePreviewUrl(reference);
+    if (!url) return null;
+    return createPortal(
+        <div className="fixed inset-0 z-[var(--z-dialog-popover)] grid place-items-center bg-black/80 p-6" role="dialog" aria-label={t("canvasB.mention.previewLabel", { label: reference.label })} onClick={onClose}>
+            <div className="relative max-h-[92vh] max-w-[92vw]" onClick={(event) => event.stopPropagation()}>
+                <img src={url} alt={reference.label} className="max-h-[88vh] max-w-[88vw] rounded-xl object-contain shadow-2xl" />
+                <button type="button" className="absolute -right-3 -top-3 rounded-full bg-black/75 p-2 text-white shadow-lg" onClick={onClose} aria-label={t("canvasB.mention.closeImagePreview")}>
+                    <X className="size-4" />
+                </button>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+// 加载失败过的缩略图地址。重绘时直接显示图标，等解析出新地址再换回图片，避免反复请求坏地址。
+const failedPreviewUrls = new Set<string>();
+
+function usableInlineImageUrl(reference: CanvasResourceReference) {
+    if (!["image", "video", "character"].includes(reference.kind) || !reference.previewUrl) return "";
+    return failedPreviewUrls.has(reference.previewUrl) ? "" : reference.previewUrl;
+}
+
+export function createInlinePreview(reference: CanvasResourceReference) {
+    const imageUrl = usableInlineImageUrl(reference);
+    if (imageUrl) {
+        const media = document.createElement("img");
+        media.className = `canvas-resource-inline-preview is-${reference.kind}`;
+        media.setAttribute("src", imageUrl);
+        media.setAttribute("alt", "");
+        // 签名地址过期或对象不可读时退回图标，并通知解析层换一个新地址。
+        media.addEventListener(
+            "error",
+            () => {
+                if (failedPreviewUrls.size >= 256) failedPreviewUrls.clear();
+                failedPreviewUrls.add(imageUrl);
+                if (media.isConnected) media.replaceWith(createInlinePreview(reference));
+                reportResourcePreviewFailure(imageUrl);
+            },
+            { once: true },
+        );
+        return media;
+    }
+    if (reference.kind === "video" && reference.mediaUrl) {
+        const media = document.createElement("video");
+        media.className = "canvas-resource-inline-preview is-video";
+        media.setAttribute("src", reference.mediaUrl);
+        media.setAttribute("aria-hidden", "true");
+        media.muted = true;
+        media.playsInline = true;
+        media.preload = "metadata";
+        media.onloadedmetadata = () => primeVideoPreviewFrame(media);
+        return media;
+    }
+    const fallback = document.createElement("span");
+    fallback.className = "canvas-resource-inline-preview is-fallback";
+    const FallbackIcon =
+        reference.sourceType === CanvasNodeType.Drawing
+            ? PenLine
+            : reference.kind === "audio"
+              ? Music2
+              : reference.kind === "video"
+                ? Play
+                : reference.kind === "image" || reference.kind === "character"
+                  ? ImageIcon
+                  : reference.kind === "skill"
+                    ? Blocks
+                    : null;
+    if (FallbackIcon) fallback.innerHTML = inlineIconSvg(FallbackIcon);
+    return fallback;
+}
+
+/** Resource URLs resolve independently of prompt text; keep chips fresh without replacing the editable selection. */
+export function syncInlineMentionPreviews(editor: HTMLElement, references: CanvasResourceReference[]) {
+    const byId = new Map(references.map((reference) => [reference.id, reference]));
+    editor.querySelectorAll<HTMLElement>("[data-mention-reference-id]").forEach((chip) => {
+        const reference = byId.get(chip.dataset.mentionReferenceId || "");
+        if (!reference) return;
+        const preview = chip.querySelector(".canvas-resource-inline-preview");
+        const hasImage = Boolean(usableInlineImageUrl(reference));
+        const hasVideo = !hasImage && reference.kind === "video" && Boolean(reference.mediaUrl);
+        const tag = hasImage ? "IMG" : hasVideo ? "VIDEO" : "SPAN";
+        const className = `canvas-resource-inline-preview is-${hasImage || hasVideo ? reference.kind : "fallback"}`;
+        const src = hasImage ? reference.previewUrl : hasVideo ? reference.mediaUrl : null;
+        if (preview && (preview.tagName !== tag || preview.className !== className || preview.getAttribute("src") !== src)) {
+            preview.replaceWith(createInlinePreview(reference));
+        }
+        syncInlineMentionPresentation(chip, reference);
+    });
+}
+
+export function primeVideoPreviewFrame(video: HTMLVideoElement) {
+    if (video.currentTime !== 0 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    try {
+        // Metadata-only loading does not paint a frame consistently across browsers.
+        // Seeking a tiny amount keeps this preview passive while forcing first-frame decode.
+        video.currentTime = Math.min(0.001, video.duration);
+    } catch {
+        // A transient media error should leave the fallback element usable.
+    }
+}

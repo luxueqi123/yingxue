@@ -1,0 +1,179 @@
+.yingxue-skills .skills-page-heading {
+    display: flex;
+    min-height: 104px;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    padding: var(--space-3) 2px var(--space-4);
+}
+.yingxue-skills .skills-page-heading-copy { min-width: 0; }
+.yingxue-skills .skills-page-eyebrow { display: inline-flex; align-items: center; gap: var(--space-1-half); color: color-mix(in srgb, var(--foreground) 50%, transparent); font-size: var(--fs-label); font-weight: 600; letter-spacing: .08em; }
+.yingxue-skills .skills-page-eyebrow svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.yingxue-skills .skills-page-title-row { display: flex; min-width: 0; align-items: baseline; gap: var(--space-2); margin-top: var(--space-1-half); }
+.yingxue-skills .skills-page-title-row h1 { color: var(--foreground); font-size: clamp(22px, 2.2vw, 30px); font-weight: 650; letter-spacing: -.025em; line-height: 1.2; }
+.yingxue-skills .skills-page-total { flex: 0 0 auto; color: color-mix(in srgb, var(--foreground) 40%, transparent); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+.yingxue-skills .skills-page-heading-copy > p { margin-top: var(--space-1-half); color: color-mix(in srgb, var(--foreground) 54%, transparent); font-size: var(--fs-body); line-height: 1.6; }
+.yingxue-skills .skills-page-heading > .ant-btn { flex: 0 0 auto; }
+
+.yingxue-skills .library-toolbar.skills-toolbar { margin-top: var(--space-4); padding-bottom: var(--space-2); }
+.yingxue-skills .skills-toolbar .admin-list-toolbar-main { flex-wrap: nowrap; justify-content: space-between; }
+.yingxue-skills .skills-tabs { flex: 0 1 auto; }
+.yingxue-skills .skills-toolbar-actions { display: flex; min-width: 0; flex: 0 1 356px; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.yingxue-skills .skills-toolbar-actions .ant-input-affix-wrapper { min-width: 160px; flex: 1 1 248px; }
+.yingxue-skills .skills-toolbar-actions .ant-select { width: 104px; flex: 0 0 104px; }
+.yingxue-skills .skills-category-row { display: flex; min-width: 0; gap: var(--space-2); overflow-x: auto; padding: 2px 2px var(--space-3); scrollbar-width: none; overscroll-behavior-inline: contain; }
+.yingxue-skills .skills-category-row::-webkit-scrollbar { display: none; }
+.yingxue-skills .skills-category-row button { height: 32px; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent); border-radius: 999px; background: transparent; padding: 0 13px; color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 13px; line-height: 30px; white-space: nowrap; transition: border-color var(--motion-state) ease-out, background-color var(--motion-state) ease-out, color var(--motion-state) ease-out; }
+.yingxue-skills .skills-category-row button:hover { border-color: color-mix(in srgb, var(--foreground) 18%, transparent); background: color-mix(in srgb, var(--foreground) 4%, transparent); color: var(--foreground); }
+.yingxue-skills .skills-category-row button.is-active { border-color: color-mix(in srgb, var(--foreground) 18%, transparent); background: color-mix(in srgb, var(--foreground) 9%, transparent); color: var(--foreground); font-weight: 560; }
+.yingxue-skills .skills-category-row button:focus-visible,
+.yingxue-skills .skill-card-title-button:focus-visible,
+.yingxue-skills .skill-card-description:focus-visible,
+.yingxue-skills .skill-card-like:focus-visible,
+.yingxue-skills .skill-card-join:focus-visible,
+.yingxue-skills .skill-card-more:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.yingxue-skills .skills-scope-panel { padding-block: var(--space-2) var(--space-4); }
+.yingxue-skills .skill-library-grid,
+.yingxue-skills .skills-skeleton-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.yingxue-skills .skill-library-card { position: relative; display: flex; width: 100%; height: 156px; min-width: 0; min-height: 156px; max-height: 156px; flex-direction: row; overflow: hidden; border: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent); border-radius: var(--r-xl); background: var(--library-surface); padding: 12px; transition: border-color var(--motion-state) ease-out, background-color var(--motion-state) ease-out, box-shadow var(--motion-state) ease-out, transform var(--motion-state) ease-out; }
+.yingxue-skills .skill-library-card:hover,
+.yingxue-skills .skill-library-card:focus-within { border-color: color-mix(in srgb, var(--foreground) 15%, transparent); background: var(--library-surface-hover); box-shadow: var(--elevation-card-hover); transform: translateY(-1px); }
+.yingxue-skills .skill-library-card.is-added { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent); }
+.yingxue-skills .skill-card-cover { width: clamp(118px, 32%, 168px); height: auto; min-height: 0; max-height: none; aspect-ratio: auto; flex: 0 0 clamp(118px, 32%, 168px); align-self: stretch; overflow: hidden; border-radius: var(--r-lg); background: color-mix(in srgb, var(--foreground) 4%, transparent); }
+.yingxue-skills .skill-card-cover > img { transition: transform 320ms cubic-bezier(.16, 1, .3, 1); }
+.yingxue-skills .skill-library-card:hover .skill-card-cover > img,
+.yingxue-skills .skill-library-card:focus-within .skill-card-cover > img { transform: scale(1.025); }
+.yingxue-skills .skill-card-cover-scrim { background: linear-gradient(to top, color-mix(in srgb, var(--color-neutral-950) 14%, transparent), transparent 42%); }
+.yingxue-skills .skill-card-cover-fallback { display: flex; align-items: center; justify-content: center; padding: var(--space-3); text-align: center; color: var(--muted-foreground); font-size: var(--fs-label); }
+.yingxue-skills .skill-card-video-badge { right: 7px; bottom: 7px; border-radius: var(--r-md); background: color-mix(in srgb, var(--color-neutral-950) 70%, transparent); padding: 4px 7px; color: var(--color-neutral-0); backdrop-filter: blur(6px); }
+.yingxue-skills .skill-card-body { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; padding-left: 12px; }
+.yingxue-skills .skill-card-top { display: flex; min-width: 0; min-height: 0; flex: 0 0 auto; align-items: flex-start; gap: var(--space-1); margin-top: 0; }
+.yingxue-skills .skill-card-title-button { min-width: 0; flex: 1 1 auto; border: 0; background: transparent; text-align: left; }
+.yingxue-skills .skill-card-title-button h3 { overflow: hidden; color: var(--foreground); font-size: 15px; font-weight: 620; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.yingxue-skills .skill-card-more { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; margin: -2px -4px 0 0; border: 0; border-radius: var(--r-md); background: transparent; color: color-mix(in srgb, var(--foreground) 48%, transparent); opacity: 1; }
+.yingxue-skills .skill-card-more:hover { background: color-mix(in srgb, var(--foreground) 6%, transparent); color: var(--foreground); }
+.yingxue-skills .skill-card-description { min-width: 0; min-height: 38px; max-height: 38px; flex: 0 0 38px; margin-top: 4px; overflow: hidden; border: 0; background: transparent; padding: 0; text-align: left; }
+.yingxue-skills .skill-card-description p { display: -webkit-box; overflow: hidden; margin: 0; color: color-mix(in srgb, var(--foreground) 55%, transparent); font-size: 13px; line-height: 19px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.yingxue-skills .skill-card-footer { display: flex; min-width: 0; align-items: center; gap: 7px; margin-top: auto; padding-top: 8px; color: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 11px; }
+.yingxue-skills .skill-card-category { display: inline-flex; min-width: 0; align-items: center; gap: 4px; }
+.yingxue-skills .skill-card-category > span { display: grid; width: 17px; height: 17px; flex: 0 0 auto; place-items: center; border-radius: 5px; background: color-mix(in srgb, var(--foreground) 6%, transparent); }
+.yingxue-skills .skill-card-category svg { width: 11px; height: 11px; }
+.yingxue-skills .skill-card-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yingxue-skills .skill-card-author::before { content: "·"; margin-right: 7px; }
+.yingxue-skills .skill-card-flag { flex: 0 0 auto; border-radius: var(--r-sm); background: color-mix(in srgb, var(--foreground) 6%, transparent); padding: 2px 5px; }
+.yingxue-skills .skill-card-action { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 7px; margin-top: 7px; }
+.yingxue-skills .skill-card-like { display: inline-flex; height: 27px; flex: 0 0 auto; align-items: center; gap: 4px; border: 0; border-radius: var(--r-md); background: transparent; padding: 0 4px; color: color-mix(in srgb, var(--foreground) 48%, transparent); font-size: 12px; }
+.yingxue-skills .skill-card-like[aria-pressed="true"] { color: color-mix(in srgb, var(--palette-status-error) 75%, var(--foreground)); }
+.yingxue-skills .skill-card-like:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
+.yingxue-skills .skill-card-join { display: inline-flex; height: 27px; min-width: 82px; flex: 0 1 auto; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: var(--r-md); background: var(--foreground); padding: 0 10px; color: var(--background); font-size: 12px; font-weight: 560; }
+.yingxue-skills .skill-card-join:hover { opacity: .86; }
+.yingxue-skills .skill-card-join.is-added { background: color-mix(in srgb, var(--foreground) 8%, transparent); color: var(--foreground); }
+.yingxue-skills .skill-card-owner-flag { display: inline-flex; height: 27px; align-items: center; border-radius: var(--r-md); background: color-mix(in srgb, var(--foreground) 6%, transparent); padding: 0 9px; color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 12px; }
+.yingxue-skills .skill-card-added-count { overflow: hidden; margin-left: auto; color: color-mix(in srgb, var(--foreground) 38%, transparent); font-size: 11px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.yingxue-skills .skills-card-skeleton { height: 156px; min-height: 156px; max-height: 156px; border-radius: var(--r-xl); background: color-mix(in srgb, var(--foreground) 4%, transparent); animation: skills-card-pulse 1.4s ease-in-out infinite; }
+@keyframes skills-card-pulse { 50% { opacity: .55; } }
+
+.yingxue-skill-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
+.yingxue-skill-drawer .ant-drawer-header { border-bottom-color: color-mix(in srgb, var(--foreground) 8%, transparent); padding: 14px 20px; }
+.yingxue-skill-drawer .ant-drawer-title { color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 13px; font-weight: 560; }
+.yingxue-skill-drawer .ant-drawer-body { padding: 0 24px 32px; }
+.yingxue-skill-drawer .skill-detail-layout { display: flex; min-width: 0; flex-direction: column; gap: 30px; }
+.yingxue-skill-drawer .skill-detail-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 20px; padding-top: 28px; }
+.yingxue-skill-drawer .skill-detail-heading { min-width: 0; }
+.yingxue-skill-drawer .skill-detail-heading h1 { color: var(--foreground); font-size: 24px; font-weight: 630; letter-spacing: -.02em; line-height: 34px; }
+.yingxue-skill-drawer .skill-detail-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; color: color-mix(in srgb, var(--foreground) 44%, transparent); font-size: 12px; line-height: 20px; }
+.yingxue-skill-drawer .skill-detail-meta img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }
+.yingxue-skill-drawer .skill-detail-meta i { width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--foreground) 20%, transparent); }
+.yingxue-skill-drawer .skill-detail-actions { display: flex; flex: 0 0 auto; align-items: flex-start; gap: var(--space-2); }
+.yingxue-skill-drawer .skill-detail-description { grid-column: 1 / -1; max-width: 720px; color: color-mix(in srgb, var(--foreground) 66%, transparent); font-size: 14px; line-height: 23px; white-space: pre-wrap; }
+.yingxue-skill-drawer .skill-detail-counts { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 16px; color: color-mix(in srgb, var(--foreground) 44%, transparent); font-size: 12px; }
+.yingxue-skill-drawer .skill-detail-counts span { display: inline-flex; align-items: center; gap: 5px; }
+.yingxue-skill-drawer .skill-detail-counts svg { width: 14px; height: 14px; }
+.yingxue-skill-drawer .skill-detail-section { min-width: 0; }
+.yingxue-skill-drawer .skill-detail-section-heading { display: flex; min-height: 40px; align-items: flex-end; justify-content: space-between; gap: var(--space-3); margin-bottom: 12px; }
+.yingxue-skill-drawer .skill-detail-section-heading > div > span { color: color-mix(in srgb, var(--foreground) 38%, transparent); font-size: 10px; font-weight: 620; letter-spacing: .1em; text-transform: uppercase; }
+.yingxue-skill-drawer .skill-detail-section-heading h2,
+.yingxue-skill-drawer .skill-detail-notes h2 { margin-top: 2px; color: var(--foreground); font-size: 15px; font-weight: 620; line-height: 22px; }
+.yingxue-skill-drawer .skill-detail-external { display: grid; width: 34px; height: 34px; place-items: center; border-radius: var(--r-md); color: color-mix(in srgb, var(--foreground) 52%, transparent); }
+.yingxue-skill-drawer .skill-detail-external:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
+.yingxue-skill-drawer .skill-detail-external:focus-visible,
+.yingxue-skill-drawer .skill-file-tree button:focus-visible,
+.yingxue-skill-drawer .skill-content-mode button:focus-visible,
+.yingxue-skill-drawer .skill-content-source:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.yingxue-skill-drawer .skill-detail-external svg { width: 16px; height: 16px; }
+.yingxue-skill-drawer .skill-content-viewer { position: relative; min-width: 0; border: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent); border-radius: var(--r-xl); background: color-mix(in srgb, var(--foreground) 1.8%, transparent); }
+.yingxue-skill-drawer .skill-content-viewer.is-embedded { min-height: 100%; border: 0; border-radius: 0; background: transparent; }
+.yingxue-skill-drawer .skill-content-mode { position: absolute; top: 10px; right: 10px; z-index: 1; display: flex; align-items: center; gap: 2px; border-radius: var(--r-md); background: color-mix(in srgb, var(--foreground) 6%, var(--background)); padding: 3px; box-shadow: var(--shadow-xs); }
+.yingxue-skill-drawer .skill-content-mode button { display: inline-flex; height: 27px; align-items: center; gap: 5px; border: 0; border-radius: var(--r-sm); background: transparent; padding: 0 8px; color: color-mix(in srgb, var(--foreground) 46%, transparent); font-size: var(--fs-label); }
+.yingxue-skill-drawer .skill-content-mode button[aria-pressed="true"] { background: color-mix(in srgb, var(--foreground) 10%, transparent); color: var(--foreground); }
+.yingxue-skill-drawer .skill-content-mode button:hover { color: var(--foreground); }
+.yingxue-skill-drawer .skill-content-mode svg { width: 13px; height: 13px; }
+.yingxue-skill-drawer .skill-content-rendered { min-width: 0; padding: 52px 20px 20px; }
+.yingxue-skill-drawer .skill-content-source { min-width: 0; min-height: 160px; overflow: auto; margin: 0; padding: 52px 20px 20px; color: color-mix(in srgb, var(--foreground) 72%, transparent); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.yingxue-skill-drawer .skill-content-rendered .ai-message-markdown { color: color-mix(in srgb, var(--foreground) 78%, transparent); font-size: 13px; line-height: 1.75; }
+.yingxue-skill-drawer .skill-media-gallery { display: flex; min-width: 0; gap: 12px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.yingxue-skill-drawer .skill-media-item { width: min(74vw, 480px); aspect-ratio: 16 / 9; flex: 0 0 auto; overflow: hidden; border: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent); border-radius: var(--r-xl); background: color-mix(in srgb, var(--foreground) 5%, transparent); scroll-snap-align: start; }
+.yingxue-skill-drawer .skill-media-item img,
+.yingxue-skill-drawer .skill-media-item video { width: 100%; height: 100%; object-fit: contain; background: var(--color-neutral-950); }
+.yingxue-skill-drawer .skill-media-failed { position: relative; display: grid; width: 100%; height: 100%; place-items: center; overflow: hidden; padding: 20px; color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 12px; text-align: center; }
+.yingxue-skill-drawer .skill-media-failed img { position: absolute; inset: 0; opacity: .2; object-fit: cover; }
+.yingxue-skill-drawer .skill-media-failed span { position: relative; }
+.yingxue-skill-drawer .skill-file-count { color: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 12px; font-variant-numeric: tabular-nums; }
+.yingxue-skill-drawer .skill-files-workspace { display: grid; min-height: 430px; max-height: 64vh; grid-template-columns: 210px minmax(0, 1fr); overflow: hidden; border: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent); border-radius: var(--r-xl); background: color-mix(in srgb, var(--foreground) 1.8%, transparent); }
+.yingxue-skill-drawer .skill-file-tree { min-width: 0; overflow-y: auto; border-right: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); padding: 10px 8px; background: color-mix(in srgb, var(--foreground) 2.5%, transparent); }
+.yingxue-skill-drawer .skill-file-tree-root { display: flex; height: 32px; align-items: center; gap: 7px; padding: 0 9px; color: color-mix(in srgb, var(--foreground) 48%, transparent); font-size: 12px; font-weight: 600; }
+.yingxue-skill-drawer .skill-file-tree-root svg { width: 15px; height: 15px; }
+.yingxue-skill-drawer .skill-file-tree button { display: flex; width: 100%; height: 32px; min-width: 0; align-items: center; gap: 7px; border: 0; border-radius: var(--r-md); background: transparent; padding-right: 8px; color: color-mix(in srgb, var(--foreground) 54%, transparent); font-size: 12px; text-align: left; }
+.yingxue-skill-drawer .skill-file-tree button:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
+.yingxue-skill-drawer .skill-file-tree button.is-active { background: color-mix(in srgb, var(--foreground) 8%, transparent); color: var(--foreground); font-weight: 560; }
+.yingxue-skill-drawer .skill-file-tree button svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.yingxue-skill-drawer .skill-file-tree button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yingxue-skill-drawer .skill-file-preview { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.yingxue-skill-drawer .skill-file-preview-bar { display: flex; height: 46px; flex: 0 0 auto; align-items: center; gap: 7px; border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); padding: 0 16px; color: color-mix(in srgb, var(--foreground) 58%, transparent); font-size: 12px; }
+.yingxue-skill-drawer .skill-file-preview-bar svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.yingxue-skill-drawer .skill-file-preview-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yingxue-skill-drawer .skill-file-preview-content { min-width: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
+.yingxue-skill-drawer .skill-file-preview-content .skill-content-rendered,
+.yingxue-skill-drawer .skill-file-preview-content .skill-content-source { padding-inline: 18px; }
+.yingxue-skill-drawer .skill-file-empty { display: grid; min-height: 300px; place-items: center; color: color-mix(in srgb, var(--foreground) 42%, transparent); font-size: 13px; }
+.yingxue-skill-drawer .skill-detail-notes { border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); padding-top: 18px; }
+.yingxue-skill-drawer .skill-detail-notes p { margin-top: 8px; color: color-mix(in srgb, var(--foreground) 56%, transparent); font-size: 12px; line-height: 20px; white-space: pre-wrap; }
+
+@media (max-width: 1180px) {
+    .yingxue-skills .skill-library-grid,
+    .yingxue-skills .skills-skeleton-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    .yingxue-skills .skills-page-heading { min-height: 0; align-items: flex-start; padding-top: var(--space-2); }
+    .yingxue-skills .skills-page-title-row { flex-wrap: wrap; }
+    .yingxue-skills .skills-page-heading-copy > p { max-width: 44ch; }
+    .yingxue-skills .skills-toolbar .admin-list-toolbar-main { align-items: stretch; flex-direction: column; }
+    .yingxue-skills .skills-toolbar-actions { width: 100%; flex-basis: auto; justify-content: stretch; }
+    .yingxue-skills .skills-toolbar-actions .ant-input-affix-wrapper { min-width: 0; }
+    .yingxue-skills .skills-toolbar .admin-list-toolbar-actions { align-self: flex-end; }
+    .yingxue-skills .skill-library-grid,
+    .yingxue-skills .skills-skeleton-grid { grid-template-columns: 1fr; }
+    .yingxue-skill-drawer .ant-drawer-body { padding-inline: 16px; }
+    .yingxue-skill-drawer .skill-detail-header { grid-template-columns: 1fr; }
+    .yingxue-skill-drawer .skill-files-workspace { max-height: none; grid-template-columns: 1fr; }
+    .yingxue-skill-drawer .skill-file-tree { max-height: 180px; border-right: 0; border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); }
+    .yingxue-skill-drawer .skill-file-preview-content { max-height: 60vh; }
+}
+@media (max-width: 520px) {
+    .yingxue-skills .skills-page-heading { flex-direction: column; }
+    .yingxue-skills .skills-page-heading > .ant-btn { align-self: flex-start; }
+    .yingxue-skills .skills-tabs { width: 100%; }
+    .yingxue-skills .skill-library-card { height: 160px; min-height: 160px; max-height: 160px; }
+    .yingxue-skills .skill-card-cover { width: 112px; flex-basis: 112px; }
+    .yingxue-skills .skill-card-footer { flex-wrap: wrap; }
+    .yingxue-skills .skill-card-added-count { display: none; }
+    .yingxue-skill-drawer .skill-detail-actions { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .yingxue-skills .skills-scope-panel,
+    .yingxue-skills .skill-library-card,
+    .yingxue-skills .skill-card-cover > img,
+    .yingxue-skills .skills-card-skeleton { animation: none; transition: none; }
+}

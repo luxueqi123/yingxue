@@ -1,3 +1,4 @@
+
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type CanvasWorkspaceMode, type ContextMenuState, type Position } from "@/types/canvas";
 
@@ -11,15 +12,19 @@ type CanvasProjectContextMenuProps = {
     canUndo: boolean;
     canRedo: boolean;
     canPaste: boolean;
+    selectedCount: number;
+    downloadableSelectionCount: number;
+    onDownloadSelection: () => void;
     screenToCanvas: (clientX: number, clientY: number) => Position;
     onClose: () => void;
     onAddNode: (type: CanvasNodeTypeId, position: Position) => void;
     onAddFolder: (position: Position) => void;
     onChooseStyle: () => void;
-    onOpenDirector: (position?: Position) => void;
+    onOpenPrevis: (position?: Position) => void;
     onUpload: (nodeId: string | undefined, position: Position) => void;
     onOpenAssets: (position: Position) => void;
     onOpenProjectCharacters: (position: Position) => void;
+    onOpenPoseLibrary?: (position: Position) => void;
     onUndo: () => void;
     onRedo: () => void;
     onPaste: (position: Position) => void;
@@ -30,6 +35,7 @@ type CanvasProjectContextMenuProps = {
     onDeleteConnection: (connectionId: string) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
     onViewMedia: (node: CanvasNodeData) => void;
+    onOpenVersions?: (node: CanvasNodeData) => void;
     onEditText: (node: CanvasNodeData) => void;
     onOpenDrawing: (node: CanvasNodeData) => void;
     onGenerateImage: (node: CanvasNodeData) => void;
@@ -38,20 +44,32 @@ type CanvasProjectContextMenuProps = {
     onUploadToArkPrivateAsset: (node: CanvasNodeData) => void;
     onSetAssetCategory: (nodeId: string, category: CanvasAssetCategory) => void;
     onToggleFrame: (node: CanvasNodeData) => void;
-};
+    onSpreadSelection: () => void;
+    onCopySelection: () => void;
+    onDeleteSelection: () => void;
+    onSendToAgent: () => void;
+
+onAdoptToDrama?: (node: CanvasNodeData) => void;
+onCreateDramaFromStoryboard?: (node: CanvasNodeData) => void;};
 
 export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props }: CanvasProjectContextMenuProps) {
+const { onAdoptToDrama, onCreateDramaFromStoryboard } = props;
+
     if (!menu) return null;
     const menuPosition = () => menu.type === "canvas" ? menu.position : screenToCanvas(menu.x, menu.y);
     return (
-        <CanvasNodeContextMenu
+        <CanvasNodeContextMenu onAdoptToDrama={onAdoptToDrama && node && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? () => onAdoptToDrama(node) : undefined} onCreateDramaFromStoryboard={onCreateDramaFromStoryboard && node?.type === CanvasNodeType.Script ? () => onCreateDramaFromStoryboard(node) : undefined}
             menu={menu}
             node={node}
+            onOpenVersions={node && props.onOpenVersions ? () => props.onOpenVersions?.(node) : undefined}
             workspaceMode={props.workspaceMode}
             isProjectLinked={props.isProjectLinked}
             canUndo={props.canUndo}
             canRedo={props.canRedo}
             canPaste={props.canPaste}
+            selectedCount={props.selectedCount}
+            downloadableSelectionCount={props.downloadableSelectionCount}
+            onDownloadSelection={props.onDownloadSelection}
             onClose={props.onClose}
             onAddNode={(type) => {
                 if (menu.type === "canvas") props.onAddNode(type, menu.position);
@@ -60,10 +78,11 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
                 if (menu.type === "canvas") props.onAddFolder(menu.position);
             }}
             onChooseStyle={props.onChooseStyle}
-            onOpenDirector={props.onOpenDirector}
+            onOpenPrevis={props.onOpenPrevis}
             onUpload={() => props.onUpload(menu.type === "node" ? menu.nodeId : undefined, menuPosition())}
             onOpenAssets={() => props.onOpenAssets(menuPosition())}
             onOpenProjectCharacters={() => props.onOpenProjectCharacters(menuPosition())}
+            onOpenPoseLibrary={props.onOpenPoseLibrary ? () => props.onOpenPoseLibrary?.(menuPosition()) : undefined}
             onUndo={props.onUndo}
             onRedo={props.onRedo}
             onPaste={() => props.onPaste(menuPosition())}
@@ -106,6 +125,10 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             onToggleFrame={() => {
                 if (node?.type === CanvasNodeType.Frame) props.onToggleFrame(node);
             }}
+            onSpreadSelection={props.onSpreadSelection}
+            onCopySelection={props.onCopySelection}
+            onDeleteSelection={props.onDeleteSelection}
+            onSendToAgent={props.onSendToAgent}
         />
     );
 }

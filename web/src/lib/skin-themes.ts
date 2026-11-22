@@ -1,6 +1,42 @@
 export type SkinThemeMode = "light" | "dark";
 export type SkinShadowStyle = "none" | "soft" | "strong";
 
+export type SkinButtonFill = {
+    mode: "solid" | "gradient";
+    angle: number;
+    start: string;
+    end: string;
+    hoverStart: string;
+    hoverEnd: string;
+    activeStart: string;
+    activeEnd: string;
+    foreground: string;
+};
+
+// 主按钮默认取皮肤主操作色的纯色墨（docs/ui-design-system.md §3.0）。渐变色值只在管理员
+// 把自定义皮肤切到“渐变”后才生效，默认给同色系的上亮下暗，不再预置紫蓝渐变。
+export const DEFAULT_BUTTON_FILLS: Record<SkinThemeMode, SkinButtonFill> = {
+    light: {
+        mode: "solid", angle: 180,
+        start: "#3f3f46", end: "#18181b",
+        hoverStart: "#52525b", hoverEnd: "#27272a",
+        activeStart: "#27272a", activeEnd: "#09090b", foreground: "#fafafa",
+    },
+    dark: {
+        mode: "solid", angle: 180,
+        start: "#ffffff", end: "#e4e4e7",
+        hoverStart: "#ffffff", hoverEnd: "#f4f4f5",
+        activeStart: "#e4e4e7", activeEnd: "#d4d4d8", foreground: "#18181b",
+    },
+};
+
+export const SKIN_BUTTON_COLOR_FIELDS = [
+    { key: "start", label: "渐变起色" }, { key: "end", label: "渐变终色" },
+    { key: "hoverStart", label: "悬停起色" }, { key: "hoverEnd", label: "悬停终色" },
+    { key: "activeStart", label: "按下起色" }, { key: "activeEnd", label: "按下终色" },
+    { key: "foreground", label: "渐变按钮文字" },
+] as const;
+
 export type SkinModeTokens = {
     canvas: string;
     surface: string;
@@ -78,6 +114,7 @@ export type SkinTokens = {
     light: SkinModeTokens;
     dark: SkinModeTokens;
     components: SkinComponentTokens;
+    buttons: Record<SkinThemeMode, SkinButtonFill>;
 };
 
 export type SkinDefinition = {
@@ -197,7 +234,7 @@ export const SKIN_COLOR_GROUPS: readonly SkinColorGroup[] = [
             { key: "switchUnchecked", label: "开关关闭", help: "Switch 关闭轨道" },
             { key: "switchUncheckedHover", label: "关闭悬停", help: "关闭状态 hover 轨道" },
             { key: "switchUncheckedHandle", label: "关闭滑块", help: "关闭状态圆形滑块" },
-            { key: "primary", label: "主操作", help: "主要按钮、链接和开关" },
+            { key: "primary", label: "主操作", help: "纯色主按钮与链接；开关使用独立颜色" },
             { key: "primaryHover", label: "主操作悬停", help: "主要操作 hover" },
             { key: "primaryActive", label: "主操作按下", help: "主要操作 active" },
             { key: "primaryForeground", label: "主操作前景", help: "主按钮上的文字和图标" },
@@ -309,15 +346,15 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
             info: "#2563eb",
             workspace: "#ffffff",
             workspaceGrid: "#f3f3f3",
-            adminBackground: "#f5f5f5",
+            adminBackground: "#f3f4f6",
             adminSurface: "#ffffff",
-            adminSubtle: "#f6f6f6",
-            adminStrong: "#ececec",
-            authBackground: "#08090c",
-            authPanel: "#0b0c10",
-            authCard: "#121318",
-            authAccent: "#93c5fd",
-            authMuted: "#8a8b91",
+            adminSubtle: "#f7f8fa",
+            adminStrong: "#eceff3",
+            authBackground: "#ffffff",
+            authPanel: "#f7f7f7",
+            authCard: "#ffffff",
+            authAccent: "#2563eb",
+            authMuted: "#737373",
         },
         dark: {
             canvas: "#0a0a0a",
@@ -361,9 +398,9 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
             info: "#60a5fa",
             workspace: "#181818",
             workspaceGrid: "#222222",
-            adminBackground: "#0f0f0f",
+            adminBackground: "#101010",
             adminSurface: "#181818",
-            adminSubtle: "#222222",
+            adminSubtle: "#202020",
             adminStrong: "#2a2a2a",
             authBackground: "#08090c",
             authPanel: "#0b0c10",
@@ -371,6 +408,7 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
             authAccent: "#93c5fd",
             authMuted: "#8a8b91",
         },
+        buttons: { light: { ...DEFAULT_BUTTON_FILLS.light }, dark: { ...DEFAULT_BUTTON_FILLS.dark } },
         components: {
             buttonRadius: 6,
             inputRadius: 6,
@@ -395,6 +433,7 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
 
 const HEX_COLOR = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
 const MANAGED_VARIABLES = [
+    "--button-primary-bg", "--button-primary-hover-bg", "--button-primary-active-bg", "--button-primary-fg",
     "--background",
     "--foreground",
     "--card",
@@ -504,7 +543,10 @@ export function normalizeSkinDefinition(value: unknown, fallback: SkinDefinition
         name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim().slice(0, 40) : fallback.name,
         description: typeof candidate.description === "string" ? candidate.description.trim().slice(0, 100) : fallback.description,
         locked: id === "classic",
-        tokens: { light, dark, components: { ...modes.components } },
+        tokens: { light, dark, components: { ...modes.components }, buttons: {
+            light: normalizeButtonFill(modes.buttons?.light, "light"),
+            dark: normalizeButtonFill(modes.buttons?.dark, "dark"),
+        } },
     };
 }
 
@@ -658,11 +700,40 @@ export function applySkinTheme(skinValue: unknown, mode: SkinThemeMode, targetDo
     const skin = normalizeSkinDefinition(skinValue);
     const root = targetDocument.documentElement;
     for (const property of MANAGED_VARIABLES) root.style.removeProperty(property);
+    // 经典皮肤的全部 token（包括主按钮）都由 globals.css 定义；只有自定义皮肤写入行内变量，
+    // 这样首屏 JS 执行前主按钮也有颜色，旧后端返回的历史填充也不会改变经典外观。
     if (skin.id !== "classic") {
-        const values = skinCSSVariables(skin, mode);
+        const values = { ...skinCSSVariables(skin, mode), ...skinButtonCSSVariables(skin, mode) };
         for (const [property, value] of Object.entries(values)) root.style.setProperty(property, value);
     }
     root.dataset.skin = skin.id;
+}
+
+export function isSkinButtonFill(value: unknown): value is SkinButtonFill {
+    if (!value || typeof value !== "object") return false;
+    const fill = value as SkinButtonFill;
+    return ["solid", "gradient"].includes(fill.mode) && Number.isInteger(fill.angle) && fill.angle >= 0 && fill.angle <= 360
+        && SKIN_BUTTON_COLOR_FIELDS.every(({ key }) => typeof fill[key] === "string" && HEX_COLOR.test(fill[key]));
+}
+
+function normalizeButtonFill(value: unknown, mode: SkinThemeMode): SkinButtonFill {
+    return isSkinButtonFill(value) ? { ...value } : { ...DEFAULT_BUTTON_FILLS[mode] };
+}
+
+export function getSkinButtonAppearance(skin: SkinDefinition, mode: SkinThemeMode) {
+    const fill = normalizeButtonFill(skin.tokens.buttons?.[mode], mode);
+    const color = skin.tokens[mode];
+    const gradient = (start: string, end: string) => `linear-gradient(${fill.angle}deg, ${start}, ${end})`;
+    return fill.mode === "gradient" ? {
+        background: gradient(fill.start, fill.end), hover: gradient(fill.hoverStart, fill.hoverEnd),
+        active: gradient(fill.activeStart, fill.activeEnd), foreground: fill.foreground,
+    } : { background: color.primary, hover: color.primaryHover, active: color.primaryActive, foreground: color.primaryForeground };
+}
+
+function skinButtonCSSVariables(skin: SkinDefinition, mode: SkinThemeMode) {
+    const button = getSkinButtonAppearance(skin, mode);
+    return { "--button-primary-bg": button.background, "--button-primary-hover-bg": button.hover,
+        "--button-primary-active-bg": button.active, "--button-primary-fg": button.foreground };
 }
 
 export function skinCSSVariables(skin: SkinDefinition, mode: SkinThemeMode): Record<string, string> {
@@ -766,18 +837,20 @@ export function skinCSSVariables(skin: SkinDefinition, mode: SkinThemeMode): Rec
 
 function skinShadowVariables(style: SkinShadowStyle, mode: SkinThemeMode) {
     if (style === "none") return { "--elevation-card": "none", "--elevation-card-hover": "none", "--elevation-overlay": "none", "--theme-admin-card-shadow": "none" };
+    // 每档阴影两层：贴边、清晰的小阴影交代边缘，大而淡的阴影交代悬浮高度。
     if (style === "strong") {
         return mode === "dark"
-            ? { "--elevation-card": "0 5px 16px #00000080", "--elevation-card-hover": "0 18px 44px #000000a6", "--elevation-overlay": "0 30px 90px #000000c2", "--theme-admin-card-shadow": "0 5px 16px #00000070" }
-            : { "--elevation-card": "0 5px 16px #0f172a29", "--elevation-card-hover": "0 18px 44px #0f172a3d", "--elevation-overlay": "0 30px 90px #0f172a52", "--theme-admin-card-shadow": "0 5px 16px #11182724" };
+            ? { "--elevation-card": "0 1px 2px #00000080, 0 6px 16px #00000066", "--elevation-card-hover": "0 1px 3px #00000080, 0 18px 44px #0000008c", "--elevation-overlay": "0 2px 6px #00000080, 0 30px 90px #000000a6", "--theme-admin-card-shadow": "0 1px 2px #00000070, 0 6px 16px #00000052" }
+            : { "--elevation-card": "0 1px 2px #0f172a1f, 0 6px 16px #0f172a1f", "--elevation-card-hover": "0 1px 3px #0f172a24, 0 18px 44px #0f172a33", "--elevation-overlay": "0 2px 6px #0f172a29, 0 30px 90px #0f172a42", "--theme-admin-card-shadow": "0 1px 2px #1118271f, 0 6px 16px #1118271a" };
     }
     return mode === "dark"
-        ? { "--elevation-card": "0 2px 7px #00000061", "--elevation-card-hover": "0 12px 30px #0000007a", "--elevation-overlay": "0 26px 72px #0000009e", "--theme-admin-card-shadow": "0 2px 7px #00000052" }
-        : { "--elevation-card": "0 2px 7px #0f172a14", "--elevation-card-hover": "0 12px 30px #0f172a24", "--elevation-overlay": "0 26px 72px #0f172a33", "--theme-admin-card-shadow": "0 2px 7px #1118270f" };
+        ? { "--elevation-card": "0 1px 2px #00000052, 0 4px 12px #00000047", "--elevation-card-hover": "0 1px 3px #00000061, 0 12px 30px #00000066", "--elevation-overlay": "0 2px 6px #00000066, 0 26px 72px #00000085", "--theme-admin-card-shadow": "0 1px 2px #00000047, 0 4px 12px #0000003d" }
+        : { "--elevation-card": "0 1px 2px #0f172a14, 0 4px 12px #0f172a0d", "--elevation-card-hover": "0 1px 3px #0f172a1a, 0 12px 30px #0f172a1f", "--elevation-overlay": "0 2px 6px #0f172a1a, 0 26px 72px #0f172a2b", "--theme-admin-card-shadow": "0 1px 2px #1118270f, 0 4px 12px #1118270a" };
 }
 
 function cloneSkinTokens(tokens: SkinTokens): SkinTokens {
-    return { light: { ...tokens.light }, dark: { ...tokens.dark }, components: { ...tokens.components } };
+    return { light: { ...tokens.light }, dark: { ...tokens.dark }, components: { ...tokens.components },
+        buttons: { light: { ...tokens.buttons.light }, dark: { ...tokens.buttons.dark } } };
 }
 
 function isSkinMode(value: unknown): value is SkinModeTokens {

@@ -1,0 +1,74 @@
+/* Same layer as the legacy overlay rules; explicit component classes keep
+   menus quiet without changing dialogs, notifications or the canvas editor. */
+@layer utilities {
+    .workspace-quiet-popup.ant-select-dropdown,
+    .workspace-quiet-popup .ant-dropdown-menu,
+    .workspace-quiet-popup .ant-popover-container,
+    .workspace-account-popover .ant-popover-container {
+        border: 0 !important;
+        border-radius: var(--user-radius-card) !important;
+        background: var(--user-surface-raised) !important;
+        background-image: none !important;
+        box-shadow: none !important;
+    }
+
+    .workspace-quiet-popup.ant-select-dropdown,
+    .workspace-quiet-popup .ant-dropdown-menu {
+        padding: var(--space-2);
+    }
+
+    .workspace-quiet-popup :where(.ant-select-item-option, .ant-dropdown-menu-item, .ant-dropdown-menu-submenu-title) {
+        border-radius: var(--user-radius-control) !important;
+        color: var(--user-ink) !important;
+    }
+
+    .workspace-quiet-popup .ant-dropdown-menu-item-danger {
+        color: var(--destructive) !important;
+    }
+
+    .workspace-quiet-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+    .workspace-quiet-popup .ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled):hover,
+    .workspace-quiet-popup .ant-dropdown-menu-submenu-title:not(.ant-dropdown-menu-item-disabled):hover {
+        background: var(--user-surface-muted) !important;
+    }
+
+    .workspace-quiet-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled),
+    .workspace-quiet-popup .ant-dropdown-menu-item-selected {
+        background: var(--user-surface-hover) !important;
+        color: var(--user-ink) !important;
+    }
+
+    /* antd 默认 slide 动画从 scaleY(.8) 拉伸展开，观感像回弹；工作台菜单只做短淡入。 */
+    .workspace-quiet-popup:is(.ant-slide-up-enter-active, .ant-slide-up-appear-active, .ant-slide-down-enter-active, .ant-slide-down-appear-active) {
+        animation-name: workspace-popup-in !important;
+        animation-duration: 120ms !important;
+        animation-timing-function: ease-out !important;
+    }
+    .workspace-quiet-popup:is(.ant-slide-up-leave-active, .ant-slide-down-leave-active) {
+        animation-name: workspace-popup-out !important;
+        animation-duration: 90ms !important;
+        animation-timing-function: ease-in !important;
+    }
+
+    .workspace-quiet-popup .ant-dropdown-menu-item-disabled,
+    .workspace-quiet-popup .ant-select-item-option-disabled {
+        color: var(--user-ink-soft) !important;
+    }
+}
+
+@keyframes workspace-popup-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes workspace-popup-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}

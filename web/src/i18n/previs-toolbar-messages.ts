@@ -1,0 +1,14 @@
+import type { InterfaceLocale } from "@/lib/interface-locale-ids";
+
+export const previsToolbarMessages = {
+    "zh-CN": { capture: "截图", record: "录屏", recordShot: "录制镜头画面", recordWindow: "录制预演台窗口", stop: "停止录制", monitor: "第二屏", closeMonitor: "关闭监看", depth: "深度捕捉", capturing: "捕捉中…", uploadFailed: "模型上传失败" },
+    "zh-HK": { capture: "截圖", record: "錄影", recordShot: "錄製鏡頭畫面", recordWindow: "錄製預演台視窗", stop: "停止錄製", monitor: "第二螢幕", closeMonitor: "關閉監看", depth: "深度擷取", capturing: "擷取中…", uploadFailed: "模型上傳失敗" },
+    "zh-TW": { capture: "截圖", record: "錄影", recordShot: "錄製鏡頭畫面", recordWindow: "錄製預演台視窗", stop: "停止錄製", monitor: "第二螢幕", closeMonitor: "關閉監看", depth: "深度擷取", capturing: "擷取中…", uploadFailed: "模型上傳失敗" },
+    "en-US": { capture: "Screenshot", record: "Record", recordShot: "Record shot", recordWindow: "Record rehearsal window", stop: "Stop recording", monitor: "Second screen", closeMonitor: "Close monitor", depth: "Capture depth", capturing: "Capturing…", uploadFailed: "Model upload failed" },
+    "fr-FR": { capture: "Capture", record: "Enregistrer", recordShot: "Enregistrer le plan", recordWindow: "Enregistrer la fenêtre de prévisualisation", stop: "Arrêter l’enregistrement", monitor: "Second écran", closeMonitor: "Fermer le moniteur", depth: "Capturer la profondeur", capturing: "Capture en cours…", uploadFailed: "Échec de l’envoi du modèle" },
+    "de-DE": { capture: "Screenshot", record: "Aufnehmen", recordShot: "Einstellung aufnehmen", recordWindow: "Vorschaufenster aufnehmen", stop: "Aufnahme stoppen", monitor: "Zweiter Bildschirm", closeMonitor: "Monitor schließen", depth: "Tiefe erfassen", capturing: "Wird erfasst…", uploadFailed: "Modell-Upload fehlgeschlagen" },
+    "ja-JP": { capture: "スクリーンショット", record: "録画", recordShot: "ショットを録画", recordWindow: "プレビュー画面を録画", stop: "録画を停止", monitor: "セカンドスクリーン", closeMonitor: "モニターを閉じる", depth: "深度キャプチャ", capturing: "キャプチャ中…", uploadFailed: "モデルのアップロードに失敗しました" },
+    "ko-KR": { capture: "스크린샷", record: "녹화", recordShot: "샷 녹화", recordWindow: "미리보기 창 녹화", stop: "녹화 중지", monitor: "두 번째 화면", closeMonitor: "모니터 닫기", depth: "깊이 캡처", capturing: "캡처 중…", uploadFailed: "모델 업로드 실패" },
+    "es-ES": { capture: "Captura", record: "Grabar", recordShot: "Grabar plano", recordWindow: "Grabar ventana de previsualización", stop: "Detener grabación", monitor: "Segunda pantalla", closeMonitor: "Cerrar monitor", depth: "Capturar profundidad", capturing: "Capturando…", uploadFailed: "Error al subir el modelo" },
+    "pt-BR": { capture: "Captura", record: "Gravar", recordShot: "Gravar plano", recordWindow: "Gravar janela de pré-visualização", stop: "Parar gravação", monitor: "Segunda tela", closeMonitor: "Fechar monitor", depth: "Capturar profundidade", capturing: "Capturando…", uploadFailed: "Falha ao enviar o modelo" },
+} satisfies Record<InterfaceLocale, Record<string, string>>;

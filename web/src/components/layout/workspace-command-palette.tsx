@@ -1,49 +1,76 @@
-import { Command, Home, Search, X } from "lucide-react";
+import { Bot, Command, Home, Search, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { navigationTools } from "@/constant/navigation-tools";
 import { Kbd } from "@/components/ui/base/kbd";
 import { cn } from "@/lib/utils";
+import { openWorkspaceWallet } from "@/lib/workspace-wallet";
 import { useUserStore } from "@/stores/use-user-store";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 
 type PaletteEntry = {
     id: string;
     title: string;
     icon: ComponentType<{ className?: string; strokeWidth?: number }>;
-    to: string;
+    to?: string;
+    run?: () => void;
 };
 
 /** 顶栏搜索 / ⌘K 命令面板：按功能开关过滤当前可用页面入口。 */
 export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useInterfaceTranslation();
     const navigate = useNavigate();
+    const location = useLocation();
     const features = useUserStore((state) => state.features);
+    const canUseSkills = useSkillLibraryAccess();
     const [query, setQuery] = useState("");
     const [highlight, setHighlight] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
-
+    const { i18n } = useTranslation();
     const entries = useMemo<PaletteEntry[]>(() => {
-        const toolEntry = (slug: string, to: string): PaletteEntry => {
+        const toolEntry = (slug: string, to?: string): PaletteEntry => {
             const tool = navigationTools.find((item) => item.slug === slug);
-            return { id: slug, title: tool?.label ?? slug, icon: tool?.icon ?? Home, to };
+            return { id: slug, title: tool ? t(tool.labelKey) : slug, icon: tool?.icon ?? Home, to };
         };
         return [
-            { id: "home", title: "首页", icon: Home, to: "/" },
-toolEntry("projects", "/projects"),
+            { id: "home", title: t("home"), icon: Home, to: "/home" },
+            toolEntry("projects", "/projects"),
             toolEntry("canvas", "/canvas"),
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
-            toolEntry("skills", "/skills"),
-            ...(features.creditsEnabled ? [toolEntry("wallet", "/wallet")] : []),
+            ...(canUseSkills ? [toolEntry("skills", "/skills")] : []),
+            ...(features.pluginCenterEnabled ? [toolEntry("plugins", "/plugins")] : []),
+            toolEntry("prompts", "/prompts"),
+            ...(features.creditsEnabled ? [{ ...toolEntry("wallet"), run: () => openWorkspaceWallet() }] : []),
             toolEntry("settings", "/settings"),
+            // 与 ⌘/Ctrl+J 相同：打开平台 Agent 面板。
+            { id: "agent", title: t("shell.palette.agent"), icon: Bot, run: () => useGlobalAgentStore.getState().openAgent() },
         ];
-    }, [features]);
+    }, [features, t, i18n.language, canUseSkills]);
 
     const filtered = useMemo(() => {
         const keyword = query.trim().toLowerCase();
         if (!keyword) return entries;
         return entries.filter((entry) => entry.title.toLowerCase().includes(keyword));
     }, [entries, query]);
+
+    const activateEntry = (entry: PaletteEntry) => {
+        onClose();
+        if (entry.id === "wallet" && !useUserStore.getState().user) {
+            navigate(`/login?next=${encodeURIComponent("/wallet")}`);
+            return;
+        }
+        if (entry.run) {
+            entry.run();
+            return;
+        }
+        if (entry.to) navigate(entry.to, entry.id === "settings" ? { state: location.pathname === "/settings" ? location.state : { returnTo: location.pathname + location.search + location.hash, returnState: location.state } } : undefined);
+    };
 
     useEffect(() => {
         if (open) {
@@ -76,14 +103,12 @@ toolEntry("projects", "/projects"),
             }
             if (event.key === "Enter" && filtered[highlight]) {
                 event.preventDefault();
-                const target = filtered[highlight];
-                onClose();
-                navigate(target.to);
+                activateEntry(filtered[highlight]);
             }
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-    }, [open, filtered, highlight, navigate, onClose]);
+    }, [activateEntry, filtered, highlight, onClose, open]);
 
     if (!open) return null;
 
@@ -99,17 +124,12 @@ toolEntry("projects", "/projects"),
                             value={query}
                             onChange={(event) => setQuery(event.target.value)}
                             className="min-w-0 flex-1 bg-transparent text-[var(--fs-body)] outline-none placeholder:text-foreground/45"
-                            placeholder="搜索页面或操作…"
+                            placeholder={t("shell.palette.placeholder")}
                         />
                         <Kbd onClick={onClose} className="hidden shrink-0 cursor-pointer transition-colors hover:bg-surface-hover hover:text-foreground sm:inline-flex">
                             ⌘K
                         </Kbd>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="ml-0.5 shrink-0 rounded-md p-1 text-foreground/50 transition-colors hover:bg-surface-hover hover:text-foreground"
-                            aria-label="关闭搜索"
-                        >
+                        <button type="button" onClick={onClose} className="ml-0.5 shrink-0 rounded-md p-1 text-foreground/50 transition-colors hover:bg-surface-hover hover:text-foreground" aria-label={t("shell.palette.close")}>
                             <X className="size-4" strokeWidth={1.6} />
                         </button>
                     </div>
@@ -125,10 +145,7 @@ toolEntry("projects", "/projects"),
                                         <button
                                             type="button"
                                             onMouseEnter={() => setHighlight(index)}
-                                            onClick={() => {
-                                                onClose();
-                                                navigate(entry.to);
-                                            }}
+                                            onClick={() => activateEntry(entry)}
                                             className={cn(
                                                 "flex w-full items-center gap-2.5 rounded-[var(--r-sm)] px-3 py-2.5 text-left text-[var(--fs-body)] transition-colors",
                                                 index === highlight ? "bg-surface-hover text-foreground" : "text-foreground/65",
@@ -144,7 +161,7 @@ toolEntry("projects", "/projects"),
                     ) : (
                         <div className="flex flex-col items-center justify-center py-8">
                             <Command className="mb-2 size-6 text-foreground/30" strokeWidth={1.5} />
-                            <p className="text-[var(--fs-caption)] font-medium text-foreground/55">未找到「{query}」相关页面</p>
+                            <p className="text-[var(--fs-caption)] font-medium text-foreground/55">{t("shell.palette.empty", { query })}</p>
                         </div>
                     )}
                 </div>

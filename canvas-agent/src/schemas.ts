@@ -75,30 +75,6 @@ const textNodeSchema = z.object({
     height: z.number().optional(),
 });
 
-const workflowNodeSchema = z.object({
-    ref: z.string().min(1),
-    kind: z.enum(["text", "script", "image", "video", "audio", "character_cards", "character_three_view", "storyboard_video"]),
-    title: z.string().min(1),
-    content: z.string().optional(),
-    prompt: z.string().optional(),
-    description: z.string().optional(),
-    referenceRefs: z.array(z.string()).optional(),
-    referenceNodeIds: z.array(z.string()).optional(),
-    runGeneration: z.boolean().optional(),
-    width: z.number().positive().optional(),
-    height: z.number().positive().optional(),
-});
-const workflowSchema = z.object({
-    title: z.string().optional(),
-    description: z.string().optional(),
-    nodes: z.array(workflowNodeSchema).min(1),
-    edges: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).optional(),
-    direction: z.enum(["horizontal", "vertical"]).optional(),
-    start: positionSchema.optional(),
-    gap: z.number().min(48).optional(),
-    autoRun: z.boolean().optional(),
-});
-
 const generationOptionsSchema = z.object({
     model: z.string().optional(),
     size: z.string().optional(),
@@ -112,6 +88,36 @@ const generationOptionsSchema = z.object({
     audioFormat: z.string().optional(),
     audioSpeed: z.string().optional(),
     audioInstructions: z.string().optional(),
+});
+
+export const workflowGenerationOptionsSchema = generationOptionsSchema.extend({
+    model: z.string().refine(value => Boolean(value.trim()), "工作流模型标识不能为空").optional(),
+    count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    transparentBackground: z.enum(["true", "false"]).optional(),
+});
+
+const workflowNodeSchema = z.object({
+    ref: z.string().min(1),
+    kind: z.enum(["text", "script", "image", "video", "audio", "character_cards", "character_three_view", "storyboard_video"]),
+    title: z.string().min(1),
+    content: z.string().optional(),
+    prompt: z.string().optional(),
+    description: z.string().optional(),
+    referenceRefs: z.array(z.string()).optional(),
+    referenceNodeIds: z.array(z.string()).optional(),
+    runGeneration: z.boolean().optional(),
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+}).merge(workflowGenerationOptionsSchema);
+const workflowSchema = z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    nodes: z.array(workflowNodeSchema).min(1),
+    edges: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })).optional(),
+    direction: z.enum(["horizontal", "vertical"]).optional(),
+    start: positionSchema.optional(),
+    gap: z.number().min(48).optional(),
+    autoRun: z.boolean().optional(),
 });
 
 const generationFlowSchema = z.object({
@@ -177,7 +183,7 @@ export const toolDescriptions: Record<ToolName, string> = {
     canvas_get_selection: "读取当前网页画布选中的节点。",
     canvas_export_snapshot: "导出当前画布快照，用于理解布局。",
     canvas_apply_ops: "批量操作当前网页画布。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、set_viewport、select_nodes、run_generation。",
-    canvas_create_workflow: "创建语义化工作流/流水线。character_cards 是角色拆分图片卡片，character_three_view 是角色三视图，storyboard_video 是分镜剧情视频。媒体节点必须有 prompt/content；已有素材使用先读取到的真实 node id 填入 referenceNodeIds。自动分配 id、根据真实节点尺寸布局、建立 edges/referenceRefs/referenceNodeIds 连线并返回可验证结果；不要用批量文本节点代替工作流。",
+    canvas_create_workflow: "创建语义化工作流/流水线。character_cards 是角色拆分图片卡片，character_three_view 是角色三视图，storyboard_video 是分镜剧情视频。媒体节点必须有 prompt/content；已有素材使用先读取到的真实 node id 填入 referenceNodeIds。每个节点可独立传 model、size、quality、seconds、audioVoice 等生成参数；只使用已确认可用的映雪模型标识，不能把来源平台显示名直接当作模型 ID。显式参数会在生成前检查，不能由默认配置静默替换；保留技能阶段审阅，创建流程不代表批准批量生成。自动分配 id、布局和真实连线并返回可验证结果；不要用批量文本节点代替工作流。",
     canvas_create_node: "创建任意类型节点：text、script、image、video、audio、frame。适合创建脚本、媒体占位、背板或自定义 metadata 节点。",
     canvas_create_text_node: "在当前画布创建单个文本节点。",
     canvas_create_text_nodes: "批量创建文本节点，适合生成标题、段落、脚本、说明等内容块。",
