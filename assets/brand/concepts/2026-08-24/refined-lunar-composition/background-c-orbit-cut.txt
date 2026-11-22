@@ -1,0 +1,9 @@
+Asset type: abstract structural background for a premium horizontal Chinese logo
+Primary request: Design two disciplined calligraphic lunar geometries around a large empty center, with no text: a dark interrupted upper orbit and a different luminous lower return stroke.
+Subject: upper form is a flattened, softly faceted dark-silver orbit spanning the top half, interrupted above center-left so it reads as an implied moon shadow rather than a crescent. Lower form is a much thinner opposite-rhythm platinum curve starting near lower-left and lifting toward lower-right, but it must stop before becoming a platform.
+Style/medium: original luxury technology-culture identity, vector-ready, restrained 2.5D relief, brushed platinum and frosted dark silver, powerful and precise.
+Composition/framing: square black canvas; overall logo reads horizontally; reserve a wide empty center covering 60 percent width and 38 percent height for later horizontal Chinese wordmark; only upper orbit and lower return stroke; optically centered with strong negative space.
+Lighting/mood: crisp cold rim light, quiet shadow depth, no ambient haze.
+Color palette: graphite, cold gray, pale platinum, a hairline of ice blue.
+Constraints: no text, no letters, no Chinese characters, no icon inside the center, no complete circle, no literal moon, no floor or reflection.
+Avoid: watermark, typography, debris, particles, dots, fragments, shards, smoke, ribbons, long streaks, excessive glow, bloom, blur, cheap chrome, plastic, fantasy ornament, game UI, badge, seal, weapon, mirrored crescents, side moons, tray-like base.

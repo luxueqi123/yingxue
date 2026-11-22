@@ -1,0 +1,197 @@
+{
+ "test/app-theme.test.ts": {
+  "pass": 3,
+  "failcount": 2,
+  "fails": [
+   "shared action colors and focus feedback > classic solid tokens remain monochrome beneath the button fill adapter in light mode",
+   "shared action colors and focus feedback > classic solid tokens remain monochrome beneath the button fill adapter in dark mode"
+  ],
+  "raw_tail": ""
+ },
+ "test/appearance-bootstrap.test.ts": {
+  "pass": 7,
+  "failcount": 2,
+  "fails": [
+   "initial HTML stays brand neutral until the public appearance is resolved",
+   "auth scene consumes resolved appearance instead of hardcoded media constants"
+  ],
+  "raw_tail": ""
+ },
+ "test/ark-video-execution.test.ts": {
+  "pass": 1,
+  "failcount": 1,
+  "fails": [
+   "actual video executor retains search setting through result versions and JSON restore"
+  ],
+  "raw_tail": ""
+ },
+ "test/canvas-angle-dialog.test.ts": {
+  "pass": 0,
+  "failcount": 1,
+  "fails": [
+   "image angle editor (#432) > uses a centered dismissible modal instead of a node-anchored overlay"
+  ],
+  "raw_tail": ""
+ },
+ "test/canvas-image-upload.test.tsx": {
+  "pass": 12,
+  "failcount": 1,
+  "fails": [
+   "图片上传占位 > 上传先占位再传输，完成替换同一节点，弹窗不等待传输完成"
+  ],
+  "raw_tail": ""
+ },
+ "test/canvas-node-config-reset.test.ts": {
+  "pass": 7,
+  "failcount": 1,
+  "fails": [
+   "applyNodeConfigPatch 模型切换清理生成参数 > 导入工程切换模型保留制作要求，用户同时修改的参数正常生效"
+  ],
+  "raw_tail": ""
+ },
+ "test/create-canvas-handoff.test.ts": {
+  "pass": 18,
+  "failcount": 1,
+  "fails": [
+   "Create forwards owned result assets through one new canvas and the project persists before clearing the handoff"
+  ],
+  "raw_tail": ""
+ },
+ "test/create-library-button.test.ts": {
+  "pass": 8,
+  "failcount": 2,
+  "fails": [
+   "creation library button > previews prompt reference images without removing them",
+   "creation homepage default mode > opens the empty homepage on image generation instead of video"
+  ],
+  "raw_tail": ""
+ },
+ "test/generation-task-local.test.ts": {
+  "pass": 60,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/kling-native-execution.test.ts": {
+  "pass": 0,
+  "failcount": 3,
+  "fails": [
+   "source kling-v3-omni quality reaches actual executor and saved result",
+   "source kling-video-o3 quality reaches actual executor and saved result",
+   "ordinary 3.0 uses its own contract; conflicting tiers and missing video semantics remain pending"
+  ],
+  "raw_tail": ""
+ },
+ "test/local-channel-permission.test.ts": {
+  "pass": 5,
+  "failcount": 3,
+  "fails": [
+   "允许本机渠道前端请求合同 > 默认关闭，旧持久化记录回退 false，新记录 true 可回显并进入请求配置",
+   "允许本机渠道前端请求合同 > 实际生成配置与 relay 在运行时重新投影 forged persisted local flag",
+   "允许本机渠道前端请求合同 > 登录态模型拉取同样消费运行时投影而不是 forged persisted flag"
+  ],
+  "raw_tail": ""
+ },
+ "test/local-channel-runtime-projection.node.test.mjs": {
+  "pass": 1,
+  "failcount": 2,
+  "fails": [
+   "actual generation request config reprojects forged persisted local permission at runtime",
+   "authenticated model fetch reprojects forged persisted local permission before backend request"
+  ],
+  "raw_tail": ""
+ },
+ "test/local-channel-task-center.node.test.mjs": {
+  "pass": 0,
+  "failcount": 1,
+  "fails": [
+   "task-center forwards explicit task/session provider config without inferring a channel from Zustand"
+  ],
+  "raw_tail": ""
+ },
+ "test/local-channel-ui.node.test.mjs": {
+  "pass": 2,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-cli-settings.test.ts": {
+  "pass": 5,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-runtime-connection.test.ts": {
+  "pass": 9,
+  "failcount": 1,
+  "fails": [
+   "the application root starts local Runtime discovery before provider catalogs bootstrap"
+  ],
+  "raw_tail": ""
+ },
+ "test/ltv-audio-execution.test.ts": {
+  "pass": 1,
+  "failcount": 1,
+  "fails": [
+   "audio execution preserves strict options and dependency plan through result application"
+  ],
+  "raw_tail": ""
+ },
+ "test/project-document-persistence.test.ts": {
+  "pass": 0,
+  "failcount": 1,
+  "fails": [
+   "制作文档经过真实同步客户端保存回读，失败保留待保存，账号缓存隔离"
+  ],
+  "raw_tail": ""
+ },
+ "test/settings-preference-spacing.test.ts": {
+  "pass": 0,
+  "failcount": 2,
+  "fails": [
+   "settings page drops the page header copy and audio preference blocks",
+   "wallet tabs and preference blocks keep a visible gap from neighboring surfaces"
+  ],
+  "raw_tail": ""
+ },
+ "test/topaz-video-execution.test.ts": {
+  "pass": 0,
+  "failcount": 1,
+  "fails": [
+   "视频增强实际首次执行器读取原片尺寸，提交和结果恢复保留增强合同"
+  ],
+  "raw_tail": ""
+ },
+ "test/ui-kit-retirement.test.ts": {
+  "pass": 2,
+  "failcount": 1,
+  "fails": [
+   "flush modal and drawer spacing is owned by product shells"
+  ],
+  "raw_tail": ""
+ },
+ "test/user-scoped-generation-persistence.test.ts": {
+  "pass": 48,
+  "failcount": 6,
+  "fails": [
+   "incremental sessions leave cached entities untouched and fetch only the opened canvas",
+   "concurrent canvas opens share one remote detail request",
+   "remote canvas conflict refreshes the baseline and overwrites once without repeating detail reads",
+   "user session initializes without downloading the full remote snapshot",
+   "login repair persists assets before canvas with bounded concurrency (failure=%s)"
+  ],
+  "raw_tail": ""
+ },
+ "test/workspace-route-loading.test.ts": {
+  "pass": 8,
+  "failcount": 5,
+  "fails": [
+   "workspace route loading > uses the Yingxue brand on the authentication scene",
+   "workspace route loading > uses the complete Yingxue logo inside workspace and admin sidebars",
+   "workspace route loading > keeps voice recording diagnostics out of production routes",
+   "workspace route loading > keeps the creation page at root and preserves the create compatibility route",
+   "workspace wallet entry > opens the credits modal instead of a dedicated wallet page"
+  ],
+  "raw_tail": ""
+ }
+}

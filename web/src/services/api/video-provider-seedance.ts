@@ -1,6 +1,8 @@
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { arkSearchModelLimits } from "@/lib/canvas/ark-video-search";
+import { isVolcengineArkVideoProtocol } from "@/lib/model-protocols";
 import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { getResourceOSSUrl } from "@/services/api/resources";
+import { getResourceInputURL } from "@/services/api/resources";
 import { getMediaBlob } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { buildApiUrl, modelOptionName, type AiConfig } from "@/stores/use-config-store";
@@ -13,13 +15,21 @@ import type { VideoProviderDeps } from "./video-provider-deps";
 import { hasExplicitVideoFrames, resolveVideoImageReferences } from "./video-reference-roles";
 
 export function isSeedanceConfig(config: ResolvedAiConfig) {
-    return config.interfaceType === "volcengine-ark-video" || isSeedanceVideoConfig(config);
+    return isVolcengineArkVideoProtocol(config.interfaceType) || isSeedanceVideoConfig(config);
 }
 
 export async function createSeedanceTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    assertSeedanceVideoReferences(videoReferences);
-    assertSeedanceAudioReferences(audioReferences);
-    const isVolcengineArk = config.interfaceType === "volcengine-ark-video";
+        const isVolcengineArk = config.interfaceType === "volcengine-ark-video";
+        const nativeLimits = isVolcengineArk ? arkSearchModelLimits(modelOptionName(model)) : null;
+        const limits = nativeLimits || SEEDANCE_REFERENCE_LIMITS;
+        if (references.length > limits.images || videoReferences.length > limits.videos || audioReferences.length > limits.audios) {
+            throw new Error(`当前模型最多支持 ${limits.images} 张图片、${limits.videos} 个视频和 ${limits.audios} 个音频，请调整参考素材。`);
+        }
+        assertSeedanceVideoReferences(videoReferences, nativeLimits?.maxDuration || 15, nativeLimits ? 200 * 1024 * 1024 : SEEDANCE_REFERENCE_LIMITS.videoMaxBytes);
+        assertSeedanceAudioReferences(audioReferences, nativeLimits?.maxDuration || 15);
+        if (options?.videoWebSearch !== undefined && typeof options.videoWebSearch !== 'boolean') throw new Error('视频联网参数必须是布尔值');
+        if (options?.videoWebSearch && !nativeLimits) throw new Error('视频联网搜索需要火山方舟 Seedance 2.0系列或2.5模型');
+        const arkProtocol = isVolcengineArkVideoProtocol(config.interfaceType);
     const payload = isVolcengineArk || isArkPlanBaseUrl(config.baseUrl)
         ? await buildSeedanceAgentPlanPayload(config, model, prompt, references, videoReferences, audioReferences, deps, options)
         : await buildSeedanceVideosPayload(config, model, prompt, references, videoReferences, audioReferences, deps, options);
@@ -54,38 +64,32 @@ export async function pollSeedanceTask(deps: VideoProviderDeps, config: Resolved
     }
 }
 
-function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[]) {
-    const error = seedanceVideoReferenceError(videoReferences);
+function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[], maxDuration: number, videoMaxBytes: number) {
+    const error = seedanceVideoReferenceError(videoReferences, { maxDuration, videoMaxBytes });
     if (error) throw new Error(error);
-    let total = 0;
-    for (const video of videoReferences) {
-        if (!video.durationMs) continue;
-        if (video.durationMs < 2000 || video.durationMs > 15000) throw new Error("Seedance 参考视频单个时长需要在 2-15 秒之间");
-        total += video.durationMs;
-    }
-    if (total > 15000) throw new Error("Seedance 参考视频总时长不能超过 15 秒");
 }
 
-function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
+function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[], maxDuration: number) {
     let total = 0;
     for (const audio of audioReferences) {
         if (!audio.durationMs) continue;
-        if (audio.durationMs < 2000 || audio.durationMs > 15000) throw new Error("Seedance 参考音频单个时长需要在 2-15 秒之间");
+        if (audio.durationMs < 2000 || audio.durationMs > maxDuration * 1000) throw new Error(`Seedance 参考音频单个时长需要在 2-${maxDuration} 秒之间`);
         total += audio.durationMs;
     }
-    if (total > 15000) throw new Error("Seedance 参考音频总时长不能超过 15 秒");
+    if (total > maxDuration * 1000) throw new Error(`Seedance 参考音频总时长不能超过 ${maxDuration} 秒`);
 }
 
 function seedanceApiUrl(config: ResolvedAiConfig, taskId?: string) {
-    if (config.interfaceType === "volcengine-ark-video" || isArkPlanBaseUrl(config.baseUrl)) return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
+    if (isVolcengineArkVideoProtocol(config.interfaceType) || isArkPlanBaseUrl(config.baseUrl)) return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
     return buildApiUrl(config.baseUrl, `/videos${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
 }
 
 async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], deps: VideoProviderDeps, options?: RequestOptions) {
-    if (audioReferences.length && !references.length && !videoReferences.length) {
-        throw new Error(config.interfaceType === "volcengine-ark-video" ? "火山方舟全模态参考不支持纯音频或文本+音频，请同时添加参考图片或参考视频" : "Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
+        const expanded = config.interfaceType === 'volcengine-ark-video' && modelOptionName(model).startsWith('doubao-seedance-2-5-');
+        if (!expanded && audioReferences.length && !references.length && !videoReferences.length) {
+            throw new Error(config.interfaceType === "volcengine-ark-video" ? "火山方舟全模态参考不支持纯音频或文本+音频，请同时添加参考图片或参考视频" : "Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
-    const content = config.interfaceType === "volcengine-ark-video"
+    const content = isVolcengineArkVideoProtocol(config.interfaceType)
         ? await buildVolcengineArkContent(prompt, references, videoReferences, audioReferences, options)
         : await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences, deps, options);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
@@ -94,8 +98,9 @@ async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: st
         model: modelOptionName(model),
         content,
         ratio: normalizeSeedanceRatio(config.size),
-        resolution: normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
+        resolution: config.interfaceType === 'volcengine-ark-video' && normalizeSeedanceResolution(config.vquality, modelOptionName(model)) === '2160p' ? '4k' : normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
         duration: normalizeSeedanceDuration(config.videoSeconds),
+        ...(options?.videoWebSearch ? { tools: [{ type: 'web_search' }] } : {}),
         ...(profile.generateAudio.supported ? { generate_audio: boolConfig(config.videoGenerateAudio, profile.generateAudio.default) } : {}),
         ...(profile.watermark.supported ? { watermark: boolConfig(config.videoWatermark, profile.watermark.default) } : {}),
     };
@@ -103,23 +108,25 @@ async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: st
 
 async function buildVolcengineArkContent(prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions) {
     const content: Array<Record<string, unknown>> = [];
-    const imagePlan = resolveVideoImageReferences(references.slice(0, SEEDANCE_REFERENCE_LIMITS.images), options, { videoCount: videoReferences.length, audioCount: audioReferences.length });
+    const imagePlan = resolveVideoImageReferences(references, options, { videoCount: videoReferences.length, audioCount: audioReferences.length });
     if (prompt.trim()) content.push({ type: "text", text: prompt.trim() });
     for (const { image, role } of imagePlan) {
-        content.push({ type: "image_url", image_url: { url: await resolveVolcengineArkReferenceUrl(image.url || image.dataUrl, image.storageKey) }, role });
+        content.push({ type: "image_url", image_url: { url: await resolveVolcengineArkReferenceUrl(image.arkAssetId ? `asset://${image.arkAssetId}` : image.url || image.dataUrl, image.storageKey) }, role });
     }
-    for (const video of videoReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.videos)) {
+    for (const video of videoReferences) {
         content.push({ type: "video_url", video_url: { url: await resolveVolcengineArkReferenceUrl(video.url, video.storageKey) }, role: "reference_video" });
     }
-    for (const audio of audioReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.audios)) {
+    for (const audio of audioReferences) {
         content.push({ type: "audio_url", audio_url: { url: await resolveVolcengineArkReferenceUrl(audio.url, audio.storageKey) }, role: "reference_audio" });
     }
     return content;
 }
 
 async function resolveVolcengineArkReferenceUrl(value: string | undefined, storageKey?: string) {
-    if (storageKey?.startsWith("resource:")) return getResourceOSSUrl(storageKey);
-    if (isPublicMediaUrl(value || "") || String(value || "").startsWith("asset://")) return String(value);
+    // 已录入的方舟素材 ID 优先：已过审或被授权的素材直接引用，无需再换对象存储地址。
+    if (String(value || "").startsWith("asset://")) return String(value);
+    if (storageKey?.startsWith("resource:")) return getResourceInputURL(storageKey);
+    if (isPublicMediaUrl(value || "")) return String(value);
     throw new Error("火山方舟视频参考素材需要公网 URL 或 asset:// 素材 ID；请先将本地素材保存到对象存储");
 }
 

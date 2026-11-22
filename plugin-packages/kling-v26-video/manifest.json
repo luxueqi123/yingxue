@@ -1,0 +1,1646 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "kling-v26-video",
+  "name": "Kling 2.6 Video",
+  "version": "1.0.0",
+  "author": "影策",
+  "description": "Kling 2.6原版本单首帧音频控制声明式协议。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "kling-v26-video",
+        "label": "Kling 2.6 Video",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api-beijing.klingai.com",
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "inputImages": {
+          "formats": [
+            "jpeg",
+            "png"
+          ],
+          "maxBytes": 50000000,
+          "minShortSide": 300,
+          "minAspectRatio": 0.4,
+          "maxAspectRatio": 2.5
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "mapping": "endpoint identity",
+            "description": "kling-2.6原版本。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "mapping": "contents.prompt.text",
+            "description": "原始提示词。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "mapping": "contents.first_frame.url",
+            "description": "单一明确首帧，原字节。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "mapping": "settings.duration",
+            "description": "5或10秒。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "mapping": "settings.resolution",
+            "description": "720p或1080p。"
+          },
+          {
+            "name": "generateAudio",
+            "type": "boolean",
+            "mapping": "settings.audio",
+            "description": "true为native，false为off；native仅1080p。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "providerOptions.kling-v26-video",
+            "description": "独立命名空间mode，未支持控制拒绝。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "kling-2.6"
+              ]
+            },
+            "message": "必须选择真实2.6版本，不能用其他模型代替"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.operation"
+                },
+                "image_to_video"
+              ]
+            },
+            "message": "此入口仅接入单首帧图生视频"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$ref": "request.prompt"
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.prompt"
+                      }
+                    },
+                    2500
+                  ]
+                }
+              ]
+            },
+            "message": "保留1至2500字符原文"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.providerOptions.kling-v26-video.mode"
+                },
+                [
+                  "std",
+                  "pro"
+                ]
+              ]
+            },
+            "message": "仅支持标准和高品质"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$lower": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.resolution"
+                      },
+                      {
+                        "$ref": "request.resolution"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "$if": {
+                    "condition": {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-v26-video.mode"
+                        },
+                        "pro"
+                      ]
+                    },
+                    "then": "1080p",
+                    "else": "720p"
+                  }
+                }
+              ]
+            },
+            "message": "清晰度必须匹配原档位"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.duration"
+                    },
+                    {
+                      "$ref": "request.duration"
+                    },
+                    5
+                  ]
+                },
+                [
+                  5,
+                  10
+                ]
+              ]
+            },
+            "message": "2.6仅支持5或10秒"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.aspectRatio"
+                    },
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    "adaptive"
+                  ]
+                },
+                [
+                  "",
+                  "auto",
+                  "adaptive"
+                ]
+              ]
+            },
+            "message": "首帧决定画幅，不能丢弃固定画幅"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.output.generateAudio"
+                        },
+                        {
+                          "$ref": "request.generateAudio"
+                        },
+                        false
+                      ]
+                    },
+                    false
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "request.output.generateAudio"
+                            },
+                            {
+                              "$ref": "request.generateAudio"
+                            },
+                            false
+                          ]
+                        },
+                        true
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$lower": {
+                            "$coalesce": [
+                              {
+                                "$ref": "request.output.resolution"
+                              },
+                              {
+                                "$ref": "request.resolution"
+                              }
+                            ]
+                          }
+                        },
+                        "1080p"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "有声视频仅1080p，不能自动升级"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.count"
+                    },
+                    1
+                  ]
+                },
+                1
+              ]
+            },
+            "message": "每次只能生成一个视频"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.images.0.role"
+                    },
+                    "first_frame"
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "此入口只支持单首帧；首尾帧源默认声音尚未确认"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.providerOptions.kling-v26-video.multiShot"
+                    },
+                    false
+                  ]
+                },
+                false
+              ]
+            },
+            "message": "不支持分镜转换"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.multiPrompt"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.elements"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.subjects"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.voices"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.videoReferenceType"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v26-video.keepOriginalSound"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "未接入主体、音色、分镜和视频编辑"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/image-to-video/kling-2.6",
+          "originPath": true,
+          "contentType": "application/json",
+          "body": {
+            "contents": [
+              {
+                "type": "prompt",
+                "text": {
+                  "$ref": "request.prompt"
+                }
+              },
+              {
+                "type": "first_frame",
+                "url": {
+                  "$dataPayload": {
+                    "$ref": "request.images.0.value"
+                  }
+                }
+              }
+            ],
+            "settings": {
+              "resolution": {
+                "$lower": {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.resolution"
+                    },
+                    {
+                      "$ref": "request.resolution"
+                    }
+                  ]
+                }
+              },
+              "duration": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.duration"
+                  },
+                  {
+                    "$ref": "request.duration"
+                  },
+                  5
+                ]
+              },
+              "audio": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "request.output.generateAudio"
+                          },
+                          {
+                            "$ref": "request.generateAudio"
+                          },
+                          false
+                        ]
+                      },
+                      true
+                    ]
+                  },
+                  "then": "native",
+                  "else": "off"
+                }
+              }
+            },
+            "options": {
+              "watermark_info": {
+                "enabled": {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.watermark"
+                    },
+                    {
+                      "$ref": "request.watermark"
+                    },
+                    false
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/tasks",
+          "originPath": true,
+          "query": {
+            "task_ids": {
+              "$ref": "taskId"
+            }
+          }
+        },
+        "response": {
+          "taskId": {
+            "$if": {
+              "condition": {
+                "$gt": [
+                  {
+                    "$len": {
+                      "$ref": "taskId"
+                    }
+                  },
+                  0
+                ]
+              },
+              "then": {
+                "$first": {
+                  "$map": {
+                    "from": {
+                      "$filter": {
+                        "from": {
+                          "$ref": "response.data"
+                        },
+                        "as": "row",
+                        "where": {
+                          "$eq": [
+                            {
+                              "$ref": "row.id"
+                            },
+                            {
+                              "$ref": "taskId"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "as": "row",
+                    "in": {
+                      "$ref": "row.id"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "$ref": "response.data.id"
+              }
+            }
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$or": [
+                  {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$if": {
+                            "condition": {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$ref": "taskId"
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            "then": {
+                              "$first": {
+                                "$map": {
+                                  "from": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "response.data"
+                                      },
+                                      "as": "row",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "row.id"
+                                          },
+                                          {
+                                            "$ref": "taskId"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "as": "row",
+                                  "in": {
+                                    "$ref": "row.id"
+                                  }
+                                }
+                              }
+                            },
+                            "else": {
+                              "$ref": "response.data.id"
+                            }
+                          }
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$gt": [
+                          {
+                            "$len": {
+                              "$ref": "taskId"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      {
+                        "$ne": [
+                          {
+                            "$len": {
+                              "$filter": {
+                                "from": {
+                                  "$ref": "response.data"
+                                },
+                                "as": "row",
+                                "where": {
+                                  "$eq": [
+                                    {
+                                      "$ref": "row.id"
+                                    },
+                                    {
+                                      "$ref": "taskId"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          1
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "$not": {
+                      "$in": [
+                        {
+                          "$if": {
+                            "condition": {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$ref": "taskId"
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            "then": {
+                              "$first": {
+                                "$map": {
+                                  "from": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "response.data"
+                                      },
+                                      "as": "row",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "row.id"
+                                          },
+                                          {
+                                            "$ref": "taskId"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "as": "row",
+                                  "in": {
+                                    "$ref": "row.status"
+                                  }
+                                }
+                              }
+                            },
+                            "else": {
+                              "$ref": "response.data.status"
+                            }
+                          }
+                        },
+                        [
+                          "submitted",
+                          "processing",
+                          "succeeded",
+                          "failed"
+                        ]
+                      ]
+                    }
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$if": {
+                              "condition": {
+                                "$gt": [
+                                  {
+                                    "$len": {
+                                      "$ref": "taskId"
+                                    }
+                                  },
+                                  0
+                                ]
+                              },
+                              "then": {
+                                "$first": {
+                                  "$map": {
+                                    "from": {
+                                      "$filter": {
+                                        "from": {
+                                          "$ref": "response.data"
+                                        },
+                                        "as": "row",
+                                        "where": {
+                                          "$eq": [
+                                            {
+                                              "$ref": "row.id"
+                                            },
+                                            {
+                                              "$ref": "taskId"
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "as": "row",
+                                    "in": {
+                                      "$ref": "row.status"
+                                    }
+                                  }
+                                }
+                              },
+                              "else": {
+                                "$ref": "response.data.status"
+                              }
+                            }
+                          },
+                          "succeeded"
+                        ]
+                      },
+                      {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$map": {
+                                "from": {
+                                  "$filter": {
+                                    "from": {
+                                      "$first": {
+                                        "$map": {
+                                          "from": {
+                                            "$filter": {
+                                              "from": {
+                                                "$ref": "response.data"
+                                              },
+                                              "as": "row",
+                                              "where": {
+                                                "$eq": [
+                                                  {
+                                                    "$ref": "row.id"
+                                                  },
+                                                  {
+                                                    "$ref": "taskId"
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "as": "row",
+                                          "in": {
+                                            "$ref": "row.outputs"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "as": "result",
+                                    "where": {
+                                      "$and": [
+                                        {
+                                          "$eq": [
+                                            {
+                                              "$ref": "result.type"
+                                            },
+                                            "video"
+                                          ]
+                                        },
+                                        {
+                                          "$gt": [
+                                            {
+                                              "$len": {
+                                                "$trim": {
+                                                  "$ref": "result.url"
+                                                }
+                                              }
+                                            },
+                                            0
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "as": "result",
+                                "in": {
+                                  "$ref": "result.url"
+                                }
+                              }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "then": "failed",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$gt": [
+                      {
+                        "$len": {
+                          "$ref": "taskId"
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  "then": {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$ref": "response.data"
+                            },
+                            "as": "row",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "row.id"
+                                },
+                                {
+                                  "$ref": "taskId"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "as": "row",
+                        "in": {
+                          "$ref": "row.status"
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "$ref": "response.data.status"
+                  }
+                }
+              }
+            }
+          },
+          "message": {
+            "$if": {
+              "condition": {
+                "$or": [
+                  {
+                    "$eq": [
+                      {
+                        "$len": {
+                          "$if": {
+                            "condition": {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$ref": "taskId"
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            "then": {
+                              "$first": {
+                                "$map": {
+                                  "from": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "response.data"
+                                      },
+                                      "as": "row",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "row.id"
+                                          },
+                                          {
+                                            "$ref": "taskId"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "as": "row",
+                                  "in": {
+                                    "$ref": "row.id"
+                                  }
+                                }
+                              }
+                            },
+                            "else": {
+                              "$ref": "response.data.id"
+                            }
+                          }
+                        }
+                      },
+                      0
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$gt": [
+                          {
+                            "$len": {
+                              "$ref": "taskId"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      {
+                        "$ne": [
+                          {
+                            "$len": {
+                              "$filter": {
+                                "from": {
+                                  "$ref": "response.data"
+                                },
+                                "as": "row",
+                                "where": {
+                                  "$eq": [
+                                    {
+                                      "$ref": "row.id"
+                                    },
+                                    {
+                                      "$ref": "taskId"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          1
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "$not": {
+                      "$in": [
+                        {
+                          "$if": {
+                            "condition": {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$ref": "taskId"
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            "then": {
+                              "$first": {
+                                "$map": {
+                                  "from": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "response.data"
+                                      },
+                                      "as": "row",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "row.id"
+                                          },
+                                          {
+                                            "$ref": "taskId"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "as": "row",
+                                  "in": {
+                                    "$ref": "row.status"
+                                  }
+                                }
+                              }
+                            },
+                            "else": {
+                              "$ref": "response.data.status"
+                            }
+                          }
+                        },
+                        [
+                          "submitted",
+                          "processing",
+                          "succeeded",
+                          "failed"
+                        ]
+                      ]
+                    }
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$if": {
+                              "condition": {
+                                "$gt": [
+                                  {
+                                    "$len": {
+                                      "$ref": "taskId"
+                                    }
+                                  },
+                                  0
+                                ]
+                              },
+                              "then": {
+                                "$first": {
+                                  "$map": {
+                                    "from": {
+                                      "$filter": {
+                                        "from": {
+                                          "$ref": "response.data"
+                                        },
+                                        "as": "row",
+                                        "where": {
+                                          "$eq": [
+                                            {
+                                              "$ref": "row.id"
+                                            },
+                                            {
+                                              "$ref": "taskId"
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "as": "row",
+                                    "in": {
+                                      "$ref": "row.status"
+                                    }
+                                  }
+                                }
+                              },
+                              "else": {
+                                "$ref": "response.data.status"
+                              }
+                            }
+                          },
+                          "succeeded"
+                        ]
+                      },
+                      {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$map": {
+                                "from": {
+                                  "$filter": {
+                                    "from": {
+                                      "$first": {
+                                        "$map": {
+                                          "from": {
+                                            "$filter": {
+                                              "from": {
+                                                "$ref": "response.data"
+                                              },
+                                              "as": "row",
+                                              "where": {
+                                                "$eq": [
+                                                  {
+                                                    "$ref": "row.id"
+                                                  },
+                                                  {
+                                                    "$ref": "taskId"
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "as": "row",
+                                          "in": {
+                                            "$ref": "row.outputs"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "as": "result",
+                                    "where": {
+                                      "$and": [
+                                        {
+                                          "$eq": [
+                                            {
+                                              "$ref": "result.type"
+                                            },
+                                            "video"
+                                          ]
+                                        },
+                                        {
+                                          "$gt": [
+                                            {
+                                              "$len": {
+                                                "$trim": {
+                                                  "$ref": "result.url"
+                                                }
+                                              }
+                                            },
+                                            0
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "as": "result",
+                                "in": {
+                                  "$ref": "result.url"
+                                }
+                              }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "then": "2.6响应缺少唯一匹配任务、有效状态或视频结果",
+              "else": {
+                "$coalesce": [
+                  {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$ref": "response.data"
+                            },
+                            "as": "row",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "row.id"
+                                },
+                                {
+                                  "$ref": "taskId"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "as": "row",
+                        "in": {
+                          "$ref": "row.message"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "$ref": "response.message"
+                  }
+                ]
+              }
+            }
+          },
+          "errorPaths": [
+            "code"
+          ],
+          "videos": {
+            "$if": {
+              "condition": {
+                "$and": [
+                  {
+                    "$eq": [
+                      {
+                        "$if": {
+                          "condition": {
+                            "$gt": [
+                              {
+                                "$len": {
+                                  "$ref": "taskId"
+                                }
+                              },
+                              0
+                            ]
+                          },
+                          "then": {
+                            "$first": {
+                              "$map": {
+                                "from": {
+                                  "$filter": {
+                                    "from": {
+                                      "$ref": "response.data"
+                                    },
+                                    "as": "row",
+                                    "where": {
+                                      "$eq": [
+                                        {
+                                          "$ref": "row.id"
+                                        },
+                                        {
+                                          "$ref": "taskId"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "as": "row",
+                                "in": {
+                                  "$ref": "row.status"
+                                }
+                              }
+                            }
+                          },
+                          "else": {
+                            "$ref": "response.data.status"
+                          }
+                        }
+                      },
+                      "succeeded"
+                    ]
+                  },
+                  {
+                    "$not": {
+                      "$or": [
+                        {
+                          "$eq": [
+                            {
+                              "$len": {
+                                "$if": {
+                                  "condition": {
+                                    "$gt": [
+                                      {
+                                        "$len": {
+                                          "$ref": "taskId"
+                                        }
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  "then": {
+                                    "$first": {
+                                      "$map": {
+                                        "from": {
+                                          "$filter": {
+                                            "from": {
+                                              "$ref": "response.data"
+                                            },
+                                            "as": "row",
+                                            "where": {
+                                              "$eq": [
+                                                {
+                                                  "$ref": "row.id"
+                                                },
+                                                {
+                                                  "$ref": "taskId"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "as": "row",
+                                        "in": {
+                                          "$ref": "row.id"
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "else": {
+                                    "$ref": "response.data.id"
+                                  }
+                                }
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        {
+                          "$and": [
+                            {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$ref": "taskId"
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$ne": [
+                                {
+                                  "$len": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "response.data"
+                                      },
+                                      "as": "row",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "row.id"
+                                          },
+                                          {
+                                            "$ref": "taskId"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                1
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "$not": {
+                            "$in": [
+                              {
+                                "$if": {
+                                  "condition": {
+                                    "$gt": [
+                                      {
+                                        "$len": {
+                                          "$ref": "taskId"
+                                        }
+                                      },
+                                      0
+                                    ]
+                                  },
+                                  "then": {
+                                    "$first": {
+                                      "$map": {
+                                        "from": {
+                                          "$filter": {
+                                            "from": {
+                                              "$ref": "response.data"
+                                            },
+                                            "as": "row",
+                                            "where": {
+                                              "$eq": [
+                                                {
+                                                  "$ref": "row.id"
+                                                },
+                                                {
+                                                  "$ref": "taskId"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "as": "row",
+                                        "in": {
+                                          "$ref": "row.status"
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "else": {
+                                    "$ref": "response.data.status"
+                                  }
+                                }
+                              },
+                              [
+                                "submitted",
+                                "processing",
+                                "succeeded",
+                                "failed"
+                              ]
+                            ]
+                          }
+                        },
+                        {
+                          "$and": [
+                            {
+                              "$eq": [
+                                {
+                                  "$if": {
+                                    "condition": {
+                                      "$gt": [
+                                        {
+                                          "$len": {
+                                            "$ref": "taskId"
+                                          }
+                                        },
+                                        0
+                                      ]
+                                    },
+                                    "then": {
+                                      "$first": {
+                                        "$map": {
+                                          "from": {
+                                            "$filter": {
+                                              "from": {
+                                                "$ref": "response.data"
+                                              },
+                                              "as": "row",
+                                              "where": {
+                                                "$eq": [
+                                                  {
+                                                    "$ref": "row.id"
+                                                  },
+                                                  {
+                                                    "$ref": "taskId"
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "as": "row",
+                                          "in": {
+                                            "$ref": "row.status"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "else": {
+                                      "$ref": "response.data.status"
+                                    }
+                                  }
+                                },
+                                "succeeded"
+                              ]
+                            },
+                            {
+                              "$eq": [
+                                {
+                                  "$len": {
+                                    "$map": {
+                                      "from": {
+                                        "$filter": {
+                                          "from": {
+                                            "$first": {
+                                              "$map": {
+                                                "from": {
+                                                  "$filter": {
+                                                    "from": {
+                                                      "$ref": "response.data"
+                                                    },
+                                                    "as": "row",
+                                                    "where": {
+                                                      "$eq": [
+                                                        {
+                                                          "$ref": "row.id"
+                                                        },
+                                                        {
+                                                          "$ref": "taskId"
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                "as": "row",
+                                                "in": {
+                                                  "$ref": "row.outputs"
+                                                }
+                                              }
+                                            }
+                                          },
+                                          "as": "result",
+                                          "where": {
+                                            "$and": [
+                                              {
+                                                "$eq": [
+                                                  {
+                                                    "$ref": "result.type"
+                                                  },
+                                                  "video"
+                                                ]
+                                              },
+                                              {
+                                                "$gt": [
+                                                  {
+                                                    "$len": {
+                                                      "$trim": {
+                                                        "$ref": "result.url"
+                                                      }
+                                                    }
+                                                  },
+                                                  0
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "as": "result",
+                                      "in": {
+                                        "$ref": "result.url"
+                                      }
+                                    }
+                                  }
+                                },
+                                0
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "then": {
+                "$map": {
+                  "from": {
+                    "$filter": {
+                      "from": {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$filter": {
+                                "from": {
+                                  "$ref": "response.data"
+                                },
+                                "as": "row",
+                                "where": {
+                                  "$eq": [
+                                    {
+                                      "$ref": "row.id"
+                                    },
+                                    {
+                                      "$ref": "taskId"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "as": "row",
+                            "in": {
+                              "$ref": "row.outputs"
+                            }
+                          }
+                        }
+                      },
+                      "as": "result",
+                      "where": {
+                        "$and": [
+                          {
+                            "$eq": [
+                              {
+                                "$ref": "result.type"
+                              },
+                              "video"
+                            ]
+                          },
+                          {
+                            "$gt": [
+                              {
+                                "$len": {
+                                  "$trim": {
+                                    "$ref": "result.url"
+                                  }
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "as": "result",
+                  "in": {
+                    "$ref": "result.url"
+                  }
+                }
+              },
+              "else": []
+            }
+          },
+          "resultEphemeral": true
+        }
+      }
+    ]
+  },
+  "documentation": "# Kling 2.6 Video\n\n接入架构仅依据[影策插件架构与接入说明](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)第7、8、12、13章。\n上游字段依据[可灵2.6图生接口](https://klingai.com/document-api/api/video/2-6)。独立Provider不修改渠道或密钥。真实模型、音轨与完整案例尚待验收。\n\n---\n\n# 可灵2.6接口合同\n\nPOST `/image-to-video/kling-2.6`，GET `/tasks?task_ids={id}`，originPath同源根路径，不追加/v1。Bearer鉴权由宿主读取渠道apiKey。\n模型固定kling-2.6；源别名kling-v2-6保持同版本。此包仅一个明确first_frame，contents保持原文和原图字节，不接受尾帧或其他参考。\nJPEG/PNG最多50000000字节，短边至少300，宽高比0.4至2.5，宿主校验尺寸头不代表完整像素验收。\nsettings.duration为5/10，resolution为720p/1080p，audio为native/off。generateAudio=true只允许1080p，false允许两档；不静默升档。\n源singleImage2video必须有明确enableSound=on/off。frames2video未保存声音开关且源schema未提供该控件，消费默认尚待核实，本次不猜测或接入。\n固定画幅、分镜、主体、音色、视频编辑等未接控制拒绝。providerOptions仅使用kling-v26-video命名空间。\n响应映射：创建data.id，轮询data按taskId唯一匹配；submitted/processing保持等待，只有succeeded且有非空video.url才暴露媒体；失败、缺失/重复任务、未知状态、空成功和非零code拒绝。resultEphemeral交由宿主归档。\n\n## Manifest完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"kling-v26-video\",\n  \"name\": \"Kling 2.6 Video\",\n  \"version\": \"1.0.0\",\n  \"author\": \"影策\",\n  \"description\": \"Kling 2.6原版本单首帧音频控制声明式协议。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"kling-v26-video\",\n        \"label\": \"Kling 2.6 Video\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api-beijing.klingai.com\",\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"inputImages\": {\n          \"formats\": [\n            \"jpeg\",\n            \"png\"\n          ],\n          \"maxBytes\": 50000000,\n          \"minShortSide\": 300,\n          \"minAspectRatio\": 0.4,\n          \"maxAspectRatio\": 2.5\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"mapping\": \"endpoint identity\",\n            \"description\": \"kling-2.6原版本。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"mapping\": \"contents.prompt.text\",\n            \"description\": \"原始提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"mapping\": \"contents.first_frame.url\",\n            \"description\": \"单一明确首帧，原字节。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"mapping\": \"settings.duration\",\n            \"description\": \"5或10秒。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"mapping\": \"settings.resolution\",\n            \"description\": \"720p或1080p。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"mapping\": \"settings.audio\",\n            \"description\": \"true为native，false为off；native仅1080p。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"mapping\": \"providerOptions.kling-v26-video\",\n            \"description\": \"独立命名空间mode，未支持控制拒绝。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"kling-2.6\"\n              ]\n            },\n            \"message\": \"必须选择真实2.6版本，不能用其他模型代替\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.operation\"\n                },\n                \"image_to_video\"\n              ]\n            },\n            \"message\": \"此入口仅接入单首帧图生视频\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$trim\": {\n                          \"$ref\": \"request.prompt\"\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    },\n                    2500\n                  ]\n                }\n              ]\n            },\n            \"message\": \"保留1至2500字符原文\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.providerOptions.kling-v26-video.mode\"\n                },\n                [\n                  \"std\",\n                  \"pro\"\n                ]\n              ]\n            },\n            \"message\": \"仅支持标准和高品质\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$lower\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.resolution\"\n                      },\n                      {\n                        \"$ref\": \"request.resolution\"\n                      }\n                    ]\n                  }\n                },\n                {\n                  \"$if\": {\n                    \"condition\": {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-v26-video.mode\"\n                        },\n                        \"pro\"\n                      ]\n                    },\n                    \"then\": \"1080p\",\n                    \"else\": \"720p\"\n                  }\n                }\n              ]\n            },\n            \"message\": \"清晰度必须匹配原档位\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.duration\"\n                    },\n                    {\n                      \"$ref\": \"request.duration\"\n                    },\n                    5\n                  ]\n                },\n                [\n                  5,\n                  10\n                ]\n              ]\n            },\n            \"message\": \"2.6仅支持5或10秒\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.aspectRatio\"\n                    },\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    \"adaptive\"\n                  ]\n                },\n                [\n                  \"\",\n                  \"auto\",\n                  \"adaptive\"\n                ]\n              ]\n            },\n            \"message\": \"首帧决定画幅，不能丢弃固定画幅\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$coalesce\": [\n                        {\n                          \"$ref\": \"request.output.generateAudio\"\n                        },\n                        {\n                          \"$ref\": \"request.generateAudio\"\n                        },\n                        false\n                      ]\n                    },\n                    false\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$coalesce\": [\n                            {\n                              \"$ref\": \"request.output.generateAudio\"\n                            },\n                            {\n                              \"$ref\": \"request.generateAudio\"\n                            },\n                            false\n                          ]\n                        },\n                        true\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$lower\": {\n                            \"$coalesce\": [\n                              {\n                                \"$ref\": \"request.output.resolution\"\n                              },\n                              {\n                                \"$ref\": \"request.resolution\"\n                              }\n                            ]\n                          }\n                        },\n                        \"1080p\"\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"有声视频仅1080p，不能自动升级\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.count\"\n                    },\n                    1\n                  ]\n                },\n                1\n              ]\n            },\n            \"message\": \"每次只能生成一个视频\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.images.0.role\"\n                    },\n                    \"first_frame\"\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"此入口只支持单首帧；首尾帧源默认声音尚未确认\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-v26-video.multiShot\"\n                    },\n                    false\n                  ]\n                },\n                false\n              ]\n            },\n            \"message\": \"不支持分镜转换\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.multiPrompt\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.elements\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.subjects\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.voices\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.videoReferenceType\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v26-video.keepOriginalSound\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"未接入主体、音色、分镜和视频编辑\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/image-to-video/kling-2.6\",\n          \"originPath\": true,\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"contents\": [\n              {\n                \"type\": \"prompt\",\n                \"text\": {\n                  \"$ref\": \"request.prompt\"\n                }\n              },\n              {\n                \"type\": \"first_frame\",\n                \"url\": {\n                  \"$dataPayload\": {\n                    \"$ref\": \"request.images.0.value\"\n                  }\n                }\n              }\n            ],\n            \"settings\": {\n              \"resolution\": {\n                \"$lower\": {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.resolution\"\n                    },\n                    {\n                      \"$ref\": \"request.resolution\"\n                    }\n                  ]\n                }\n              },\n              \"duration\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.duration\"\n                  },\n                  {\n                    \"$ref\": \"request.duration\"\n                  },\n                  5\n                ]\n              },\n              \"audio\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$coalesce\": [\n                          {\n                            \"$ref\": \"request.output.generateAudio\"\n                          },\n                          {\n                            \"$ref\": \"request.generateAudio\"\n                          },\n                          false\n                        ]\n                      },\n                      true\n                    ]\n                  },\n                  \"then\": \"native\",\n                  \"else\": \"off\"\n                }\n              }\n            },\n            \"options\": {\n              \"watermark_info\": {\n                \"enabled\": {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.watermark\"\n                    },\n                    {\n                      \"$ref\": \"request.watermark\"\n                    },\n                    false\n                  ]\n                }\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/tasks\",\n          \"originPath\": true,\n          \"query\": {\n            \"task_ids\": {\n              \"$ref\": \"taskId\"\n            }\n          }\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$if\": {\n              \"condition\": {\n                \"$gt\": [\n                  {\n                    \"$len\": {\n                      \"$ref\": \"taskId\"\n                    }\n                  },\n                  0\n                ]\n              },\n              \"then\": {\n                \"$first\": {\n                  \"$map\": {\n                    \"from\": {\n                      \"$filter\": {\n                        \"from\": {\n                          \"$ref\": \"response.data\"\n                        },\n                        \"as\": \"row\",\n                        \"where\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"row.id\"\n                            },\n                            {\n                              \"$ref\": \"taskId\"\n                            }\n                          ]\n                        }\n                      }\n                    },\n                    \"as\": \"row\",\n                    \"in\": {\n                      \"$ref\": \"row.id\"\n                    }\n                  }\n                }\n              },\n              \"else\": {\n                \"$ref\": \"response.data.id\"\n              }\n            }\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$or\": [\n                  {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$if\": {\n                            \"condition\": {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            \"then\": {\n                              \"$first\": {\n                                \"$map\": {\n                                  \"from\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"response.data\"\n                                      },\n                                      \"as\": \"row\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"row.id\"\n                                          },\n                                          {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        ]\n                                      }\n                                    }\n                                  },\n                                  \"as\": \"row\",\n                                  \"in\": {\n                                    \"$ref\": \"row.id\"\n                                  }\n                                }\n                              }\n                            },\n                            \"else\": {\n                              \"$ref\": \"response.data.id\"\n                            }\n                          }\n                        }\n                      },\n                      0\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$gt\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"taskId\"\n                            }\n                          },\n                          0\n                        ]\n                      },\n                      {\n                        \"$ne\": [\n                          {\n                            \"$len\": {\n                              \"$filter\": {\n                                \"from\": {\n                                  \"$ref\": \"response.data\"\n                                },\n                                \"as\": \"row\",\n                                \"where\": {\n                                  \"$eq\": [\n                                    {\n                                      \"$ref\": \"row.id\"\n                                    },\n                                    {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  ]\n                                }\n                              }\n                            }\n                          },\n                          1\n                        ]\n                      }\n                    ]\n                  },\n                  {\n                    \"$not\": {\n                      \"$in\": [\n                        {\n                          \"$if\": {\n                            \"condition\": {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            \"then\": {\n                              \"$first\": {\n                                \"$map\": {\n                                  \"from\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"response.data\"\n                                      },\n                                      \"as\": \"row\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"row.id\"\n                                          },\n                                          {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        ]\n                                      }\n                                    }\n                                  },\n                                  \"as\": \"row\",\n                                  \"in\": {\n                                    \"$ref\": \"row.status\"\n                                  }\n                                }\n                              }\n                            },\n                            \"else\": {\n                              \"$ref\": \"response.data.status\"\n                            }\n                          }\n                        },\n                        [\n                          \"submitted\",\n                          \"processing\",\n                          \"succeeded\",\n                          \"failed\"\n                        ]\n                      ]\n                    }\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$if\": {\n                              \"condition\": {\n                                \"$gt\": [\n                                  {\n                                    \"$len\": {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  },\n                                  0\n                                ]\n                              },\n                              \"then\": {\n                                \"$first\": {\n                                  \"$map\": {\n                                    \"from\": {\n                                      \"$filter\": {\n                                        \"from\": {\n                                          \"$ref\": \"response.data\"\n                                        },\n                                        \"as\": \"row\",\n                                        \"where\": {\n                                          \"$eq\": [\n                                            {\n                                              \"$ref\": \"row.id\"\n                                            },\n                                            {\n                                              \"$ref\": \"taskId\"\n                                            }\n                                          ]\n                                        }\n                                      }\n                                    },\n                                    \"as\": \"row\",\n                                    \"in\": {\n                                      \"$ref\": \"row.status\"\n                                    }\n                                  }\n                                }\n                              },\n                              \"else\": {\n                                \"$ref\": \"response.data.status\"\n                              }\n                            }\n                          },\n                          \"succeeded\"\n                        ]\n                      },\n                      {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$filter\": {\n                                    \"from\": {\n                                      \"$first\": {\n                                        \"$map\": {\n                                          \"from\": {\n                                            \"$filter\": {\n                                              \"from\": {\n                                                \"$ref\": \"response.data\"\n                                              },\n                                              \"as\": \"row\",\n                                              \"where\": {\n                                                \"$eq\": [\n                                                  {\n                                                    \"$ref\": \"row.id\"\n                                                  },\n                                                  {\n                                                    \"$ref\": \"taskId\"\n                                                  }\n                                                ]\n                                              }\n                                            }\n                                          },\n                                          \"as\": \"row\",\n                                          \"in\": {\n                                            \"$ref\": \"row.outputs\"\n                                          }\n                                        }\n                                      }\n                                    },\n                                    \"as\": \"result\",\n                                    \"where\": {\n                                      \"$and\": [\n                                        {\n                                          \"$eq\": [\n                                            {\n                                              \"$ref\": \"result.type\"\n                                            },\n                                            \"video\"\n                                          ]\n                                        },\n                                        {\n                                          \"$gt\": [\n                                            {\n                                              \"$len\": {\n                                                \"$trim\": {\n                                                  \"$ref\": \"result.url\"\n                                                }\n                                              }\n                                            },\n                                            0\n                                          ]\n                                        }\n                                      ]\n                                    }\n                                  }\n                                },\n                                \"as\": \"result\",\n                                \"in\": {\n                                  \"$ref\": \"result.url\"\n                                }\n                              }\n                            }\n                          },\n                          0\n                        ]\n                      }\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$gt\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"taskId\"\n                        }\n                      },\n                      0\n                    ]\n                  },\n                  \"then\": {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$ref\": \"response.data\"\n                            },\n                            \"as\": \"row\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"row.id\"\n                                },\n                                {\n                                  \"$ref\": \"taskId\"\n                                }\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"row\",\n                        \"in\": {\n                          \"$ref\": \"row.status\"\n                        }\n                      }\n                    }\n                  },\n                  \"else\": {\n                    \"$ref\": \"response.data.status\"\n                  }\n                }\n              }\n            }\n          },\n          \"message\": {\n            \"$if\": {\n              \"condition\": {\n                \"$or\": [\n                  {\n                    \"$eq\": [\n                      {\n                        \"$len\": {\n                          \"$if\": {\n                            \"condition\": {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            \"then\": {\n                              \"$first\": {\n                                \"$map\": {\n                                  \"from\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"response.data\"\n                                      },\n                                      \"as\": \"row\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"row.id\"\n                                          },\n                                          {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        ]\n                                      }\n                                    }\n                                  },\n                                  \"as\": \"row\",\n                                  \"in\": {\n                                    \"$ref\": \"row.id\"\n                                  }\n                                }\n                              }\n                            },\n                            \"else\": {\n                              \"$ref\": \"response.data.id\"\n                            }\n                          }\n                        }\n                      },\n                      0\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$gt\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"taskId\"\n                            }\n                          },\n                          0\n                        ]\n                      },\n                      {\n                        \"$ne\": [\n                          {\n                            \"$len\": {\n                              \"$filter\": {\n                                \"from\": {\n                                  \"$ref\": \"response.data\"\n                                },\n                                \"as\": \"row\",\n                                \"where\": {\n                                  \"$eq\": [\n                                    {\n                                      \"$ref\": \"row.id\"\n                                    },\n                                    {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  ]\n                                }\n                              }\n                            }\n                          },\n                          1\n                        ]\n                      }\n                    ]\n                  },\n                  {\n                    \"$not\": {\n                      \"$in\": [\n                        {\n                          \"$if\": {\n                            \"condition\": {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            \"then\": {\n                              \"$first\": {\n                                \"$map\": {\n                                  \"from\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"response.data\"\n                                      },\n                                      \"as\": \"row\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"row.id\"\n                                          },\n                                          {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        ]\n                                      }\n                                    }\n                                  },\n                                  \"as\": \"row\",\n                                  \"in\": {\n                                    \"$ref\": \"row.status\"\n                                  }\n                                }\n                              }\n                            },\n                            \"else\": {\n                              \"$ref\": \"response.data.status\"\n                            }\n                          }\n                        },\n                        [\n                          \"submitted\",\n                          \"processing\",\n                          \"succeeded\",\n                          \"failed\"\n                        ]\n                      ]\n                    }\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$if\": {\n                              \"condition\": {\n                                \"$gt\": [\n                                  {\n                                    \"$len\": {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  },\n                                  0\n                                ]\n                              },\n                              \"then\": {\n                                \"$first\": {\n                                  \"$map\": {\n                                    \"from\": {\n                                      \"$filter\": {\n                                        \"from\": {\n                                          \"$ref\": \"response.data\"\n                                        },\n                                        \"as\": \"row\",\n                                        \"where\": {\n                                          \"$eq\": [\n                                            {\n                                              \"$ref\": \"row.id\"\n                                            },\n                                            {\n                                              \"$ref\": \"taskId\"\n                                            }\n                                          ]\n                                        }\n                                      }\n                                    },\n                                    \"as\": \"row\",\n                                    \"in\": {\n                                      \"$ref\": \"row.status\"\n                                    }\n                                  }\n                                }\n                              },\n                              \"else\": {\n                                \"$ref\": \"response.data.status\"\n                              }\n                            }\n                          },\n                          \"succeeded\"\n                        ]\n                      },\n                      {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$filter\": {\n                                    \"from\": {\n                                      \"$first\": {\n                                        \"$map\": {\n                                          \"from\": {\n                                            \"$filter\": {\n                                              \"from\": {\n                                                \"$ref\": \"response.data\"\n                                              },\n                                              \"as\": \"row\",\n                                              \"where\": {\n                                                \"$eq\": [\n                                                  {\n                                                    \"$ref\": \"row.id\"\n                                                  },\n                                                  {\n                                                    \"$ref\": \"taskId\"\n                                                  }\n                                                ]\n                                              }\n                                            }\n                                          },\n                                          \"as\": \"row\",\n                                          \"in\": {\n                                            \"$ref\": \"row.outputs\"\n                                          }\n                                        }\n                                      }\n                                    },\n                                    \"as\": \"result\",\n                                    \"where\": {\n                                      \"$and\": [\n                                        {\n                                          \"$eq\": [\n                                            {\n                                              \"$ref\": \"result.type\"\n                                            },\n                                            \"video\"\n                                          ]\n                                        },\n                                        {\n                                          \"$gt\": [\n                                            {\n                                              \"$len\": {\n                                                \"$trim\": {\n                                                  \"$ref\": \"result.url\"\n                                                }\n                                              }\n                                            },\n                                            0\n                                          ]\n                                        }\n                                      ]\n                                    }\n                                  }\n                                },\n                                \"as\": \"result\",\n                                \"in\": {\n                                  \"$ref\": \"result.url\"\n                                }\n                              }\n                            }\n                          },\n                          0\n                        ]\n                      }\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"2.6响应缺少唯一匹配任务、有效状态或视频结果\",\n              \"else\": {\n                \"$coalesce\": [\n                  {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$ref\": \"response.data\"\n                            },\n                            \"as\": \"row\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"row.id\"\n                                },\n                                {\n                                  \"$ref\": \"taskId\"\n                                }\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"row\",\n                        \"in\": {\n                          \"$ref\": \"row.message\"\n                        }\n                      }\n                    }\n                  },\n                  {\n                    \"$ref\": \"response.message\"\n                  }\n                ]\n              }\n            }\n          },\n          \"errorPaths\": [\n            \"code\"\n          ],\n          \"videos\": {\n            \"$if\": {\n              \"condition\": {\n                \"$and\": [\n                  {\n                    \"$eq\": [\n                      {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$gt\": [\n                              {\n                                \"$len\": {\n                                  \"$ref\": \"taskId\"\n                                }\n                              },\n                              0\n                            ]\n                          },\n                          \"then\": {\n                            \"$first\": {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$filter\": {\n                                    \"from\": {\n                                      \"$ref\": \"response.data\"\n                                    },\n                                    \"as\": \"row\",\n                                    \"where\": {\n                                      \"$eq\": [\n                                        {\n                                          \"$ref\": \"row.id\"\n                                        },\n                                        {\n                                          \"$ref\": \"taskId\"\n                                        }\n                                      ]\n                                    }\n                                  }\n                                },\n                                \"as\": \"row\",\n                                \"in\": {\n                                  \"$ref\": \"row.status\"\n                                }\n                              }\n                            }\n                          },\n                          \"else\": {\n                            \"$ref\": \"response.data.status\"\n                          }\n                        }\n                      },\n                      \"succeeded\"\n                    ]\n                  },\n                  {\n                    \"$not\": {\n                      \"$or\": [\n                        {\n                          \"$eq\": [\n                            {\n                              \"$len\": {\n                                \"$if\": {\n                                  \"condition\": {\n                                    \"$gt\": [\n                                      {\n                                        \"$len\": {\n                                          \"$ref\": \"taskId\"\n                                        }\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  \"then\": {\n                                    \"$first\": {\n                                      \"$map\": {\n                                        \"from\": {\n                                          \"$filter\": {\n                                            \"from\": {\n                                              \"$ref\": \"response.data\"\n                                            },\n                                            \"as\": \"row\",\n                                            \"where\": {\n                                              \"$eq\": [\n                                                {\n                                                  \"$ref\": \"row.id\"\n                                                },\n                                                {\n                                                  \"$ref\": \"taskId\"\n                                                }\n                                              ]\n                                            }\n                                          }\n                                        },\n                                        \"as\": \"row\",\n                                        \"in\": {\n                                          \"$ref\": \"row.id\"\n                                        }\n                                      }\n                                    }\n                                  },\n                                  \"else\": {\n                                    \"$ref\": \"response.data.id\"\n                                  }\n                                }\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        {\n                          \"$and\": [\n                            {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"taskId\"\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$ne\": [\n                                {\n                                  \"$len\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"response.data\"\n                                      },\n                                      \"as\": \"row\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"row.id\"\n                                          },\n                                          {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        ]\n                                      }\n                                    }\n                                  }\n                                },\n                                1\n                              ]\n                            }\n                          ]\n                        },\n                        {\n                          \"$not\": {\n                            \"$in\": [\n                              {\n                                \"$if\": {\n                                  \"condition\": {\n                                    \"$gt\": [\n                                      {\n                                        \"$len\": {\n                                          \"$ref\": \"taskId\"\n                                        }\n                                      },\n                                      0\n                                    ]\n                                  },\n                                  \"then\": {\n                                    \"$first\": {\n                                      \"$map\": {\n                                        \"from\": {\n                                          \"$filter\": {\n                                            \"from\": {\n                                              \"$ref\": \"response.data\"\n                                            },\n                                            \"as\": \"row\",\n                                            \"where\": {\n                                              \"$eq\": [\n                                                {\n                                                  \"$ref\": \"row.id\"\n                                                },\n                                                {\n                                                  \"$ref\": \"taskId\"\n                                                }\n                                              ]\n                                            }\n                                          }\n                                        },\n                                        \"as\": \"row\",\n                                        \"in\": {\n                                          \"$ref\": \"row.status\"\n                                        }\n                                      }\n                                    }\n                                  },\n                                  \"else\": {\n                                    \"$ref\": \"response.data.status\"\n                                  }\n                                }\n                              },\n                              [\n                                \"submitted\",\n                                \"processing\",\n                                \"succeeded\",\n                                \"failed\"\n                              ]\n                            ]\n                          }\n                        },\n                        {\n                          \"$and\": [\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$if\": {\n                                    \"condition\": {\n                                      \"$gt\": [\n                                        {\n                                          \"$len\": {\n                                            \"$ref\": \"taskId\"\n                                          }\n                                        },\n                                        0\n                                      ]\n                                    },\n                                    \"then\": {\n                                      \"$first\": {\n                                        \"$map\": {\n                                          \"from\": {\n                                            \"$filter\": {\n                                              \"from\": {\n                                                \"$ref\": \"response.data\"\n                                              },\n                                              \"as\": \"row\",\n                                              \"where\": {\n                                                \"$eq\": [\n                                                  {\n                                                    \"$ref\": \"row.id\"\n                                                  },\n                                                  {\n                                                    \"$ref\": \"taskId\"\n                                                  }\n                                                ]\n                                              }\n                                            }\n                                          },\n                                          \"as\": \"row\",\n                                          \"in\": {\n                                            \"$ref\": \"row.status\"\n                                          }\n                                        }\n                                      }\n                                    },\n                                    \"else\": {\n                                      \"$ref\": \"response.data.status\"\n                                    }\n                                  }\n                                },\n                                \"succeeded\"\n                              ]\n                            },\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$len\": {\n                                    \"$map\": {\n                                      \"from\": {\n                                        \"$filter\": {\n                                          \"from\": {\n                                            \"$first\": {\n                                              \"$map\": {\n                                                \"from\": {\n                                                  \"$filter\": {\n                                                    \"from\": {\n                                                      \"$ref\": \"response.data\"\n                                                    },\n                                                    \"as\": \"row\",\n                                                    \"where\": {\n                                                      \"$eq\": [\n                                                        {\n                                                          \"$ref\": \"row.id\"\n                                                        },\n                                                        {\n                                                          \"$ref\": \"taskId\"\n                                                        }\n                                                      ]\n                                                    }\n                                                  }\n                                                },\n                                                \"as\": \"row\",\n                                                \"in\": {\n                                                  \"$ref\": \"row.outputs\"\n                                                }\n                                              }\n                                            }\n                                          },\n                                          \"as\": \"result\",\n                                          \"where\": {\n                                            \"$and\": [\n                                              {\n                                                \"$eq\": [\n                                                  {\n                                                    \"$ref\": \"result.type\"\n                                                  },\n                                                  \"video\"\n                                                ]\n                                              },\n                                              {\n                                                \"$gt\": [\n                                                  {\n                                                    \"$len\": {\n                                                      \"$trim\": {\n                                                        \"$ref\": \"result.url\"\n                                                      }\n                                                    }\n                                                  },\n                                                  0\n                                                ]\n                                              }\n                                            ]\n                                          }\n                                        }\n                                      },\n                                      \"as\": \"result\",\n                                      \"in\": {\n                                        \"$ref\": \"result.url\"\n                                      }\n                                    }\n                                  }\n                                },\n                                0\n                              ]\n                            }\n                          ]\n                        }\n                      ]\n                    }\n                  }\n                ]\n              },\n              \"then\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$filter\": {\n                                \"from\": {\n                                  \"$ref\": \"response.data\"\n                                },\n                                \"as\": \"row\",\n                                \"where\": {\n                                  \"$eq\": [\n                                    {\n                                      \"$ref\": \"row.id\"\n                                    },\n                                    {\n                                      \"$ref\": \"taskId\"\n                                    }\n                                  ]\n                                }\n                              }\n                            },\n                            \"as\": \"row\",\n                            \"in\": {\n                              \"$ref\": \"row.outputs\"\n                            }\n                          }\n                        }\n                      },\n                      \"as\": \"result\",\n                      \"where\": {\n                        \"$and\": [\n                          {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"result.type\"\n                              },\n                              \"video\"\n                            ]\n                          },\n                          {\n                            \"$gt\": [\n                              {\n                                \"$len\": {\n                                  \"$trim\": {\n                                    \"$ref\": \"result.url\"\n                                  }\n                                }\n                              },\n                              0\n                            ]\n                          }\n                        ]\n                      }\n                    }\n                  },\n                  \"as\": \"result\",\n                  \"in\": {\n                    \"$ref\": \"result.url\"\n                  }\n                }\n              },\n              \"else\": []\n            }\n          },\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
+}

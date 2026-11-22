@@ -1,0 +1,178 @@
+---
+title: 精选工程源效果与素材依赖
+description: 冻结精选范围内的源消费合同与接入边界
+---
+
+# 精选工程源效果与素材依赖
+
+本记录以 `ltv-featured-200-scope.json` 的冻结原站顺序为范围，保持 200 个 ID 和排名不变。它记录实际依赖，不是永久不兼容名单，也不修改适配或上线计数。当前工程进度仍由 `../content/docs/progress/featured-200-integration.mdx` 负责。
+
+## 已核对的源消费方
+
+### 候补 336：H3-Max 与现有 AutoDL H3 不可仅按名称匹配
+
+9 个原节点均为 `MiniMax-Hailuo-H3-Max`、单图输入、480P、自适应比例、5／6／8 秒。与已有目录快照中 4 个启用 AutoDL 工作流逐项对照，分辨率和时长范围可以覆盖，但没有一个声明 `adaptive` 比例；其中图音同步工作流还要求原节点没有提供的音频。源 H3-Max 与托管 lightx2v 工作流的模型等价性也未证明。
+
+当前 `autoDLH3Resolution` 对未知比例走横屏分支，直接透传 adaptive 会静默固定为横屏，并非忠实接入。故本次不换模型、不写渠道配置、不清除这 9 个配置／能力核验项。证据 `.local/featured-200/reserve-336-h3-contract.json` 包含源 SHA、现有代码 SHA、逐节点字段比较和目录快照时间；不是现有服务全局不支持的结论。下一步需要既有服务对同一模型与自适应几何的具体合同依据，不以新增服务作为前提。
+
+### Kling 主体引用不是普通图像输入
+
+- 原序第19例《回魂》重审确认6节点／9处绑定涉及4个主体ID和3张封面，仍受同一主体注册与账号映射边界约束。逐项回执`.local/featured-200/rank19-reassessment/subject-dependency.json`仅保留标识哈希。未将来源主体ID直接送往目标渠道，未删除原字段或借封面放行。
+- 排名 59 的 `subjectList` 保存一项主体绑定。原 `0zme995kos_wy.js` 在相应视频模态支持主体时，将 `subjectList[].klingId` 映射到 `elementList`；名称和封面不替代主体 ID。源文件 SHA、关键偏移和目标插件校验保存在 `.local/featured-200/kling-subject-source-audit/receipt.json`，没有导出主体 ID 或账号材料。
+- 当前 `kling-v3-video` manifest 对 `providerOptions.elements` 非空明确报“主体ID需要独立的主体注册适配”。需要实现目标主体注册／既有主体核验及账号归属映射，再接提交；不能仅复制来源 ID、删除校验或拿 coverUrl 当普通参考图宣称接通。这是当前未实现边界，不是永久不兼容或已完成替补决定。
+
+### 排名 171 无连线 4K 重绘已接入原生蒙版合同
+
+- 两个源 `scene=redraw` 节点没有连线及 imageList，但明确保存原图 `originImage`、透明蒙版 `mark` 和创作提示词。原 `handleGenerateRepaint` 在隔离 VM 执行后保留这些独立字段及 4K、3:4、n=1，没有要求额外连线；适配器因此恢复明确原图槽位，不从旧产物或封面补图。
+- 两节点共享同一组原图和蒙版字节，均为 928×1232；蒙版含 47,282 个完全透明像素，输入不做插值或重采样。历史输出均为 3584×4800，现作为严格目标尺寸；4K 不是把 quality 改为 high，更不降低为 2K。模型必须声明支持蒙版及此精确尺寸，否则运行前拒绝。
+- 源函数和像素回执在 `.local/featured-200/portrait-redraw-source/`；全冻结重审和逐原参数回写验证在 `.local/featured-200/portrait-redraw-audit/`。9 例共 35 个局部编辑节点消除该类适配缺口，只有排名 171 新增为适配准备，当前 47/200。未调用真实模型、未做完整视觉清洗或上线验收。
+
+### 排名 76 方形擦除：输入像素不匹配，不能只解除比例门槛
+
+- **后续源合同已核实并实现。** 在隔离 VM 中执行 `3fmef38tastmc.js` 的原 `handleGenerateErase`，即使调用参数提供 imageList，输出也只有 originImage、n、quality、scene、modeType、ratio；`0wllgknwomk2u.js` 明确先 `compositeImageWithMask`、上传，再以返回地址调用擦除函数。353×350 因此是已经合成透明选区的实际输入，不是必须配合连线原图发送的独立蒙版。现有原生 inpainting 请求改为使用该透明图的同一字节来源作为 image 和 mask，不猜测缩放；连线原图仅保留来源／变化校验。首次、重试、序列化后重试已通过隔离钩子测试；来源变化仍拒绝。源文件 SHA、代码偏移、原函数请求回执见 `square-erase-source/source-contract.json`。
+- 最终冻结重审只改变排名 76，一个节点转为保留原输出尺寸的 `ltv-mask-edit` 渠道配置要求，批次已更新为 46/200。尚未真实模型生成、浏览器视觉或部署；以下尺寸不匹配记录保留为排查过程，不能再误读为必须对蒙版做缩放才能接入。
+
+- 节点 `i-qdqNc1qDjp` 保存 `scene=erase`、`ratio=1:1`、`quality=2K`，历史输出尺寸为 2048×2048。当前 `ltvMaskEditOptions` 仅接受 16:9，确有未承接的方形请求，但单纯扩大比例白名单尚不足以证明此例能执行。
+- 读取并核对冻结快照 SHA 后，仅下载两份明确引用的输入字节：`imageList` 原图是 1803×1790，`originImage` 透明蒙版是 353×350。两者都有透明及半透明像素，尺寸不同；没有把它们改写、拉伸或重采样，也没有以旧产物尺寸代替输入几何。
+- 后续应核对该源擦除入口对低分辨率透明图与原图的实际消费、变换和位置对应关系，再接入原生蒙版准备及首次／重试路径。不能直接把这两份文件作为要求同尺寸的原图／mask 发送，不能因历史输出是方形就推断源蒙版已是方形。
+- 证据 `.local/featured-200/square-erase-source/receipt.json`，复算入口 `inspect-square-erase.py`；包含原输入 SHA、尺寸、alpha 计数和源快照 SHA，不包含公开凭据。没有进行视觉清洗验收、付费生成或发布，本次保持 45/200 适配准备；排名 76 仍未准入。
+
+### 首批 Seed Audio：本地参数齐备不等于普通配音协议
+
+- 对冻结排名 1–10 做了独立有界核对，读取前验证全部 10 份快照 SHA 和当前适配报告 SHA。排名 1、2、7 共 36 个 `seed-audio-1.0` 节点：24 个 `audio2audio`、11 个 `text2audio`、1 个 `image2audio`；场景字段分别为 28 个 Music 和 8 个 Text-to-Speech。不能只凭场景名或 `text2audio` 名称将它们全部接成普通 TTS。
+- 本地源模型目录包含 `modelVendor=seed-audio`、三种操作、引用数量约束，以及语言、采样率、输出格式、速度、音调、音量的字段声明。本批 36 个节点的引用条数均符合目录声明；这不证明对应媒体已清洗或可读取。不能再把这些已在本地的参数笼统报告为“资产缺失”。
+- 36 个节点均没有保存 `taskInfo.taskParams`，因此这批工程不能直接提供历史完整请求。源 `0zme995kos_wy.js` 的 `buildRequestData` 可确认外层使用 `params/metadata/provider/model/taskType/requestId`，其中 provider 来自模型目录；这仍不是当前影策渠道已实现该服务或其响应、轮询合同已验证的证据。
+- 下一步边界是核对该源服务的实际请求及结果消费合同与影策既有插件能力，不改原模型、提示词、参数，不以 OpenAI 配音或其它音乐模型替代。证据 `.local/featured-200/first-batch-seed-audio-contract.json`，可复算入口 `audit-first-batch-audio.py`。源写入、付费调用、生产写入均为 0，适配和上线计数未增加。
+
+### Seedream 组图：纠正插件仅支持 2K 的判断
+
+- `volcengine-ark-seedream` 现有请求模板将比例值转换为默认 2K 像素，但精确像素与 `4k` 档位可原样透传。之前适配代码／测试中的“宿主 size 只有 2K”表述不准确，现已纠正；不需要为了 4K 另建平行 Provider。
+- 使用实际 `.yingce-plugin` 包的 `BuildCreate` 验证：`4k` 与 `3840x2160` 均能与组图 `auto`、`max_images=15` 同时保留。后端 `TestOfficialArkSeedreamMapsAspectRatioToPixelSize` 和 `TestOfficialArkSeedreamPreservesSequentialSize` 通过；这是本地真实插件请求构造，不是远程模型出图验收。
+- 当前 42 个 `sequential` 高级操作告警中，36 个属于 jimeng-4.6，2 个 Seedream 4.5 保存 count 大于 1，另 4 个是排名 171 的 Seedream 4.5、4K、16:9、count=1。不能把这三类缺口一概归为组图不支持。排名 171 节点的 contentWidth／contentHeight 是 634×350 展示尺寸，不拿来冒充 4K 输出像素。
+- 已按[火山官方图片生成 API 的 Seedream 4.5 尺寸表](https://www.volcengine.com/docs/82379/1541523)补齐该版本的 4K 七种源比例映射，并与本批实际 16:9 输出交叉核验。通过已有 `size` 与组图 providerOptions 提交，不增加 Provider、不修改提示词；未知比例、其它未核验模型高档位及多产出要求仍保留。官方网页文本保存在 `.local/featured-200/ark-official-image-api.txt`，不把同页 Seedream 5.0 pro 的尺寸上限混用于 4.5。
+- 已进一步实测排名 171 的现有输出：4 个节点共 3 个唯一地址，每个仅顺序读取 4,096 字节 PNG 头（HTTP 206），三份均为 **5504×3040**、16,732,160 像素；既不是展示尺寸 634×350，也不是 3840×2160 的 8,294,400 像素。不能套用视频 UHD 的“4K”定义使这些图片减少约一半像素。两个节点共享同一输出地址，未复制或伪造额外素材。
+- 图片头回执 `.local/featured-200/ark-output-header-receipt.json` 记录冻结快照 SHA、节点映射、URL 哈希及读取字节数；同目录 `ark-output-header-audit.py` 限制最多 3 个地址、每地址最多 65,536 字节，不渲染整图。已有输出尺寸只证明历史产物，不能直接推广为全部模型／比例的请求映射或水印清洗验收。
+- 新增映射回归先失败后通过；适配／配置专项共 43 项、172 断言及 TypeScript 检查通过。冻结 200 重审 `.local/featured-200/ark-four-k-audit/` 中仅排名 171 改变：4 个节点消除 8 条参数告警，旧普通图片渠道要求更新为保留 5504×3040 的 Ark 组图渠道要求。批次表已核对 SHA 后同步，仍 43/200 适配准备、本批发布 0，运行、清洗、昵称、顺序与替补字段未改。真实远端生成、浏览器保存重载和生产验收仍待完成。
+
+### 运镜特效材料不能当作封面图片引用
+
+- 排名 156 包含 5 个 `material-lens` 节点，分别连接 5 个 `star-video2` 生成节点。已经提取并执行原 `recalcLensEdgeEffects`：连线将 lensVersionId 写入目标 `effects`，并维护 lensModels 的版本 UUID 与 sourceNodeId；封面不是图片输入。
+- 在冻结快照的隔离副本上逐项运行原函数，5 个已保存目标参数均保持不变。逐一移除对应连线后，原函数会移除该版本效果，imageList 与其它参数全部保持；因此不能把材料改成普通参考图，也不能只保留特效名称就宣称完整接入。
+- 原函数 SHA、摘录偏移、5 组版本／目标节点和断言结果见 `.local/featured-200/lens-source-contract/receipt.json`，复算入口为同目录 `audit.mjs`。未修改源快照、生成素材、准入名单或生产数据。
+- 发现先前本地效果扫描仅收集 `fineTuneModels`，没有覆盖上述 5 个 lensVersionUuid。它不能证明运镜特效正文缺失；已扩展同一只读扫描器的 `--kind lens` 分支，按材料资产 UUID 和版本 UUID 独立检索，并将结果与原风格扫描隔离，不覆盖旧证据。
+- 补查已完成：10 个资产／版本 UUID，再追加 5 个数值版本 ID；遍历首要资产目录 3,279 个文件和 4 份 ZIP，读取 4,428 个非媒体数据流、222,511,014 字节，跳过 845 个媒体文件／成员，无读取错误、无标识命中。两次回执分别是 `lens-source-contract/local-dependency-scan.json` 与 `local-dependency-id-scan.json`。这只证明该目录及本次可解码 ZIP 内未找到这些精确标识，不排除改名、去标识或其它目录的效果正文，亦不证明通用模型不支持相同效果。
+
+### 时间线正分贝：预览与导出不是同一个消费合同
+
+- 已从本地原始 chunk 提取并执行原 `A/D/R/_/L/P/F/O/j` 函数及原常量，未按经验重写后自测。源预览在正分贝区间使用 `1 + db / 20 * 4`，不是通用的 `10 ** (db / 20)`：+6 dB 为 2.2 倍、+12 dB 为 3.4 倍、+20 dB 为 5 倍；通用换算对应约 1.995、3.981、10 倍。-60 dB 在源预览为静音。
+- `toServerModel()` 将 `F(clip)` 得到的原分贝随每个片段提交，轨道音量另行限制在 0–1；远程 `media-platform / compose` 消费 videoList、audioList 与轨道音量。前端请求证明了字段送达构造器，没有证明远程编码器使用预览的正增益曲线。
+- Premiere 工程导出另有 `Audio Levels` XML，将片段 dB 与轨道音量转换的 dB 相加并限幅；这是单独的工程导出路径，不能冒充远程视频合成消费证据。
+- 影策原生播放／FFmpeg 导出已能接收大于 1 的 volume，但目前统一的线性音量字段尚不能证明同时忠实对应上述源路径。因此保留排名 101、186 的正分贝核验门禁，不改模型、音量、排序或上线计数。下一步应寻找本地合成服务消费者或同输入的真实源导出对照，不能仅删去门禁。
+- 可复算证据：`.local/featured-200/audio-positive-source-contract/audit.mjs` 与 `receipt.json`，包含两个源文件 SHA、精确摘录偏移、原函数执行结果及请求链。未读取图片、发送生成任务或写生产数据。
+- 同一审计逐份核对排名 101、186 的冻结快照 SHA：实际正增益分别为 +12 dB 和两个 +0.310409 dB 片段。排名 101 的第二条时间线还保存了短于片段末端的总长（106 秒对 109.009 秒）。原 `applySavedClipLayout` 按 `Math.max(eS(clips), savedDuration)` 扩展该短总长，故原生适配已移除这一错误拒绝，保持所有片段和源快照不变；长于片段的尾部空白仍明确待映射，不直接丢弃。新增回归先复现失败后通过；正分贝门禁独立保留。
+
+### 扩图节点的具体协议边界
+
+- 全冻结范围共 8 个工程、16 个 `expand-image` 节点；12 个请求 2K、4 个请求 4K，全部 n=1、image2image，重试身份均为 nebula-ultra。逐份冻结缓存 SHA 已核对，没有读取原图、下载远程素材或修改参数。
+- 原客户端先按源像素计算四边 padding，调用 `compositeOutpaintImage` 在不透明白底画布上放置原图，再上传该合成图。保存的 `params.originImage` 已经包含扩展区域，`_outpaintPads` 保存于 data 层、位于 params 之外；不能把保存的 originImage 再加一次边，也不能假定它是透明蒙版。
+- `handleGenerateOutpaint` 将 originImage、n、quality、scene、modeType 及可选 width／height／aspect_ratio 交给 nebula 提交链；前端构造器没有 prompt 或独立 mask 字段。源标准档映射 nebula-core／auto，其余档映射 nebula-ultra／大写质量；本批仅出现 ultra。源后端如何展开 scene 尚未由这些前端文件证明。
+- 影策已有 `canvas-outpaint-generation.ts` 的 OpenAI Images 蒙版扩图，支持精确像素尺寸检查和原图合成；因此问题不是“影策没有扩图”。缺口是原 nebula 场景与现有模型提交合同之间尚未完成桥接，不能静默更换为 OpenAI 模型、丢弃 4K、伪造提示词或重复扩展几何来清零阻塞。
+- 证据 `.local/featured-200/outpaint-source-contract/receipt.json` 与 `audit.py`：白名单字段投影、原文件 SHA、16 个节点几何和请求构造器；不输出原图 URL、提示词或账户材料。下一步核验目标渠道是否明确支持同一专用场景及其输出尺寸合同，再接原生任务、重试、媒体回写和清洗流程。当前保持 16 条既有阻塞，不调整排名、完整案例数或上线数。
+
+本地原前端 `0zme995kos_wy.js` 的请求构建逻辑先解构 `fineTuneType` 与 `fineTuneModels`，不是把这两个字段直接透传：
+
+- `template`：读取所选模型的 `versionId`，与已有 `effects` 去重合并；首个模型的 `templateInfo` 中 `name=template` 的默认值进入 `effectTemplateUuids`。
+- `lora` 且为图片请求：构建 `loraList`，保留 `modelId=versionId`、modelType、imageUrl、weight、name。
+- 所选列表为空时没有效果模型消费；非空列表不是可随意丢弃的模型切换残留。模板封面也不等于模板指令或 LoRA 权重。
+- 素材恢复函数 `T` 仅按原 URL 或 assetId 匹配 V2 元信息，再通过 `resolveHttpUrl` 取 HTTP 地址；只有 `asset://` 标识而没有实际地址的记录不构成可下载媒体。
+
+消费方 SHA、符号偏移、代码摘录和逐节点清单保存在忽略目录 `.local/featured-200/source-dependency-inventory.json`；复算脚本同目录 `audit-source-dependencies.py`。原始账号、媒体地址不复制到公开文档。
+
+## 冻结源依赖盘点（非当前适配告警数）
+
+| 源依赖 | 涉及工程 | 涉及节点 | 下一道实施关口 |
+| --- | ---: | ---: | --- |
+| 非空模板／LoRA 选择 | 48 | 1,054 | 对应版本的模板正文／权重或真实渠道消费者；先证明同一效果合同，再接原生提交、重试、复制 |
+| MJ stylize／weird／chaos | 64 | 1,760 | 原模型版本和三项控制的真实目标协议；不塞进普通模型提示词冒充已支持 |
+| 仅有 asset 标识、槽位自身没有 HTTP 定位 | 6 | 73 | 检查 V2、源节点、资产目录和公开详情中的对应 ID，定位真实同一素材；不拿封面补位 |
+
+这些集合重叠，不能相加当成剩余工程数；字段存在数也不等同适配错误数。素材统计只说明槽位自身缺定位，尚未证明所有缓存都缺该媒体。每项保留原排名，未自动替补。
+
+### 节点资产身份漏接已修复
+
+源 `1di1-3y--egfx.js` 的 `ei()` 将图片的 `portraitAssetId`、视频的 `assetVideoAssetId` 和音频的 `assetAudioAssetId` 与节点实际选中的首个 URL 一起提交。未处于 hidden／watermark 保护状态的图片优先采用 `originalUrl`，其它图片采用当前 `url`。源 `2lcp-dbl2ngkb.js` 的 `buildTaskResultUrlPatch` 在替换生成产物时清除对应资产身份；因此保存下来的身份与该版本地址有明确关系，不是任意封面关联。
+
+转换器此前只从参数列表中建立资产地址索引，遗漏了上述节点字段。本次在同一快照、相同媒体类型的索引中补入节点消费者的真实选择地址；保持冲突地址拒绝、显式槽位地址优先、HTTPS 校验、源快照不修改和保护状态选择规则。没有按文件名、相似图片或案例封面猜配素材。
+
+按当前完整预处理链复算，原排名 35、51、117、122、181 的 166 个未解析槽位（含 typed／mixed 列表镜像）对应 68 个资产，现未解析为 0；总计 234 个 `asset://` 槽位可定位。冻结 200 项重审中，57 条 `invalid-reference` 转为同节点的 `channel-configuration-required`，其它问题不变；准备数仍为 43/200，本批发布 0。这是地址与原生引用链修复，不是 166 份工程、媒体清洗或实际模型执行验收。
+
+4 项行为测试先观察到预期失败，修复后通过；补充原生导入、引用连线、运行时版本校验、复制 ID 重映射和 JSON 序列化回读路径，未冒充真实数据库保存。8 个关联测试文件独立运行，68 项通过，类型检查通过。源符号／SHA 证据为 `.local/featured-200/node-asset-source-contract.json`；冻结重审为 `node-asset-locator-200-audit/`，日志为 `node-asset-locator-regression/`。新恢复的 68 个地址已建立一一对应素材源清单，媒体清洗与视觉验收另行推进。
+
+## 实施纪律
+
+### 本地归档补查
+
+按冻结工程实际选择补查全部二开首要资产目录，包含 LTV、群友站及其它同级资产与 4 个回退 ZIP；不解压覆盖清洗源。枚举 3,279 个文件、1,998 个归档成员，完整读取 4,428 个非媒体正文流，共 222,511,014 字节，读取／解码错误为 0。图片、音视频、字体、GLB 和 WASM 共 718 个外部文件及 127 个归档成员不参与正文检索；这不是可见水印或模型效果验收。
+
+冻结工程中有 118 个所选版本 UUID、111 个效果模板 UUID。精确标识检索在群友站的 4 份工程图中命中其中 7 个版本和 7 个模板，共 41 处所选版本对象。这些对象保留版本、权重、封面及 `templateInfo`；后者字段为 `template`、`templateType`、`promptMagic`、`allowPrompt`、`allowImageReference`、`imageTotal`、`placeholder`，未据此认定效果正文已恢复。归档中未命中这些所选版本／模板标识，不代表改名、去标识或其它编码的正文必然不存在。
+
+忽略目录证据为 `.local/featured-200/local-effect-dependency-scan.json` 和 `local-effect-match-classification.json`，同目录保留复算脚本。索引只保存路径、标识、字段名、长度与 SHA，不将账号字段、签名媒体地址或原始详情正文复制到公开文档。该补查不改变 200 个原站排名、不替补工程、不增加适配完成或上线计数；后续继续核对命中工程的真实效果消费入口。
+
+### 名称、内嵌正文与压缩编码复查
+
+用户明确资产就在本地。之前从精确标识未命中直接转向询问登录会话不充分；当前继续以已有本地目录为查找基准，不将“未定位”写成“本地缺失”。
+
+补查覆盖相同 3,279 个文件、4 个 ZIP 和 4,428 个非媒体正文流，并按 118 个选定版本建立 124 个规范化名称／版本别名。除了独立 JSON，还读取 Markdown／HTML 中的 JSON、字符串中的工程快照、JS 的 JSON 字符串以及 96 个带 gzip 魔数的归档文件（后缀仍为 JS／CSS），后者解码 10,353,478 字节。实际解析 2,809 个 JSON 文档、2,591 个内嵌 JSON、137 个文档 JSON 块，检查 145,556 个对象；文本解码错误 0。另有 23 个文档 JSON 块未能作为完整 JSON 解析，仍属于未核验片段，不能用解码错误 0 表示这些片段的语义已完整检查。
+
+1,299 处候选分别为：819 处名称文本命中、396 处已保存生成参数、41 处已保存效果选择、36 份社区工作流、6 处 Provider 请求 schema、1 份 API 端点索引。已保存节点的 prompt、社区工程的 graph，以及插件请求的 body 不因字段名称相似就成为所选效果模板正文。当前仍未确认可执行的同一效果定义；这不是所有编码或去标识导出都不存在的证明，也不代表影策不支持该功能。
+
+逐正文 SHA 与此前标识扫描一一对比：改动、新增、缺失均为 0；冻结 200 份快照的 SHA 也均与批次表一致。复算入口为 `.local/featured-200/audit-local-effect-content.py` 和 `classify-local-effect-content.py`，证据目录为 `.local/featured-200/local-effect-content-audit/`。候选仅保留路径、指针、字段名／类型／长度、命中标识和 SHA；没有执行源 JS、发起收费生成、修改源资产或改变准入／发布计数。
+
+23 个未解析块进一步尝试允许字符串原始控制字符、连续 JSON 值的只读解码；未猜补缺失引号／分隔符，也没有执行 JavaScript。仍没有可完整恢复的块或所选版本的正文证据；部分前缀解码不算完整文档。结果为 `local-effect-content-audit/recovered-document-blocks/receipt.json`。这些片段继续保留，不据此断言本地没有效果正文。
+
+### 后续接入纪律
+
+1. 模板效果在原站确实参与提交，因此不得用“字段未在通用模型 schema 声明”作为删除理由。影策可扩展插件不等于某个源平台专有效果已自然存在。
+2. 接入同一语义的插件或已有协议后，必须验证首次提交、重试和持久化共同路径；只把参数保存进 metadata 不算执行链完成。
+3. 来源正文、模型权重或媒体定位缺失时记录具体 ID 与查找证据，继续其它工程；不会据此声称影策不支持接入。
+4. 完整工程仍须媒体清洗、打开编辑、后端保存重开和线上验收。当前盘点没有发布任何工程，没有调用收费生成。
+
+## 镜头聚焦是完整原图红框，不是裁切
+
+本地源 `17mhzv4pgusko.js` 的 `drawFocusRegionRedBox` 保留图片 `naturalWidth`／`naturalHeight`，先把完整原图画入同尺寸 canvas，再用 `#ff0000` 描边。线宽为 `max(2,min(8,round(0.01*min(W,H))))`，矩形为 `[relX*W,relY*H,width*W,height*H]`，产物为 PNG。不能用裁切图片、选区尺寸图或只有文字描述来替代这个输入合同。
+
+`0wllgknwomk2u.js` 的选区保存入口写入 `focusRegion={nodeId,relX,relY,width,height,imageUrl}`，保存的 `originImage` 仍是完整原图地址，并写 `scene=camera_focus`；输出比例结合原图宽高与归一化选区宽高选择最近档位。连线只表示来源，不代表已经画出红框。
+
+真正提交前，`0zme995kos_wy.js` 的 `C()` 调用上述画框函数，把 PNG 转为文件后上传，返回新的 `originImage` 和 `scene=camera_focus`；图片请求随后把参考图替换为这张已上传的红框图。因此直接把保存的 originImage 当作最终红框输入会漏掉实际预处理。
+
+冻结 200 份原始快照逐份 SHA 校验后的盘点是 **79 个节点／13 个工程**，原排名 13、16、35、88、92、99、108、113、117、122、123、151、159；79 个保存的 originImage 均与 focusRegion 原图一致。此前涉及新恢复素材的排名 117／122 中 6 个节点只是一部分，不能作为全范围数量。
+
+源文件 SHA、符号偏移、代码摘录和逐节点几何证据为 `.local/featured-200/camera-focus-source-contract.json`，复算入口 `audit-camera-focus-source.py`。当前只确认源客户端准备合同，尚未证明私有 scene 的服务端处理、原模型效果、原生首次提交／重试及持久化已等价接入；保留参数和阻塞，不用猜测 prompt 放行。
+
+## Magic 区域选择不是普通词语替换
+
+原组件 `0wllgknwomk2u.js` 在识别后保存 `magicList[id]={suggestions,imageUrl}`，提示词插入 `{{magic:id:index}}`；`2xt5r4-qlahum.js` 按索引显示选中建议的标签，但编辑器序列化仍保存完整标记。请求构建器 `0zme995kos_wy.js` 没有从剩余字段中移除 `magicList`，经 `...ea` / `...eP` 进入请求，并非只发送显示标签。
+
+当前冻结范围为 9 个工程、64 个节点、80 个选择标记，原排名 35、46、54、55、56、64、85、113、193。排名 56 保存的是“书页”建议及归一化 bbox 和对应图片地址；这些数据本地已存在，问题是原生执行链还没有承接区域选择语义，不应向用户索要这些已有配置。不能仅用“书页”替换标记后删除图像和 bbox，或把整个 magicList 当作已废弃参数。
+
+排名 113 的同一个节点另有两个标记在所存建议中找不到选择项，须单独核对源版本，不能默认选第一个建议。此为选择完整性核查，不代表所有区域参数已经可执行。复算脚本 `.local/featured-200/audit-magic-dependencies.py` 与证据 `.local/featured-200/magic-source-dependency-audit.json` 保留逐节点索引和源消费文件 SHA；没有变更该类参数的准入或发起生成。
+
+## 原生剧本节点的 VFS 正文边界
+
+用户现已明确确认“没有导出，按原顺序核验替补”。第 27 位因此进入替补流程，原工程不删除、不补写正文。已核验原候补队首第 201 位《捉妖师》，版本和顺序与冻结 feed 相符，但该例仍有 MJ 控制、magicList 和镜头聚焦适配缺口；保持候选修复状态，尚未激活替补，也没有跳过它。权威决定见 `ltv-featured-200-scope.json` 的 replacementDecisions。
+
+冻结排名 27 的 `screenplay` 节点不是 `script` / `script-v2` 分镜表。其 `script_content` 仅含 `work_key`、`vfs_paths`、`draft_vfs_paths`，正文目录有大纲、人物、场景和第一集，另有大纲草稿，共 5 个 Markdown 路径；`file_desc` 是说明，不能替代剧本正文。不能将此类型简单加入现有分镜类型白名单，也不能以说明文字创建一个文本节点后宣称完成。
+
+本地原组件 `1so5yrwqmdbaa.js` 从 `script_content.vfs_paths` 规范化目录，并调用 `requestOpenScreenplayChapter` / `openWorkspaceVfsFile`；`0fr_vbyjwo1u1.js` 将文件读取交给 `apiClient.post(canvasFolderVfsRead, ...)`，路由常量为 `/api/canvas/folder/vfs/read`。这是独立于画布快照的正文读取链，不能据此推断该接口匿名可读。本次未发起远程读取或写入。
+
+按这 5 个精确路径重新扫描本地二开首要资产及 ZIP 正文：3,279 个文件、1,998 个归档成员、4,428 个正文流、222,511,014 字节，错误 0；UTF-8 / UTF-16 两种字节序均未命中所需路径，命中的是组件中的通用 VFS 消费代码。此结果不排除改名、去标识或其它编码的正文，也不证明影策缺少接入能力。下一步须定位与该源工程对应的 VFS 正文及目录／草稿版本，再确定原生文档编辑与持久化接入，不能从说明补写故事。
+
+复算脚本 `.local/featured-200/audit-screenplay-local.py`、证据 `.local/featured-200/screenplay-local-audit.json`。证据 SHA `a0296f94534199164faad0183f94495201fc5639b2d2a70ba9e4f90e6052e243`，记录冻结工程哈希、逐文件哈希和检索边界，不复制正文或账号材料。保留该工程的现有阻塞、排名和全部原始资料，没有替补、调整适配计数或上线。
+
+## 工程内素材定位恢复已接入
+
+冻结快照实查发现部分 asset 并非彻底缺失：同一工程的其它媒体槽位记录了相同 asset ID 的 HTTPS 地址。现由 `restoreLtvProjectAssetUrls` 在主适配器建立引用图之前恢复定位；作用域只限传入的单个工程，不使用跨工程或跨账号缓存。按媒体类型与规范化 asset ID 精确匹配，多个地址冲突、标识冲突、非 HTTPS 线索不自动恢复；已有明确地址保持原样。只补 `_httpUrl`，不复制其它槽位的尺寸、时长、顺序或节点身份，也不修改输入快照。
+
+真实 200 工程回放恢复 **5 个工程、25 个节点、25 个 asset、68 个引用槽位**；同一个 asset 出现在 typed/mixed 列表中按槽位分别记录，不当成多份素材。引用错误从 86 条减至 70 条，涉及工程从 8 个减至 7 个。完整工程适配准备仍为 40/200，剩余能力问题未忽略。
+
+35 项媒体输入与主适配器回归、TypeScript 检查通过；新增正例先在缺恢复逻辑时失败。回执 `.local/featured-200/asset-locator-receipt.json`，全量适配回执 `.local/featured-200/asset-locator-200-audit/`。这是地址和引用图恢复，不是媒体下载、清洗、服务端保存或上线验收。

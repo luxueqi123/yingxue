@@ -1,0 +1,1283 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "kling-omni-video",
+  "name": "Kling 3.0 Omni Video",
+  "version": "2.1.0",
+  "author": "Kuaishou / 影策",
+  "description": "Kling 3.0 Omni Video 独立请求协议插件。",
+  "documentation": "# Kling 3.0 Omni Video\n\n该目录是独立官方协议插件源码。后端从生成的 `kling-omni-video.yingce-plugin` 包加载，不依赖系统内置 `host:` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# Kling 3.0 Omni Video 接口字段\n\n## 协议身份\n\n- 插件 ID：`kling-omni-video`。\n- Provider ID：`kling-omni-video`。\n- 能力：`video`。\n- 默认 Base URL：`https://api-beijing.klingai.com`。\n- 鉴权驱动：`bearer`。\n- 创建：`POST /v1/videos/omni-video`。\n- 查询：`GET /v1/videos/omni-video/{{taskId}}`。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | API Key |\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n| `model` | string | 是 | `model` | 视频模型 ID。 |\n| `prompt` | string | 是 | `prompt/content/input` | 视频提示词。 |\n| `images` | media[] | 否 | `first/last/reference image` | 显式 role 图片输入。 |\n| `videos` | media[] | 否 | `reference video` | 参考视频。 |\n| `audios` | media[] | 否 | `reference audio/voice` | 参考音频或音色。 |\n| `duration` | integer | 否 | `duration/seconds` | 时长秒数。 |\n| `aspectRatio` | string | 否 | `ratio/aspect_ratio/size` | 画幅比例或尺寸。 |\n| `resolution` | string | 否 | `resolution` | 分辨率档位。 |\n| `generateAudio` | boolean | 否 | `generate_audio` | 是否生成音频。 |\n| `watermark` | boolean | 否 | `watermark` | 水印开关。 |\n| `providerOptions` | object | 否 | `provider-specific fields` | 插件命名空间内的厂商扩展字段。 |\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n| `create.method` | `\"POST\"` |\n| `create.path` | `\"/v1/videos/omni-video\"` |\n| `create.contentType` | `\"application/json\"` |\n| `create.body.model_name` | `{\"$ref\":\"request.model\"}` |\n| `create.body.prompt` | `{\"$ref\":\"request.prompt\"}` |\n| `create.body.mode` | `{\"$ref\":\"request.providerOptions.kling-omni-video.mode\"}` |\n| `create.body.duration` | `{\"$omitEmpty\":{\"$if\":{\"condition\":{\"$and\":[{\"$gt\":[{\"$len\":{\"$ref\":\"request.videos\"}},0]},{\"$eq\":[{\"$ref\":\"request.providerOptions.kling-omni-video.videoReferenceType\"},\"base\"]}]},\"then\":null,\"else\":{\"$toString\":{\"$ref\":\"request.duration\"}}}}}` |\n| `create.body.aspect_ratio` | `{\"$omitEmpty\":{\"$if\":{\"condition\":{\"$in\":[{\"$ref\":\"request.aspectRatio\"},[\"16:9\",\"9:16\",\"1:1\"]]},\"then\":{\"$ref\":\"request.aspectRatio\"},\"else\":null}}}` |\n| `create.body.sound` | `{\"$if\":{\"condition\":{\"$ref\":\"request.generateAudio\"},\"then\":\"on\",\"else\":\"off\"}}` |\n| `create.body.multi_shot` | `{\"$coalesce\":[{\"$ref\":\"request.providerOptions.kling-omni-video.multiShot\"},false]}` |\n| `create.body.shot_type` | `{\"$omitEmpty\":{\"$if\":{\"condition\":{\"$ref\":\"request.providerOptions.kling-omni-video.multiShot\"},\"then\":{\"$if\":{\"condition\":{\"$gt\":[{\"$len\":{\"$ref\":\"request.providerOptions.kling-omni-video.multiPrompt\"}},0]},\"then\":\"customize\",\"else\":\"intelligence\"}},\"else\":null}}}` |\n| `create.body.multi_prompt` | `{\"$omitEmpty\":{\"$map\":{\"from\":{\"$ref\":\"request.providerOptions.kling-omni-video.multiPrompt\"},\"as\":\"shot\",\"in\":{\"index\":{\"$ref\":\"shot.index\"},\"prompt\":{\"$ref\":\"shot.prompt\"},\"duration\":{\"$toString\":{\"$ref\":\"shot.duration\"}}}}}}` |\n| `create.body.image_list` | `{\"$omitEmpty\":{\"$map\":{\"from\":{\"$sortByOrder\":{\"$ref\":\"request.images\"}},\"as\":\"media\",\"in\":{\"image_url\":{\"$ref\":\"media.value\"},\"type\":{\"$omitEmpty\":{\"$if\":{\"condition\":{\"$eq\":[{\"$ref\":\"media.role\"},\"first_frame\"]},\"then\":\"first_frame\",\"else\":{\"$if\":{\"condition\":{\"$eq\":[{\"$ref\":\"media.role\"},\"last_frame\"]},\"then\":\"end_frame\",\"else\":null}}}}}}}}}` |\n| `create.body.video_list` | `{\"$omitEmpty\":{\"$map\":{\"from\":{\"$sortByOrder\":{\"$ref\":\"request.videos\"}},\"as\":\"media\",\"in\":{\"video_url\":{\"$ref\":\"media.value\"},\"refer_type\":{\"$ref\":\"request.providerOptions.kling-omni-video.videoReferenceType\"},\"keep_original_sound\":{\"$ref\":\"request.providerOptions.kling-omni-video.keepOriginalSound\"}}}}}` |\n| `poll.method` | `\"GET\"` |\n| `poll.path` | `\"/v1/videos/omni-video/{{taskId}}\"` |\n| `poll.contentType` | `\"application/json\"` |\n\n## Provider 扩展键\n\n- `providerOptions.kling-omni-video.keepOriginalSound`\n- `providerOptions.kling-omni-video.mode`\n- `providerOptions.kling-omni-video.multiPrompt`\n- `providerOptions.kling-omni-video.multiShot`\n- `providerOptions.kling-omni-video.videoReferenceType`\n\n动态模型或工作流允许使用文档声明的完整 `parameters/input/extra_body` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n| `response.taskId` | `{\"$coalesce\":[{\"$ref\":\"response.data.task_id\"},{\"$ref\":\"taskId\"}]}` |\n| `response.status` | `{\"$if\":{\"condition\":{\"$eq\":[{\"$ref\":\"response.data.task_status\"},\"succeed\"]},\"then\":\"succeeded\",\"else\":{\"$ref\":\"response.data.task_status\"}}}` |\n| `response.message` | `{\"$coalesce\":[{\"$ref\":\"response.data.task_status_msg\"},{\"$ref\":\"response.message\"}]}` |\n| `response.videos` | `{\"$map\":{\"from\":{\"$ref\":\"response.data.task_result.videos\"},\"as\":\"video\",\"in\":{\"$ref\":\"video.url\"}}}` |\n| `response.errorPaths[0]` | `\"code\"` |\n| `response.resultEphemeral` | `true` |\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n官方合同 https://klingai.com/document-api/api/video/3-0-omni/video-omni/legacy 。使用model_name、mode和image_list/video_list；std标准720p、pro高品质1080p、4k高品质4K。首帧first_frame、尾帧end_frame，普通参考省略type。结果为30天临时资源，必须转存。仅承接kling-v3-omni；主体注册及自定义分镜须有对应适配，不能传入LTV私有ID或忽略分镜。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"kling-omni-video\",\n  \"name\": \"Kling 3.0 Omni Video\",\n  \"version\": \"2.1.0\",\n  \"author\": \"Kuaishou / 影策\",\n  \"description\": \"Kling 3.0 Omni Video 独立请求协议插件。\",\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"kling-omni-video\",\n        \"label\": \"Kling 3.0 Omni Video\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api-beijing.klingai.com\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt/content/input\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"first/last/reference image\",\n            \"description\": \"显式 role 图片输入。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference video\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference audio/voice\",\n            \"description\": \"参考音频或音色。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration/seconds\",\n            \"description\": \"时长秒数。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio/aspect_ratio/size\",\n            \"description\": \"画幅比例或尺寸。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否生成音频。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"水印开关。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"插件命名空间内的厂商扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"kling-v3-omni\"\n              ]\n            },\n            \"message\": \"此协议要求实际Kling 3.0 Omni模型，不接受源平台别名或其它版本\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$trim\": {\n                          \"$ref\": \"request.prompt\"\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    },\n                    2500\n                  ]\n                }\n              ]\n            },\n            \"message\": \"Omni提示词必须完整且不超过2500字符\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.providerOptions.kling-omni-video.mode\"\n                },\n                [\n                  \"std\",\n                  \"pro\",\n                  \"4k\"\n                ]\n              ]\n            },\n            \"message\": \"必须明确选择标准、高品质或4K模式\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.resolution\"\n                    },\n                    \"\"\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$lower\": {\n                        \"$ref\": \"request.resolution\"\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"request.providerOptions.kling-omni-video.mode\"\n                            },\n                            \"std\"\n                          ]\n                        },\n                        \"then\": \"720p\",\n                        \"else\": {\n                          \"$if\": {\n                            \"condition\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.mode\"\n                                },\n                                \"pro\"\n                              ]\n                            },\n                            \"then\": \"1080p\",\n                            \"else\": \"4k\"\n                          }\n                        }\n                      }\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.mode\"\n                        },\n                        \"4k\"\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$lower\": {\n                            \"$ref\": \"request.resolution\"\n                          }\n                        },\n                        \"2160p\"\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"独立分辨率不能与质量模式冲突\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.videos\"\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        \"then\": 4,\n                        \"else\": 7\n                      }\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"Omni支持最多7图，有视频时最多4图1视频；独立音频需其它合同\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$in\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              [\n                                \"first_frame\"\n                              ]\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$in\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              [\n                                \"last_frame\"\n                              ]\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$or\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  [\n                                    \"last_frame\"\n                                  ]\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  [\n                                    \"first_frame\"\n                                  ]\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        1\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"首尾帧不可重复，尾帧必须同时提供首帧\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$ref\": \"request.images\"\n                      },\n                      \"as\": \"media\",\n                      \"where\": {\n                        \"$not\": {\n                          \"$in\": [\n                            {\n                              \"$ref\": \"media.role\"\n                            },\n                            [\n                              \"\",\n                              \"reference_image\",\n                              \"first_frame\",\n                              \"last_frame\"\n                            ]\n                          ]\n                        }\n                      }\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"图片包含未适配的参考角色\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$in\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                    },\n                    [\n                      true,\n                      false\n                    ]\n                  ]\n                }\n              ]\n            },\n            \"message\": \"智能分镜必须是布尔值\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.providerOptions.kling-omni-video.elements\"\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"主体ID需要独立的主体注册适配\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                    },\n                    null\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                    },\n                    {\n                      \"$map\": {\n                        \"from\": {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                        },\n                        \"as\": \"shot\",\n                        \"in\": {\n                          \"index\": {\n                            \"$ref\": \"shot.index\"\n                          },\n                          \"prompt\": {\n                            \"$ref\": \"shot.prompt\"\n                          },\n                          \"duration\": {\n                            \"$ref\": \"shot.duration\"\n                          }\n                        }\n                      }\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"自定义分镜必须是仅含index、prompt、duration的数组\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                  }\n                },\n                6\n              ]\n            },\n            \"message\": \"自定义分镜最多6个镜头\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$len\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                      },\n                      \"as\": \"shot\",\n                      \"where\": {\n                        \"$not\": {\n                          \"$and\": [\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"shot.index\"\n                                },\n                                {\n                                  \"$add\": [\n                                    {\n                                      \"$ref\": \"shotIndex\"\n                                    },\n                                    1\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"shot.prompt\"\n                                },\n                                {\n                                  \"$toString\": {\n                                    \"$ref\": \"shot.prompt\"\n                                  }\n                                }\n                              ]\n                            },\n                            {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$trim\": {\n                                      \"$ref\": \"shot.prompt\"\n                                    }\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$lte\": [\n                                {\n                                  \"$len\": {\n                                    \"$ref\": \"shot.prompt\"\n                                  }\n                                },\n                                2500\n                              ]\n                            },\n                            {\n                              \"$in\": [\n                                {\n                                  \"$ref\": \"shot.duration\"\n                                },\n                                [\n                                  1,\n                                  \"1\",\n                                  2,\n                                  \"2\",\n                                  3,\n                                  \"3\",\n                                  4,\n                                  \"4\",\n                                  5,\n                                  \"5\",\n                                  6,\n                                  \"6\",\n                                  7,\n                                  \"7\",\n                                  8,\n                                  \"8\",\n                                  9,\n                                  \"9\",\n                                  10,\n                                  \"10\",\n                                  11,\n                                  \"11\",\n                                  12,\n                                  \"12\",\n                                  13,\n                                  \"13\",\n                                  14,\n                                  \"14\",\n                                  15,\n                                  \"15\"\n                                ]\n                              ]\n                            }\n                          ]\n                        }\n                      }\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"分镜须连续编号，正文1至2500字符，每个镜头1至15秒整数\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$not\": {\n                    \"$gt\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                        }\n                      },\n                      0\n                    ]\n                  }\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                        },\n                        true\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$add\": [\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.0.duration\"\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.1.duration\"\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.2.duration\"\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.3.duration\"\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.4.duration\"\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt.5.duration\"\n                                },\n                                0\n                              ]\n                            }\n                          ]\n                        },\n                        {\n                          \"$ref\": \"request.duration\"\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"自定义分镜须开启多镜头，分镜时长之和须等于视频总时长\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$not\": {\n                    \"$gt\": [\n                      {\n                        \"$len\": {\n                          \"$ref\": \"request.videos\"\n                        }\n                      },\n                      0\n                    ]\n                  }\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.generateAudio\"\n                        },\n                        false\n                      ]\n                    },\n                    {\n                      \"$in\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                        },\n                        [\n                          \"feature\",\n                          \"base\"\n                        ]\n                      ]\n                    },\n                    {\n                      \"$in\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.keepOriginalSound\"\n                        },\n                        [\n                          \"yes\",\n                          \"no\"\n                        ]\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频参考需关闭生成声音并明确参考用途与原声设置\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$not\": {\n                    \"$and\": [\n                      {\n                        \"$gt\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.videos\"\n                            }\n                          },\n                          0\n                        ]\n                      },\n                      {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                          },\n                          \"base\"\n                        ]\n                      }\n                    ]\n                  }\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  [\n                                    \"first_frame\"\n                                  ]\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$in\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  [\n                                    \"last_frame\"\n                                  ]\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$not\": {\n                        \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                      }\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频编辑不能同时使用首尾帧或多镜头\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$gt\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                        },\n                        \"base\"\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$gte\": [\n                        {\n                          \"$ref\": \"request.duration\"\n                        },\n                        3\n                      ]\n                    },\n                    {\n                      \"$lte\": [\n                        {\n                          \"$ref\": \"request.duration\"\n                        },\n                        15\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"视频生成时长必须在3至15秒，视频编辑按原视频时长\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$in\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              [\n                                \"first_frame\"\n                              ]\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$gt\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                        },\n                        \"base\"\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$in\": [\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    [\n                      \"16:9\",\n                      \"9:16\",\n                      \"1:1\"\n                    ]\n                  ]\n                }\n              ]\n            },\n            \"message\": \"未提供首帧或待编辑视频时必须指定支持的画幅\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/omni-video\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model_name\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"mode\": {\n              \"$ref\": \"request.providerOptions.kling-omni-video.mode\"\n            },\n            \"duration\": {\n              \"$omitEmpty\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$and\": [\n                      {\n                        \"$gt\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.videos\"\n                            }\n                          },\n                          0\n                        ]\n                      },\n                      {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                          },\n                          \"base\"\n                        ]\n                      }\n                    ]\n                  },\n                  \"then\": null,\n                  \"else\": {\n                    \"$toString\": {\n                      \"$ref\": \"request.duration\"\n                    }\n                  }\n                }\n              }\n            },\n            \"aspect_ratio\": {\n              \"$omitEmpty\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$in\": [\n                      {\n                        \"$ref\": \"request.aspectRatio\"\n                      },\n                      [\n                        \"16:9\",\n                        \"9:16\",\n                        \"1:1\"\n                      ]\n                    ]\n                  },\n                  \"then\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  },\n                  \"else\": null\n                }\n              }\n            },\n            \"sound\": {\n              \"$if\": {\n                \"condition\": {\n                  \"$ref\": \"request.generateAudio\"\n                },\n                \"then\": \"on\",\n                \"else\": \"off\"\n              }\n            },\n            \"multi_shot\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                },\n                false\n              ]\n            },\n            \"shot_type\": {\n              \"$omitEmpty\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$ref\": \"request.providerOptions.kling-omni-video.multiShot\"\n                  },\n                  \"then\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$gt\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                            }\n                          },\n                          0\n                        ]\n                      },\n                      \"then\": \"customize\",\n                      \"else\": \"intelligence\"\n                    }\n                  },\n                  \"else\": null\n                }\n              }\n            },\n            \"multi_prompt\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$ref\": \"request.providerOptions.kling-omni-video.multiPrompt\"\n                  },\n                  \"as\": \"shot\",\n                  \"in\": {\n                    \"index\": {\n                      \"$ref\": \"shot.index\"\n                    },\n                    \"prompt\": {\n                      \"$ref\": \"shot.prompt\"\n                    },\n                    \"duration\": {\n                      \"$toString\": {\n                        \"$ref\": \"shot.duration\"\n                      }\n                    }\n                  }\n                }\n              }\n            },\n            \"image_list\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.images\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"image_url\": {\n                      \"$ref\": \"media.value\"\n                    },\n                    \"type\": {\n                      \"$omitEmpty\": {\n                        \"$if\": {\n                          \"condition\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"first_frame\"\n                            ]\n                          },\n                          \"then\": \"first_frame\",\n                          \"else\": {\n                            \"$if\": {\n                              \"condition\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              },\n                              \"then\": \"end_frame\",\n                              \"else\": null\n                            }\n                          }\n                        }\n                      }\n                    }\n                  }\n                }\n              }\n            },\n            \"video_list\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$sortByOrder\": {\n                      \"$ref\": \"request.videos\"\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"video_url\": {\n                      \"$ref\": \"media.value\"\n                    },\n                    \"refer_type\": {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.videoReferenceType\"\n                    },\n                    \"keep_original_sound\": {\n                      \"$ref\": \"request.providerOptions.kling-omni-video.keepOriginalSound\"\n                    }\n                  }\n                }\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/omni-video/{{taskId}}\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$eq\": [\n                  {\n                    \"$ref\": \"response.data.task_status\"\n                  },\n                  \"succeed\"\n                ]\n              },\n              \"then\": \"succeeded\",\n              \"else\": {\n                \"$ref\": \"response.data.task_status\"\n              }\n            }\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.task_status_msg\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$map\": {\n              \"from\": {\n                \"$ref\": \"response.data.task_result.videos\"\n              },\n              \"as\": \"video\",\n              \"in\": {\n                \"$ref\": \"video.url\"\n              }\n            }\n          },\n          \"errorPaths\": [\n            \"code\"\n          ],\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  }\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "kling-omni-video",
+        "label": "Kling 3.0 Omni Video",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api-beijing.klingai.com",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "视频模型 ID。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt/content/input",
+            "description": "视频提示词。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "first/last/reference image",
+            "description": "显式 role 图片输入。"
+          },
+          {
+            "name": "videos",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference video",
+            "description": "参考视频。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference audio/voice",
+            "description": "参考音频或音色。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "mapping": "duration/seconds",
+            "description": "时长秒数。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "required": false,
+            "mapping": "ratio/aspect_ratio/size",
+            "description": "画幅比例或尺寸。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "mapping": "resolution",
+            "description": "分辨率档位。"
+          },
+          {
+            "name": "generateAudio",
+            "type": "boolean",
+            "required": false,
+            "mapping": "generate_audio",
+            "description": "是否生成音频。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "水印开关。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "插件命名空间内的厂商扩展字段。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "kling-v3-omni"
+              ]
+            },
+            "message": "此协议要求实际Kling 3.0 Omni模型，不接受源平台别名或其它版本"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$ref": "request.prompt"
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.prompt"
+                      }
+                    },
+                    2500
+                  ]
+                }
+              ]
+            },
+            "message": "Omni提示词必须完整且不超过2500字符"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.providerOptions.kling-omni-video.mode"
+                },
+                [
+                  "std",
+                  "pro",
+                  "4k"
+                ]
+              ]
+            },
+            "message": "必须明确选择标准、高品质或4K模式"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.resolution"
+                    },
+                    ""
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$lower": {
+                        "$ref": "request.resolution"
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$eq": [
+                            {
+                              "$ref": "request.providerOptions.kling-omni-video.mode"
+                            },
+                            "std"
+                          ]
+                        },
+                        "then": "720p",
+                        "else": {
+                          "$if": {
+                            "condition": {
+                              "$eq": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.mode"
+                                },
+                                "pro"
+                              ]
+                            },
+                            "then": "1080p",
+                            "else": "4k"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.mode"
+                        },
+                        "4k"
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$lower": {
+                            "$ref": "request.resolution"
+                          }
+                        },
+                        "2160p"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "独立分辨率不能与质量模式冲突"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$ref": "request.videos"
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        "then": 4,
+                        "else": 7
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "Omni支持最多7图，有视频时最多4图1视频；独立音频需其它合同"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.images"
+                            }
+                          },
+                          "as": "media",
+                          "where": {
+                            "$in": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              [
+                                "first_frame"
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.images"
+                            }
+                          },
+                          "as": "media",
+                          "where": {
+                            "$in": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              [
+                                "last_frame"
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$or": [
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "last_frame"
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "first_frame"
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        1
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "首尾帧不可重复，尾帧必须同时提供首帧"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$not": {
+                          "$in": [
+                            {
+                              "$ref": "media.role"
+                            },
+                            [
+                              "",
+                              "reference_image",
+                              "first_frame",
+                              "last_frame"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "图片包含未适配的参考角色"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$in": [
+                    {
+                      "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                    },
+                    [
+                      true,
+                      false
+                    ]
+                  ]
+                }
+              ]
+            },
+            "message": "智能分镜必须是布尔值"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$ref": "request.providerOptions.kling-omni-video.elements"
+                  }
+                },
+                0
+              ]
+            },
+            "message": "主体ID需要独立的主体注册适配"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                    },
+                    null
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                    },
+                    {
+                      "$map": {
+                        "from": {
+                          "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                        },
+                        "as": "shot",
+                        "in": {
+                          "index": {
+                            "$ref": "shot.index"
+                          },
+                          "prompt": {
+                            "$ref": "shot.prompt"
+                          },
+                          "duration": {
+                            "$ref": "shot.duration"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "自定义分镜必须是仅含index、prompt、duration的数组"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                  }
+                },
+                6
+              ]
+            },
+            "message": "自定义分镜最多6个镜头"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                      },
+                      "as": "shot",
+                      "where": {
+                        "$not": {
+                          "$and": [
+                            {
+                              "$eq": [
+                                {
+                                  "$ref": "shot.index"
+                                },
+                                {
+                                  "$add": [
+                                    {
+                                      "$ref": "shotIndex"
+                                    },
+                                    1
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "$eq": [
+                                {
+                                  "$ref": "shot.prompt"
+                                },
+                                {
+                                  "$toString": {
+                                    "$ref": "shot.prompt"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$trim": {
+                                      "$ref": "shot.prompt"
+                                    }
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$lte": [
+                                {
+                                  "$len": {
+                                    "$ref": "shot.prompt"
+                                  }
+                                },
+                                2500
+                              ]
+                            },
+                            {
+                              "$in": [
+                                {
+                                  "$ref": "shot.duration"
+                                },
+                                [
+                                  1,
+                                  "1",
+                                  2,
+                                  "2",
+                                  3,
+                                  "3",
+                                  4,
+                                  "4",
+                                  5,
+                                  "5",
+                                  6,
+                                  "6",
+                                  7,
+                                  "7",
+                                  8,
+                                  "8",
+                                  9,
+                                  "9",
+                                  10,
+                                  "10",
+                                  11,
+                                  "11",
+                                  12,
+                                  "12",
+                                  13,
+                                  "13",
+                                  14,
+                                  "14",
+                                  15,
+                                  "15"
+                                ]
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "分镜须连续编号，正文1至2500字符，每个镜头1至15秒整数"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$not": {
+                    "$gt": [
+                      {
+                        "$len": {
+                          "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                        }
+                      },
+                      0
+                    ]
+                  }
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                        },
+                        true
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$add": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.0.duration"
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.1.duration"
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.2.duration"
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.3.duration"
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.4.duration"
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "request.providerOptions.kling-omni-video.multiPrompt.5.duration"
+                                },
+                                0
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "$ref": "request.duration"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "自定义分镜须开启多镜头，分镜时长之和须等于视频总时长"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$not": {
+                    "$gt": [
+                      {
+                        "$len": {
+                          "$ref": "request.videos"
+                        }
+                      },
+                      0
+                    ]
+                  }
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.generateAudio"
+                        },
+                        false
+                      ]
+                    },
+                    {
+                      "$in": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                        },
+                        [
+                          "feature",
+                          "base"
+                        ]
+                      ]
+                    },
+                    {
+                      "$in": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.keepOriginalSound"
+                        },
+                        [
+                          "yes",
+                          "no"
+                        ]
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "视频参考需关闭生成声音并明确参考用途与原声设置"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$not": {
+                    "$and": [
+                      {
+                        "$gt": [
+                          {
+                            "$len": {
+                              "$ref": "request.videos"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      {
+                        "$eq": [
+                          {
+                            "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                          },
+                          "base"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "$and": [
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "first_frame"
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "last_frame"
+                                  ]
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$not": {
+                        "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "视频编辑不能同时使用首尾帧或多镜头"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$and": [
+                    {
+                      "$gt": [
+                        {
+                          "$len": {
+                            "$ref": "request.videos"
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                        },
+                        "base"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gte": [
+                        {
+                          "$ref": "request.duration"
+                        },
+                        3
+                      ]
+                    },
+                    {
+                      "$lte": [
+                        {
+                          "$ref": "request.duration"
+                        },
+                        15
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "视频生成时长必须在3至15秒，视频编辑按原视频时长"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.images"
+                            }
+                          },
+                          "as": "media",
+                          "where": {
+                            "$in": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              [
+                                "first_frame"
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gt": [
+                        {
+                          "$len": {
+                            "$ref": "request.videos"
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                        },
+                        "base"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$in": [
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    [
+                      "16:9",
+                      "9:16",
+                      "1:1"
+                    ]
+                  ]
+                }
+              ]
+            },
+            "message": "未提供首帧或待编辑视频时必须指定支持的画幅"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/videos/omni-video",
+          "contentType": "application/json",
+          "body": {
+            "model_name": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "mode": {
+              "$ref": "request.providerOptions.kling-omni-video.mode"
+            },
+            "duration": {
+              "$omitEmpty": {
+                "$if": {
+                  "condition": {
+                    "$and": [
+                      {
+                        "$gt": [
+                          {
+                            "$len": {
+                              "$ref": "request.videos"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      {
+                        "$eq": [
+                          {
+                            "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                          },
+                          "base"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": null,
+                  "else": {
+                    "$toString": {
+                      "$ref": "request.duration"
+                    }
+                  }
+                }
+              }
+            },
+            "aspect_ratio": {
+              "$omitEmpty": {
+                "$if": {
+                  "condition": {
+                    "$in": [
+                      {
+                        "$ref": "request.aspectRatio"
+                      },
+                      [
+                        "16:9",
+                        "9:16",
+                        "1:1"
+                      ]
+                    ]
+                  },
+                  "then": {
+                    "$ref": "request.aspectRatio"
+                  },
+                  "else": null
+                }
+              }
+            },
+            "sound": {
+              "$if": {
+                "condition": {
+                  "$ref": "request.generateAudio"
+                },
+                "then": "on",
+                "else": "off"
+              }
+            },
+            "multi_shot": {
+              "$coalesce": [
+                {
+                  "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                },
+                false
+              ]
+            },
+            "shot_type": {
+              "$omitEmpty": {
+                "$if": {
+                  "condition": {
+                    "$ref": "request.providerOptions.kling-omni-video.multiShot"
+                  },
+                  "then": {
+                    "$if": {
+                      "condition": {
+                        "$gt": [
+                          {
+                            "$len": {
+                              "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                            }
+                          },
+                          0
+                        ]
+                      },
+                      "then": "customize",
+                      "else": "intelligence"
+                    }
+                  },
+                  "else": null
+                }
+              }
+            },
+            "multi_prompt": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$ref": "request.providerOptions.kling-omni-video.multiPrompt"
+                  },
+                  "as": "shot",
+                  "in": {
+                    "index": {
+                      "$ref": "shot.index"
+                    },
+                    "prompt": {
+                      "$ref": "shot.prompt"
+                    },
+                    "duration": {
+                      "$toString": {
+                        "$ref": "shot.duration"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "image_list": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.images"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "image_url": {
+                      "$ref": "media.value"
+                    },
+                    "type": {
+                      "$omitEmpty": {
+                        "$if": {
+                          "condition": {
+                            "$eq": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "first_frame"
+                            ]
+                          },
+                          "then": "first_frame",
+                          "else": {
+                            "$if": {
+                              "condition": {
+                                "$eq": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "last_frame"
+                                ]
+                              },
+                              "then": "end_frame",
+                              "else": null
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "video_list": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$sortByOrder": {
+                      "$ref": "request.videos"
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "video_url": {
+                      "$ref": "media.value"
+                    },
+                    "refer_type": {
+                      "$ref": "request.providerOptions.kling-omni-video.videoReferenceType"
+                    },
+                    "keep_original_sound": {
+                      "$ref": "request.providerOptions.kling-omni-video.keepOriginalSound"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/videos/omni-video/{{taskId}}"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.task_id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$eq": [
+                  {
+                    "$ref": "response.data.task_status"
+                  },
+                  "succeed"
+                ]
+              },
+              "then": "succeeded",
+              "else": {
+                "$ref": "response.data.task_status"
+              }
+            }
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.task_status_msg"
+              },
+              {
+                "$ref": "response.message"
+              }
+            ]
+          },
+          "videos": {
+            "$map": {
+              "from": {
+                "$ref": "response.data.task_result.videos"
+              },
+              "as": "video",
+              "in": {
+                "$ref": "video.url"
+              }
+            }
+          },
+          "errorPaths": [
+            "code"
+          ],
+          "resultEphemeral": true
+        }
+      }
+    ]
+  }
+}

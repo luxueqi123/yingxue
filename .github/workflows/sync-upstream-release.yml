@@ -2,18 +2,12 @@ name: Sync upstream and publish Yingxue
 
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
-    inputs:
-      publish_current:
-        description: Revalidate and publish the already merged upstream version
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
-  packages: write
+  actions: write
 
 concurrency:
   group: sync-upstream-release
@@ -21,190 +15,83 @@ concurrency:
 
 jobs:
   sync:
-    name: Merge, verify and publish
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.commit.outputs.version || steps.resume.outputs.version }}
-    env:
-      UPSTREAM_REPOSITORY: ddcat-ai/open-ai-canvas
+    if: github.repository == 'luxueqi123/yingxue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: Checkout Yingxue main
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Resolve latest stable upstream release
+      - name: Resolve stable upstream version
         id: upstream
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          tag="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
-          test -n "$tag"
+          tag="$(gh api repos/ddcat-ai/open-ai-canvas/releases/latest --jq '.tag_name')"
+          [[ "$tag" =~ ^v[0-9]+(\.[0-9]+){2,3}$ ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags https://github.com/ddcat-ai/open-ai-canvas.git "refs/tags/$tag"
 
-      - name: Fetch upstream release
-        shell: bash
-        run: |
-          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
-          git fetch --no-tags upstream "refs/tags/${{ steps.upstream.outputs.tag }}:refs/tags/upstream-${{ steps.upstream.outputs.tag }}"
-
-      - name: Detect pending upstream changes
-        id: pending
-        shell: bash
-        run: |
-          if [[ "${{ inputs.publish_current }}" == "true" ]]; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-          elif git merge-base --is-ancestor "upstream-${{ steps.upstream.outputs.tag }}" HEAD; then
-            echo "value=false" >> "$GITHUB_OUTPUT"
-            echo "Yingxue already contains ${{ steps.upstream.outputs.tag }}"
-            echo "已包含上游 ${{ steps.upstream.outputs.tag }}；本次不执行新版本合并，只检查是否有待续跑的发布。" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "value=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Resume a tagged release whose publication failed
-        if: steps.pending.outputs.value != 'true'
-        id: resume
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          version="$(tr -d '\r\n' < VERSION)"
-          if ! git rev-parse --verify "refs/tags/$version" >/dev/null 2>&1; then
-            exit 0
-          fi
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$version" --silent 2>"$RUNNER_TEMP/release-error.txt"; then
-            echo "Release $version 已存在；本次未触发构建或发布。" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-error.txt"; then
-            cat "$RUNNER_TEMP/release-error.txt" >&2
-            exit 1
-          fi
-          echo "恢复发布标签 $version 对应的提交；不会将主分支后续提交包含到该标签。" >> "$GITHUB_STEP_SUMMARY"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Merge upstream without publishing
-        if: steps.pending.outputs.value == 'true'
+      - name: Merge upstream into Yingxue
         id: merge
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         shell: bash
         run: |
-          git config user.name "yingxue-release-bot"
+          base="$(git rev-parse --short=12 HEAD)"
+          candidate="codex/sync-$UPSTREAM_TAG-$base"
+          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
+          if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+            git switch --detach "refs/remotes/origin/$candidate"
+            exit 0
+          fi
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git merge --no-ff --no-commit "upstream-${{ steps.upstream.outputs.tag }}"; then
-            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
-            git merge --abort || true
+          if ! git merge --no-ff --no-commit FETCH_HEAD; then
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/merge-conflicts.txt"
+            git merge --abort
             echo "conflict=true" >> "$GITHUB_OUTPUT"
+            printf '影策 %s 与映雪合并有冲突，未发布更新包。\n' "$UPSTREAM_TAG" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          version="v$(date -u +%Y.%-m.%-d)-yingxue.${GITHUB_RUN_NUMBER}"
-          printf '%s\n' "$version" > VERSION
-          python - "$version" "${{ steps.upstream.outputs.tag }}" <<'PY'
-          from pathlib import Path
-          import sys
+          git commit -m "feat(sync): 上游更新 - 合并影策 $UPSTREAM_TAG"
 
-          path = Path("CHANGELOG.md")
-          text = path.read_text(encoding="utf-8")
-          marker = "## Unreleased\n"
-          entry = (
-              f"\n## {sys.argv[1]}\n\n"
-              f"- 自动同步上游稳定版 `{sys.argv[2]}`，并通过映雪后端、前端与发布构建验收。\n"
-          )
-          if marker not in text:
-              raise SystemExit("CHANGELOG.md 缺少 Unreleased 标题")
-          path.write_text(text.replace(marker, marker + entry, 1), encoding="utf-8")
-          PY
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Upload merge conflict report
+      - uses: actions/upload-artifact@v4
         if: failure() && steps.merge.outputs.conflict == 'true'
-        uses: actions/upload-artifact@v4
         with:
           name: upstream-${{ steps.upstream.outputs.tag }}-conflicts
-          path: ${{ runner.temp }}/conflicts.txt
+          path: ${{ runner.temp }}/merge-conflicts.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
-      - name: Set up Go
-        if: steps.pending.outputs.value == 'true'
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-          cache: true
-
-      - name: Verify backend
-        if: steps.pending.outputs.value == 'true'
-        working-directory: backend
-        run: |
-          test -z "$(gofmt -l .)"
-          go test ./...
-
-      - name: Set up Bun
-        if: steps.pending.outputs.value == 'true'
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.9
-
-      - name: Install web dependencies for cross-runtime tests
-        if: steps.pending.outputs.value == 'true'
-        working-directory: web
-        run: bun install --frozen-lockfile
-
-      - name: Verify Canvas Agent
-        if: steps.pending.outputs.value == 'true'
-        working-directory: canvas-agent
-        run: |
-          bun install --frozen-lockfile
-          bun run build
-          bun run test
-
-      - name: Verify web
-        if: steps.pending.outputs.value == 'true'
-        working-directory: web
-        run: |
-          bun run typecheck
-          bun run test
-          bun run build
-          google-chrome --version || chromium --version
-          bun run test:director:e2e
-
-      - name: Commit and tag verified release
-        id: commit
-        if: steps.pending.outputs.value == 'true'
+      - name: Publish only through the release gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          CANDIDATE_BRANCH: ${{ steps.merge.outputs.candidate }}
         shell: bash
         run: |
-          git add VERSION CHANGELOG.md
-          git commit -m "merge(upstream): 映雪 - 自动同步 ${{ steps.upstream.outputs.tag }}"
-          git tag -a "${{ steps.merge.outputs.version }}" -m "${{ steps.merge.outputs.version }}"
-          git push --atomic origin HEAD:main "refs/tags/${{ steps.merge.outputs.version }}"
-          echo "version=${{ steps.merge.outputs.version }}" >> "$GITHUB_OUTPUT"
-
-      - name: Report blocked automatic sync
-        if: failure() && steps.pending.outputs.value == 'true'
-        shell: bash
-        run: |
-          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          {
-            echo "## 上游自动同步被阻断"
-            echo
-            echo "- 上游版本：\`${{ steps.upstream.outputs.tag }}\`"
-            echo "- 结果：未创建提交、标签、镜像或 Release，生产环境不会变化。"
-            if [[ "${{ steps.merge.outputs.conflict }}" == "true" ]]; then
-              echo "- 原因：上游合并冲突。"
-              echo "- 冲突清单：见本次运行的 \`upstream-${{ steps.upstream.outputs.tag }}-conflicts\` 构件。"
-            else
-              echo "- 原因：合并后的验证或发布步骤失败；本次没有冲突清单构件。"
-            fi
-            echo "- 运行记录：${url}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  publish:
-    name: Publish verified upstream merge
-    needs: sync
-    if: needs.sync.outputs.version != ''
-    uses: ./.github/workflows/publish-images.yml
-    with:
-      release_tag: ${{ needs.sync.outputs.version }}
-    secrets: inherit
+          [[ "$(tr -d '\r\n' < VERSION)" == "$UPSTREAM_TAG" ]]
+          tag="$(git tag --points-at HEAD --list 'v*-yingxue.*' --sort=-version:refname | sed -n '1p')"
+          if [[ -z "$tag" ]]; then
+            tag="v$(date -u +%Y.%-m.%-d)-yingxue.$GITHUB_RUN_NUMBER"
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' tag -a "$tag" -m "映雪 · 影策 $UPSTREAM_TAG"
+            git push --atomic origin "HEAD:refs/heads/$CANDIDATE_BRANCH" "refs/tags/$tag"
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --silent 2>"$RUNNER_TEMP/release-check.err"; then
+            exit 0
+          fi
+          if ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-check.err"; then
+            cat "$RUNNER_TEMP/release-check.err" >&2
+            exit 1
+          fi
+          active="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/publish-images.yml/runs?head_sha=$(git rev-parse HEAD)" --jq '[.workflow_runs[] | select(.status != "completed")] | length')"
+          if [[ "$active" == 0 ]]; then
+            gh workflow run publish-images.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          fi

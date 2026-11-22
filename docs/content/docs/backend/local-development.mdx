@@ -5,6 +5,32 @@ description: 在宿主机启动映雪前后端开发服务
 
 # 本地开发
 
+## 隔离数据库验收
+
+使用生产数据库副本验证接口和迁移时，显式设置 `CANVAS_BACKGROUND_WORKERS_ENABLED=false`。该开关默认 `true`；关闭后不启动队列消费、资源清理、短剧调度、会话恢复及启动转码回填，防止副本里的任务或存储凭证触发正式资源变更。接口权限、版本检查和保存校验保持生效，生成任务只会排队，不能据此记录生成验收成功。正式站必须保留后台消费开启。
+
+## 案例目录实时更新
+
+案例支持表通过 `case-support-data` 虚拟模块交付。开发服务监听原 JSON 变化时需同步失效虚拟模块缓存，新增案例才能出现在正常图库。此路径已用真实 Vite 文件监听回归验证，避免只刷新页面仍读取旧案例目录。
+
+## 样式源码扫描范围
+
+`web/src/styles/globals.css` 将 Tailwind 扫描限定为 `web/src`、`web/index.html` 和既有 Streamdown 组件源码。案例原片、下载分片、验收回执和项目数据不作为样式类来源，避免大型本地案例目录使开发服务耗尽内存。新增页面放在 `web/src` 时自动纳入；新增外部 UI 库需要按实际依赖补充 `@source`。
+
+## 桌面本机渠道与服务器可信上游
+
+这两类宿主使用不同的出站合同，不要通过切换部署模式来放宽生产权限：
+
+- 桌面本机渠道要求后端显式绑定 `127.0.0.1:端口`、启用 `CANVAS_DESKTOP_LOCAL_CHANNELS_ENABLED`，并在渠道中明确保存 `allowLocalChannel: true`。仅允许经过解析验证的 `127.0.0.1` / `localhost` 回环目标，不授权其他私网或链路本地地址。
+- 非桌面服务器不接受本机渠道开关。普通渠道仍走通用出站校验；确有可信内网上游时，仅通过既有 `CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS` 精确配置主机，不使用私网通配。这个白名单不授予桌面能力。
+- 管理员保存、模型目录预览/导入、执行及恢复任务均使用当前宿主能力和服务端渠道标志。PATCH 未提交该字段时保留已有值；客户端不能覆盖系统渠道的本机权限。
+
+## Compose 公网资源地址
+
+`docker-compose.yml`、`docker-compose.dev.yml`、`docker-compose.local.yml`、`docker-compose.server.yml` 和 `docker-compose.deploy.yml` 均将 `.env` 中的 `CANVAS_PUBLIC_BASE_URL` 传入后端。使用本地文件存储且上游模型需要读取参考素材时，将它设为上游能访问的 HTTPS 站点根地址（例如 `https://canvas.example.com`，不要附加 `/api`）；存储设置中的公网访问地址优先于该环境变量。
+
+修改后需要重新创建后端容器，单纯重启旧容器不会更新环境变量。未配置时保持空值并由资源请求强校验，不会自动采用容器内网地址；这项设置不放宽出站 SSRF 校验，也不应为此开放数据库或后端端口。只做本地界面开发且不向模型提交资源时可以不设置。部署后仍需验证真实资源 URL 能被目标供应商读取，健康检查不能替代该验证。
+
 ## 一键启动（Windows PowerShell）
 
 在仓库根目录执行：
@@ -21,7 +47,7 @@ description: 在宿主机启动映雪前后端开发服务
 - 打开两个 PowerShell 窗口，分别运行后端和前端；
 - 将前端 `/api` 请求代理到 `http://127.0.0.1:8080`。
 
-启动后访问 <http://localhost:3000>。后端健康检查地址是 <http://127.0.0.1:8080/api/health>。
+启动后访问 [http://localhost:3000](http://localhost:3000)。后端健康检查地址是 [http://127.0.0.1:8080/api/health](http://127.0.0.1:8080/api/health)。
 
 脚本使用固定的本地开发端口：前端 `3000`，后端 `8080`。如果端口被占用，脚本会先退出，不会关闭已有进程。请分别在两个开发窗口中按 `Ctrl+C` 停止服务。
 
@@ -50,11 +76,35 @@ go run ./cmd/server
 
 ```bash
 cd web
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
+`web/` 只使用 `bun.lock`。不要用 pnpm 或 npm 往同一套 `node_modules` 里再装一遍。
+
 前端默认监听 `0.0.0.0:3000`，Vite 将 `/api` 和 OAuth 回调代理到 `127.0.0.1:8080`。如需修改代理目标，可设置 `VITE_API_PROXY_TARGET`。
+
+## 时间线成片与字幕导出
+
+后端运行环境需要同时找到 `ffmpeg` 和 `ffprobe`。`CANVAS_FFMPEG_PATH` 只指定 FFmpeg 可执行文件，音轨探测仍从后端进程的 `PATH` 查找 ffprobe；只填 FFmpeg 路径仍可能报“媒体探测依赖未安装”。已有两项工具时，在启动开发后端的同一 PowerShell 中加入其目录，环境只影响当前进程及其子进程：
+
+```powershell
+$mediaToolsDir = Split-Path -Parent $env:CANVAS_FFMPEG_PATH
+if (-not (Test-Path -LiteralPath (Join-Path $mediaToolsDir 'ffprobe.exe'))) {
+    throw 'FFmpeg 所在目录没有 ffprobe.exe，请核对已安装的媒体工具目录'
+}
+$env:PATH = "$mediaToolsDir;$env:PATH"
+```
+
+已经运行的后端不会继承之后修改的终端环境。重新启动前确认没有进行中的任务，并保留原数据目录、启动参数和其他环境；不要修改账号密码、渠道或系统 PATH。依赖发现和 `/api/health` 成功后，还需通过原生页面提交实际时间线、下载 MP4 并检查容器与完整解码。
+
+`POST /api/timeline/renders` 创建异步渲染任务。服务端使用 FFmpeg 合成视频，**不烧录字幕**；完成任务的 `resultJson` 包含视频 `resourceId` 和可选的 `subtitleSrt` 正文。隐藏字幕轨不进入该字幕文件。编辑器结果区分别提供 MP4 与 SRT 下载，并提示字幕不在视频画面内；需要在播放器中同时加载同名 SRT。
+
+时间线快照支持可选的 `timeline.width` 和 `timeline.height`，必须同时指定为正偶数；同时省略时沿用 1920×1080。短剧制作按所选画幅传入尺寸，FFmpeg 的缩放、补边、黑场及最终资源元数据使用同一尺寸，保留竖屏和方形画幅。
+
+画布节点的“进入剪辑”弹窗也提供“渲染成片（服务端）”，复用上述接口及任务中心轮询，不新增渲染服务或模型渠道。提交当前时间线草稿时，将可见媒体片段对应节点的 `metadata.storageKey` 映射为 `directMedia.storageKey=resource:<id>`；已有直连媒体优先。缺失节点、类型不匹配和未上传的本地媒体在提交前报错，不利用服务端黑场占位冒充完整输出。素材归属继续由后端资源服务校验。产物就绪后显式提供 MP4 下载及可选 SRT；原本地导出入口仍保持字幕烧录语义。
+
+本地 ffmpeg.wasm 导出则烧录可见字幕，使用应用自带字体；字幕或字体处理失败会报错，不返回缺少字幕的成功视频。两种模式的产物形态不同，服务端视频预览成功不代表字幕烧录已验证。无需为现有字幕导出添加模型服务。
 
 ## 时间线字幕转写（whisper.cpp）
 
@@ -147,3 +197,32 @@ node scripts/audit-static-release.mjs web/dist
 7. 同时验证源站与公网域名，确认 HTML 为禁止缓存、哈希资源为长期缓存、缺失分包为 `404`。
 
 回滚时使用上一个完整发布目录和 Compose 覆盖文件。只切回 Web 静态挂载并重新创建 Web 服务，不回滚或覆盖数据库、Redis、上传资源及 `skill-media` 数据盘目录。
+
+<!-- local-media-manifest-capacity-20261008 -->
+## 本地案例媒体库容量
+
+本地媒体清单支持最高64 MiB，适用于200例及未激活候补的原媒体登记。超过上限或文件描述、路径、MIME、字节数、SHA不一致仍返回校验失败；不同原地址指向同一原字节时保留每条来源绑定。容量回归不代表案例发布或模型运行通过。
+
+
+<!-- registered-case-media-storage -->
+## 本地案例素材附加目录
+
+既有Vite及预览服务可读取私有的 `.local/ltv-case-library/media-storage.json` 配置：`version` 为1，`additionalMediaDirectories` 为最多4个绝对本机目录。配置在服务启动时加载，变更配置后须重新加载既有服务。该配置只用于本机开发/预览，不提供生产发布能力，也不出现在公开媒体清单。
+
+媒体仍必须列入既有 `manifest.json` 白名单。优先读取原 `media` 目录，文件不存在时才顺序查找附加目录；原文件存在但尺寸不符时返回409。符号链接逃逸、未登记文件和非法Range均拒绝，继续支持HEAD、Range和ETag。相对目录、UNC路径或超过4个目录令启动失败。既有素材保留原路径，不自动搬移或覆盖。
+
+### 容器的案例媒体双目录挂载
+
+本地构建及部署 Compose 使用 `CANVAS_LTV_CASE_MEDIA_PATH` 挂载包含 `manifest.json` 和 `media/` 的案例库。素材分散在另一处目录时，可设置 `CANVAS_LTV_CASE_MEDIA_EXTRA_PATH`，直接指向补充的媒体目录。两处均只读，不需要复制大素材库。补充路径留空时复用主案例库的 `media/`，继续支持单目录部署。
+
+Nginx 保持既有 `/production-library/case-media/` 地址。主目录文件不存在时才读取补充目录；同名文件由主目录优先。成片及 `case-<id>/<sha>.<ext>` 工程素材均支持 GET、HEAD 和字节 Range；缺失文件返回真实404，写方法被拒绝。大媒体继续使用禁止共享缓存的响应头。清单仍只从主案例库读取。
+
+上述挂载与 Vite 的私有 `media-storage.json` 分属不同运行方式，容器不会读取本机配置文件。部署时应显式配置服务器上已有的素材路径；宿主机路径检查或 Windows Nginx 回归不能替代 Linux 容器和上线验收。
+
+可使用已有 Nginx 可执行文件运行隔离回归，生成全新回执路径：
+
+```bash
+node web/scripts/test-case-media-gateway.mjs --nginx /path/to/nginx --receipt .local/cache/case-media-gateway-receipt.json
+```
+
+脚本只启动有限时长的回环测试服务，校验主目录优先、补充目录、嵌套素材、HEAD、Range、416、404和拒绝写方法，然后停止测试进程。不会启动生产服务或下载、复制实际素材。

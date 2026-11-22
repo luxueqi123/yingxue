@@ -1,3 +1,4 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 
 // 根据视口宽度动态计算面板宽度约束，避免小屏幕上面板挤压画布
@@ -5,12 +6,11 @@ export function getPanelWidthBounds(): { min: number; max: number } {
     const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
     if (vw < 768) return { min: 260, max: 360 };
     if (vw < 1024) return { min: 280, max: 440 };
-    if (vw < 1440) return { min: 320, max: 560 };
-    return { min: 360, max: 760 };
+    return { min: 320, max: 600 };
 }
 
 // 智能体面板列包裹器：承载面板宽度管理、resize 拖拽和顶部停靠偏移。
-// 面板始终作为 flex 子元素避让画布；topInset 用于避让绝对定位的顶部栏（沉浸专注时顶部栏隐藏，传 0）。
+// 面板停靠在画布工具栏下方，避免悬浮工具栏遮挡 Agent 标题和消息；沉浸模式传 0。
 // closing 期间保持宽度和渲染，让面板播放滑出动画；动画结束后由父组件卸载列。
 export function AssistantPanelColumn({
     width,
@@ -25,6 +25,7 @@ export function AssistantPanelColumn({
     onWidthChange: (width: number) => void;
     children: (resizing: boolean) => ReactNode;
 }) {
+    const { t } = useInterfaceTranslation();
     const columnRef = useRef<HTMLDivElement>(null);
     const [resizing, setResizing] = useState(false);
 
@@ -53,11 +54,11 @@ export function AssistantPanelColumn({
     return (
         <div
             ref={columnRef}
-            className="relative flex shrink-0 overflow-hidden"
+            className="relative z-[var(--z-toolbar)] flex shrink-0 overflow-hidden"
             style={{
                 width,
                 paddingTop: topInset,
-                transition: resizing ? "none" : "width var(--motion-dur-base-calc) var(--motion-ease-out), padding-top var(--motion-dur-base-calc) var(--motion-ease-out)",
+                transition: resizing ? "none" : "width 250ms var(--motion-ease-out), padding-top 250ms var(--motion-ease-out)",
             }}
         >
             <div className="h-full w-full">
@@ -66,7 +67,7 @@ export function AssistantPanelColumn({
                         type="button"
                         className="absolute inset-y-0 left-0 z-[var(--node-z-overlay)] w-4 -translate-x-1/2 cursor-col-resize"
                         onMouseDown={startResize}
-                        aria-label="调整右侧面板宽度"
+                        aria-label={t("canvasUi.resizePanel")}
                     />
                 ) : null}
                 {children(resizing)}

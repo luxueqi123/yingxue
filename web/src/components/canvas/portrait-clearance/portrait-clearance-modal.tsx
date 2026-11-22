@@ -1,18 +1,24 @@
-import { Button, InputNumber, Modal, Popconfirm, Segmented, Select, Tag } from "antd";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import { Button, InputNumber, Popconfirm, Segmented, Select, Tag } from "antd";
+import { AppModal } from "@/components/ui/product/app-modal";
 import { Switch } from "@/components/ui/base/switch";
 import { Callout } from "@/components/ui/product/callout";
 import { StatusBadge } from "@/components/ui/base/badges";
 import { CircleAlert, Download, History, Image as ImageIcon, Pause, Play, ScanFace, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { createDefaultPortraitClearanceState, PORTRAIT_CLEARANCE_PLUGIN_ID, PORTRAIT_RISK_LABELS, PORTRAIT_TASK_STAGE_LABELS, type PortraitClearanceAnalysisMode, type PortraitClearanceMode, type PortraitClearanceNodeState } from "@/lib/portrait-clearance/contracts";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { createDefaultPortraitClearanceState, PORTRAIT_CLEARANCE_PLUGIN_ID, PORTRAIT_RISK_LABEL_KEYS, PORTRAIT_TASK_STAGE_LABEL_KEYS, type PortraitClearanceAnalysisMode, type PortraitClearanceMode, type PortraitClearanceNodeState } from "@/lib/portrait-clearance/contracts";
 import { isPortraitImageInput, swapPortraitClearanceDirectBindings } from "@/lib/portrait-clearance/input-bindings";
 import { portraitVisionModelError, portraitVisionModelLabel, portraitVisionModels, resolvePortraitVisionModel } from "@/lib/portrait-clearance/vision";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { cancelPortraitTask, createPortraitClearanceTask, deletePortraitTask, downloadPortraitReport, imageNodeDataUrl, installPortraitClearanceModels, listPortraitTasks, portraitOwnerScopeHash, readPortraitRuntimeStatus, readPortraitTaskResult, retryPortraitTask, type PortraitRuntimeStatus, type PortraitRuntimeTask } from "@/services/portrait-clearance-runtime";
+import { cancelPortraitTask, createPortraitClearanceTask, deletePortraitTask, downloadPortraitReport, imageNodeDataUrl, installPortraitClearanceModels, listPortraitTasks, portraitOwnerScopeHash, readPortraitRuntimeStatus, readPortraitTaskImage, readPortraitTaskResult, retryPortraitTask, type PortraitRuntimeStatus, type PortraitRuntimeTask } from "@/services/portrait-clearance-runtime";
 import type { PortraitFeatureKey, PortraitPairResult, PortraitRiskLevel } from "@/lib/portrait-clearance/contracts";
+
+type RuntimeError = { kind: "raw"; message: string } | { kind: "translated"; key: InterfaceMessageKey };
+class PortraitResultInvalidError extends Error {}
 
 type PortraitClearanceModalProps = {
     projectId: string;
@@ -25,6 +31,7 @@ type PortraitClearanceModalProps = {
 };
 
 export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, onClose, onUpdateState, onAddCandidate }: PortraitClearanceModalProps) {
+    const { locale, t } = useInterfaceTranslation();
     const effectiveConfig = useEffectiveConfig();
     const enabled = usePluginStore((state) => state.pluginStates[PORTRAIT_CLEARANCE_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PORTRAIT_CLEARANCE_PLUGIN_ID)?.enabled));
     const state = node?.metadata?.portraitClearance || createDefaultPortraitClearanceState();
@@ -33,7 +40,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
     const [runtimeStatus, setRuntimeStatus] = useState<PortraitRuntimeStatus | null>(null);
     const [runtimeConnecting, setRuntimeConnecting] = useState(false);
     const [runtimeRetryNonce, setRuntimeRetryNonce] = useState(0);
-    const [runtimeError, setRuntimeError] = useState("");
+    const [runtimeError, setRuntimeError] = useState<RuntimeError | null>(null);
     const [history, setHistory] = useState<PortraitRuntimeTask[]>([]);
     const [result, setResult] = useState<PortraitResultView | null>(null);
     const [reportFormat, setReportFormat] = useState<"json" | "md" | "html" | "docx">("html");
@@ -52,6 +59,15 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
     const selectedModel = state.analysisMode === "local-plus-vision" ? resolvePortraitVisionModel(effectiveConfig, state.modelPolicy) : "";
     const visionModelError = state.analysisMode === "local-plus-vision" ? portraitVisionModelError(effectiveConfig, state.modelPolicy) : "";
     const canStart = enabled && runtimeReady && !visionModelError && (state.mode === "network-search" ? hasQuery : hasQuery && hasReference);
+    const runtimeErrorText = runtimeError?.kind === "translated" ? t(runtimeError.key) : runtimeError?.message || "";
+    const rawRuntimeError = runtimeError?.kind === "raw" ? runtimeError.message : "";
+    const setRuntimeErrorFrom = (error: unknown, fallbackKey: InterfaceMessageKey) => {
+        if (error instanceof PortraitResultInvalidError) {
+            setRuntimeError({ kind: "translated", key: "portraitClearanceUi.resultInvalid" });
+            return;
+        }
+        setRuntimeError(error instanceof Error ? { kind: "raw", message: error.message } : { kind: "translated", key: fallbackKey });
+    };
 
     useEffect(() => {
         if (!open || !enabled) return;
@@ -65,12 +81,12 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
                 const status = await readPortraitRuntimeStatus();
                 if (disposed) return;
                 setRuntimeStatus(status);
-                setRuntimeError("");
+                setRuntimeError(null);
                 attempt = 0;
             } catch (error) {
                 if (disposed) return;
                 setRuntimeStatus(null);
-                setRuntimeError(error instanceof Error ? error.message : "本机肖像引擎不可用");
+                setRuntimeErrorFrom(error, "portraitClearanceUi.engineUnavailable");
                 attempt += 1;
                 retryTimer = window.setTimeout(load, Math.min(5_000, 800 + attempt * 700));
             } finally {
@@ -78,7 +94,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             }
         };
         setRuntimeStatus(null);
-        setRuntimeError("");
+        setRuntimeError(null);
         void load();
         return () => {
             disposed = true;
@@ -116,7 +132,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
     const startTask = async () => {
         if (!node || !canStart || starting) return;
         setStarting(true);
-        setRuntimeError("");
+        setRuntimeError(null);
         try {
             const ownerScopeHash = await portraitOwnerScopeHash();
             const inputNodes = imageInputs.filter((item) => {
@@ -131,7 +147,10 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
                 return { ...file, nodeId: item.id, role };
             }));
             const inputBytes = inputs.reduce((total, item) => total + decodedDataUrlBytes(item.dataUrl), 0);
-            if (inputBytes > 20 * 1024 * 1024) throw new Error("肖像排查图片总大小不能超过 20MB");
+            if (inputBytes > 20 * 1024 * 1024) {
+                setRuntimeError({ kind: "translated", key: "portraitClearanceUi.imagePayloadTooLarge" });
+                return;
+            }
             const task = await createPortraitClearanceTask({
                 projectId,
                 nodeId: node.id,
@@ -149,7 +168,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
                 task: { status: task.status, stage: task.stage, progress: task.progress, processedCandidates: task.processedCandidates, ...(task.totalCandidates === undefined ? {} : { totalCandidates: task.totalCandidates }), ...(task.errorCode ? { errorCode: task.errorCode } : {}), ...(task.errorMessage ? { errorMessage: task.errorMessage } : {}), updatedAt: task.updatedAt },
             });
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "本机肖像任务创建失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.taskCreateFailed");
         } finally {
             setStarting(false);
         }
@@ -164,7 +183,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             // local task without losing its downloaded candidates and audit trail.
             if (node) onUpdateState(node.id, { ...state, activeTaskId: state.activeTaskId, task: { status: task.status, stage: task.stage, progress: task.progress, processedCandidates: task.processedCandidates, ...(task.errorCode ? { errorCode: task.errorCode } : {}), ...(task.errorMessage ? { errorMessage: task.errorMessage } : {}), updatedAt: task.updatedAt } });
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "停止任务失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.taskStopFailed");
         } finally {
             setBusyAction("");
         }
@@ -179,7 +198,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             const task = await retryPortraitTask(taskId);
             onUpdateState(node.id, { ...state, activeTaskId: task.taskId, task: { status: task.status, stage: task.stage, progress: task.progress, processedCandidates: task.processedCandidates, updatedAt: task.updatedAt }, lastResult: undefined });
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "重试任务失败");
+            setRuntimeErrorFrom(error, "workbenchUi.retryFailed");
         } finally {
             setBusyAction("");
         }
@@ -201,7 +220,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             anchor.click();
             URL.revokeObjectURL(url);
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "导出报告失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.reportExportFailed");
         } finally {
             setBusyAction("");
         }
@@ -215,7 +234,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             setHistory((current) => current.filter((item) => item.taskId !== taskId));
             if (state.lastResult?.taskId === taskId && node) onUpdateState(node.id, { ...state, lastResult: undefined });
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "删除本地排查数据失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.localDataDeleteFailed");
         } finally {
             setBusyAction("");
         }
@@ -229,7 +248,7 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             setResult(value);
             onUpdateState(node.id, { ...state, activeTaskId: undefined, task: { status: task.status, stage: task.stage, progress: task.progress, processedCandidates: task.processedCandidates, ...(task.totalCandidates === undefined ? {} : { totalCandidates: task.totalCandidates }), ...(task.errorCode ? { errorCode: task.errorCode } : {}), ...(task.errorMessage ? { errorMessage: task.errorMessage } : {}), updatedAt: task.updatedAt }, lastResult: { taskId: task.taskId, highestRisk: value.highestRisk, riskCounts: value.riskCounts, candidateCount: value.candidateCount, comparedCount: value.comparedCount, ...(task.modelRef ? { modelRef: task.modelRef } : {}), completedAt: task.completedAt || task.updatedAt, detailsAvailable: true } });
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "读取历史排查结果失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.historyReadFailed");
         } finally {
             setBusyAction("");
         }
@@ -238,18 +257,18 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
     const installModels = async () => {
         if (installingModels) return;
         setInstallingModels(true);
-        setRuntimeError("");
+        setRuntimeError(null);
         try {
             setRuntimeStatus(await installPortraitClearanceModels());
         } catch (error) {
-            setRuntimeError(error instanceof Error ? error.message : "本地肖像模型安装失败");
+            setRuntimeErrorFrom(error, "portraitClearanceUi.modelInstallFailed");
         } finally {
             setInstallingModels(false);
         }
     };
 
     return (
-        <Modal
+        <AppModal
             open={open}
             onCancel={onClose}
             footer={null}
@@ -259,82 +278,82 @@ export function PortraitClearanceModal({ projectId, node, upstreamNodes, open, o
             centered
             destroyOnHidden={false}
             className="portrait-clearance-modal"
-            styles={{ container: { padding: 0, overflow: "hidden" }, body: { padding: 0 } }}
+            flush
         >
             <div className="flex max-h-[calc(100dvh-32px)] min-h-[min(680px,calc(100dvh-32px))] flex-col overflow-hidden bg-background text-foreground">
                 <header className="flex shrink-0 flex-wrap items-center gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground text-background"><ScanFace className="size-5" aria-hidden="true" /></span>
                     <div className="min-w-0 flex-1">
-                        <h2 className="truncate text-base font-semibold">{node?.title || "肖像可识别性排查"}</h2>
-                        <p className="mt-0.5 text-xs text-foreground/55">本地人脸预检、候选排查与审慎风险报告</p>
+                        <h2 className="truncate text-base font-semibold">{node?.title || t("coverageUi.479")}</h2>
+                        <p className="mt-0.5 text-xs text-foreground/55">{t("coverageUi.480")}</p>
                     </div>
-                    <Tag icon={enabled ? <ShieldCheck className="size-3" /> : <CircleAlert className="size-3" />} color={enabled ? "green" : "default"} style={enabled ? undefined : portraitRiskTagStyle("medium")} title={enabled ? "本地肖像排查功能可用" : "已有节点、摘要和本机历史仍可查看；重新运行前请到插件中心启用肖像排查。"}>{enabled ? "插件已启用" : "插件已停用"}</Tag>
-                    <Button aria-label="关闭排查工作台" onClick={onClose}>关闭</Button>
+                    <Tag icon={enabled ? <ShieldCheck className="size-3" /> : <CircleAlert className="size-3" />} color={enabled ? "green" : "default"} style={enabled ? undefined : portraitRiskTagStyle("medium")} title={enabled ? t("coverageUi.481") : t("coverageUi.482")}>{enabled ? t("coverageUi.483") : t("coverageUi.484")}</Tag>
+                    <Button aria-label={t("coverageUi.485")} onClick={onClose}>{t("canvasImportClose")}</Button>
                 </header>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-5" data-canvas-wheel-scroll style={{ scrollPaddingBottom: 96 }}>
                     <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
                         <aside className="flex min-w-0 flex-col gap-4">
                             <section className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-                                <div className="mb-2 text-xs font-semibold text-foreground/60">排查模式</div>
+                                <div className="mb-2 text-xs font-semibold text-foreground/60">{t("coverageUi.486")}</div>
                                 <Segmented
                                     block
                                     value={state.mode}
                                     disabled={!enabled}
                                     onChange={(value) => patchState({ mode: value as PortraitClearanceMode })}
-                                    options={[{ value: "direct-compare", label: "直接比对" }, { value: "network-search", label: "网络排查" }]}
+                                    options={[{ value: "direct-compare", label: t("canvasPortraitUi005") }, { value: "network-search", label: t("canvasPortraitUi004") }]}
                                 />
                             </section>
 
                             <section className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-                                <div className="mb-3 text-xs font-semibold text-foreground/60">输入图片</div>
+                                <div className="mb-3 text-xs font-semibold text-foreground/60">{t("canvasArtCritiqueUi005")}</div>
                                 <div className="space-y-2">
-                                    <PortraitInputCard label="查询图" node={query} ready={hasQuery} />
-                                    {state.mode === "direct-compare" ? <PortraitInputCard label="参考图" node={reference} ready={hasReference} /> : <PortraitCandidateStrip nodes={candidateNodes} />}
+                                    <PortraitInputCard label={t("canvasPortraitUi001")} node={query} ready={hasQuery} />
+                                    {state.mode === "direct-compare" ? <PortraitInputCard label={t("modelUi.referencePicture")} node={reference} ready={hasReference} /> : <PortraitCandidateStrip nodes={candidateNodes} />}
                                 </div>
-                                <p className="mt-3 text-xs leading-5 text-foreground/55">在画布上把图片节点连接到本节点，角色会写入节点状态；不会按渲染顺序静默交换 A/B。</p>
-                                {state.mode === "direct-compare" ? <Button size="small" disabled={!enabled || !hasQuery || !hasReference} onClick={() => patchState({ inputBindings: swapPortraitClearanceDirectBindings(state.inputBindings) })}>交换 A / B</Button> : null}
+                                <p className="mt-3 text-xs leading-5 text-foreground/55">{t("coverageUi.487")}</p>
+                                {state.mode === "direct-compare" ? <Button size="small" disabled={!enabled || !hasQuery || !hasReference} onClick={() => patchState({ inputBindings: swapPortraitClearanceDirectBindings(state.inputBindings) })}>{t("coverageUi.488")}</Button> : null}
                             </section>
 
                             <section className="rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-                                <div className="mb-3 text-xs font-semibold text-foreground/60">执行设置</div>
-                                <label className="mb-3 block text-xs">分析方式<Select className="mt-1 w-full" value={state.analysisMode} disabled={!enabled} options={[{ value: "local-plus-vision", label: "本地 + 视觉模型" }, { value: "local-only", label: "仅本地" }]} onChange={(value) => patchState({ analysisMode: value as PortraitClearanceAnalysisMode })} /></label>
-                                {state.analysisMode === "local-plus-vision" ? <label className="mb-3 block text-xs">视觉分析模型<Select className="mt-1 w-full" value={state.modelPolicy.mode === "pinned" ? state.modelPolicy.modelRef : "project-default"} disabled={!enabled} options={[{ value: "project-default", label: `项目默认 · ${portraitVisionModelLabel(effectiveConfig, effectiveConfig.textModel || effectiveConfig.model)}` }, ...portraitVisionModels(effectiveConfig).map((model) => ({ value: model, label: portraitVisionModelLabel(effectiveConfig, model) }))]} onChange={(value) => patchState({ modelPolicy: value === "project-default" ? { mode: "project-default" } : { mode: "pinned", modelRef: String(value) } })} /></label> : null}
-                                <label className="mb-3 block text-xs">去重方式<Select className="mt-1 w-full" value={state.settings.dedupMode} disabled={!enabled} options={[{ value: "phash", label: "pHash 快速" }, { value: "arcface", label: "ArcFace 双条件" }]} onChange={(value) => patchState({ settings: { ...state.settings, dedupMode: value as "phash" | "arcface" } })} /></label>
-                                {state.analysisMode === "local-plus-vision" ? <label className="mb-3 block text-xs">模型并发（最多 10）<InputNumber className="mt-1 w-full" min={1} max={10} precision={0} value={state.settings.modelConcurrency} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, modelConcurrency: Math.max(1, Math.min(10, Number(value) || 2)) } })} /></label> : null}
-                                {state.mode === "network-search" ? <><label className="mb-3 block text-xs">候选上限<InputNumber className="mt-1 w-full" min={1} max={60} value={state.settings.maxCandidates} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, maxCandidates: Math.max(1, Math.min(60, Number(value) || 30)) } })} /></label><label className="mb-3 block text-xs">百度滚动次数<InputNumber className="mt-1 w-full" min={0} max={20} value={state.settings.searchScrolls} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, searchScrolls: Math.max(0, Math.min(20, Number(value) || 0)) } })} /></label></> : null}
-                                <div className="flex items-center justify-between gap-3 text-xs"><span>浏览器调试</span><Switch size="sm" checked={state.settings.showBrowserForDebug} disabled={!enabled} onChange={(checked) => patchState({ settings: { ...state.settings, showBrowserForDebug: checked } })} /></div>
+                                <div className="mb-3 text-xs font-semibold text-foreground/60">{t("coverageUi.489")}</div>
+                                <label className="mb-3 block text-xs">{t("coverageUi.490")}<Select className="mt-1 w-full" value={state.analysisMode} disabled={!enabled} options={[{ value: "local-plus-vision", label: t("coverageUi.491") }, { value: "local-only", label: t("coverageUi.492") }]} onChange={(value) => patchState({ analysisMode: value as PortraitClearanceAnalysisMode })} /></label>
+                                {state.analysisMode === "local-plus-vision" ? <label className="mb-3 block text-xs">{t("coverageUi.493")}<Select className="mt-1 w-full" value={state.modelPolicy.mode === "pinned" ? state.modelPolicy.modelRef : "project-default"} disabled={!enabled} options={[{ value: "project-default", label: t("coverageUi.494", { value0: portraitVisionModelLabel(effectiveConfig, effectiveConfig.textModel || effectiveConfig.model) }) }, ...portraitVisionModels(effectiveConfig).map((model) => ({ value: model, label: portraitVisionModelLabel(effectiveConfig, model) }))]} onChange={(value) => patchState({ modelPolicy: value === "project-default" ? { mode: "project-default" } : { mode: "pinned", modelRef: String(value) } })} /></label> : null}
+                                <label className="mb-3 block text-xs">{t("coverageUi.495")}<Select className="mt-1 w-full" value={state.settings.dedupMode} disabled={!enabled} options={[{ value: "phash", label: t("coverageUi.496") }, { value: "arcface", label: t("coverageUi.497") }]} onChange={(value) => patchState({ settings: { ...state.settings, dedupMode: value as "phash" | "arcface" } })} /></label>
+                                {state.analysisMode === "local-plus-vision" ? <label className="mb-3 block text-xs">{t("coverageUi.498")}<InputNumber className="mt-1 w-full" min={1} max={10} precision={0} value={state.settings.modelConcurrency} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, modelConcurrency: Math.max(1, Math.min(10, Number(value) || 2)) } })} /></label> : null}
+                                {state.mode === "network-search" ? <><label className="mb-3 block text-xs">{t("coverageUi.499")}<InputNumber className="mt-1 w-full" min={1} max={60} value={state.settings.maxCandidates} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, maxCandidates: Math.max(1, Math.min(60, Number(value) || 30)) } })} /></label><label className="mb-3 block text-xs">{t("coverageUi.500")}<InputNumber className="mt-1 w-full" min={0} max={20} value={state.settings.searchScrolls} disabled={!enabled} onChange={(value) => patchState({ settings: { ...state.settings, searchScrolls: Math.max(0, Math.min(20, Number(value) || 0)) } })} /></label></> : null}
+                                <div className="flex items-center justify-between gap-3 text-xs"><span>{t("coverageUi.501")}</span><Switch size="sm" checked={state.settings.showBrowserForDebug} disabled={!enabled} onChange={(checked) => patchState({ settings: { ...state.settings, showBrowserForDebug: checked } })} /></div>
                             </section>
                         </aside>
 
                         <main className="min-w-0 space-y-4">
-                            {!runtimeReady && enabled ? <Callout tone={runtimeConnecting ? "info" : "warning"} title={runtimeConnecting ? "正在连接本机检测引擎" : runtimeStatus ? "本地模型未就绪" : "本机引擎连接失败"} action={runtimeConnecting ? null : runtimeStatus ? <Button size="small" icon={<Download className="size-3.5" />} loading={installingModels} onClick={() => void installModels()}>{installingModels ? "下载中…" : "下载本地模型"}</Button> : <Button size="small" onClick={() => setRuntimeRetryNonce((value) => value + 1)}>立即重连</Button>}>{runtimeConnecting ? "正在自动建立本机连接，请稍候。" : runtimeStatus ? (installingModels ? "正在下载并校验本地肖像模型，请稍候。" : runtimeError || "请下载本地肖像模型后再开始排查。") : portraitRuntimeErrorMessage(runtimeError) || "正在自动重连本机引擎，请确认 Canvas Agent 已启动。"}</Callout> : null}
-                            {runtimeReady && runtimeError ? <Callout tone="error" title="网络排查请求失败" onClose={() => setRuntimeError("")}>{runtimeError}</Callout> : null}
-                            {state.mode === "network-search" && runtimeStatus?.browser.available === false ? <Callout tone="warning" title="未检测到系统浏览器">网络排查需要系统 Chrome、Edge 或 Chromium；也可以先连接手动候选，任务不会静默切换搜索服务。</Callout> : null}
+                            {!runtimeReady && enabled ? <Callout tone={runtimeConnecting ? "info" : "warning"} title={runtimeConnecting ? t("coverageUi.502") : runtimeStatus ? t("coverageUi.503") : t("coverageUi.504")} action={runtimeConnecting ? null : runtimeStatus ? <Button size="small" icon={<Download className="size-3.5" />} loading={installingModels} onClick={() => void installModels()}>{installingModels ? t("coverageUi.505") : t("coverageUi.506")}</Button> : <Button size="small" onClick={() => setRuntimeRetryNonce((value) => value + 1)}>{t("coverageUi.507")}</Button>}>{runtimeConnecting ? t("coverageUi.508") : runtimeStatus ? (installingModels ? t("coverageUi.509") : runtimeErrorText || t("coverageUi.510")) : (runtimeError?.kind === "translated" ? runtimeErrorText : portraitRuntimeErrorMessage(rawRuntimeError)) || t("coverageUi.511")}</Callout> : null}
+                            {runtimeReady && runtimeError ? <Callout tone="error" title={t("coverageUi.512")} onClose={() => setRuntimeError(null)}>{runtimeErrorText}</Callout> : null}
+                            {state.mode === "network-search" && runtimeStatus?.browser.available === false ? <Callout tone="warning" title={t("coverageUi.513")}>{t("coverageUi.514")}</Callout> : null}
 
                             <section className="rounded-xl border p-4" style={{ borderColor: "var(--border)" }}>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div><h3 className="text-sm font-semibold">当前结果</h3><p className="mt-1 text-xs text-foreground/55">完整结果会在本机任务完成后生成；节点 metadata 只保留可恢复摘要。</p></div>
-                                    {state.task ? <StatusBadge tone={state.task.status === "failed" ? "error" : state.task.status === "cancelled" ? "warning" : state.task.status === "completed" ? "success" : "loading"} label={state.task.status === "failed" ? "失败" : state.task.status === "cancelled" ? "已停止" : PORTRAIT_TASK_STAGE_LABELS[state.task.stage] || state.task.stage} /> : null}
+                                    <div><h3 className="text-sm font-semibold">{t("coverageUi.515")}</h3><p className="mt-1 text-xs text-foreground/55">{t("coverageUi.516")}</p></div>
+                                    {state.task ? <StatusBadge tone={state.task.status === "failed" ? "error" : state.task.status === "cancelled" ? "warning" : state.task.status === "completed" ? "success" : "loading"} label={state.task.status === "failed" ? t("creationPageShotStatusFailed") : state.task.status === "cancelled" ? t("agentChromeStatusStopped") : t(PORTRAIT_TASK_STAGE_LABEL_KEYS[state.task.stage])} /> : null}
                                 </div>
-                                {state.task?.status === "failed" && state.task.errorMessage ? <Callout className="mt-4" tone="error" title="排查任务失败">{state.task.errorMessage}</Callout> : null}
-                                {state.lastResult ? <><div className="mt-4 grid gap-3 sm:grid-cols-4"><Metric label="最高风险" value={PORTRAIT_RISK_LABELS[state.lastResult.highestRisk]} tone={portraitRiskTone(state.lastResult.highestRisk)} /><Metric label="候选数" value={String(state.lastResult.candidateCount)} /><Metric label="已分析" value={String(result?.comparedCount ?? state.lastResult.comparedCount)} /><Metric label="详情" value={state.lastResult.detailsAvailable ? "可用" : "需重新运行"} /></div>{result ? <PortraitResultPanel result={result} taskId={state.lastResult.taskId} onAddCandidate={onAddCandidate} /> : <div className="mt-4 rounded-lg bg-foreground/[.03] p-3 text-xs text-foreground/55">正在读取本机详细结果，图片和完整模型响应不会写入画布 metadata。</div>}</> : <div className="mt-4 grid min-h-44 place-items-center rounded-lg border border-dashed text-center text-sm text-foreground/45" style={{ borderColor: "var(--border)" }}><div><ScanFace className="mx-auto mb-2 size-8 opacity-45" /><p>{canStart ? "准备好开始排查" : "先连接所需图片"}</p><p className="mt-1 text-xs">本地模式会在 Canvas Agent 中执行，关闭工作台不会取消任务。</p></div></div>}
+                                {state.task?.status === "failed" && state.task.errorMessage ? <Callout className="mt-4" tone="error" title={t("coverageUi.517")}>{state.task.errorMessage}</Callout> : null}
+                                {state.lastResult ? <><div className="mt-4 grid gap-3 sm:grid-cols-4"><Metric label={t("coverageUi.518")} value={t(PORTRAIT_RISK_LABEL_KEYS[state.lastResult.highestRisk])} tone={portraitRiskTone(state.lastResult.highestRisk)} /><Metric label={t("coverageUi.519")} value={String(state.lastResult.candidateCount)} /><Metric label={t("coverageUi.520")} value={String(result?.comparedCount ?? state.lastResult.comparedCount)} /><Metric label={t("imageNodeUi.details")} value={state.lastResult.detailsAvailable ? t("settingsUi.available") : t("coverageUi.521")} /></div>{result ? <PortraitResultPanel result={result} taskId={state.lastResult.taskId} onAddCandidate={onAddCandidate} /> : <div className="mt-4 rounded-lg bg-foreground/[.03] p-3 text-xs text-foreground/55">{t("coverageUi.522")}</div>}</> : <div className="mt-4 grid min-h-44 place-items-center rounded-lg border border-dashed text-center text-sm text-foreground/45" style={{ borderColor: "var(--border)" }}><div><ScanFace className="mx-auto mb-2 size-8 opacity-45" /><p>{canStart ? t("coverageUi.523") : t("coverageUi.524")}</p><p className="mt-1 text-xs">{t("coverageUi.525")}</p></div></div>}
                             </section>
 
                             <section className="rounded-xl border p-4" style={{ borderColor: "var(--border)" }}>
-                                <div className="mb-3 flex items-center gap-2"><History className="size-4" /><h3 className="text-sm font-semibold">历史运行</h3></div>
-                                {history.length ? <div className="space-y-2">{history.map((item) => <div key={item.taskId} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--border)" }}><span className="min-w-24 font-medium">{item.mode === "direct-compare" ? "直接比对" : "网络排查"}</span><StatusBadge variant="filled" tone={item.status === "completed" ? "success" : item.status === "failed" ? "error" : item.status === "partial" ? "warning" : "loading"} label={PORTRAIT_TASK_STAGE_LABELS[item.stage] || item.status} /><span className="text-foreground/55">{item.processedCandidates}{item.totalCandidates ? ` / ${item.totalCandidates}` : ""} 项</span><span className="ml-auto text-foreground/45">{formatDate(item.updatedAt)}</span><Button size="small" type="link" onClick={() => void openHistoryTask(item)}>查看</Button><Popconfirm title="删除本地排查数据？" description="报告、候选和本机任务将不可恢复。" onConfirm={() => void removeHistory(item.taskId)}><Button size="small" type="link" danger loading={busyAction === `delete-${item.taskId}`}>删除</Button></Popconfirm></div>)}</div> : <div className="rounded-lg bg-foreground/[.03] p-3 text-xs leading-5 text-foreground/55">暂无当前节点历史。不会建立跨项目的人脸身份索引。</div>}
+                                <div className="mb-3 flex items-center gap-2"><History className="size-4" /><h3 className="text-sm font-semibold">{t("coverageUi.526")}</h3></div>
+                                {history.length ? <div className="space-y-2">{history.map((item) => <div key={item.taskId} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--border)" }}><span className="min-w-24 font-medium">{item.mode === "direct-compare" ? t("canvasPortraitUi005") : t("canvasPortraitUi004")}</span><StatusBadge variant="filled" tone={item.status === "completed" ? "success" : item.status === "failed" ? "error" : item.status === "partial" ? "warning" : "loading"} label={t(PORTRAIT_TASK_STAGE_LABEL_KEYS[item.stage])} /><span className="text-foreground/55">{item.processedCandidates}{item.totalCandidates ? ` / ${item.totalCandidates}` : ""} {t("projectUi.itemUnit")}</span><span className="ml-auto text-foreground/45">{formatDate(item.updatedAt, locale, t("announcementTimelineUi.justNow"))}</span><Button size="small" type="link" onClick={() => void openHistoryTask(item)}>{t("storageUi.viewOrder")}</Button><Popconfirm title={t("coverageUi.527")} description={t("coverageUi.528")} onConfirm={() => void removeHistory(item.taskId)}><Button size="small" type="link" danger loading={busyAction === `delete-${item.taskId}`}>{t("canvasLibraryDelete")}</Button></Popconfirm></div>)}</div> : <div className="rounded-lg bg-foreground/[.03] p-3 text-xs leading-5 text-foreground/55">{t("coverageUi.529")}</div>}
                             </section>
                         </main>
                     </div>
                 </div>
 
                 <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: "var(--border)" }}>
-                    <div className="flex items-center gap-2 text-xs text-foreground/55"><CircleAlert className="size-3.5" />结果不能替代司法鉴定、律师意见或法院判断。</div>
-                    <div className="flex flex-wrap items-center justify-end gap-2"><Select size="small" value={reportFormat} disabled={!state.lastResult || Boolean(busyAction)} options={[{ value: "html", label: "HTML 报告" }, { value: "md", label: "Markdown 报告" }, { value: "docx", label: "DOCX 报告" }, { value: "json", label: "JSON 结果" }]} onChange={(value) => setReportFormat(value as "json" | "md" | "html" | "docx")} /><Button icon={<Download className="size-3.5" />} loading={busyAction === "export"} disabled={!state.lastResult} onClick={() => void exportReport()}>导出</Button>{state.activeTaskId && state.task?.status !== "failed" && state.task?.status !== "cancelled" ? <Popconfirm title="停止当前排查？" description="已下载的候选和本机任务会保留，可稍后查看或重试。" onConfirm={() => void stopTask()}><Button danger icon={<Pause className="size-3.5" />} loading={busyAction === "stop"}>停止</Button></Popconfirm> : null}{state.task?.status === "failed" || state.task?.status === "cancelled" ? <Button icon={<Play className="size-3.5" />} loading={busyAction === "retry"} onClick={() => void retryTask()}>重试</Button> : null}<Button type="primary" icon={<Play className="size-3.5" />} loading={starting} disabled={!canStart} onClick={() => void startTask()}>开始排查</Button></div>
+                    <div className="flex items-center gap-2 text-xs text-foreground/55"><CircleAlert className="size-3.5" />{t("coverageUi.530")}</div>
+                    <div className="flex flex-wrap items-center justify-end gap-2"><Select size="small" value={reportFormat} disabled={!state.lastResult || Boolean(busyAction)} options={[{ value: "html", label: t("coverageUi.531") }, { value: "md", label: t("coverageUi.532") }, { value: "docx", label: t("coverageUi.533") }, { value: "json", label: t("coverageUi.534") }]} onChange={(value) => setReportFormat(value as "json" | "md" | "html" | "docx")} /><Button icon={<Download className="size-3.5" />} loading={busyAction === "export"} disabled={!state.lastResult} onClick={() => void exportReport()}>{t("canvasLibraryExport")}</Button>{state.activeTaskId && state.task?.status !== "failed" && state.task?.status !== "cancelled" ? <Popconfirm title={t("coverageUi.535")} description={t("coverageUi.536")} onConfirm={() => void stopTask()}><Button danger icon={<Pause className="size-3.5" />} loading={busyAction === "stop"}>{t("coverageUi.537")}</Button></Popconfirm> : null}{state.task?.status === "failed" || state.task?.status === "cancelled" ? <Button icon={<Play className="size-3.5" />} loading={busyAction === "retry"} onClick={() => void retryTask()}>{t("authRetry")}</Button> : null}<Button type="primary" icon={<Play className="size-3.5" />} loading={starting} disabled={!canStart} onClick={() => void startTask()}>{t("coverageUi.538")}</Button></div>
                 </footer>
             </div>
-        </Modal>
+        </AppModal>
     );
 }
 
@@ -344,6 +363,7 @@ function decodedDataUrlBytes(dataUrl: string) {
 }
 
 function PortraitInputCard({ label, node, ready }: { label: string; node?: CanvasNodeData; ready: boolean }) {
+    const { t } = useInterfaceTranslation();
     const preview = portraitNodePreview(node);
     return <div className="flex items-center gap-2 rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
         <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md bg-foreground/[.04]">
@@ -351,17 +371,18 @@ function PortraitInputCard({ label, node, ready }: { label: string; node?: Canva
         </div>
         <div className="min-w-0 flex-1">
             <div className="text-xs font-medium">{label}</div>
-            <div className="truncate text-[11px] text-foreground/50">{node?.title || (ready ? "已连接图片" : "待连接")}</div>
+            <div className="truncate text-[11px] text-foreground/50">{node?.title || (ready ? t("coverageUi.539") : t("coverageUi.540"))}</div>
         </div>
-        <StatusBadge tone={ready ? "success" : "warning"} label={ready ? "已连接" : "待连接"} />
+        <StatusBadge tone={ready ? "success" : "warning"} label={ready ? t("settingsUi.connected") : t("coverageUi.540")} />
     </div>;
 }
 
 function PortraitCandidateStrip({ nodes }: { nodes: CanvasNodeData[] }) {
+    const { t } = useInterfaceTranslation();
     return <div className="rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
         <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-            <span className="font-medium">手动候选</span>
-            <Tag color={nodes.length ? "green" : "default"}>{nodes.length ? `${nodes.length} 张` : "可选"}</Tag>
+            <span className="font-medium">{t("canvasPortraitUi003")}</span>
+            <Tag color={nodes.length ? "green" : "default"}>{nodes.length ? t("canvasUi.imageCount", { count: nodes.length }) : t("assetsUi.optional")}</Tag>
         </div>
         {nodes.length ? <div className="grid grid-cols-4 gap-1.5">{nodes.slice(0, 4).map((item, index) => {
             const preview = portraitNodePreview(item);
@@ -369,10 +390,10 @@ function PortraitCandidateStrip({ nodes }: { nodes: CanvasNodeData[] }) {
                 <div className="grid aspect-square place-items-center overflow-hidden rounded-md bg-foreground/[.04]">
                     {preview ? <img src={preview} alt="" className="size-full object-cover" loading="lazy" draggable={false} /> : <ImageIcon className="size-4 text-foreground/35" aria-hidden="true" />}
                 </div>
-                <div className="mt-1 truncate text-[10px] text-foreground/55" title={item.title || `候选 ${index + 1}`}>{item.title || `候选 ${index + 1}`}</div>
+                <div className="mt-1 truncate text-[10px] text-foreground/55" title={item.title || t("coverageUi.541", { value0: index + 1 })}>{item.title || t("coverageUi.541", { value0: index + 1 })}</div>
             </div>;
-        })}</div> : <div className="rounded-md bg-foreground/[.03] px-2 py-2 text-[11px] text-foreground/50">在画布上连接候选图片后，会在这里显示缩略图。</div>}
-        {nodes.length > 4 ? <div className="mt-1 text-[10px] text-foreground/45">还有 {nodes.length - 4} 张候选图片</div> : null}
+        })}</div> : <div className="rounded-md bg-foreground/[.03] px-2 py-2 text-[11px] text-foreground/50">{t("coverageUi.542")}</div>}
+        {nodes.length > 4 ? <div className="mt-1 text-[10px] text-foreground/45">{t("coverageUi.349")} {nodes.length - 4} {t("coverageUi.543")}</div> : null}
     </div>;
 }
 
@@ -394,52 +415,65 @@ type PortraitResultView = {
 };
 
 function PortraitResultPanel({ result, taskId, onAddCandidate }: { result: PortraitResultView; taskId: string; onAddCandidate?: PortraitClearanceModalProps["onAddCandidate"] }) {
+    const { t } = useInterfaceTranslation();
     const sortedPairs = [...result.pairs].sort((left, right) => riskRank(right.riskLevel) - riskRank(left.riskLevel) || (right.overallSimilarity || 0) - (left.overallSimilarity || 0));
-    return <div className="mt-4 space-y-3"><div className="flex flex-wrap gap-2">{Object.entries(result.riskCounts).map(([risk, count]) => <Tag key={risk} color="default" style={portraitRiskTagStyle(risk as PortraitRiskLevel)}>{PORTRAIT_RISK_LABELS[risk as PortraitRiskLevel]} · {count}</Tag>)}</div><div className="grid gap-3 xl:grid-cols-2">{sortedPairs.map((pair) => <ResultPairCard key={pair.id} taskId={taskId} pair={pair} candidate={result.candidates.find((candidate) => candidate.resultId === pair.id)} onAddCandidate={onAddCandidate} />)}</div>{result.limitations.length ? <div className="rounded-lg bg-foreground/[.03] p-3 text-xs leading-5 text-foreground/60"><div className="mb-1 font-semibold text-foreground/75">限制与人工复核</div>{result.limitations.map((item) => <div key={item}>· {item}</div>)}</div> : null}</div>;
+    return <div className="mt-4 space-y-3"><div className="flex flex-wrap gap-2">{Object.entries(result.riskCounts).map(([risk, count]) => <Tag key={risk} color="default" style={portraitRiskTagStyle(risk as PortraitRiskLevel)}>{t(PORTRAIT_RISK_LABEL_KEYS[risk as PortraitRiskLevel])} · {count}</Tag>)}</div><div className="grid gap-3 xl:grid-cols-2">{sortedPairs.map((pair) => <ResultPairCard key={pair.id} taskId={taskId} pair={pair} candidate={result.candidates.find((candidate) => candidate.resultId === pair.id)} onAddCandidate={onAddCandidate} />)}</div>{result.limitations.length ? <div className="rounded-lg bg-foreground/[.03] p-3 text-xs leading-5 text-foreground/60"><div className="mb-1 font-semibold text-foreground/75">{t("coverageUi.544")}</div>{result.limitations.map((item) => <div key={item}>· {item}</div>)}</div> : null}</div>;
 }
 
-const PORTRAIT_FEATURES: Array<{ key: PortraitFeatureKey; label: string }> = [
-    { key: "face_shape", label: "脸型与下颌线" },
-    { key: "facial_layout", label: "五官整体布局" },
-    { key: "eyes_brows", label: "眼型与眉形" },
-    { key: "nose_mouth", label: "鼻型与嘴型" },
-    { key: "hair_hairline", label: "发型与发际线" },
-    { key: "distinctive_features", label: "标志性特征" },
-];
-const PORTRAIT_FEATURE_SIMILARITY_LABELS = { high: "高度相似", medium: "中等相似", low: "低度相似", none: "无明显相似" } as const;
+const PORTRAIT_FEATURES = [
+    { key: "face_shape", labelKey: "coverageUi.545" },
+    { key: "facial_layout", labelKey: "coverageUi.546" },
+    { key: "eyes_brows", labelKey: "coverageUi.547" },
+    { key: "nose_mouth", labelKey: "coverageUi.548" },
+    { key: "hair_hairline", labelKey: "coverageUi.549" },
+    { key: "distinctive_features", labelKey: "coverageUi.550" },
+] as const satisfies readonly { key: PortraitFeatureKey; labelKey: string }[];
+const PORTRAIT_FEATURE_SIMILARITY_LABEL_KEYS = {
+    high: "portraitClearanceUi.similarityHigh",
+    medium: "portraitClearanceUi.similarityMedium",
+    low: "portraitClearanceUi.similarityLow",
+    none: "portraitClearanceUi.similarityNone",
+} as const;
 
 function ResultPairCard({ taskId, pair, candidate, onAddCandidate }: { taskId: string; pair: PortraitPairResult; candidate?: PortraitResultView["candidates"][number]; onAddCandidate?: PortraitClearanceModalProps["onAddCandidate"] }) {
+    const { t } = useInterfaceTranslation();
     const [image, setImage] = useState("");
     useEffect(() => {
-        let disposed = false;
-        void import("@/services/portrait-clearance-runtime").then(({ readPortraitTaskImage }) => readPortraitTaskImage(taskId, pair.comparisonImageId)).then((value) => { if (!disposed) setImage(value.dataUrl); }).catch(() => undefined);
-        return () => { disposed = true; };
+        const controller = new AbortController();
+        void readPortraitTaskImage(taskId, pair.comparisonImageId, controller.signal)
+            .then((value) => setImage(value.dataUrl))
+            .catch((error) => {
+                if (controller.signal.aborted) return;
+                // 结果正文仍可阅读，但图片读取失败必须留下任务与图片上下文，不能静默伪装成“尚未加载”。
+                console.warn("读取肖像对比图片失败", { taskId, imageId: pair.comparisonImageId, error });
+            });
+        return () => controller.abort();
     }, [pair.comparisonImageId, taskId]);
     const vision = pair.visionComparison;
     return <article className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--border)" }}>
         <div className="flex gap-3 p-3">
             <div className="grid size-24 shrink-0 place-items-center overflow-hidden rounded-md bg-foreground/[.04]">{image ? <img src={image} alt="" className="size-full object-contain" /> : <ScanFace className="size-6 opacity-35" />}</div>
             <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{candidate?.title || pair.comparisonImageId}</span><Tag color="default" style={portraitRiskTagStyle(pair.riskLevel)}>{PORTRAIT_RISK_LABELS[pair.riskLevel]}</Tag><StatusBadge variant="filled" tone={pair.status === "failed" ? "error" : pair.status === "partial" ? "warning" : "success"} label={pair.status === "failed" ? "失败/跳过" : pair.status === "partial" ? "部分完成" : "完成"} /></div>
-                <div className="mt-1 text-xs text-foreground/55">{candidate?.sourceDomain || pair.source} · {pair.analysisPath === "unable" ? "无法形成可靠路径" : `Path ${pair.analysisPath}`}{pair.overallSimilarity === undefined ? "" : ` · 相似度 ${pair.overallSimilarity.toFixed(4)}`}</div>
-                <div className="mt-1 flex flex-wrap gap-2">{candidate?.sourcePageUrl ? <button type="button" className="text-xs text-[var(--workspace-accent)] underline" onClick={() => window.open(candidate.sourcePageUrl, "_blank", "noopener,noreferrer")}>打开来源页面</button> : null}{onAddCandidate && candidate && image ? <button type="button" className="text-xs text-[var(--workspace-accent)] underline" onClick={() => void onAddCandidate({ id: candidate.id, title: candidate.title, imageArtifactId: candidate.imageArtifactId }, image)}>添加到画布</button> : null}</div>
+                <div className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{candidate?.title || pair.comparisonImageId}</span><Tag color="default" style={portraitRiskTagStyle(pair.riskLevel)}>{t(PORTRAIT_RISK_LABEL_KEYS[pair.riskLevel])}</Tag><StatusBadge variant="filled" tone={pair.status === "failed" ? "error" : pair.status === "partial" ? "warning" : "success"} label={pair.status === "failed" ? t("coverageUi.551") : pair.status === "partial" ? t("coverageUi.552") : t("storageUi.done")} /></div>
+                <div className="mt-1 text-xs text-foreground/55">{candidate?.sourceDomain || pair.source} · {pair.analysisPath === "unable" ? t("coverageUi.553") : t("portraitClearanceUi.analysisPath", { value0: pair.analysisPath })}{pair.overallSimilarity === undefined ? "" : t("coverageUi.554", { value0: pair.overallSimilarity.toFixed(4) })}</div>
+                <div className="mt-1 flex flex-wrap gap-2">{candidate?.sourcePageUrl ? <button type="button" className="text-xs text-[var(--workspace-accent)] underline" onClick={() => window.open(candidate.sourcePageUrl, "_blank", "noopener,noreferrer")}>{t("coverageUi.555")}</button> : null}{onAddCandidate && candidate && image ? <button type="button" className="text-xs text-[var(--workspace-accent)] underline" onClick={() => void onAddCandidate({ id: candidate.id, title: candidate.title, imageArtifactId: candidate.imageArtifactId }, image)}>{t("creationPageAddToCanvas")}</button> : null}</div>
             </div>
         </div>
         <div className="border-t px-3 py-2 text-xs leading-5" style={{ borderColor: "var(--border)" }}>
-            <div><span className="text-foreground/50">本地预检：</span>人脸 {pair.localPrecheck.facesA} / {pair.localPrecheck.facesB} · 质量 {pair.localPrecheck.qualityA.grade} / {pair.localPrecheck.qualityB.grade}{pair.localPrecheck.faceSimilarity === undefined ? "" : ` · ArcFace ${pair.localPrecheck.faceSimilarity.toFixed(4)}`}</div>
-            {pair.localPrecheck.reliabilityIssues.length ? <div className="mt-1 text-foreground/55"><span className="text-foreground/50">可靠性问题：</span>{pair.localPrecheck.reliabilityIssues.join("；")}</div> : null}
-            {pair.error ? <div className="mt-1 text-red-600"><span className="font-medium">处理说明：</span>{pair.error.message}</div> : null}
+            <div><span className="text-foreground/50">{t("coverageUi.556")}</span>{t("coverageUi.557")} {pair.localPrecheck.facesA} / {pair.localPrecheck.facesB} {t("coverageUi.558")} {pair.localPrecheck.qualityA.grade} / {pair.localPrecheck.qualityB.grade}{pair.localPrecheck.faceSimilarity === undefined ? "" : ` · ArcFace ${pair.localPrecheck.faceSimilarity.toFixed(4)}`}</div>
+            {pair.localPrecheck.reliabilityIssues.length ? <div className="mt-1 text-foreground/55"><span className="text-foreground/50">{t("coverageUi.559")}</span>{pair.localPrecheck.reliabilityIssues.join("；")}</div> : null}
+            {pair.error ? <div className="mt-1 text-red-600"><span className="font-medium">{t("coverageUi.560")}</span>{pair.error.message}</div> : null}
             {vision ? <>
-                <div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-medium">多模态面部特征分析</span><StatusBadge variant="filled" tone={vision.status === "success" ? "success" : "warning"} label={vision.status === "success" ? "已完成" : "无法可靠判断"} />{vision.manualReviewRecommended ? <StatusBadge variant="filled" tone="warning" label="建议人工复核" /> : null}</div>
-                <div className="mt-2 overflow-x-auto rounded-md border" style={{ borderColor: "var(--border)" }}><table className="w-full min-w-[520px] text-left text-[11px]"><thead className="bg-foreground/[.04]"><tr><th className="px-2 py-1.5 font-medium">特征维度</th><th className="px-2 py-1.5 font-medium">相似度</th><th className="px-2 py-1.5 font-medium">分析说明</th></tr></thead><tbody>{PORTRAIT_FEATURES.map(({ key, label }) => { const feature = vision.featureComparison[key]; return <tr key={key} className="border-t" style={{ borderColor: "var(--border)" }}><td className="px-2 py-1.5">{label}</td><td className="px-2 py-1.5"><Tag color="default" style={portraitFeatureSimilarityStyle(feature.similarity)}>{PORTRAIT_FEATURE_SIMILARITY_LABELS[feature.similarity]}</Tag></td><td className="px-2 py-1.5 text-foreground/60">{feature.note || "-"}</td></tr>; })}</tbody></table></div>
-                <div className="mt-2"><span className="text-foreground/50">视觉依据：</span>{vision.basis.join("；") || "无"}</div>
-            </> : <div className="mt-1 text-foreground/55">{pair.basis.join("；") || "暂无结构化依据"}</div>}
+                <div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-medium">{t("coverageUi.561")}</span><StatusBadge variant="filled" tone={vision.status === "success" ? "success" : "warning"} label={vision.status === "success" ? t("agentChromeStatusCompleted") : t("coverageUi.562")} />{vision.manualReviewRecommended ? <StatusBadge variant="filled" tone="warning" label={t("coverageUi.563")} /> : null}</div>
+                <div className="mt-2 overflow-x-auto rounded-md border" style={{ borderColor: "var(--border)" }}><table className="w-full min-w-[520px] text-left text-[11px]"><thead className="bg-foreground/[.04]"><tr><th className="px-2 py-1.5 font-medium">{t("coverageUi.564")}</th><th className="px-2 py-1.5 font-medium">{t("coverageUi.565")}</th><th className="px-2 py-1.5 font-medium">{t("coverageUi.566")}</th></tr></thead><tbody>{PORTRAIT_FEATURES.map(({ key, labelKey }) => { const feature = vision.featureComparison[key]; return <tr key={key} className="border-t" style={{ borderColor: "var(--border)" }}><td className="px-2 py-1.5">{t(labelKey)}</td><td className="px-2 py-1.5"><Tag color="default" style={portraitFeatureSimilarityStyle(feature.similarity)}>{t(PORTRAIT_FEATURE_SIMILARITY_LABEL_KEYS[feature.similarity])}</Tag></td><td className="px-2 py-1.5 text-foreground/60">{feature.note || "-"}</td></tr>; })}</tbody></table></div>
+                <div className="mt-2"><span className="text-foreground/50">{t("coverageUi.567")}</span>{vision.basis.join("；") || t("tasksUi.noneValue")}</div>
+            </> : <div className="mt-1 text-foreground/55">{pair.basis.join("；") || t("coverageUi.568")}</div>}
         </div>
     </article>;
 }
 
 function parsePortraitResult(value: unknown): PortraitResultView {
-    if (!isRecord(value) || typeof value.taskId !== "string" || !["direct-compare", "network-search"].includes(String(value.mode)) || typeof value.highestRisk !== "string" || !isRecord(value.riskCounts) || typeof value.candidateCount !== "number" || typeof value.comparedCount !== "number" || !Array.isArray(value.candidates) || !Array.isArray(value.pairs) || !Array.isArray(value.limitations)) throw new Error("本机肖像完整结果无效");
+    if (!isRecord(value) || typeof value.taskId !== "string" || !["direct-compare", "network-search"].includes(String(value.mode)) || typeof value.highestRisk !== "string" || !isRecord(value.riskCounts) || typeof value.candidateCount !== "number" || typeof value.comparedCount !== "number" || !Array.isArray(value.candidates) || !Array.isArray(value.pairs) || !Array.isArray(value.limitations)) throw new PortraitResultInvalidError();
     return { taskId: value.taskId, mode: value.mode as PortraitResultView["mode"], highestRisk: value.highestRisk as PortraitRiskLevel, riskCounts: value.riskCounts as PortraitResultView["riskCounts"], candidateCount: value.candidateCount, comparedCount: value.comparedCount, candidates: value.candidates.filter(isCandidate), pairs: value.pairs as PortraitPairResult[], limitations: value.limitations.filter((item): item is string => typeof item === "string") };
 }
 
@@ -455,9 +489,9 @@ function riskRank(value: PortraitRiskLevel) {
     return ({ unable_to_determine: 0, low: 1, low_to_medium: 2, medium: 3, high: 4 } as Record<PortraitRiskLevel, number>)[value];
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, locale: string, justNow: string) {
     const time = Date.parse(value);
-    return Number.isFinite(time) ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(time) : "刚刚";
+    return Number.isFinite(time) ? new Intl.DateTimeFormat(locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(time) : justNow;
 }
 
 function portraitRuntimeErrorMessage(message: string) {

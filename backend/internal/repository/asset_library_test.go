@@ -25,6 +25,81 @@ func newAssetLibraryTestRepository(t *testing.T) (*Repository, *gorm.DB) {
 	return New(db), db
 }
 
+func TestPersonalAssetLibraryRetainsEmptyAndNonJSONEntityPayloads(t *testing.T) {
+	r, db := newAssetLibraryTestRepository(t)
+	for index, payload := range []string{"", "legacy-payload", "{}", "null"} {
+		asset := model.Asset{ID: fmt.Sprintf("entity-%d", index), UserID: "owner", Kind: "entity", Category: model.AssetCategoryCharacter, PayloadJSON: payload}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	if err := personalAssetLibraryQuery(r.db.Model(&model.Asset{}).Where("user_id = ?", "owner")).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 4 {
+		t.Fatalf("personal entity count = %d, want 4", count)
+	}
+}
+
+func TestPersonalAssetLibraryExcludesCaseReferencesButPreservesCanvasAccess(t *testing.T) {
+	repo, db := newAssetLibraryTestRepository(t)
+	payloads := []string{
+		`{"metadata":{"source":"canvas-upload"},"data":{"url":"https://libtv-res.liblib.art/case.mp4"}}`,
+		`{"metadata":{"source":"case-import"},"data":{"storageKey":"resource:case"}}`,
+		`{"metadata":{"source":"canvas-upload"},"data":{"dataUrl":"/production-library/case-media/case/image.png"}}`,
+		`{"metadata":{"source":"generation-task","taskId":"task-1"}}`,
+		`{"metadata":{"source":"canvas-manual"},"data":{"url":"https://libtv-res.liblib.art/case.mp4"}}`,
+		`{"metadata":{"source":"canvas-upload"},"data":{"storageKey":"resource:mine"}}`,
+		`{"metadata":{"source":"case-import","taskId":"task-2"}}`,
+	}
+	for index, payload := range payloads {
+		asset := model.Asset{ID: fmt.Sprintf("origin-%d", index), UserID: "user-1", Kind: "image", Category: model.AssetCategoryMaterial, Status: model.AssetVersionStatusConfirmed, PayloadJSON: payload}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, total, err := repo.UserAssetsPage("user-1", 1, 2, UserAssetPageFilter{Status: "active"})
+	if err != nil || total != 4 || len(rows) != 2 {
+		t.Fatalf("personal page: rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	kinds, _, _, err := repo.UserAssetFacets("user-1", "active")
+	if err != nil || len(kinds) != 1 || kinds[0].Count != 4 {
+		t.Fatalf("personal facets: %#v err=%v", kinds, err)
+	}
+	if _, err := repo.AssetForUser("user-1", "origin-0"); err != nil {
+		t.Fatalf("case reference no longer accessible to its canvas: %v", err)
+	}
+	if _, err := repo.AssetForUser("user-2", "origin-0"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cross-user case reference read: %v", err)
+	}
+}
+
+func TestUserCharacterAssetsPageReturnsStablePages(t *testing.T) {
+	repo, db := newAssetLibraryTestRepository(t)
+	now := time.Now().UTC()
+	for index, title := range []string{"甲", "乙", "丙"} {
+		asset := model.Asset{ID: fmt.Sprintf("character-%d", index), UserID: "user-1", Kind: "entity", Category: model.AssetCategoryCharacter, Status: model.AssetVersionStatusConfirmed, Title: title, PayloadJSON: "{}", CreatedAt: now, UpdatedAt: now.Add(time.Duration(index) * time.Second)}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&model.Asset{ID: "image-1", UserID: "user-1", Kind: "image", Category: model.AssetCategoryMaterial, Status: model.AssetVersionStatusConfirmed, Title: "不是角色", PayloadJSON: "{}", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	first, total, err := repo.UserCharacterAssetsPage("user-1", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := repo.UserCharacterAssetsPage("user-1", "乙", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 || len(first) != 2 || first[0].ID != "character-2" || len(second) != 1 || second[0].Title != "乙" {
+		t.Fatalf("page = total %d first %#v search %#v", total, first, second)
+	}
+}
+
 func TestUserAssetsPagePaginatesAndIsolatesUsers(t *testing.T) {
 	repo, db := newAssetLibraryTestRepository(t)
 	now := time.Now().UTC()

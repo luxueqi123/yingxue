@@ -1,0 +1,822 @@
+.case-project-preview {
+    --cpp-bg: var(--nt-bg-body, var(--background, #f7f8fa));
+    --cpp-panel: var(--nt-bg-overlay, var(--card, #ffffff));
+    --cpp-panel-strong: var(--nt-bg-float, var(--popover, #ffffff));
+    --cpp-border: var(--nt-border-neutral-l1, var(--border, #e4e7eb));
+    --cpp-border-strong: var(--nt-border-neutral-l3, var(--border, #cfd5dc));
+    --cpp-text: var(--nt-text-default, var(--foreground, #17202a));
+    --cpp-muted: var(--nt-text-secondary, var(--muted-foreground, #6f7a86));
+    --cpp-subtle: var(--nt-text-tertiary, var(--muted-foreground, #929ba5));
+    --cpp-brand: var(--nt-bg-brand, var(--primary, #17a7c5));
+    --cpp-brand-contrast: var(--nt-border-brand-contrast, var(--primary, #148eac));
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0;
+    background: var(--cpp-bg);
+    color: var(--cpp-text);
+}
+
+.case-project-preview button {
+    font: inherit;
+}
+
+.case-project-preview button:focus-visible {
+    outline: 2px solid var(--cpp-brand-contrast);
+    outline-offset: 2px;
+}
+
+.case-project-preview-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    min-height: 48px;
+    padding: 4px 14px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--cpp-border);
+    background: var(--cpp-panel);
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.case-project-preview-heading {
+    min-width: 0;
+}
+
+.case-project-preview-eyebrow {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--cpp-brand-contrast);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+}
+
+.case-project-preview-heading h2,
+.case-project-preview-heading p {
+    margin: 0;
+}
+
+.case-project-preview-heading h2 {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-project-preview-heading p {
+    margin-top: 5px;
+    color: var(--cpp-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.case-project-preview-view-switch {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--cpp-border);
+    border-radius: 10px;
+    background: var(--cpp-panel);
+}
+
+.case-project-preview-view-switch button {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--cpp-muted);
+    cursor: pointer;
+    font-size: 13px;
+    transition:
+        color 160ms ease,
+        background-color 160ms ease;
+}
+
+.case-project-preview-view-switch button:hover,
+.case-project-preview-view-switch button[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--cpp-brand) 12%, transparent);
+    color: var(--cpp-text);
+}
+
+.case-project-preview-workflow-layout {
+    display: block;
+    height: 100%;
+    min-width: 0;
+}
+
+.case-project-preview-canvas-region {
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: var(--cpp-bg);
+    isolation: isolate;
+}
+
+.case-project-preview-canvas-region [data-canvas-viewport] {
+    position: absolute;
+    inset: 0;
+}
+
+.case-project-preview-connections {
+    position: absolute;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.case-project-preview-frame {
+    position: absolute;
+    z-index: 0;
+    box-sizing: border-box;
+    overflow: visible;
+    border: 1px solid color-mix(in srgb, var(--cpp-brand) 42%, var(--cpp-border));
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--cpp-brand) 5%, transparent);
+    pointer-events: none;
+}
+
+.case-project-preview-frame-title {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 28px);
+    overflow: hidden;
+    color: var(--cpp-brand-contrast);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: auto;
+}
+
+.case-project-preview-frame-title:hover {
+    color: var(--cpp-text);
+}
+
+.case-project-preview-frame-title small {
+    color: var(--cpp-muted);
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.case-project-preview-node {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--cpp-border-strong) 88%, transparent);
+    border-radius: 12px;
+    background: var(--cpp-panel);
+    box-shadow: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+    color: var(--cpp-text);
+    cursor: pointer;
+    text-align: left;
+    transform: translateZ(0);
+    transition:
+        border-color 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.case-project-preview-node:hover,
+.case-project-preview-node.is-selected {
+    border-color: var(--cpp-brand-contrast);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--cpp-brand) 22%, transparent),
+        0 10px 28px color-mix(in srgb, #000 18%, transparent);
+}
+
+.case-project-preview-node-header {
+    display: flex;
+    min-width: 0;
+    min-height: 34px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--cpp-border);
+    color: var(--cpp-brand-contrast);
+}
+
+.case-project-preview-node-header strong {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-project-preview-node-header small {
+    flex: 0 0 auto;
+    color: var(--cpp-subtle);
+    font-size: 10px;
+}
+
+.case-project-preview-node > .case-project-preview-node-thumbnail,
+.case-project-preview-node > .case-project-preview-text-thumbnail,
+.case-project-preview-node > .case-project-preview-media-placeholder {
+    min-height: 0;
+    flex: 1;
+}
+
+.case-project-preview-node .case-project-preview-media-placeholder {
+    min-height: 50px;
+}
+
+.case-project-preview-node-group {
+    position: absolute;
+    right: 8px;
+    bottom: 7px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--cpp-panel-strong) 84%, transparent);
+    color: var(--cpp-subtle);
+    font-size: 9px;
+}
+
+.case-project-preview-node > img,
+.case-project-preview-node > .case-project-preview-media-placeholder,
+.case-project-preview-node > .case-project-preview-text-thumbnail {
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+}
+
+.case-project-preview-node > img {
+    height: calc(100% - 34px);
+    object-fit: contain;
+}
+
+.case-project-preview-text-thumbnail {
+    overflow: hidden;
+    padding: 12px;
+    color: var(--cpp-muted);
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: left;
+    white-space: pre-wrap;
+}
+
+.case-project-preview-media-placeholder {
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px;
+    color: var(--cpp-subtle);
+    font-size: 11px;
+    text-align: center;
+}
+
+.case-project-preview-empty-canvas {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--cpp-muted);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.case-project-preview-canvas-tools {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--cpp-border);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--cpp-panel-strong) 94%, transparent);
+    box-shadow: 0 6px 16px color-mix(in srgb, #000 12%, transparent);
+    color: var(--cpp-muted);
+    backdrop-filter: blur(12px);
+}
+
+.case-project-preview-canvas-tools button {
+    display: grid;
+    width: 29px;
+    height: 29px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.case-project-preview-canvas-tools button:hover {
+    background: color-mix(in srgb, var(--cpp-text) 8%, transparent);
+    color: var(--cpp-text);
+}
+
+.case-project-preview-canvas-tools span {
+    width: 46px;
+    color: var(--cpp-text);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.case-project-preview-canvas-hint {
+    position: absolute;
+    right: 14px;
+    bottom: 20px;
+    max-width: min(440px, calc(100% - 184px));
+    margin: 0;
+    color: var(--cpp-subtle);
+    font-size: 11px;
+    line-height: 1.45;
+    text-align: right;
+    pointer-events: none;
+}
+
+.case-project-preview-inspector {
+    position: absolute;
+    z-index: 8;
+    inset: 10px 10px 10px auto;
+    width: min(360px, 90%);
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--cpp-border);
+    border-radius: 14px;
+    background: var(--cpp-panel);
+}
+
+.case-project-preview-inspector.is-empty {
+    min-height: 220px;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 24px;
+    color: var(--cpp-muted);
+    text-align: center;
+}
+
+.case-project-preview-inspector.is-empty strong {
+    color: var(--cpp-text);
+    font-size: 14px;
+}
+
+.case-project-preview-inspector.is-empty p {
+    max-width: 250px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.case-project-preview-inspector-header {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--cpp-border);
+}
+
+.case-project-preview-inspector-header > div {
+    min-width: 0;
+}
+
+.case-project-preview-inspector-header span {
+    color: var(--cpp-brand-contrast);
+    font-size: 10px;
+}
+
+.case-project-preview-inspector-header h3 {
+    overflow: hidden;
+    margin: 3px 0 0;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-project-preview-inspector-header > button {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--cpp-muted);
+    cursor: pointer;
+}
+
+.case-project-preview-inspector-header > button:hover {
+    background: color-mix(in srgb, var(--cpp-text) 8%, transparent);
+    color: var(--cpp-text);
+}
+
+.case-project-preview-inspector-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+    scrollbar-width: thin;
+}
+
+.case-project-preview-inspector-media {
+    display: grid;
+    min-height: 120px;
+    max-height: 250px;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--cpp-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--cpp-text) 4%, transparent);
+}
+
+.case-project-preview-inspector-media > :is(img, video) {
+    display: block;
+    width: 100%;
+    max-height: 250px;
+    object-fit: contain;
+}
+
+.case-project-preview-media-error {
+    margin: 8px 12px 0;
+    color: var(--cpp-subtle);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.case-project-preview-inspector-audio {
+    padding: 12px;
+    border: 1px solid var(--cpp-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--cpp-text) 4%, transparent);
+}
+
+.case-project-preview-inspector-audio audio {
+    display: block;
+    width: 100%;
+}
+
+.case-project-preview-media-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.case-project-preview-inspector-section {
+    margin-top: 14px;
+}
+
+.case-project-preview-inspector-section h4 {
+    margin: 0 0 7px;
+    color: var(--cpp-muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+}
+
+.case-project-preview-long-text {
+    max-height: 340px;
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--cpp-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--cpp-text) 3%, transparent);
+    color: var(--cpp-text);
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.case-project-preview-meta-list,
+.case-project-preview-parameter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 0;
+}
+
+.case-project-preview-meta-list > div,
+.case-project-preview-parameter-list > div {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--cpp-border) 65%, transparent);
+}
+
+.case-project-preview-meta-list dt,
+.case-project-preview-parameter-list dt {
+    color: var(--cpp-muted);
+    font-size: 11px;
+}
+
+.case-project-preview-meta-list dd,
+.case-project-preview-parameter-list dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--cpp-text);
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.case-project-preview-parameter-list dd {
+    max-height: 180px;
+    overflow: auto;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 10px;
+}
+
+.case-project-preview-muted {
+    margin: 0;
+    color: var(--cpp-subtle);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.case-project-preview-reference-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.case-project-preview-reference-list button {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--cpp-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--cpp-text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.case-project-preview-reference-list button:hover {
+    border-color: var(--cpp-brand-contrast);
+    background: color-mix(in srgb, var(--cpp-brand) 7%, transparent);
+}
+
+.case-project-preview-reference-list button > span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.case-project-preview-reference-list strong,
+.case-project-preview-reference-list small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-project-preview-reference-list strong {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.case-project-preview-reference-list small {
+    color: var(--cpp-muted);
+    font-size: 10px;
+}
+
+.case-project-preview-assets-layout {
+    align-items: start;
+}
+
+.case-project-preview-assets-browser {
+    min-width: 0;
+}
+
+.case-project-preview-assets-note {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 14px;
+    color: var(--cpp-muted);
+    font-size: 12px;
+}
+
+.case-project-preview-asset-section + .case-project-preview-asset-section {
+    margin-top: 20px;
+}
+
+.case-project-preview-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 9px;
+}
+
+.case-project-preview-section-heading h3 {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    color: var(--cpp-text);
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.case-project-preview-section-heading > span {
+    min-width: 25px;
+    padding: 2px 7px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--cpp-text) 6%, transparent);
+    color: var(--cpp-muted);
+    font-size: 10px;
+    text-align: center;
+}
+
+.case-project-preview-asset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 10px;
+}
+
+.case-project-preview-asset-card {
+    display: flex;
+    min-width: 0;
+    min-height: 184px;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    border: 1px solid var(--cpp-border);
+    border-radius: 11px;
+    background: var(--cpp-panel);
+    color: var(--cpp-text);
+    cursor: pointer;
+    text-align: left;
+    transition:
+        border-color 140ms ease,
+        transform 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.case-project-preview-asset-card:hover,
+.case-project-preview-asset-card.is-selected {
+    border-color: var(--cpp-brand-contrast);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--cpp-brand) 16%, transparent);
+    transform: translateY(-1px);
+}
+
+.case-project-preview-asset-media {
+    display: flex;
+    height: 112px;
+    min-height: 112px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--cpp-text) 4%, transparent);
+}
+
+.case-project-preview-asset-media > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.case-project-preview-asset-media .case-project-preview-media-placeholder {
+    min-height: 100%;
+}
+
+.case-project-preview-asset-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 10px 10px;
+}
+
+.case-project-preview-asset-copy strong,
+.case-project-preview-asset-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.case-project-preview-asset-copy strong {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.case-project-preview-asset-copy small,
+.case-project-preview-asset-copy em {
+    color: var(--cpp-muted);
+    font-size: 10px;
+    font-style: normal;
+}
+
+.case-project-preview-asset-copy em {
+    margin-top: auto;
+    color: var(--cpp-brand-contrast);
+}
+
+.case-project-preview-asset-empty {
+    margin: 0;
+    padding: 20px;
+    border: 1px dashed var(--cpp-border);
+    border-radius: 9px;
+    color: var(--cpp-subtle);
+    font-size: 12px;
+    text-align: center;
+}
+
+@media (max-width: 980px) {
+    .case-project-preview-workflow-layout,
+    .case-project-preview-assets-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .case-project-preview-inspector {
+        max-height: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .case-project-preview-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+    }
+
+    .case-project-preview-view-switch {
+        grid-column: 1;
+        grid-row: 2;
+        justify-self: start;
+    }
+
+    .case-project-preview-canvas-region {
+        height: 100%;
+        min-height: 0;
+    }
+
+    .case-project-preview-canvas-hint {
+        right: 10px;
+        bottom: 15px;
+        max-width: calc(100% - 162px);
+        font-size: 10px;
+    }
+
+    .case-project-preview-asset-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .case-project-preview-asset-card {
+        min-height: 165px;
+    }
+
+    .case-project-preview-asset-media {
+        height: 92px;
+        min-height: 92px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .case-project-preview-view-switch button,
+    .case-project-preview-node,
+    .case-project-preview-asset-card {
+        transition: none;
+    }
+}

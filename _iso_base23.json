@@ -1,0 +1,160 @@
+{
+ "test/app-theme.test.ts": {
+  "pass": null,
+  "failcount": null,
+  "fails": [],
+  "raw_tail": "bun test v1.4.0 (34cbb9a40)\nThe following filters did not match any test files:\n test/app-theme.test.ts\n3192 files were searched [18.00ms]\n\nnote: Tests need \".test\", \"_test_\", \".spec\" or \"_spec_\" in the filename (ex: \"MyApp.test.ts\")\nnote: To treat the \"test/app-theme.test.ts\" filter as a path, run \"bun test ./test/app-theme.test.ts\"\n\nLearn more about bun test: https://bun.com/docs/cli/test\n"
+ },
+ "test/appearance-bootstrap.test.ts": {
+  "pass": 7,
+  "failcount": 2,
+  "fails": [
+   "initial HTML stays brand neutral until the public appearance is resolved",
+   "auth scene consumes resolved appearance instead of hardcoded media constants"
+  ],
+  "raw_tail": ""
+ },
+ "test/ark-video-execution.test.ts": {
+  "pass": 2,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/canvas-angle-dialog.test.ts": {
+  "pass": 1,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/canvas-image-upload.test.tsx": {
+  "pass": 12,
+  "failcount": 1,
+  "fails": [
+   "图片上传占位 > 上传先占位再传输，完成替换同一节点，弹窗不等待传输完成"
+  ],
+  "raw_tail": ""
+ },
+ "test/canvas-node-config-reset.test.ts": {
+  "pass": 8,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/create-canvas-handoff.test.ts": {
+  "pass": 18,
+  "failcount": 1,
+  "fails": [
+   "Create forwards owned result assets through one new canvas and the project persists before clearing the handoff"
+  ],
+  "raw_tail": ""
+ },
+ "test/create-library-button.test.ts": {
+  "pass": 6,
+  "failcount": 1,
+  "fails": [
+   "creation library button > previews prompt reference images without removing them"
+  ],
+  "raw_tail": ""
+ },
+ "test/generation-task-local.test.ts": {
+  "pass": 59,
+  "failcount": 1,
+  "fails": [
+   "cinematic continuation failure boundary keeps retryable errors pending and marks provider failures"
+  ],
+  "raw_tail": ""
+ },
+ "test/kling-native-execution.test.ts": {
+  "pass": 2,
+  "failcount": 1,
+  "fails": [
+   "ordinary 3.0 uses its own contract; conflicting tiers and missing video semantics remain pending"
+  ],
+  "raw_tail": ""
+ },
+ "test/local-channel-permission.test.ts": {
+  "pass": 8,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-channel-runtime-projection.node.test.mjs": {
+  "pass": 3,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-channel-task-center.node.test.mjs": {
+  "pass": 1,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-channel-ui.node.test.mjs": {
+  "pass": 2,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-cli-settings.test.ts": {
+  "pass": 5,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/local-runtime-connection.test.ts": {
+  "pass": 10,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/ltv-audio-execution.test.ts": {
+  "pass": 2,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/project-document-persistence.test.ts": {
+  "pass": 1,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/settings-preference-spacing.test.ts": {
+  "pass": null,
+  "failcount": null,
+  "fails": [],
+  "raw_tail": "bun test v1.4.0 (34cbb9a40)\nThe following filters did not match any test files:\n test/settings-preference-spacing.test.ts\n3192 files were searched [17.00ms]\n\nnote: Tests need \".test\", \"_test_\", \".spec\" or \"_spec_\" in the filename (ex: \"MyApp.test.ts\")\nnote: To treat the \"test/settings-preference-spacing.test.ts\" filter as a path, run \"bun test ./test/settings-preference-spacing.test.ts\"\n\nLearn more about bun test: https://bun.com/docs/cli/test\n"
+ },
+ "test/topaz-video-execution.test.ts": {
+  "pass": 1,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/ui-kit-retirement.test.ts": {
+  "pass": 2,
+  "failcount": 1,
+  "fails": [
+   "flush modal and drawer spacing is owned by product shells"
+  ],
+  "raw_tail": ""
+ },
+ "test/user-scoped-generation-persistence.test.ts": {
+  "pass": 54,
+  "failcount": 0,
+  "fails": [],
+  "raw_tail": ""
+ },
+ "test/workspace-route-loading.test.ts": {
+  "pass": 9,
+  "failcount": 4,
+  "fails": [
+   "workspace route loading > uses the Yingxue brand on the authentication scene",
+   "workspace route loading > uses the complete Yingxue logo inside workspace and admin sidebars",
+   "workspace route loading > keeps voice recording diagnostics out of production routes",
+   "workspace route loading > keeps the creation page at root and preserves the create compatibility route"
+  ],
+  "raw_tail": ""
+ }
+}

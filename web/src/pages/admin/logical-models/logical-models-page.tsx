@@ -1,10 +1,12 @@
-import { Alert, App, Button, Form, Input, InputNumber, Modal, Segmented, Select, Switch, Table, Tag } from "antd";
+import { Alert, App, Button, Form, Input, InputNumber, Segmented, Switch, Table, Tag } from "antd";
+import { AdminModal } from "@/pages/admin/ui/overlays";
 import type { FormInstance } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { Archive, FlaskConical, GitBranch, Layers3, Pencil, Plus, Search } from "lucide-react";
+import { Archive, FlaskConical, GitBranch, Layers3, Pencil, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 
-import { PaginationBar } from "@/components/layout/workspace-page";
+import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { ModelIconPicker, ModelLogo } from "@/components/model-logo";
 import { ChoiceBrowser } from "@/components/choice-browser";
 import { ModelEditorModal } from "@/components/model-editor-modal";
@@ -12,6 +14,7 @@ import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
 import { AdminDataTable, AdminFilterChip, AdminRowActions, AdminStatusBadge, AdminTableEmpty } from "@/pages/admin/components/admin-ui";
 import { listAdminChannels } from "@/services/api/auth";
 import { listAdminChannelModels, type ChannelModel } from "@/services/api/wallet";
+import { Select } from "@/components/ui/base/select";
 import {
     createAdminLogicalModel,
     deleteAdminLogicalModel,
@@ -39,6 +42,8 @@ import {
     sanitizeDefaults,
     type CapabilityKind,
 } from "./model-routing-capabilities";
+
+const channelParametersPaths = { image: "/admin/channels?view=models&capability=image", video: "/admin/channels?view=models&capability=video" };
 
 type RouteRuleRow = { channelModelId: string; enabled: boolean; priority: number; weight: number };
 type LogicalModelFormValues = {
@@ -93,8 +98,8 @@ export default function LogicalModelsPage() {
     const reload = async () => {
         setLoading(true);
         try {
-            const [modelResult, firstChannelPage] = await Promise.all([listAdminLogicalModels(), listAdminChannels({ page: 1, limit: 100 })]);
-            const remainingChannelPages = await Promise.all(Array.from({ length: Math.max(0, Math.ceil(firstChannelPage.total / firstChannelPage.limit) - 1) }, (_, index) => listAdminChannels({ page: index + 2, limit: firstChannelPage.limit })));
+            const [modelResult, firstChannelPage] = await Promise.all([listAdminLogicalModels(), listAdminChannels({ page: 1, pageSize: 100 })]);
+            const remainingChannelPages = await Promise.all(Array.from({ length: Math.max(0, Math.ceil(firstChannelPage.total / firstChannelPage.pageSize) - 1) }, (_, index) => listAdminChannels({ page: index + 2, pageSize: firstChannelPage.pageSize })));
             const channels = [firstChannelPage, ...remainingChannelPages].flatMap((result) => result.channels);
             const channelModelResults = await Promise.all(channels.map((channel) => listAdminChannelModels(channel.id)));
             setModels(modelResult.models);
@@ -271,18 +276,18 @@ export default function LogicalModelsPage() {
         { title: "状态", width: 130, render: (_, item) => logicalModelStatusTag(item) },
         {
             title: "操作",
-            width: 230,
+            width: 300,
             align: "right",
             render: (_, item) => (
                 <AdminRowActions
                     primary={{ label: "编辑", icon: <Pencil className="size-3.5" />, onClick: () => openModel(item) }}
-                    visibleActionCount={1}
+                    visibleActionCount={3}
                     actions={[
-                        { key: "simulate", label: "模拟供应线路匹配", icon: <FlaskConical className="size-3.5" />, onClick: () => openSimulation(item) },
+                        { key: "simulate", label: "模拟线路", icon: <FlaskConical className="size-3.5" />, onClick: () => openSimulation(item) },
                         { key: "toggle", label: item.enabled ? "停用" : "启用", onClick: () => void toggleModel(item) },
                         {
                             key: "archive",
-                            label: "归档模型",
+                            label: "归档",
                             icon: <Archive className="size-3.5" />,
                             danger: true,
                             disabled: deletingModelId === item.id,
@@ -303,9 +308,17 @@ export default function LogicalModelsPage() {
         <AdminPageFrame
             title="前台模型目录"
             actions={
-                <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openModel()}>
-                    新增模型
-                </Button>
+                <>
+                    {(["image", "video"] as const).map((kind) => (
+                        <Link key={kind} to={channelParametersPaths[kind]} className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted focus-visible:ring-2">
+                            <SlidersHorizontal className="size-4" />
+                            {kind === "image" ? "渠道图片参数" : "渠道视频参数"}
+                        </Link>
+                    ))}
+                    <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openModel()}>
+                        新增模型
+                    </Button>
+                </>
             }
         >
             <AdminDataTable
@@ -338,7 +351,7 @@ export default function LogicalModelsPage() {
                     setKeyword("");
                     setPage(1);
                 }}
-                table={{ className: "admin-logical-model-table", rowKey: "id", size: "small", loading, pagination: false, columns: modelColumns, dataSource: paginatedModels, scroll: { x: 980 } }}
+                table={{ className: "admin-logical-model-table", rowKey: "id", size: "small", loading, pagination: false, columns: modelColumns, dataSource: paginatedModels, scroll: { x: 1050 } }}
                 empty={<AdminTableEmpty filtered={Boolean(deferredKeyword)} title="暂无模型" />}
                 footer={
                     <PaginationBar
@@ -355,7 +368,7 @@ export default function LogicalModelsPage() {
             />
 
             <ModelEditorModal
-                admin
+                shell={AdminModal}
                 open={editingModel !== undefined}
                 busy={saving}
                 title={editingModel ? "编辑前台模型" : "新增前台模型"}
@@ -455,6 +468,11 @@ export default function LogicalModelsPage() {
                         children: (
                             <>
                                 <EditorSection title="创作端可选能力">
+                                    {(modelCapability === "image" || modelCapability === "video") && (
+                                        <Link className="text-sm underline underline-offset-2 focus-visible:ring-2" to={channelParametersPaths[modelCapability]} target="_blank" rel="noopener noreferrer">
+                                            {modelCapability === "image" ? "编辑渠道图片参数（新窗口）" : "编辑渠道视频参数（新窗口）"}
+                                        </Link>
+                                    )}
                                     <Form.Item name="capabilitySpec" noStyle>
                                         <CapabilityScopeEditor capability={modelCapability} sourceSpecs={modelSourceSpecs} mode="front" />
                                     </Form.Item>
@@ -489,11 +507,10 @@ export default function LogicalModelsPage() {
                 )}
             </ModelEditorModal>
 
-            <Modal
+            <AdminModal
                 title={simulatingModel ? `供应线路匹配模拟 - ${simulatingModel.name}` : "供应线路匹配模拟"}
                 open={Boolean(simulatingModel)}
                 className="workspace-modal workspace-modal-wide admin-simulation-modal"
-                rootClassName="admin-modal-root"
                 centered
                 destroyOnHidden
                 onCancel={() => setSimulatingModel(undefined)}
@@ -541,7 +558,7 @@ export default function LogicalModelsPage() {
                         ) : null}
                     </div>
                 ) : null}
-            </Modal>
+            </AdminModal>
         </AdminPageFrame>
     );
 }

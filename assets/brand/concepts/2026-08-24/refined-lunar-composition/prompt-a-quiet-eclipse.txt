@@ -1,0 +1,10 @@
+Asset type: premium brand logo concept for the Yingxue AI creation website
+Primary request: Create a clean iconic emblem whose three-part vertical composition is: an upper abstract moon shadow, the central Chinese wordmark "映雪", and a different lower reflected moon form.
+Subject: the exact two Chinese characters "映雪" are the primary visual mass, rendered once in bold expressive Chinese brush calligraphy. Above and behind the top third of the characters is a broad quiet lunar shadow formed by one translucent gunmetal arc and one controlled faded edge, not a solid crescent and not a complete circle. Below the characters is a thin upward cold-light reflection that grows naturally from the final brush strokes, curved like an ice edge rather than a tray.
+Style/medium: original premium cinematic identity design; vector-friendly silhouette with restrained 2.5D platinum metal and frosted-jade material; powerful, contemporary, luxury film-studio quality.
+Composition/framing: centered square emblem on a pure near-black background; compact and balanced; readable at 80 px; only three large visual masses; upper and lower moon forms are visibly different and never mirrored.
+Lighting/mood: cold moonlight, decisive rim lighting, deep charcoal shadow, at most two controlled highlights, crisp edges.
+Color palette: platinum silver, dark gunmetal, tiny restrained ice-blue reflections, near-black.
+Text (verbatim): "映雪"
+Constraints: render exactly "映雪" once and no other text; centered, upright, strong silhouette, clean negative space, accurate Chinese characters, no complete circular border.
+Avoid: debris, fragments, particles, dots, shards, smoke, long motion trails, excessive glow, bloom, blur, cheap chrome, plastic shine, ornate frame, seal, badge, game emblem, weapon logo, left-right crescents, mirrored moons, literal photographic moon, tray-like base, extra strokes, watermark, letters, English.

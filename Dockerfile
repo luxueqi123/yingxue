@@ -1,41 +1,39 @@
 # syntax=docker/dockerfile:1.7
 
-# Bridge 使用 Go 标准库交叉编译为原生 Windows/Linux 程序，避免把 Bun/Node 运行时打进下载文件。
-FROM golang:1.24-alpine AS comfy-bridge-build
-
-WORKDIR /src
-COPY canvas-agent/native/comfy-bridge ./
-RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/OpenAICanvas-ComfyBridge.exe . \
-    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/OpenAICanvas-ComfyBridge-linux-amd64 . \
-    && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/OpenAICanvas-ComfyBridge-linux-arm64 .
-
 # 构建 Vite 前端产物。
-FROM oven/bun:1.3.13 AS web-build
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.9 AS web-build
 
 WORKDIR /app/web
-ARG VITE_TLDRAW_LICENSE_KEY
-ARG BUILD_VERSION
-ENV VITE_TLDRAW_LICENSE_KEY=${VITE_TLDRAW_LICENSE_KEY}
-ENV CANVAS_BUILD_VERSION=${BUILD_VERSION}
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
-COPY canvas-agent /app/canvas-agent
+COPY README.md /app/README.md
+COPY assets /app/assets
 COPY web ./
-COPY --from=comfy-bridge-build /out/OpenAICanvas-ComfyBridge.exe /app/web/public/OpenAICanvas-ComfyBridge.exe
-COPY --from=comfy-bridge-build /out/OpenAICanvas-ComfyBridge-linux-amd64 /app/web/public/OpenAICanvas-ComfyBridge-linux-amd64
-COPY --from=comfy-bridge-build /out/OpenAICanvas-ComfyBridge-linux-arm64 /app/web/public/OpenAICanvas-ComfyBridge-linux-arm64
-# Bun 1.3 与 TypeScript 7 的 tsc shim 在生产容器中解析路径异常；Bridge
-# 已在上一步完成校验，生产镜像直接执行 Vite 打包，类型检查留给开发 CI。
-RUN CANVAS_PREBUILT_BRIDGE=1 bun run build:bridge \
-    && bun --bun ./node_modules/vite/bin/vite.js build
+COPY backend/internal/ecommerceagent/platform_knowledge.json /app/backend/internal/ecommerceagent/platform_knowledge.json
+COPY backend/internal/app/appearance_theme_packs.json /app/backend/internal/app/appearance_theme_packs.json
+COPY backend/internal/app/video_model_presets.json /app/backend/internal/app/video_model_presets.json
+ARG VITE_TLDRAW_LICENSE_KEY
+ARG BUILD_VERSION
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ENV VITE_TLDRAW_LICENSE_KEY=${VITE_TLDRAW_LICENSE_KEY}
+ENV CANVAS_BUILD_VERSION=${BUILD_VERSION}
+ENV CANVAS_BUILD_COMMIT=${BUILD_COMMIT}
+ENV CANVAS_BUILD_TIME=${BUILD_TIME}
+# 生产镜像只构建云端工作台前端；Agent Runtime 在后端 Worker 中运行。
+RUN bun --bun ./node_modules/vite/bin/vite.js build
 
 # 运行镜像：nginx 托管静态前端，并在 Compose 中把 /api 转发到后端服务。
 FROM nginx:1.27-alpine
 
-COPY --from=web-build /app/web/dist /usr/share/nginx/html
+COPY --from=web-build /app/web/dist /opt/canvas-release
+COPY docker/canvas-web-entrypoint.sh /usr/local/bin/canvas-web-entrypoint
+RUN chmod +x /usr/local/bin/canvas-web-entrypoint
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+ENTRYPOINT ["/usr/local/bin/canvas-web-entrypoint"]
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1

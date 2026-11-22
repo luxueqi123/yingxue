@@ -1,14 +1,17 @@
-import { App, Button, Input, Modal, Select } from "antd";
+import { Alert, App, Button, Input } from "antd";
+import { AdminModal } from "@/pages/admin/ui/overlays";
 import type { ColumnsType } from "antd/es/table";
 import { Download, Eye, Search, Trash2 } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { PaginationBar } from "@/components/layout/workspace-page";
+import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { adminResourceFileUrl, deleteAdminResources, downloadAdminResource, getAdminStorageStats, listAdminResources, type AdminStorageResource, type AdminStorageStats } from "@/services/api/admin-storage";
 import { AdminBatchBar, AdminDataTable, AdminFilterChip, AdminStatTile, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
+import { Select } from "@/components/ui/base/select";
+import { AdminSearchInput } from "./admin-search-input";
 
 const pageSizes = [20, 50, 100];
 
@@ -16,14 +19,14 @@ export default function StorageResourcesPanel() {
     const { message, modal } = App.useApp();
     const [searchParams, setSearchParams] = useSearchParams();
     const keyword = searchParams.get("filter") || "";
-    const kind = normalizeOption(searchParams.get("kind"), ["image", "video", "audio", "file"]);
+    const kind = normalizeOption(searchParams.get("kind"), ["image", "video", "audio", "file", "live2d"]);
     const status = normalizeOption(searchParams.get("status"), ["pending", "ready", "failed", "deleted"]);
-    const provider = normalizeOption(searchParams.get("provider"), ["local", "aliyun", "tencent", "qiniu", "s3"]);
-    const userId = searchParams.get("userId") || "";
+    const provider = normalizeOption(searchParams.get("provider"), ["local", "aliyun", "tencent", "qiniu", "volcengine", "s3"]);
+    const userQuery = searchParams.get("user") || searchParams.get("userId") || "";
     const page = positiveInt(searchParams.get("page"), 1);
     const pageSize = normalizePageSize(searchParams.get("pageSize"));
     const debouncedKeyword = useDebouncedValue(keyword);
-    const debouncedUserId = useDebouncedValue(userId);
+    const debouncedUserQuery = useDebouncedValue(userQuery);
     const [resources, setResources] = useState<AdminStorageResource[]>([]);
     const [stats, setStats] = useState<AdminStorageStats | null>(null);
     const [total, setTotal] = useState(0);
@@ -34,12 +37,12 @@ export default function StorageResourcesPanel() {
     const [deleting, setDeleting] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const requestSequence = useRef(0);
-    const hasFilters = Boolean(keyword || userId || kind !== "all" || status !== "all" || provider !== "all");
+    const hasFilters = Boolean(keyword || userQuery || kind !== "all" || status !== "all" || provider !== "all");
 
     const updateUrl = (patch: Record<string, string | number>, replace = false) => {
         const next = new URLSearchParams(searchParams);
         Object.entries(patch).forEach(([key, value]) => {
-            const isDefault = ((key === "filter" || key === "userId") && value === "") || (["kind", "status", "provider"].includes(key) && value === "all") || (key === "page" && value === 1) || (key === "pageSize" && value === 20);
+            const isDefault = ((key === "filter" || key === "user" || key === "userId") && value === "") || (["kind", "status", "provider"].includes(key) && value === "all") || (key === "page" && value === 1) || (key === "pageSize" && value === 20);
             if (isDefault) next.delete(key);
             else next.set(key, String(value));
         });
@@ -67,9 +70,10 @@ export default function StorageResourcesPanel() {
                 kind: kind === "all" ? undefined : kind,
                 status: status === "all" ? undefined : status,
                 provider: provider === "all" ? undefined : provider,
-                userId: debouncedUserId || undefined,
+                user: debouncedUserQuery || undefined,
+                userId: debouncedUserQuery || undefined,
                 page,
-                limit: pageSize,
+                pageSize: pageSize,
             },
             controller.signal,
         )
@@ -85,7 +89,7 @@ export default function StorageResourcesPanel() {
             })
             .finally(() => sequence === requestSequence.current && setLoading(false));
         return () => controller.abort();
-    }, [debouncedKeyword, debouncedUserId, kind, status, provider, page, pageSize, refreshKey]);
+    }, [debouncedKeyword, debouncedUserQuery, kind, status, provider, page, pageSize, refreshKey]);
 
     const columns = useMemo<ColumnsType<AdminStorageResource>>(
         () => [
@@ -196,10 +200,11 @@ export default function StorageResourcesPanel() {
                 <AdminStatTile label="实际可用体积" value={stats ? formatBytes(stats.physicalBytes) : "--"} detail="仅统计已就绪资源" />
                 <AdminStatTile label="存储分布" value={stats ? formatBytes(stats.remoteBytes) : "--"} detail={stats ? `本地 ${formatBytes(stats.localBytes)} · 远端` : undefined} />
             </div>
+            {stats?.offload && (stats.offload.pending > 0 || stats.offload.failed > 0) ? <OffloadAlert offload={stats.offload} /> : null}
             <AdminDataTable
                 toolbar={
                     <div className="admin-storage-resource-filters">
-                        <Input
+                        <AdminSearchInput
                             aria-label="搜索资源"
                             autoComplete="off"
                             allowClear
@@ -207,9 +212,9 @@ export default function StorageResourcesPanel() {
                             prefix={<Search className="size-4 text-foreground/40" />}
                             value={keyword}
                             placeholder="资源 ID 或对象路径"
-                            onChange={(event) => updateUrl({ filter: event.target.value, page: 1 }, true)}
+                            onValueChange={(value) => updateUrl({ filter: value, page: 1 }, true)}
                         />
-                        <Input aria-label="按用户 ID 筛选" autoComplete="off" allowClear className="w-48" value={userId} placeholder="用户" onChange={(event) => updateUrl({ userId: event.target.value, page: 1 }, true)} />
+                        <AdminSearchInput aria-label="按用户名、昵称、邮箱或用户 ID 筛选" autoComplete="off" allowClear className="w-64" value={userQuery} placeholder="用户名 / 昵称 / 邮箱 / 用户 ID" onValueChange={(value) => updateUrl({ user: value, userId: "", page: 1 }, true)} />
                         <Select aria-label="筛选资源类型" className="w-32" value={kind} onChange={(value) => updateUrl({ kind: value, page: 1 })} options={kindOptions} />
                         <Select aria-label="筛选资源状态" className="w-32" value={status} onChange={(value) => updateUrl({ status: value, page: 1 })} options={statusOptions} />
                         <Select aria-label="筛选存储类型" className="w-36" value={provider} onChange={(value) => updateUrl({ provider: value, page: 1 })} options={providerOptions} />
@@ -218,14 +223,14 @@ export default function StorageResourcesPanel() {
                 toolbarActiveFilters={
                     <>
                         {keyword ? <AdminFilterChip label={`搜索：${keyword}`} onRemove={() => updateUrl({ filter: "", page: 1 })} /> : null}
-                        {userId ? <AdminFilterChip label={`用户：${userId}`} onRemove={() => updateUrl({ userId: "", page: 1 })} /> : null}
+                        {userQuery ? <AdminFilterChip label={`用户：${userQuery}`} onRemove={() => updateUrl({ user: "", userId: "", page: 1 })} /> : null}
                         {kind !== "all" ? <AdminFilterChip label={`类型：${kindLabel(kind)}`} onRemove={() => updateUrl({ kind: "all", page: 1 })} /> : null}
                         {status !== "all" ? <AdminFilterChip label={`状态：${statusLabel(status)}`} onRemove={() => updateUrl({ status: "all", page: 1 })} /> : null}
                         {provider !== "all" ? <AdminFilterChip label={`存储：${providerLabel(provider)}`} onRemove={() => updateUrl({ provider: "all", page: 1 })} /> : null}
                     </>
                 }
                 toolbarActive={hasFilters}
-                onReset={() => updateUrl({ filter: "", userId: "", kind: "all", status: "all", provider: "all", page: 1 })}
+                onReset={() => updateUrl({ filter: "", user: "", userId: "", kind: "all", status: "all", provider: "all", page: 1 })}
                 batchActions={
                     <AdminBatchBar count={selectedIds.length} onClear={() => setSelectedIds([])}>
                         <Button danger size="small" icon={<Trash2 className="size-3.5" />} loading={deleting} onClick={() => confirmDelete(selectedIds)}>
@@ -256,7 +261,7 @@ export default function StorageResourcesPanel() {
                 empty={<AdminTableEmpty filtered={hasFilters} title={hasFilters ? undefined : "暂无资源记录"} description={hasFilters ? undefined : "资源上传或生成后会显示在这里。"} />}
                 footer={<PaginationBar alwaysShow current={page} pageSize={pageSize} total={total} onChange={(nextPage, nextSize) => updateUrl({ page: nextSize !== pageSize ? 1 : nextPage, pageSize: nextSize })} />}
             />
-            <Modal
+            <AdminModal
                 title={previewing ? fileName(previewing.objectKey) || "资源预览" : "资源预览"}
                 open={Boolean(previewing)}
                 width={880}
@@ -271,7 +276,7 @@ export default function StorageResourcesPanel() {
                 destroyOnHidden
             >
                 {previewing ? <ResourcePreview resource={previewing} /> : null}
-            </Modal>
+            </AdminModal>
         </div>
     );
 }
@@ -317,6 +322,7 @@ const kindOptions = [
     { label: "视频", value: "video" },
     { label: "音频", value: "audio" },
     { label: "文件", value: "file" },
+    { label: "Live2D 模型", value: "live2d" },
 ];
 const statusOptions = [
     { label: "全部状态", value: "all" },
@@ -331,6 +337,7 @@ const providerOptions = [
     { label: "阿里云 OSS", value: "aliyun" },
     { label: "腾讯云 COS", value: "tencent" },
     { label: "七牛云 Kodo", value: "qiniu" },
+    { label: "火山引擎 TOS", value: "volcengine" },
     { label: "S3", value: "s3" },
 ];
 
@@ -349,7 +356,7 @@ function fileName(objectKey: string) {
     return objectKey.split("/").filter(Boolean).at(-1) || "";
 }
 function kindLabel(kind: string) {
-    return ({ image: "图片", video: "视频", audio: "音频", file: "文件" } as Record<string, string>)[kind] || kind || "未知";
+    return ({ image: "图片", video: "视频", audio: "音频", file: "文件", live2d: "Live2D" } as Record<string, string>)[kind] || kind || "未知";
 }
 function statusLabel(status: string) {
     return ({ pending: "待处理", ready: "已就绪", failed: "失败", deleted: "已删除" } as Record<string, string>)[status] || status || "未知";
@@ -358,7 +365,7 @@ function statusTone(status: string): "neutral" | "success" | "warning" | "error"
     return status === "ready" ? "success" : status === "pending" ? "warning" : status === "failed" ? "error" : "neutral";
 }
 function providerLabel(provider: string) {
-    return ({ local: "本地", aliyun: "阿里云 OSS", tencent: "腾讯云 COS", qiniu: "七牛云 Kodo", s3: "S3" } as Record<string, string>)[provider] || provider || "本地";
+    return ({ local: "本地", aliyun: "阿里云 OSS", tencent: "腾讯云 COS", qiniu: "七牛云 Kodo", volcengine: "火山引擎 TOS", s3: "S3" } as Record<string, string>)[provider] || provider || "本地";
 }
 function formatBytes(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -385,4 +392,12 @@ function formatDuration(durationMs: number) {
     const seconds = Math.round(durationMs / 1000);
     const minutes = Math.floor(seconds / 60);
     return minutes > 0 ? `${minutes}:${String(seconds % 60).padStart(2, "0")}` : `${seconds} 秒`;
+}
+
+function OffloadAlert({ offload }: { offload: AdminStorageStats["offload"] }) {
+    const parts = [`${offload.pending.toLocaleString()} 个作品（${formatBytes(offload.pendingBytes)}）等待同步到对象存储`];
+    if (offload.oldestPending) parts.push(`最早一条保存于 ${new Date(offload.oldestPending).toLocaleString("zh-CN", { hour12: false })}`);
+    if (offload.lastErrorCode) parts.push(`最近错误 ${offload.lastErrorCode}`);
+    const failed = offload.failed > 0 ? `另有 ${offload.failed.toLocaleString()} 个作品的本地文件丢失，无法自动同步，请在请求日志中按任务排查。` : undefined;
+    return <Alert type={offload.failed > 0 ? "error" : "warning"} showIcon message="对象存储写入失败，部分作品暂存在服务器" description={[parts.join("；") + "。用户访问不受影响，存储恢复后会自动同步。", failed].filter(Boolean).join(" ")} />;
 }

@@ -8,7 +8,7 @@ import {
     imageSizeForResolution,
     supportsImageResolutionPresets,
 } from "../src/lib/image-resolution-tiers";
-import { defaultImageCapabilityConfig } from "../src/lib/model-capabilities";
+import { defaultImageCapabilityConfig, normalizeImageValue } from "../src/lib/model-capabilities";
 import { resolveImageRequestSize } from "../src/services/api/image-validation";
 
 const sizes = [
@@ -63,6 +63,45 @@ describe("image resolution tiers", () => {
         expect(supportsImageResolutionPresets(profile.size)).toBe(true);
         expect(imageResolutionChoices(profile.size.values)).toEqual(["auto", "1k", "2k", "4k"]);
         expect(buildImageResolutionOptions(profile.size.values)).toHaveLength(30);
+    });
+
+    // Agnes 图像的 size 是官方必填项，但取分辨率档位，画面比例走独立的 ratio 字段，
+    // 所以界面必须同时保留比例和档位两个选择器，不能退化成 OpenAI 的像素尺寸。
+    test("Agnes 图像按比例加档位选择尺寸，并关闭上游不支持的输出开关", () => {
+        const profile = defaultImageCapabilityConfig("agnes-image", "agnes-image-2.1-flash");
+
+        expect(profile.size.parameter).toBe("aspect_ratio");
+        expect(profile.size.values).toEqual(["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"]);
+        expect(profile.resolution.values).toEqual(["1k", "2k", "4k"]);
+        expect(profile.quality.supported).toBe(false);
+        expect(normalizeImageValue(profile, { size: "3:4", imageResolution: "4k", count: "4" })).toMatchObject({ size: "3:4", imageResolution: "4k", count: "1" });
+
+        // 顶层 response_format 是官方明确列出的错误写法，output_format 会被上游直接拒绝。
+        expect(profile.responseFormat.supported).toBe(false);
+        expect(profile.outputFormat.supported).toBe(false);
+        expect(profile.transparentBackground.supported).toBe(false);
+        expect(profile.references.maskSupported).toBe(false);
+    });
+
+    test("声明式图片模型保留独立分辨率选择", () => {
+        const profile = defaultImageCapabilityConfig("openai-image", "gpt-image-2.5");
+        profile.parameters = [
+            { name: "size", label: "画幅 / 尺寸", type: "string", values: ["auto", "1824x1024", "2752x1536"], default: "1824x1024", encoding: "pixels" },
+            { name: "imageResolution", label: "分辨率", type: "string", values: ["1k", "2k"], default: "1k" },
+        ];
+        profile.resolution = { supported: true, values: ["1k", "2k"], default: "1k" };
+        profile.size = {
+            parameter: "size",
+            values: ["auto", "1824x1024", "2752x1536"],
+            default: "1824x1024",
+            allowCustom: false,
+            presets: [
+                { tier: "1k", ratio: "16:9", size: "1824x1024", width: 1824, height: 1024 },
+                { tier: "2k", ratio: "16:9", size: "2752x1536", width: 2752, height: 1536 },
+            ],
+        };
+
+        expect(normalizeImageValue(profile, { size: "2752x1536", imageResolution: "2k" })).toMatchObject({ size: "2752x1536", imageResolution: "2k" });
     });
 
     test("识别适合全景图的 2:1 自定义尺寸", () => {

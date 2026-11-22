@@ -1,0 +1,462 @@
+/* The theme only supplies appearance. Existing routes, copy and business state remain authoritative. */
+:root[data-skin="luxueqi-tianya"] {
+    --lxq-paper: #f3f4f4;
+    --lxq-sheet: #fcfcfb;
+    --lxq-nav: #e9ebeb;
+    --lxq-ink: #262c31;
+    --lxq-muted: #626c73;
+    --lxq-blue: #557385;
+    --lxq-silver: #99a4ab;
+    --lxq-line: #d5dadd;
+    --lxq-wash: #e3e8eb;
+    --lxq-wash-hover: #d7e0e5;
+    --lxq-shadow: rgba(31, 42, 50, 0.09);
+    --lxq-on-accent: #f8fafb;
+    --creation-composer-spotlight: color-mix(in srgb, var(--lxq-blue) 22%, transparent);
+    --lxq-hero: url("/themes/luxueqi-tianya/hero-light.webp");
+    --lxq-heading: "Longying Serif", "Noto Serif SC", "Songti SC", "SimSun", serif;
+    --bg-page: var(--lxq-paper);
+    --bg-canvas: var(--lxq-paper);
+    --bg-surface: var(--lxq-sheet);
+    --bg-surface-elevated: var(--lxq-sheet);
+    --bg-surface-secondary: var(--surface-card);
+    --bg-float: var(--lxq-sheet);
+    --bg-topbar-btn: var(--lxq-wash);
+    --bg-topbar-btn-hover: var(--surface-hover);
+    --fg-default: var(--lxq-ink);
+    --fg-muted: var(--lxq-muted);
+    --fg-secondary: var(--lxq-muted);
+    --fg-subtle: var(--icon-muted);
+    --fg-brand: var(--lxq-blue);
+    --nt-bg-body: var(--lxq-paper);
+    --nt-bg-canvas: var(--lxq-paper);
+    --nt-bg-float: var(--lxq-sheet);
+    --nt-bg-float-glass-l1: color-mix(in srgb, var(--lxq-sheet) 95%, transparent);
+    --nt-bg-float-glass-l2: color-mix(in srgb, var(--lxq-sheet) 85%, transparent);
+    --nt-bg-brand: var(--btn-solid-bg);
+    --nt-bg-brand-hover: var(--btn-solid-hover-bg);
+    --nt-bg-brand-active: var(--btn-solid-active-bg);
+    --nt-bg-brand-overlay: var(--lxq-wash);
+    --nt-bg-brand-overlay-hover: var(--lxq-wash-hover);
+    --nt-bg-brand-overlay-active: var(--lxq-wash-hover);
+    --nt-bg-highlight: var(--btn-solid-bg);
+    --nt-bg-highlight-hover: var(--btn-solid-hover-bg);
+    --nt-bg-highlight-active: var(--btn-solid-active-bg);
+    --nt-bg-overlay: color-mix(in srgb, var(--lxq-ink) 4%, transparent);
+    --nt-bg-overlay-hover: color-mix(in srgb, var(--lxq-ink) 7%, transparent);
+    --nt-bg-overlay-active: color-mix(in srgb, var(--lxq-ink) 10%, transparent);
+    --nt-text-default: var(--lxq-ink);
+    --nt-text-secondary: var(--lxq-muted);
+    --nt-text-tertiary: var(--lxq-muted);
+    --nt-text-subtle: var(--icon-muted);
+    --nt-text-brand: var(--lxq-blue);
+    --nt-text-link: var(--lxq-blue);
+    --nt-text-highlight: var(--lxq-blue);
+    --nt-border-neutral-l1: var(--lxq-line);
+    --nt-border-neutral-l2: var(--lxq-line);
+    --nt-border-neutral-l3: var(--input);
+    --nt-border-brand: var(--lxq-line);
+    --nt-border-brand-contrast: var(--lxq-blue);
+    --nt-border-highlight: var(--lxq-blue);
+    --nt-border-highlight-strong: var(--lxq-blue);
+    --nt-brand: var(--lxq-blue);
+    --nt-accent-cyan: var(--lxq-blue);
+    --nt-accent-blue: var(--lxq-blue);
+    --nt-accent-slate: var(--lxq-silver);
+    --nt-brand-surface-l1: var(--lxq-wash);
+    --nt-brand-surface-l2: var(--lxq-wash-hover);
+    --palette-node-image: #6783a8;
+    --palette-node-video: #416f99;
+    --palette-node-text: #527a85;
+    --palette-node-audio: #497f72;
+    --palette-node-config: #688294;
+    --palette-node-script: #7e78a0;
+    --palette-node-drawing: #8c7660;
+    --palette-node-frame: #5d8876;
+    --palette-node-character: #8e7593;
+    --palette-node-skill: #92773b;
+}
+
+:root[data-skin="luxueqi-tianya"].dark {
+    --lxq-paper: #121619;
+    --lxq-sheet: #1c2226;
+    --lxq-nav: #171c20;
+    --lxq-ink: #edf0f2;
+    --lxq-muted: #b2bdc5;
+    --lxq-blue: #adc2d1;
+    --lxq-silver: #aab6be;
+    --lxq-line: #39434a;
+    --lxq-wash: #303d47;
+    --lxq-wash-hover: #3a4a56;
+    --lxq-on-accent: #18222b;
+    --lxq-shadow: rgba(0, 0, 0, 0.3);
+    --lxq-hero: url("/themes/luxueqi-tianya/hero-dark.webp");
+    --palette-node-image: #9fbee3;
+    --palette-node-video: #8fbbdf;
+    --palette-node-text: #9bc8d3;
+    --palette-node-audio: #8ac7b1;
+    --palette-node-config: #a3bdcf;
+    --palette-node-script: #bbb0dc;
+    --palette-node-drawing: #d1b699;
+    --palette-node-frame: #9dccb6;
+    --palette-node-character: #d5b6da;
+    --palette-node-skill: #dfca8d;
+}
+
+:root[data-skin="luxueqi-tianya"] :is(.app-user-workspace, .app-user-overlays, .app-product-workspace, .app-product-overlays) {
+    --user-page-bg: var(--lxq-paper);
+    --user-surface: var(--lxq-sheet);
+    --user-surface-raised: #ffffff;
+    --user-surface-muted: #eceeef;
+    --user-surface-hover: #e4e8ea;
+    --user-control-pressed: #dbe1e5;
+    --user-border: var(--lxq-line);
+    --user-border-strong: #b8c4cc;
+    --user-ink: var(--lxq-ink);
+    --user-ink-muted: var(--lxq-muted);
+    --user-ink-soft: #75818a;
+    --user-accent: var(--lxq-blue);
+    --primary: var(--lxq-blue);
+    --primary-foreground: var(--lxq-on-accent);
+    --border: var(--lxq-line);
+    --input: var(--lxq-line);
+    --surface-card: var(--user-surface-muted);
+    --surface-hover: var(--user-surface-hover);
+    --btn-solid-bg: var(--lxq-blue);
+    --btn-solid-hover-bg: color-mix(in srgb, var(--lxq-blue) 90%, var(--lxq-ink));
+    --btn-solid-active-bg: color-mix(in srgb, var(--lxq-blue) 80%, var(--lxq-ink));
+    --btn-solid-fg: var(--lxq-on-accent);
+    --control-selected-bg: var(--lxq-wash);
+    --control-selected-hover-bg: var(--lxq-wash-hover);
+    --control-selected-fg: var(--lxq-ink);
+    --control-selected-border: var(--lxq-line);
+    --control-focus-ring: var(--lxq-blue);
+    --workspace-canvas: var(--lxq-paper);
+    --workspace-navigation: var(--lxq-nav);
+    --workspace-content: var(--lxq-paper);
+    --workspace-surface: var(--lxq-sheet);
+    --workspace-surface-strong: var(--lxq-sheet);
+    --workspace-border: var(--lxq-line);
+    --workspace-border-strong: #b8c4cc;
+    --workspace-accent: var(--lxq-blue);
+    --workspace-accent-soft: var(--lxq-wash);
+    --workspace-nav-active-bg: var(--lxq-wash);
+    --workspace-nav-active-hover-bg: var(--lxq-wash-hover);
+    --product-accent-blue: #557385;
+    --product-accent-green: #30785f;
+    --product-accent-orange: #96651c;
+    --product-accent-pink: #95627e;
+    --product-accent-violet: #73658c;
+    --product-accent-cyan: #628294;
+}
+
+:root[data-skin="luxueqi-tianya"].dark :is(.app-user-workspace, .app-user-overlays, .app-product-workspace, .app-product-overlays) {
+    --user-surface-raised: #252e35;
+    --user-surface-muted: #252e35;
+    --user-surface-hover: #303c46;
+    --user-control-pressed: #3b4b57;
+    --user-border-strong: #536471;
+    --user-ink-soft: #97aab8;
+    --workspace-border-strong: #536471;
+    --product-accent-blue: #adc2d1;
+    --product-accent-green: #8acdaf;
+    --product-accent-orange: #e9c184;
+    --product-accent-pink: #dba8c2;
+    --product-accent-violet: #bbb0dc;
+    --product-accent-cyan: #a7bfce;
+}
+
+:root[data-skin="luxueqi-tianya"] :is(.app-workspace-sidebar, .app-workspace-sidebar-nav) {
+    background: var(--lxq-nav);
+    border-color: var(--lxq-line);
+}
+:root[data-skin="luxueqi-tianya"] .app-workspace-nav-link {
+    color: var(--lxq-muted);
+}
+:root[data-skin="luxueqi-tianya"] .app-workspace-nav-link:is(:hover, :focus-visible, .is-active) {
+    color: var(--lxq-ink);
+}
+:root[data-skin="luxueqi-tianya"] .app-workspace-nav-active-pill {
+    background: var(--lxq-wash) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lxq-blue) 24%, transparent);
+}
+:root[data-skin="luxueqi-tianya"] .app-workspace-nav-active-pill::before {
+    background: var(--lxq-blue);
+    box-shadow: none;
+}
+:root[data-skin="luxueqi-tianya"] .app-workspace-nav-link.is-active :is(svg, .app-workspace-nav-icon) {
+    color: var(--lxq-blue);
+    opacity: 1;
+}
+:root[data-skin="luxueqi-tianya"] :is(.app-user-workspace, .auth-scene, .auth-dialog) :is(h1, h2),
+:root[data-skin="luxueqi-tianya"] :is(.app-page-header-title, .ant-modal-title) {
+    font-family: var(--lxq-heading);
+    font-weight: 600;
+    letter-spacing: 0.035em;
+}
+
+:root[data-skin="luxueqi-tianya"] .creation-home {
+    isolation: isolate;
+    background-color: var(--lxq-paper);
+}
+:root[data-skin="luxueqi-tianya"] .ltv-home {
+    background-image: radial-gradient(ellipse at 92% 12%, color-mix(in srgb, var(--lxq-silver) 10%, transparent), transparent 58%);
+}
+:root[data-skin="luxueqi-tianya"] .creation-home::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    right: 0;
+    width: min(780px, 66%);
+    height: 300px;
+    background: var(--lxq-hero) right top / cover no-repeat;
+    filter: saturate(0.15);
+    pointer-events: none;
+    opacity: 0.3;
+    mask-image: radial-gradient(ellipse 80% 70% at 65% 15%, #000 12%, transparent 86%);
+}
+:root[data-skin="luxueqi-tianya"] .creation-chat-composer {
+    background: var(--lxq-sheet);
+    border-color: var(--lxq-line);
+    box-shadow:
+        0 12px 34px -20px var(--lxq-shadow),
+        inset 0 1px 0 color-mix(in srgb, var(--lxq-sheet) 70%, white);
+}
+:root[data-skin="luxueqi-tianya"] .creation-chat-composer:focus-within {
+    border-color: var(--lxq-blue);
+}
+:root[data-skin="luxueqi-tianya"] .creation-home-embedded::before {
+    content: none;
+}
+:root[data-skin="luxueqi-tianya"] .creation-home-embedded .creation-composer-stage.is-home-mode {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+}
+:root[data-skin="luxueqi-tianya"] .creation-home-embedded .creation-composer-stage.is-home-mode::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: -24px;
+    right: -48px;
+    width: 320px;
+    height: 320px;
+    background: url("/themes/luxueqi-tianya/composer-portrait-20261114.webp") center / contain no-repeat;
+    opacity: 0.42;
+    filter: blur(1.2px) saturate(0.55) contrast(0.8);
+    mask-image: radial-gradient(ellipse 48% 62% at 36% 34%, #000 15%, transparent 86%);
+    pointer-events: none;
+}
+:root[data-skin="luxueqi-tianya"] .app-user-workspace .creation-home-embedded .creation-chat-composer {
+    background: linear-gradient(90deg, var(--lxq-sheet) 48%, color-mix(in srgb, var(--lxq-sheet) 94%, transparent) 60%, transparent 72%) !important;
+}
+:root[data-skin="luxueqi-tianya"] .creation-mode-spark {
+    background: var(--lxq-blue);
+    box-shadow: none;
+}
+:root[data-skin="luxueqi-tianya"] .app-spatial-surface {
+    background: color-mix(in srgb, var(--lxq-sheet) 97%, transparent);
+    border-color: var(--lxq-line);
+    box-shadow: 0 14px 40px -22px var(--lxq-shadow);
+}
+:root[data-skin="luxueqi-tianya"] .app-spatial-interactive:hover {
+    border-color: var(--lxq-blue);
+}
+
+:root[data-skin="luxueqi-tianya"] :is([data-admin-root], body.admin-overlays, .admin-drawer, .admin-secondary-drawer, .admin-modal-root, .admin-channel-modal-root, .admin-mobile-navigation-menu) {
+    --admin-canvas: var(--lxq-paper);
+    --admin-sidebar: var(--lxq-nav);
+    --admin-surface: var(--lxq-sheet);
+    --admin-surface-2: #eceeef;
+    --admin-surface-3: #e1e6e9;
+    --admin-text: var(--lxq-ink);
+    --admin-text-secondary: #475c69;
+    --admin-text-muted: var(--lxq-muted);
+    --admin-text-placeholder: #75818a;
+    --admin-border: var(--lxq-line);
+    --admin-border-strong: #b8c4cc;
+    --admin-divider: var(--lxq-line);
+    --admin-row-border: #e1e6e9;
+    --admin-row-hover: #eceeef;
+    --admin-nav-hover: #e3e8eb;
+    --admin-nav-active: var(--lxq-wash);
+    --admin-accent: #557385;
+    --admin-accent-fg: #f9fcff;
+    --admin-focus: #557385;
+    --admin-status-success: #30785f;
+    --admin-status-warning: #96651c;
+    --admin-status-error: #b03d50;
+    --admin-status-info: #286b93;
+    --admin-switch-on: #557385;
+    --admin-chart-primary: #557385;
+    --admin-chart-secondary: #99a4ab;
+    --admin-chart-warning: #96651c;
+}
+:root[data-skin="luxueqi-tianya"].dark :is([data-admin-root], body.admin-overlays, .admin-drawer, .admin-secondary-drawer, .admin-modal-root, .admin-channel-modal-root, .admin-mobile-navigation-menu) {
+    --admin-surface-2: #252e35;
+    --admin-surface-3: #303c46;
+    --admin-text-secondary: #c8d3db;
+    --admin-text-placeholder: #97aab8;
+    --admin-border-strong: #536471;
+    --admin-row-border: #39434a;
+    --admin-row-hover: #252e35;
+    --admin-nav-hover: #303c46;
+    --admin-accent: #adc2d1;
+    --admin-accent-fg: #18222b;
+    --admin-focus: #aec8d9;
+    --admin-status-success: #8acdaf;
+    --admin-status-warning: #e9c184;
+    --admin-status-error: #f29aab;
+    --admin-status-info: #9acdef;
+    --admin-switch-on: #adc2d1;
+    --admin-chart-primary: #adc2d1;
+    --admin-chart-secondary: #aab6be;
+    --admin-chart-warning: #e9c184;
+}
+
+:root[data-skin="luxueqi-tianya"] :is(.auth-panel.is-page, .auth-dialog-form) {
+    background: var(--lxq-sheet);
+    border-color: var(--lxq-line);
+    box-shadow: 0 18px 60px -30px var(--lxq-shadow);
+}
+:root[data-skin="luxueqi-tianya"] :is(.auth-tab, .auth-panel-description, .auth-form-label) {
+    color: var(--lxq-muted);
+}
+:root[data-skin="luxueqi-tianya"] .auth-tab[aria-selected="true"] {
+    color: var(--lxq-blue);
+    border-color: var(--lxq-blue);
+}
+:root[data-skin="luxueqi-tianya"] .auth-panel :is(.auth-input, .auth-password-input) {
+    background: var(--lxq-paper);
+    border-color: var(--lxq-line);
+    color: var(--lxq-ink);
+}
+:root[data-skin="luxueqi-tianya"] .auth-scene:has(.auth-media-fallback) {
+    background: var(--lxq-hero) center / cover;
+}
+:root[data-skin="luxueqi-tianya"] ::selection {
+    background: var(--lxq-wash);
+    color: var(--lxq-ink);
+}
+
+.lxq-agent-orb {
+    display: inline-flex;
+    position: relative;
+    flex: none;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 22%, var(--lxq-wash, #dbeafa), var(--lxq-sheet, #fbfdff));
+    color: var(--lxq-blue, #286b93);
+    box-shadow: inset 0 0 0 1px var(--lxq-line, #ccdce9);
+}
+.lxq-agent-orb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 12%;
+    transform: scale(1.04);
+}
+.lxq-agent-orb.is-small > svg {
+    width: 85%;
+    height: 85%;
+}
+.lxq-agent-orb-ring {
+    position: absolute;
+    inset: 2px;
+    border: 1px solid currentColor;
+    opacity: 0.4;
+    border-radius: inherit;
+    pointer-events: none;
+}
+.lxq-agent-orb.is-work .lxq-agent-orb-ring {
+    border-style: dashed;
+    animation: lxq-orbit 7s linear infinite;
+}
+.lxq-agent-orb .lxq-agent-orb-done {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    width: 26%;
+    height: 26%;
+    overflow: visible;
+}
+.lxq-agent-orb-done circle {
+    fill: var(--lxq-blue, #286b93);
+    stroke: var(--lxq-sheet, #fbfdff);
+}
+.lxq-agent-orb-done path {
+    stroke: var(--lxq-sheet, #fbfdff);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.lxq-credit-mark,
+.lxq-credit-mark svg {
+    width: 20px;
+    height: 20px;
+    color: var(--lxq-blue);
+    filter: none;
+}
+.lxq-not-found-emblem {
+    display: inline-flex;
+    width: 120px;
+    height: 120px;
+    justify-content: center;
+    color: var(--lxq-blue);
+}
+.lxq-not-found-emblem > svg {
+    width: 90px;
+    height: 110px;
+    transform: rotate(-20deg);
+}
+@keyframes lxq-orbit {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lxq-agent-orb.is-work .lxq-agent-orb-ring {
+        animation: none;
+    }
+}
+@media (max-width: 640px) {
+    :root[data-skin="luxueqi-tianya"] .creation-home::before {
+        height: 380px;
+        width: 100%;
+        opacity: 0.52;
+        background-position: 65% top;
+    }
+    :root[data-skin="luxueqi-tianya"] .creation-home-embedded .creation-launchpad-heading {
+        min-height: 172px;
+        justify-content: space-between;
+    }
+    :root[data-skin="luxueqi-tianya"] .creation-home-embedded .creation-composer-stage.is-home-mode::before {
+        top: -8px;
+        right: -60px;
+        width: 260px;
+        height: 260px;
+    }
+}
+@layer utilities {
+    :root[data-skin="luxueqi-tianya"] .workspace-signal-icon .lxq-signal-wash {
+        fill: var(--lxq-wash) !important;
+        stroke: none !important;
+    }
+    :root[data-skin="luxueqi-tianya"] .workspace-signal-icon .lxq-signal-bamboo {
+        fill: none !important;
+        stroke: var(--lxq-silver) !important;
+    }
+    :root[data-skin="luxueqi-tianya"] .workspace-signal-icon .lxq-signal-line {
+        fill: none !important;
+        stroke: var(--lxq-blue) !important;
+    }
+    :root[data-skin="luxueqi-tianya"] .workspace-signal-icon .lxq-signal-dot {
+        fill: var(--lxq-blue) !important;
+    }
+    :root[data-skin="luxueqi-tianya"] .workspace-signal-icon .lxq-signal-dot.is-error {
+        fill: var(--status-error) !important;
+    }
+}

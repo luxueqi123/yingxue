@@ -1,0 +1,350 @@
+// 逻辑模型的前台目录与价格展示：把后台配置的逻辑模型投影成用户可见的列表和价格档。
+
+package app
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"infinite-canvas/backend/internal/imagebilling"
+	"infinite-canvas/backend/internal/model"
+)
+
+// PublicLogicalModels 只发布当前分组可用渠道上的线路；价格按分组换算为实际扣费的微积分。
+func (s *Service) PublicLogicalModels(access *userGroupAccess, intent *ModelRequestIntent) ([]PublicLogicalModel, error) {
+	if access == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	policy, err := s.creditPolicy()
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := s.routeCatalogSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]PublicLogicalModel, 0, len(snapshot.Ordered))
+	for _, id := range snapshot.Ordered {
+		cached, visible, groupErr := s.groupLogicalModel(policy, access, snapshot.Models[id])
+		if groupErr != nil || !visible {
+			continue
+		}
+		structuralSpecs := availableCachedRouteSpecs(cached.Routes)
+		coverageValid := logicalModelCapabilityCovered(cached.ProductSpec, structuralSpecs)
+		available := coverageValid && hasHealthyCachedRoute(s, cached.Routes)
+		if intent != nil {
+			resolvedIntent := *intent
+			resolvedIntent.Options = mergeIntentDefaults(intent.Options, cached.Defaults)
+			productMatch := MatchCapability(cached.ProductSpec, resolvedIntent)
+			if !productMatch.Matched {
+				continue
+			}
+			available = false
+			if coverageValid {
+				for _, route := range cached.Routes {
+					priceCompatible := cached.Model.PricePolicy != "channel" || channelModelHasCompatiblePriceTier(route.ChannelModel, resolvedIntent, route.CapabilitySpec)
+					if route.Route.Enabled && route.Route.Weight > 0 && !s.logicalRouteBlocked(route) && MatchCapability(route.CapabilitySpec, resolvedIntent).Matched && priceCompatible {
+						available = true
+						break
+					}
+				}
+			}
+		}
+		result = append(result, publicLogicalModel(cached, available))
+	}
+	return result, nil
+}
+
+// groupLogicalModel 返回按分组过滤线路并换算价格后的副本，不修改共享路由快照。
+// 没有任何可见线路时 visible=false；分组缺少货币兑换比例的线路被跳过。
+func (s *Service) groupLogicalModel(policy CreditPolicy, access *userGroupAccess, cached cachedLogicalModel) (cachedLogicalModel, bool, error) {
+	routes := make([]cachedLogicalRoute, 0, len(cached.Routes))
+	for _, route := range cached.Routes {
+		if !access.allowsChannel(route.ChannelModel.ChannelID) {
+			continue
+		}
+		if cached.Model.PricePolicy == "channel" {
+			channelModel := route.ChannelModel
+			tiers := make([]model.ChannelModelPriceTier, len(channelModel.PriceTiers))
+			copy(tiers, channelModel.PriceTiers)
+			skip := false
+			for index := range tiers {
+				pricing, prices, err := groupTierPricesWithPolicy(policy, access, &channelModel, &tiers[index], channelModel.ModelKey)
+				if err != nil {
+					skip = true
+					break
+				}
+				if tiers[index].ImagePricing != nil {
+					converted, err := imagebilling.MapPrices(tiers[index].ImagePricing, func(price int64) (int64, error) {
+						value, err := pricing.convertPrice(price)
+						if err != nil {
+							return 0, err
+						}
+						return effectiveCatalogPrice(value, pricing.MultiplierBPS), nil
+					})
+					if err != nil {
+						return cached, false, err
+					}
+					tiers[index].ImagePricing = converted
+				}
+				tiers[index].UnitPriceMicrocredits = effectiveCatalogPrice(prices.Unit, pricing.MultiplierBPS)
+				tiers[index].InputTokenPriceMicrocredits = effectiveCatalogPrice(prices.Input, pricing.MultiplierBPS)
+				tiers[index].OutputTokenPriceMicrocredits = effectiveCatalogPrice(prices.Output, pricing.MultiplierBPS)
+				tiers[index].CachedTokenPriceMicrocredits = effectiveCatalogPrice(prices.Cached, pricing.MultiplierBPS)
+				tiers[index].CacheWriteTokenPriceMicrocredits = effectiveCatalogPrice(prices.CacheWrite, pricing.MultiplierBPS)
+			}
+			if skip {
+				continue
+			}
+			channelModel.PriceTiers = tiers
+			route.ChannelModel = channelModel
+		}
+		routes = append(routes, route)
+	}
+	if len(routes) == 0 && len(cached.Routes) > 0 {
+		return cached, false, nil
+	}
+	cached.Routes = routes
+	if cached.Model.PricePolicy != "channel" {
+		pricing, err := access.pricing(model.PriceCurrencyCredits, cached.Model.Code)
+		if err != nil {
+			return cached, false, err
+		}
+		item := cached.Model
+		if item.ImagePricing != nil {
+			converted, err := imagebilling.MapPrices(item.ImagePricing, func(price int64) (int64, error) { return effectiveCatalogPrice(price, pricing.MultiplierBPS), nil })
+			if err != nil {
+				return cached, false, err
+			}
+			item.ImagePricing = converted
+		}
+		item.UnitPriceMicrocredits = effectiveCatalogPrice(item.UnitPriceMicrocredits, pricing.MultiplierBPS)
+		item.InputPriceMicrocredits = effectiveCatalogPrice(item.InputPriceMicrocredits, pricing.MultiplierBPS)
+		item.OutputPriceMicrocredits = effectiveCatalogPrice(item.OutputPriceMicrocredits, pricing.MultiplierBPS)
+		item.CachedPriceMicrocredits = effectiveCatalogPrice(item.CachedPriceMicrocredits, pricing.MultiplierBPS)
+		item.CacheWritePriceMicrocredits = effectiveCatalogPrice(item.CacheWritePriceMicrocredits, pricing.MultiplierBPS)
+		cached.Model = item
+	}
+	return cached, true, nil
+}
+
+func publicLogicalModel(cached cachedLogicalModel, available bool) PublicLogicalModel {
+	item := cached.Model
+	productSpec := capabilitySpecWithRoutePresets(cached.ProductSpec, enabledLogicalRouteSpecs(cached.Routes))
+	profiles := make([]CapabilitySpec, 0, len(cached.Routes))
+	seen := make(map[string]bool, len(cached.Routes))
+	for _, route := range cached.Routes {
+		if !route.Route.Enabled || route.Route.Weight <= 0 {
+			continue
+		}
+		key := capabilityFingerprint(route.CapabilitySpec)
+		if !seen[key] {
+			seen[key] = true
+			profiles = append(profiles, route.CapabilitySpec)
+		}
+	}
+
+	priceTiers := publicLogicalModelPriceTiers(cached)
+	pricingMode, displayPrice, priceLabel := computeModelPriceDisplay(item, priceTiers)
+
+	return PublicLogicalModel{
+		ImagePricing: item.ImagePricing,
+		ID:           item.ID, Code: item.Code, Name: item.Name, Icon: item.Icon,
+		Description: item.Description, Capability: item.Capability, SortOrder: item.SortOrder,
+		PricePolicy: item.PricePolicy, PricingMode: pricingMode, DisplayPrice: displayPrice,
+		PriceLabel: priceLabel, BillingMode: item.BillingMode,
+		UnitPriceMicrocredits:       item.UnitPriceMicrocredits,
+		InputPriceMicrocredits:      item.InputPriceMicrocredits,
+		OutputPriceMicrocredits:     item.OutputPriceMicrocredits,
+		CachedPriceMicrocredits:     item.CachedPriceMicrocredits,
+		CacheWritePriceMicrocredits: item.CacheWritePriceMicrocredits,
+		PriceTiers:                  priceTiers, LegacyModelIDs: decodeLegacyModelIDs(item.LegacyModelIDsJSON),
+		CapabilitySpec: productSpec, CapabilityProfiles: profiles,
+		DefaultOptions: cached.Defaults, Available: available,
+	}
+}
+
+func publicLogicalModelPriceTiers(cached cachedLogicalModel) []PublicLogicalModelPriceTier {
+	if cached.Model.PricePolicy != "channel" {
+		return []PublicLogicalModelPriceTier{}
+	}
+	result := make([]PublicLogicalModelPriceTier, 0)
+	seen := make(map[string]bool)
+	for _, route := range cached.Routes {
+		if !route.Route.Enabled || route.Route.Weight <= 0 {
+			continue
+		}
+		for _, tier := range route.ChannelModel.PriceTiers {
+			if !tier.Enabled || !tier.PriceConfigured {
+				continue
+			}
+			selector := skuSelectorForTier(tier)
+			if parameters := route.CapabilitySpec.ImageParameters; parameters != nil {
+				selector = model.DecodeSKUSelector(tier.SelectorJSON)
+				if validateImageParameterPriceSelector(parameters, selector) != nil {
+					continue
+				}
+			}
+			_, selectorKey, selectorErr := model.CanonicalSKUSelector(selector)
+			if selectorErr != nil {
+				continue
+			}
+			key := fmt.Sprintf("%s:%s:%d:%d:%d:%d:%d", selectorKey, tier.BillingMode, tier.UnitPriceMicrocredits, tier.InputTokenPriceMicrocredits, tier.OutputTokenPriceMicrocredits, tier.CachedTokenPriceMicrocredits, tier.CacheWriteTokenPriceMicrocredits)
+			if tier.ImagePricing != nil {
+				raw, err := json.Marshal(tier.ImagePricing)
+				if err != nil {
+					continue
+				}
+				key += ":" + string(raw)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, PublicLogicalModelPriceTier{ImagePricing: tier.ImagePricing, Selector: selector, Resolution: normalizeChannelModelTierResolution(tier.Resolution), VideoSeconds: tier.VideoSeconds, BillingMode: tier.BillingMode, UnitPriceMicrocredits: tier.UnitPriceMicrocredits, InputTokenPriceMicrocredits: tier.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: tier.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: tier.CachedTokenPriceMicrocredits, CacheWriteTokenPriceMicrocredits: tier.CacheWriteTokenPriceMicrocredits})
+		}
+	}
+	return result
+}
+
+func decodeLegacyModelIDs(raw string) []string {
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return []string{}
+	}
+	return normalizeLegacyModelIDs(values)
+}
+
+func normalizeLegacyModelIDs(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+func enabledLogicalRouteSpecs(routes []cachedLogicalRoute) []CapabilitySpec {
+	specs := make([]CapabilitySpec, 0, len(routes))
+	for _, route := range routes {
+		if !route.Route.Enabled || route.Route.Weight <= 0 {
+			continue
+		}
+		specs = append(specs, route.CapabilitySpec)
+	}
+	return specs
+}
+
+// capabilitySpecWithRoutePresets repairs old front-model snapshots that stored
+// only `*` for a custom size. The wildcard remains for matching custom values,
+// while route presets are restored for admin and creator-side selectors.
+// Callers must pass only currently enabled routes; disabled or zero-weight
+// routes would otherwise advertise size tiers the public catalog cannot route.
+func capabilitySpecWithRoutePresets(spec CapabilitySpec, routes []CapabilitySpec) CapabilitySpec {
+	if spec.Capability == "image" {
+		for _, route := range routes {
+			if route.ImageParameters != nil {
+				return effectiveImageParameterSpec(spec, routes)
+			}
+		}
+	}
+	result := spec
+	result.Options = make(map[string]OptionConstraint, len(spec.Options))
+	for name, constraint := range spec.Options {
+		if !isWildcardOptionConstraint(constraint) {
+			result.Options[name] = constraint
+			continue
+		}
+		values := append([]any(nil), constraint.Values...)
+		seen := make(map[string]bool, len(values))
+		for _, value := range values {
+			seen[normalizedScalar(value)] = true
+		}
+		for _, route := range routes {
+			for _, value := range route.Options[name].Values {
+				key := normalizedScalar(value)
+				if key != "" && !seen[key] {
+					seen[key] = true
+					values = append(values, value)
+				}
+			}
+		}
+		result.Options[name] = OptionConstraint{Values: values}
+	}
+	// 前台规格里的预设可能只来自单条线路的快照（后续新增的供应线路还没同步进来），
+	// 因此不管自身是否已有预设都要与各线路取并集，否则多档会被压成单档。
+	if merged := mergeCapabilityImageSize(append([]CapabilitySpec{spec}, routes...)); merged != nil {
+		if result.ImageSize == nil {
+			result.ImageSize = merged
+		} else {
+			restored := *result.ImageSize
+			if restored.Parameter == "" {
+				restored.Parameter = merged.Parameter
+			}
+			if !restored.AllowCustom {
+				restored.AllowCustom = merged.AllowCustom
+			}
+			restored.Presets = merged.Presets
+			result.ImageSize = &restored
+		}
+	}
+	return result
+}
+
+func mergeCapabilityImageSize(specs []CapabilitySpec) *CapabilityImageSize {
+	var result *CapabilityImageSize
+	seen := map[string]bool{}
+	for _, spec := range specs {
+		part := spec.ImageSize
+		if part == nil {
+			continue
+		}
+		if result == nil {
+			result = &CapabilityImageSize{Parameter: part.Parameter, AllowCustom: part.AllowCustom}
+		} else {
+			if result.Parameter != "aspect_ratio" && part.Parameter == "aspect_ratio" {
+				result.Parameter = "aspect_ratio"
+			} else if result.Parameter == "" {
+				result.Parameter = part.Parameter
+			}
+			result.AllowCustom = result.AllowCustom || part.AllowCustom
+		}
+		for _, preset := range part.Presets {
+			key := preset.Tier + ":" + preset.Ratio + ":" + preset.Size
+			if key == "::" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			result.Presets = append(result.Presets, preset)
+		}
+	}
+	return result
+}
+
+// capabilityFingerprint 用规范化后的结构去重能力画像；不能直接依赖原始 JSON，
+// 因为同一组枚举能力的数组顺序不应造成重复展示。
+func capabilityFingerprint(spec CapabilitySpec) string {
+	copySpec := spec
+	copySpec.Operations = append([]string(nil), spec.Operations...)
+	sort.Strings(copySpec.Operations)
+	copySpec.Inputs = make(map[string]InputConstraint, len(spec.Inputs))
+	for name, constraint := range spec.Inputs {
+		copySpec.Inputs[name] = constraint
+	}
+	copySpec.Options = make(map[string]OptionConstraint, len(spec.Options))
+	for name, constraint := range spec.Options {
+		values := append([]any(nil), constraint.Values...)
+		sort.SliceStable(values, func(i, j int) bool { return normalizedScalar(values[i]) < normalizedScalar(values[j]) })
+		constraint.Values = values
+		copySpec.Options[name] = constraint
+	}
+	encoded, _ := json.Marshal(copySpec)
+	return string(encoded)
+}

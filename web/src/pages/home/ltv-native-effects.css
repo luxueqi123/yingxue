@@ -1,0 +1,365 @@
+/* LTV 31n4_jbbgzclt.css: original dot grid and node flow modules. */
+.ltv-new-canvas:is(:hover, :focus-visible) .CreateCanvasDotGrid-module__kaFbVq__ripple,
+.ltv-new-canvas:is(:hover, :focus-visible) .CreateCanvasNodeLinks-module__wdS5GW__flowMaskPath {
+  animation-play-state: running;
+}
+.CreateCanvasDotGrid-module__kaFbVq__root {
+  --dot-gap:18px;
+  --dot-core:.345px;
+  --dot-feather:1.61px;
+  --dot-color:color-mix(in srgb, var(--nt-bg-brand) 40%, transparent);
+  --dot-color-bright:var(--nt-bg-brand-active);
+  --base-opacity:1;
+  --ripple-opacity:1;
+  --ripple-filter:saturate(1.15) brightness(.96) contrast(1.04);
+  --label-hole-x:210px;
+  --label-hole-y:72px;
+  --mask-from:80px;
+  --mask-to:1200px;
+  --ripple-duration:4s;
+  --ripple-ease:cubic-bezier(.33, 0, .2, 1);
+  --spotlight-radius:120px;
+  --spotlight-opacity:1;
+  --spotlight-fade:.22s;
+  pointer-events: none;
+  contain: paint;
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse var(--label-hole-x) var(--label-hole-y) at 50% 50%,
+      transparent 0%,
+      transparent 28%,
+      #00000059 55%,
+      #000 100%);
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse var(--label-hole-x) var(--label-hole-y) at 50% 50%,
+      transparent 0%,
+      transparent 28%,
+      #00000059 55%,
+      #000 100%);
+  mask-image:
+    radial-gradient(
+      ellipse var(--label-hole-x) var(--label-hole-y) at 50% 50%,
+      transparent 0%,
+      transparent 28%,
+      #00000059 55%,
+      #000 100%);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+@supports (width:round(down, 100%, 1px)) {
+  .CreateCanvasDotGrid-module__kaFbVq__root {
+    width: round(down, 100%, var(--dot-gap));
+    height: round(down, 100%, var(--dot-gap));
+    inset: 50% auto auto 50%;
+    translate: -50% -50%;
+  }
+}
+.dark .CreateCanvasDotGrid-module__kaFbVq__root {
+  --dot-core:.3px;
+  --dot-feather:1.4px;
+  --dot-color:#ffffff1a;
+  --dot-color-bright:#ffffffb3;
+  --ripple-filter:none;
+}
+.CreateCanvasDotGrid-module__kaFbVq__base,
+.CreateCanvasDotGrid-module__kaFbVq__ripple {
+  background-image:
+    radial-gradient(
+      circle,
+      var(--dot-color) var(--dot-core),
+      transparent var(--dot-feather));
+  background-position: 0 0;
+  background-size: var(--dot-gap) var(--dot-gap);
+  position: absolute;
+  inset: 0;
+}
+.CreateCanvasDotGrid-module__kaFbVq__base {
+  opacity: var(--base-opacity);
+}
+.CreateCanvasDotGrid-module__kaFbVq__ripple {
+  background-image:
+    radial-gradient(
+      circle,
+      var(--dot-color-bright) var(--dot-core),
+      transparent var(--dot-feather));
+  filter: var(--ripple-filter);
+  opacity: 0;
+  -webkit-mask-image:
+    radial-gradient(
+      circle,
+      #0000 18%,
+      #0003 32%,
+      #000000d9 50%,
+      #0003 68%,
+      #0000 82%);
+  mask-image:
+    radial-gradient(
+      circle,
+      #0000 18%,
+      #0003 32%,
+      #000000d9 50%,
+      #0003 68%,
+      #0000 82%);
+  -webkit-mask-position: 50%;
+  mask-position: 50%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: var(--mask-from) var(--mask-from);
+  -webkit-mask-size: var(--mask-from) var(--mask-from);
+  mask-size: var(--mask-from) var(--mask-from);
+  animation: CreateCanvasDotGrid-module__kaFbVq__create-dot-ripple-mask var(--ripple-duration) var(--ripple-ease) infinite;
+  animation-play-state: paused;
+}
+.CreateCanvasDotGrid-module__kaFbVq__rippleDelay2 {
+  animation-delay: calc(var(--ripple-duration) / -2);
+}
+.CreateCanvasDotGrid-module__kaFbVq__spotlight {
+  --mx:50%;
+  --my:50%;
+  background-image:
+    radial-gradient(
+      circle,
+      var(--dot-color-bright) var(--dot-core),
+      transparent var(--dot-feather));
+  background-position: 0 0;
+  background-size: var(--dot-gap) var(--dot-gap);
+  filter: var(--ripple-filter);
+  opacity: 0;
+  transition: opacity var(--spotlight-fade) ease;
+  -webkit-mask-image:
+    radial-gradient(
+      circle var(--spotlight-radius) at var(--mx) var(--my),
+      #000 0%,
+      #000000d9 28%,
+      #00000059 55%,
+      transparent 72%);
+  -webkit-mask-image:
+    radial-gradient(
+      circle var(--spotlight-radius) at var(--mx) var(--my),
+      #000 0%,
+      #000000d9 28%,
+      #00000059 55%,
+      transparent 72%);
+  mask-image:
+    radial-gradient(
+      circle var(--spotlight-radius) at var(--mx) var(--my),
+      #000 0%,
+      #000000d9 28%,
+      #00000059 55%,
+      transparent 72%);
+  position: absolute;
+  inset: 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.CreateCanvasDotGrid-module__kaFbVq__root[data-hover=true] .CreateCanvasDotGrid-module__kaFbVq__spotlight {
+  opacity: var(--spotlight-opacity);
+}
+@keyframes CreateCanvasDotGrid-module__kaFbVq__create-dot-ripple-mask {
+  0% {
+    -webkit-mask-size: var(--mask-from) var(--mask-from);
+    -webkit-mask-size: var(--mask-from) var(--mask-from);
+    mask-size: var(--mask-from) var(--mask-from);
+    opacity: 0;
+  }
+  16% {
+    opacity: var(--ripple-opacity);
+  }
+  to {
+    -webkit-mask-size: var(--mask-to) var(--mask-to);
+    -webkit-mask-size: var(--mask-to) var(--mask-to);
+    mask-size: var(--mask-to) var(--mask-to);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .CreateCanvasDotGrid-module__kaFbVq__ripple {
+    opacity: .3;
+    animation: none;
+    -webkit-mask-size: 280px 280px;
+    mask-size: 280px 280px;
+  }
+  .CreateCanvasDotGrid-module__kaFbVq__rippleDelay2,
+  .CreateCanvasDotGrid-module__kaFbVq__spotlight {
+    display: none;
+  }
+}
+.CreateCanvasNodeLinks-module__wdS5GW__stage {
+  --link-width:139.47px;
+  --link-height:66.7677px;
+  --node-width:179.53px;
+  --node-height:103.86px;
+  --node-radius:11.87px;
+  --node-stroke:1.484px;
+  --dot-size:7.914px;
+  --pill-gap:8px;
+  --flow-duration:4s;
+  --flow-delay:1.6s;
+  --flow-ease:cubic-bezier(.4, 0, .2, 1);
+  --flow-color:#000;
+  --flow-opacity:.34;
+  z-index: 1;
+  flex: none;
+  width: fit-content;
+  display: block;
+  position: relative;
+}
+.dark .CreateCanvasNodeLinks-module__wdS5GW__stage {
+  --flow-color:#fff;
+  --flow-opacity:.5;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__group {
+  pointer-events: none;
+  z-index: 0;
+  width: var(--link-width);
+  height: calc(var(--link-height) * 2);
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__center {
+  z-index: 2;
+  position: relative;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__groupLeft {
+  right: calc(100% + var(--pill-gap));
+}
+.CreateCanvasNodeLinks-module__wdS5GW__groupRight {
+  left: calc(100% + var(--pill-gap));
+  transform: scaleX(-1);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__link {
+  z-index: 0;
+  width: var(--link-width);
+  height: var(--link-height);
+  position: absolute;
+  left: 0;
+  overflow: visible;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__linkUpper {
+  top: 0;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__linkLower {
+  bottom: 0;
+  transform: scaleY(-1);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__linkBase,
+.CreateCanvasNodeLinks-module__wdS5GW__linkFlow {
+  fill: none;
+  stroke-width: var(--node-stroke);
+  vector-effect: non-scaling-stroke;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__linkBase {
+  stroke: var(--nt-border-neutral-l1);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__linkFlow {
+  stroke: var(--flow-color);
+  stroke-linecap: round;
+  opacity: var(--flow-opacity);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__flowMask {
+  mask-type: alpha;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__flowMaskPath {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 10px;
+  stroke-dasharray: .24 2.76;
+  stroke-dashoffset: -1px;
+  stroke-linecap: round;
+  animation: CreateCanvasNodeLinks-module__wdS5GW__create-canvas-link-flow var(--flow-duration) var(--flow-ease) var(--flow-delay) infinite;
+  animation-play-state: paused;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__flowMaskPathDelay2 {
+  animation-delay: calc(var(--flow-delay) + var(--flow-duration) / -2);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__dot {
+  z-index: 1;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  background-color: var(--nt-bg-canvas);
+  background-image: linear-gradient(var(--nt-bg-overlay-active), var(--nt-bg-overlay-active));
+  opacity: 0;
+  border-radius: 9999px;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  translate: 50% -50%;
+}
+.CreateCanvasNodeLinks-module__wdS5GW__node {
+  z-index: 2;
+  box-sizing: border-box;
+  width: var(--node-width);
+  height: var(--node-height);
+  border: var(--node-stroke) solid var(--nt-border-neutral-l1);
+  border-radius: var(--node-radius);
+  background: color-mix(in srgb, var(--nt-bg-invert) 5%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  position: absolute;
+}
+.dark .CreateCanvasNodeLinks-module__wdS5GW__node {
+  background: color-mix(in srgb, var(--nt-bg-invert) 2%, transparent);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__nodeUpper {
+  top: calc(var(--node-height) / -2);
+  right: calc(100% - 22px);
+}
+.CreateCanvasNodeLinks-module__wdS5GW__nodeLower {
+  top: calc(var(--link-height) * 2 - var(--node-height) / 2 + 22px);
+  right: calc(100% - 22px);
+}
+@keyframes CreateCanvasNodeLinks-module__wdS5GW__create-canvas-link-flow {
+  0% {
+    stroke-dashoffset: -1px;
+  }
+  35% {
+    stroke-dashoffset: .24px;
+  }
+  35%, to {
+    stroke-dashoffset: .24px;
+  }
+}
+@media (min-width: 768px) and (max-width: 1279px) {
+  .CreateCanvasNodeLinks-module__wdS5GW__stage {
+    --link-width:120px;
+    --link-height:58px;
+    --node-width:140px;
+    --node-height:80px;
+    --node-radius:10.5px;
+    --dot-size:7px;
+    --pill-gap:7px;
+  }
+  .CreateCanvasNodeLinks-module__wdS5GW__nodeUpper,
+  .CreateCanvasNodeLinks-module__wdS5GW__nodeLower {
+    right: calc(100% - 34px);
+  }
+}
+@media (max-width: 767px) {
+  .CreateCanvasNodeLinks-module__wdS5GW__stage {
+    --link-width:104px;
+    --link-height:50px;
+    --node-width:112px;
+    --node-height:64px;
+    --node-radius:10px;
+    --dot-size:6px;
+    --pill-gap:6px;
+  }
+  .CreateCanvasNodeLinks-module__wdS5GW__nodeUpper,
+  .CreateCanvasNodeLinks-module__wdS5GW__nodeLower {
+    right: calc(100% - 48px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .CreateCanvasNodeLinks-module__wdS5GW__flowMaskPath {
+    stroke-dashoffset: -.38px;
+    animation: none;
+  }
+  .CreateCanvasNodeLinks-module__wdS5GW__flowMaskPathDelay2 {
+    display: none;
+  }
+}

@@ -1,0 +1,333 @@
+{
+  "version": 1,
+  "withdrawn": [
+    {
+      "id": "case-40c4c14cc98d448aad6fb9ccf8aa3cbe",
+      "reason": "missing-reviewed-cover"
+    },
+    {
+      "id": "case-ed539a7e4b1d4efbbc01e726ad80605e",
+      "reason": "missing-reviewed-cover"
+    },
+    {
+      "id": "case-b588660e2e10490e8da147b7a7b57a18",
+      "reason": "missing-reviewed-cover"
+    },
+    {
+      "id": "case-66c714e782b543919af8bd0967918428",
+      "reason": "missing-reviewed-cover"
+    },
+    {
+      "id": "case-19a5252f8c8044a682b220a4c359ac19",
+      "reason": "title-and-video-brand"
+    },
+    {
+      "id": "case-5d4fbcff82a64b9fbbed41b719f8cd76",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-240201f7fe774571bdb178f74e83a6c0",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-241dafd71d83411c8ef3d315116f190e",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-3fd91499028e45e4aaa163508fd91902",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-4321894032df433f91b17cdb6c38b171",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-6d82b4eab5f94bd7b85b4e53c974beb5",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-86346ecc862842508a47fdc9bac7bc73",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-99606f439f4047eebc221c88da38ba2d",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-9a096de2e3274198aeedf1e297242c6e",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-a6be4321645a4dd0a7e0a1dc2cbee879",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-b042739143dc46deb973bb7cf68dd3cd",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-b7dc80558cb4456389efa35b7b435f68",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-bbd112aa76f54da38867d4023ed3f0df",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-dbbbb173237e4445af543b317a0ef3df",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-ee4243e2e6794a5daafdc2b31de6be4e",
+      "reason": "cover-brand"
+    },
+    {
+      "id": "case-5f842013f7ac4c80a4dfe41e0868fee7",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-37ff9b09565449eca1f83e887c9fd9c3",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-5ed0b8f402fa449a8fd84f63c8ae2a88",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-6997e82a18334655b312bcc0a6f5df40",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-8eba7af2263d4b45bc9a7ecd7504537c",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-a43ecf6eebda4291b07cc1910dbea213",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-57919a01985e40f8818b819b7ccb6bfe",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-7b2a364e4523403dbafd161370690088",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-82e588c5a3c7477c8d0870dac3579224",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-a7f47cae62914b9cb8b8fa77e04b8472",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-dc8eb94c8d20464683bb6ad7a8576ec1",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-002e87a8d90247e7a342c58e894dae79",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-265abec6fe9649b389caccebd2cdb560",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-2a29d513cb89468e8f5053c4818e3740",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-36d233bb05d942a69c90170025be4c0d",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-3e71dbbafff44e31968baa0604191484",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-54f59d4b780b4b5f9131cb304bac64a9",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-76d7dd345cb04d9291504cc6c29569c4",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-7a31f489cf214cad80d36d3e739c4a43",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-8c2049ab9a884171992912cc56dfee9e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-ae89a9880159416e86bf9f0245695647",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-be978bfe43cc4c038f3ffd0417f648cc",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-e2badcdbfa214b938448388c17f8167e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-f52ca80ff7344aafbd52dd079a9c1d41",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-f846e83077bf4385ba89aae95d167c5e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-00c29a5fba074e889e6d466d9623ed30",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-0588e31dfd3a49d2b8ca5eca6e744ab7",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-1b4f2f2a233743699caadf828f3ba076",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-42bd4670408241a5a3d22dfaa7c7261c",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-54cf2e99db18491baf87bfa00b99931f",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-7d6fbacdef864a60bc7a1cb42a263a0e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-c4851966b29848fb9445624c7a477699",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-ec3e1224283448ebafa75f41677a6c9a",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-ef11cf17a55f4c78b268328d90b97ff1",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-14aeabcdd2b34cc788e163a6cd25efaf",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-8c0a275b899449a3909dc6faf64fb67b",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-aa8c7cf96bca4ce2aa42a0d40f46b0c6",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-da7309e046e04052888ed51f3da3b926",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-1a469a394fdf43539871ab8b9788f3a8",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-5a3cb71af1fa4f3fbca5b1bce5d68124",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-b4ed453cd8a74195be8da308bbb12ed4",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-0a081077d83b49f49f3a9efc16b3e42f",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-188cd0d2574c495bb32875c8141a5310",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-28f7c84f9b1740399ff01d38b9cbae37",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-31f0dd1ea7b24eacb77998de6ae5105e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-65d87aba29f64e8399ae184aa53134df",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-8eee3e10b8c3442882ac631511100ce2",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-9d25c7f555424d60a940b0d3d8f13750",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-b797eaf61f3446feb9690fab0d41d011",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-dd2bdf617b474f0ea9ef1da8495ad995",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-1710baffb51044eaa5eb07608984b08e",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-304d7478ff0d4a32bdc79a6582f0a74c",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-31b600ea119b48e0bf69ca0672d18856",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-478efe8b6f714c25a17046b596d225a3",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-66aaac286b4241c294b37938be4482e2",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-72a59573699c44fcaacb6710e38b6087",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-797182bb00d541849a5c538e35758aa9",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-80ef02c5841448b7bda2b36600cac830",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-81df68ca246f451292718ab782bb9288",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-dbb918dfeaa843a6967aa35e0db2f992",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-e3d4bed4f39e4c3587736b4d34a0f53a",
+      "reason": "video-brand"
+    },
+    {
+      "id": "case-eaac03bc4139490bb5030630c3db8a76",
+      "reason": "video-brand"
+    }
+  ]
+}

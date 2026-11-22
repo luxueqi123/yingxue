@@ -1,6 +1,7 @@
 import { modelCapabilityConfigFor, videoResolutionRequest } from "@/lib/model-capabilities";
+import { artdance25Resolution, videoGenerationsReferenceError } from "@/lib/video-generations-constraints";
 import { boolConfig } from "@/lib/seedance-video";
-import { getResourceOSSUrl } from "@/services/api/resources";
+import { getResourceInputURL } from "@/services/api/resources";
 import { modelOptionName } from "@/stores/use-config-store";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import type { ReferenceImage } from "@/types/image";
@@ -8,25 +9,38 @@ import type { ReferenceImage } from "@/types/image";
 import type { ApiEnvelope, ApiVideoResponse, RequestOptions, ResolvedAiConfig, VideoGenerationTask, VideoGenerationTaskState } from "./video-contracts";
 import type { VideoProviderDeps } from "./video-provider-deps";
 import { normalizeVideoSeconds, normalizeVideoSize } from "./video-validation";
+import { hasExplicitVideoFrames, resolveVideoImageReferences } from "./video-reference-roles";
 
 export async function createVideoGenerationsTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    if (references.length > 9 || videoReferences.length > 3 || audioReferences.length > 3) throw new Error("NewAPI Video Generations 最多支持 9 张参考图、3 个参考视频和 3 个参考音频");
+    const providerModel = modelOptionName(model);
+    const fixedResolution = artdance25Resolution(providerModel);
+    if (fixedResolution && config.vquality && config.vquality.toLowerCase() !== fixedResolution) throw new Error("Artdance 模型名称已固定分辨率，请选择匹配的模型档位。");
+    const profile = modelCapabilityConfigFor(config, model).video!;
+    const { maxImages, maxVideos, maxAudios } = profile.references;
+    if (references.length > maxImages || videoReferences.length > maxVideos || audioReferences.length > maxAudios) {
+        throw new Error(`NewAPI Video Generations 当前模型最多支持 ${maxImages} 张参考图、${maxVideos} 个参考视频和 ${maxAudios} 个参考音频`);
+    }
     if (audioReferences.length > 0 && videoReferences.length === 0) throw new Error("NewAPI Video Generations 的参考音频必须同时提供至少 1 个参考视频；纯音频生视频请切换到支持该模式的渠道");
     const [imageUrls, videoUrls, audioUrls] = await Promise.all([
         Promise.all(references.map((item) => resolveVideoGenerationsUrl(item.url || item.dataUrl, item.storageKey))),
         Promise.all(videoReferences.map((item) => resolveVideoGenerationsUrl(item.url, item.storageKey))),
         Promise.all(audioReferences.map((item) => resolveVideoGenerationsUrl(item.url, item.storageKey))),
     ]);
-    const profile = modelCapabilityConfigFor(config, model).video!;
     const resolution = newAPIVideoResolutionRequest(profile, config.vquality, modelOptionName(model));
+    const imageRoles = fixedResolution && hasExplicitVideoFrames(options) ? resolveVideoImageReferences(references, options, { videoCount: videoReferences.length, audioCount: audioReferences.length }) : references.map(image => ({ image, role: "reference_image" as const }));
+    const firstFrame = imageRoles.findIndex(item => item.role === "first_frame");
+    const lastFrame = imageRoles.findIndex(item => item.role === "last_frame");
+    const referenceUrls = imageUrls.filter((_, index) => imageRoles[index].role === "reference_image");
     const payload = {
         model: modelOptionName(model),
         prompt: prompt.trim(),
         seconds: normalizeVideoSeconds(config.videoSeconds),
         aspect_ratio: normalizeVideoSize(config.size) || "16:9",
-        ...(resolution ? { resolution } : {}),
+        ...(!fixedResolution && resolution ? { resolution } : {}),
         ...(profile.generateAudio.supported ? { generate_audio: boolConfig(config.videoGenerateAudio, profile.generateAudio.default) } : {}),
-        ...(imageUrls.length ? { image_urls: imageUrls } : {}),
+        ...(referenceUrls.length ? { image_urls: referenceUrls } : {}),
+        ...(firstFrame >= 0 ? { start_image_url: imageUrls[firstFrame] } : {}),
+        ...(lastFrame >= 0 ? { end_image_url: imageUrls[lastFrame] } : {}),
         ...(videoUrls.length ? { video_urls: videoUrls } : {}),
         ...(audioUrls.length ? { audio_urls: audioUrls } : {}),
     };
@@ -50,7 +64,7 @@ export async function pollVideoGenerationsTask(deps: VideoProviderDeps, task: Vi
             if (!url) return { status: "failed", error: "视频任务已完成但没有返回视频地址" };
             return { status: "completed", result: await deps.response.videoResultFromUrl(url, options) };
         }
-        if (status === "FAILURE" || status === "FAILED" || status === "CANCELLED") return { status: "failed", error: String(state.fail_reason || state.error || "视频生成失败") };
+        if (status === "ERROR" || status === "FAILURE" || status === "FAILED" || status === "CANCELLED") return { status: "failed", error: String(state.fail_reason || state.error || "视频生成失败") };
         return { status: "pending" };
     } catch (error) {
         throw new Error(deps.response.readAxiosError(error, "NewAPI Video Generations 任务查询失败"));
@@ -63,7 +77,7 @@ function newAPIVideoResolutionRequest(profile: NonNullable<ReturnType<typeof mod
 }
 
 async function resolveVideoGenerationsUrl(value: string | undefined, storageKey?: string) {
-    if (storageKey?.startsWith("resource:")) return getResourceOSSUrl(storageKey);
+    if (storageKey?.startsWith("resource:")) return getResourceInputURL(storageKey);
     if (isPublicMediaUrl(value || "")) return String(value);
     throw new Error("NewAPI Video Generations 的参考素材需要公网 URL；请先把素材保存到对象存储");
 }

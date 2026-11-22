@@ -1,80 +1,85 @@
+import { interfaceTranslator, type InterfaceLocale, type InterfaceTranslate } from "@/lib/interface-locale";
 import { getNodeListLabel } from "@/lib/canvas/node-registry";
+import { producedModelLabel, producedModelSearchTerms } from "@/lib/canvas/produced-model";
+import type { AiConfig } from "@/stores/use-config-store";
 import { canvasNodeCreatedAt, canvasNodeUpdatedAt } from "@/lib/canvas/canvas-node-timestamps";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-
-const searchTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-});
-
-export function searchCanvasNodes(nodes: CanvasNodeData[], query: string, limit = 80) {
+import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
+export function searchCanvasNodes(nodes: CanvasNodeData[], query: string, limit = 80, config?: AiConfig, t?: InterfaceTranslate) {
     const keyword = query.trim().toLocaleLowerCase();
     return nodes
-        .filter((node) => !keyword || canvasNodeSearchTerms(node).some((value) => value.toLocaleLowerCase().includes(keyword)))
+        .filter((node) => !keyword || canvasNodeSearchTerms(node, config, t).some((value) => value.toLocaleLowerCase().includes(keyword)))
         .toSorted((left, right) => timestampValue(canvasNodeUpdatedAt(right)) - timestampValue(canvasNodeUpdatedAt(left)))
         .slice(0, keyword ? limit : Math.min(limit, 40));
 }
-
-export function canvasNodeSearchContext(node: CanvasNodeData) {
-    const location = [node.metadata?.chapterTitle, typeof node.metadata?.shotIndex === "number" ? `镜头 ${node.metadata.shotIndex + 1}` : ""].filter(Boolean).join(" · ");
-    const textContent = node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Markdown || node.type === CanvasNodeType.Script || node.type === CanvasNodeType.Skill
-        ? node.metadata?.content
-        : undefined;
-    return location || node.metadata?.prompt || node.metadata?.composerContent || node.metadata?.workflowDescription || textContent || getNodeListLabel(node.type);
+export function canvasNodeSearchContext(node: CanvasNodeData, t: InterfaceTranslate = interfaceTranslator("zh-CN")) {
+    const location = [node.metadata?.chapterTitle, typeof node.metadata?.shotIndex === "number" ? t("creationPageShotNumber", { shot: node.metadata.shotIndex + 1 }) : ""].filter(Boolean).join(" · ");
+    const textContent = node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Script || node.type === CanvasNodeType.Skill ? node.metadata?.content : undefined;
+    return location || nodeGenerationPrompt(node) || node.metadata?.workflowDescription || textContent || getNodeListLabel(node.type, t);
 }
-
-export function canvasNodeMaterialSummary(node: CanvasNodeData) {
-    const details = [getNodeListLabel(node.type)];
+export function canvasNodeMaterialSummary(node: CanvasNodeData, config?: AiConfig, t: InterfaceTranslate = interfaceTranslator("zh-CN")) {
+    const details = [getNodeListLabel(node.type, t)];
     const width = node.metadata?.naturalWidth;
     const height = node.metadata?.naturalHeight;
     if (width && height) details.push(`${width}×${height}`);
-    if (node.metadata?.durationMs) details.push(formatDuration(node.metadata.durationMs));
+    if (node.metadata?.durationMs) details.push(formatDuration(node.metadata.durationMs, t));
     if (node.metadata?.bytes) details.push(formatBytes(node.metadata.bytes));
-    if (node.metadata?.model) details.push(node.metadata.model);
+    const producedModel = node.metadata?.producedModel;
+    if (producedModel) details.splice(1, 0, config ? producedModelLabel(config, producedModel) : producedModel);
     return details.slice(0, 3).join(" · ");
 }
-
-export function canvasNodeSearchTimes(node: CanvasNodeData) {
+export function canvasNodeSearchTimes(node: CanvasNodeData, locale: InterfaceLocale = "zh-CN") {
+    const searchTimeFormatter = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+    const t = interfaceTranslator(locale);
     const createdAt = canvasNodeCreatedAt(node);
     const updatedAt = canvasNodeUpdatedAt(node);
     return {
         createdAt,
         updatedAt,
-        createdLabel: createdAt ? searchTimeFormatter.format(new Date(createdAt)) : "未记录",
-        updatedLabel: updatedAt ? searchTimeFormatter.format(new Date(updatedAt)) : "未记录",
+        createdLabel: createdAt ? searchTimeFormatter.format(new Date(createdAt)) : t("pluginUi.notRecorded"),
+        updatedLabel: updatedAt ? searchTimeFormatter.format(new Date(updatedAt)) : t("pluginUi.notRecorded"),
     };
 }
-
-function canvasNodeSearchTerms(node: CanvasNodeData) {
+function canvasNodeSearchTerms(node: CanvasNodeData, config?: AiConfig, t?: InterfaceTranslate) {
     return [
         node.title,
         node.type,
         getNodeListLabel(node.type),
-        node.metadata?.prompt,
-        node.metadata?.composerContent,
+        ...(t ? [getNodeListLabel(node.type, t), canvasNodeSearchContext(node, t)] : []),
+        nodeGenerationPrompt(node),
         node.metadata?.model,
+        ...producedModelSearchTerms(node.metadata, config),
         node.metadata?.chapterTitle,
         node.metadata?.workflowTitle,
         node.metadata?.workflowDescription,
         typeof node.metadata?.shotIndex === "number" ? `镜头 ${node.metadata.shotIndex + 1}` : "",
         ...(node.metadata?.assetTags || []),
+        // 分镜单元格文本：搜索占位符承诺可搜「镜头」，镜头提示词与台词必须可命中。
+        ...storyboardCellSearchTerms(node),
     ].filter((value): value is string => typeof value === "string" && Boolean(value));
 }
-
+function storyboardCellSearchTerms(node: CanvasNodeData) {
+    // 分镜表（批量表节点）：每镜提示词在 batchTable.rows[].prompt；标准分镜结构与
+    // 单元格文本分别在 storyboardRows 与 cells。
+    const table = node.metadata?.batchTable;
+    const batchTerms = table ? [...table.rows.map((row) => row.prompt), ...(table.contentKind === "storyboard" ? (table.storyboardRows || []).flatMap(storyboardRowSearchTerms) : []), ...table.rows.flatMap((row) => Object.values(row.cells ?? {}))] : [];
+    // 分镜脚本节点的标准分镜结构：镜头视频提示词（videoMotionPrompt）、台词等单元格文本。
+    const scriptRows = node.metadata?.storyboard?.rows || [];
+    const scriptTerms = scriptRows.flatMap(storyboardRowSearchTerms);
+    return [...batchTerms, ...scriptTerms];
+}
+function storyboardRowSearchTerms(row: { plotDescription?: string; dialogue?: string; narrativeIntent?: string; performanceBlocking?: string; videoMotionPrompt?: string; imageGenerationPrompt?: string }) {
+    return [row.videoMotionPrompt, row.plotDescription, row.dialogue, row.imageGenerationPrompt, row.narrativeIntent, row.performanceBlocking];
+}
 function timestampValue(value?: string) {
     const timestamp = value ? Date.parse(value) : 0;
     return Number.isFinite(timestamp) ? timestamp : 0;
 }
-
-function formatDuration(durationMs: number) {
+function formatDuration(durationMs: number, t: InterfaceTranslate) {
     const seconds = Math.max(0, Math.round(durationMs / 1000));
-    if (seconds < 60) return `${seconds}秒`;
-    return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+    if (seconds < 60) return t("tasksUi.durationSeconds", { seconds });
+    return t("tasksUi.durationMinutesSeconds", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
 }
-
 function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;

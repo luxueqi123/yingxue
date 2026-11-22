@@ -3,6 +3,7 @@ import { useEffect, type Dispatch, type SetStateAction } from "react";
 import type { CanvasNodeData, ContextMenuState } from "@/types/canvas";
 
 type UseCanvasKeyboardOptions = {
+    enabled?: boolean;
     nodesRef: { current: CanvasNodeData[] };
     selectedNodeIdsRef: { current: Set<string> };
     selectedConnectionId: string | null;
@@ -12,7 +13,7 @@ type UseCanvasKeyboardOptions = {
     setShortcutRequestNonce: Dispatch<SetStateAction<number>>;
     setInfoNodeId: Dispatch<SetStateAction<string | null>>;
     setCropNodeId: Dispatch<SetStateAction<string | null>>;
-    setMaskEditNodeId: Dispatch<SetStateAction<string | null>>;
+    setRegionEditNodeId: Dispatch<SetStateAction<string | null>>;
     setAnnotationNodeId: Dispatch<SetStateAction<string | null>>;
     saveCanvasProject: () => unknown;
     zoomToActualSize: () => void;
@@ -49,6 +50,7 @@ export function hasCanvasTextSelection(selection: TextSelectionLike | null | und
 }
 
 export function useCanvasKeyboard({
+    enabled = true,
     nodesRef,
     selectedNodeIdsRef,
     selectedConnectionId,
@@ -58,7 +60,7 @@ export function useCanvasKeyboard({
     setShortcutRequestNonce,
     setInfoNodeId,
     setCropNodeId,
-    setMaskEditNodeId,
+    setRegionEditNodeId,
     setAnnotationNodeId,
     saveCanvasProject,
     zoomToActualSize,
@@ -84,6 +86,7 @@ export function useCanvasKeyboard({
     beginBatchConnection,
 }: UseCanvasKeyboardOptions) {
     useEffect(() => {
+        if (!enabled) return;
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target instanceof Element ? event.target : null;
             if (target?.closest(".canvas-node-toolbar, .canvas-node-toolbar-menu")) return;
@@ -128,7 +131,7 @@ export function useCanvasKeyboard({
             if (isCanvasControlTarget && !(isModifierShortcut && !event.altKey && (key === "c" || key === "v"))) return;
             if (event.altKey && !isModifierShortcut && key === "l") {
                 event.preventDefault();
-                if (!event.repeat && selectedNodeIdsRef.current.size > 1) beginBatchConnection();
+                if (!event.repeat && selectedNodeIdsRef.current.size > 0) beginBatchConnection();
                 return;
             }
             if (event.key === "?" && !isModifierShortcut && !event.altKey) {
@@ -173,9 +176,12 @@ export function useCanvasKeyboard({
                 if (shouldPreferCopiedNodes()) {
                     event.preventDefault();
                     if (pasteCopiedNodes()) return;
-                    void navigator.clipboard?.readText?.().then((text) => {
-                        if (restoreCopiedNodesFromText(text)) pasteCopiedNodes();
-                    }).catch(() => undefined);
+                    void navigator.clipboard
+                        ?.readText?.()
+                        .then((text) => {
+                            if (restoreCopiedNodesFromText(text)) pasteCopiedNodes();
+                        })
+                        .catch(() => undefined);
                 }
                 return;
             }
@@ -184,9 +190,13 @@ export function useCanvasKeyboard({
                 else if (selectedConnectionId) deleteConnection(selectedConnectionId);
             }
             if (event.key === "Escape") {
-                // 沉浸专注：无选中且无弹窗/下拉/右键菜单时，Esc 退出专注；否则保留原有取消选择行为。
-                const hasFocusOverlay = Boolean(document.querySelector(".ant-modal-wrap, .ant-dropdown, .ant-select-dropdown, .ant-popover, [data-canvas-context-menu]"));
-                if (focusMode && !selectedNodeIdsRef.current.size && !hasFocusOverlay) {
+                // 先让可见浮层处理 Esc，避免关闭弹窗时连底层选择和播放一起取消。
+                // AntD 可能保留已关闭的浮层 DOM，不能只判断元素存在。
+                const hasFocusOverlay = Array.from(document.querySelectorAll<HTMLElement>(".ant-modal-wrap, .ant-dropdown, .ant-select-dropdown, .ant-popover, [data-canvas-context-menu]")).some(
+                    (overlay) => overlay.getClientRects().length > 0 && window.getComputedStyle(overlay).visibility !== "hidden" && !overlay.closest('[hidden], [aria-hidden="true"], [inert]'),
+                );
+                if (hasFocusOverlay) return;
+                if (focusMode && !selectedNodeIdsRef.current.size) {
                     event.stopPropagation();
                     exitFocusMode();
                     return;
@@ -194,7 +204,7 @@ export function useCanvasKeyboard({
                 deselectCanvas();
                 setInfoNodeId(null);
                 setCropNodeId(null);
-                setMaskEditNodeId(null);
+                setRegionEditNodeId(null);
                 setAnnotationNodeId(null);
             }
         };
@@ -219,5 +229,40 @@ export function useCanvasKeyboard({
             window.removeEventListener("keydown", handleKeyDown, true);
             window.removeEventListener("paste", handlePaste, true);
         };
-    }, [beginBatchConnection, cancelSelectionBox, copySelectedNodes, deleteConnection, deleteNodes, deselectCanvas, exitFocusMode, fitCanvasContent, fitCanvasSelection, focusMode, nodesRef, onOpenSearch, pasteCopiedNodes, pasteSystemClipboard, redoCanvas, restoreCopiedNodesFromText, saveCanvasProject, selectedConnectionId, selectedNodeIdsRef, setAnnotationNodeId, setContextMenu, setCropNodeId, setInfoNodeId, setMaskEditNodeId, setSelectedConnectionId, setSelectedNodeIds, setShortcutRequestNonce, shouldPreferCopiedNodes, toggleFocusMode, undoCanvas, zoomCanvasIn, zoomCanvasOut, zoomToActualSize]);
+    }, [
+        enabled,
+        beginBatchConnection,
+        cancelSelectionBox,
+        copySelectedNodes,
+        deleteConnection,
+        deleteNodes,
+        deselectCanvas,
+        exitFocusMode,
+        fitCanvasContent,
+        fitCanvasSelection,
+        focusMode,
+        nodesRef,
+        onOpenSearch,
+        pasteCopiedNodes,
+        pasteSystemClipboard,
+        redoCanvas,
+        restoreCopiedNodesFromText,
+        saveCanvasProject,
+        selectedConnectionId,
+        selectedNodeIdsRef,
+        setAnnotationNodeId,
+        setContextMenu,
+        setCropNodeId,
+        setInfoNodeId,
+        setRegionEditNodeId,
+        setSelectedConnectionId,
+        setSelectedNodeIds,
+        setShortcutRequestNonce,
+        shouldPreferCopiedNodes,
+        toggleFocusMode,
+        undoCanvas,
+        zoomCanvasIn,
+        zoomCanvasOut,
+        zoomToActualSize,
+    ]);
 }

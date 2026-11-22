@@ -1,0 +1,808 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "kling-v25-video",
+  "name": "Kling 2.5 Turbo Video",
+  "version": "1.0.1",
+  "author": "影策",
+  "description": "Kling 2.5 Turbo同版本首帧与首尾帧声明式协议。",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "kling-v25-video",
+        "label": "Kling 2.5 Turbo Video",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api-beijing.klingai.com",
+        "requiresPublicMediaUrls": false,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "inputImages": {
+          "formats": [
+            "jpeg",
+            "png"
+          ],
+          "maxBytes": 10000000,
+          "minShortSide": 300,
+          "minAspectRatio": 0.4,
+          "maxAspectRatio": 2.5
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "values": [
+              "kling-v2-5-turbo"
+            ],
+            "mapping": "model_name",
+            "description": "精确2.5模型版本。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "原始提示词，不能截断。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": true,
+            "mapping": "image/image_tail",
+            "description": "按显式first_frame和last_frame角色取值。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "values": [
+              "5",
+              "10"
+            ],
+            "mapping": "duration",
+            "description": "5或10秒。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ],
+            "mapping": "mode",
+            "description": "与std/pro对应。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "providerOptions.kling-v25-video",
+            "description": "仅本Provider命名空间mode。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.model"
+                },
+                "kling-v2-5-turbo"
+              ]
+            },
+            "message": "此协议只接受实际Kling 2.5 Turbo模型，不能使用3.0或源平台别名"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$ref": "request.operation"
+                },
+                "image_to_video"
+              ]
+            },
+            "message": "此入口只承接首帧或首尾帧图生视频"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$ref": "request.prompt"
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$ref": "request.prompt"
+                      }
+                    },
+                    2500
+                  ]
+                }
+              ]
+            },
+            "message": "原始提示词必须完整且不超过2500字符"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.providerOptions.kling-v25-video.mode"
+                },
+                [
+                  "std",
+                  "pro"
+                ]
+              ]
+            },
+            "message": "2.5模式只支持std和pro"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$lower": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.resolution"
+                      },
+                      {
+                        "$ref": "request.resolution"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "$if": {
+                    "condition": {
+                      "$eq": [
+                        {
+                          "$ref": "request.providerOptions.kling-v25-video.mode"
+                        },
+                        "pro"
+                      ]
+                    },
+                    "then": "1080p",
+                    "else": "720p"
+                  }
+                }
+              ]
+            },
+            "message": "分辨率必须匹配2.5质量档位"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.duration"
+                    },
+                    {
+                      "$ref": "request.duration"
+                    },
+                    5
+                  ]
+                },
+                [
+                  5,
+                  10
+                ]
+              ]
+            },
+            "message": "2.5只支持5或10秒"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.aspectRatio"
+                    },
+                    {
+                      "$ref": "request.aspectRatio"
+                    },
+                    "adaptive"
+                  ]
+                },
+                [
+                  "",
+                  "auto",
+                  "adaptive"
+                ]
+              ]
+            },
+            "message": "图生视频画幅由原图决定，不能忽略固定输出画幅"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.generateAudio"
+                    },
+                    {
+                      "$ref": "request.generateAudio"
+                    },
+                    false
+                  ]
+                },
+                false
+              ]
+            },
+            "message": "2.5此入口不生成音频"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.output.count"
+                    },
+                    1
+                  ]
+                },
+                1
+              ]
+            },
+            "message": "每次只能生成一个视频"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "2.5此入口不接收视频或音频参考"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$eq": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "first_frame"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$eq": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "last_frame"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    1
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    {
+                      "$add": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.images"
+                              },
+                              "as": "media",
+                              "where": {
+                                "$eq": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "first_frame"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.images"
+                              },
+                              "as": "media",
+                              "where": {
+                                "$eq": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "last_frame"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "必须明确一个首帧和至多一个尾帧，不能用普通参考或重复角色代替"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$eq": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "last_frame"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.providerOptions.kling-v25-video.mode"
+                    },
+                    "pro"
+                  ]
+                }
+              ]
+            },
+            "message": "2.5首尾帧只支持pro高品质"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.providerOptions.kling-v25-video.multiShot"
+                    },
+                    false
+                  ]
+                },
+                false
+              ]
+            },
+            "message": "2.5此入口不支持智能分镜"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.multiPrompt"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.elements"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.subjects"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.voices"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "2.5此入口不接收分镜、主体或音色ID"
+          },
+          {
+            "assert": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.videoReferenceType"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.providerOptions.kling-v25-video.keepOriginalSound"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "2.5此入口不接收视频编辑控制"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/videos/image2video",
+          "contentType": "application/json",
+          "body": {
+            "model_name": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "mode": {
+              "$ref": "request.providerOptions.kling-v25-video.mode"
+            },
+            "duration": {
+              "$toString": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.duration"
+                  },
+                  {
+                    "$ref": "request.duration"
+                  },
+                  5
+                ]
+              }
+            },
+            "image": {
+              "$first": {
+                "$map": {
+                  "from": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$eq": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "first_frame"
+                        ]
+                      }
+                    }
+                  },
+                  "as": "media",
+                  "in": {
+                    "$dataPayload": {
+                      "$ref": "media.value"
+                    }
+                  }
+                }
+              }
+            },
+            "image_tail": {
+              "$omitEmpty": {
+                "$first": {
+                  "$map": {
+                    "from": {
+                      "$filter": {
+                        "from": {
+                          "$ref": "request.images"
+                        },
+                        "as": "media",
+                        "where": {
+                          "$eq": [
+                            {
+                              "$ref": "media.role"
+                            },
+                            "last_frame"
+                          ]
+                        }
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "$dataPayload": {
+                        "$ref": "media.value"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "watermark_info": {
+              "enabled": {
+                "$coalesce": [
+                  {
+                    "$ref": "request.output.watermark"
+                  },
+                  {
+                    "$ref": "request.watermark"
+                  },
+                  false
+                ]
+              }
+            }
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/videos/image2video/{{taskId}}"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.task_id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$if": {
+              "condition": {
+                "$or": [
+                  {
+                    "$and": [
+                      {
+                        "$eq": [
+                          {
+                            "$ref": "response.data.task_status"
+                          },
+                          "succeed"
+                        ]
+                      },
+                      {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$map": {
+                                "from": {
+                                  "$filter": {
+                                    "from": {
+                                      "$ref": "response.data.task_result.videos"
+                                    },
+                                    "as": "video",
+                                    "where": {
+                                      "$not": {
+                                        "$eq": [
+                                          {
+                                            "$coalesce": [
+                                              {
+                                                "$ref": "video.url"
+                                              },
+                                              ""
+                                            ]
+                                          },
+                                          ""
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "as": "video",
+                                "in": {
+                                  "$ref": "video.url"
+                                }
+                              }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$not": {
+                          "$ref": "response.data.task_id"
+                        }
+                      },
+                      {
+                        "$not": {
+                          "$ref": "taskId"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "then": "failed",
+              "else": {
+                "$if": {
+                  "condition": {
+                    "$eq": [
+                      {
+                        "$ref": "response.data.task_status"
+                      },
+                      "succeed"
+                    ]
+                  },
+                  "then": "succeeded",
+                  "else": {
+                    "$coalesce": [
+                      {
+                        "$ref": "response.data.task_status"
+                      },
+                      "pending"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "messagePaths": [
+            "data.task_status_msg",
+            "message"
+          ],
+          "errorPaths": [
+            "code"
+          ],
+          "videos": {
+            "$if": {
+              "condition": {
+                "$eq": [
+                  {
+                    "$ref": "response.data.task_status"
+                  },
+                  "succeed"
+                ]
+              },
+              "then": {
+                "$map": {
+                  "from": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "response.data.task_result.videos"
+                      },
+                      "as": "video",
+                      "where": {
+                        "$not": {
+                          "$eq": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "video.url"
+                                },
+                                ""
+                              ]
+                            },
+                            ""
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "as": "video",
+                  "in": {
+                    "$ref": "video.url"
+                  }
+                }
+              },
+              "else": []
+            }
+          },
+          "resultEphemeral": true
+        }
+      }
+    ]
+  },
+  "documentation": "# Kling 2.5 Turbo Video\n\n独立的影策v2声明式Provider，只使用`kling-v2-5-turbo`原版本。安装不创建或修改渠道。\n\n接入架构：[影策插件架构与接入说明](https://my.feishu.cn/docx/HPePdtuGoosbKhxF950crh5fnpb)第7、8、12、13章。\n上游合同：[可灵2.5专页](https://klingai.com/document-api/api/video/2-5-turbo)及[页面链接的旧版接口](https://klingai.com/document-api/api/video/2-5-turbo/image-to-video/legacy)。\n\n配置已授权渠道的API Key，显式选择2.5模型。支持一个首帧，或pro档位的首尾帧；5/10秒、std 720p或pro 1080p。原提示词、图像字节和角色保持。当前未宣称真实上游生成或生产验收。\n\n---\n\n# Kling 2.5 Turbo 接口合同\n\n- POST `/v1/videos/image2video`；GET `/v1/videos/image2video/{taskId}`。Bearer密钥只由宿主渠道读取。\n- `model_name=kling-v2-5-turbo`，原文prompt最多2500字符，mode为std/pro；duration以字符串提交5或10。统一output值优先。\n- 宿主通用图片quality不参与视频档位；只有本Provider命名空间mode与视频resolution决定档位，不向上游发送图片quality。\n- image/image_tail按first_frame/last_frame取值，不按数组位置猜测；内嵌数据去掉data URL前缀。宿主读取一次原字节并核对格式、大小、尺寸头，提交相同字节，不重编码。\n- 旧版合同JPEG/PNG最多10000000字节，短边至少300、比例0.4至2.5。仅首尾帧要求pro。完整像素解码另行验收。\n- 自适应原图画幅；拒绝固定画幅、4K、非5/10时长、生成音频、视频/音频参考、主体、智能/自定义分镜、多输出。未实现字段不得静默变成3.0参数。\n- 响应映射：data.task_id保存为taskId；data.task_status的submitted/processing保持等待，succeed映射为succeeded且必须有非空data.task_result.videos[].url；只有succeed暴露媒体，未完成或失败响应即使带URL也不提前下载。failed、上游非零code、缺task ID和空成功保持失败。data.task_status_msg或message提供错误信息。30天临时结果由现有宿主下载归档。\n- LTV源`kling-v2-5-turbo-pro`依照源schema映射到实际2.5模型；low/high为std/pro，不接受O1、3.0或Turbo3.0版本。\n\n## Manifest完整接口定义\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"kling-v25-video\",\n  \"name\": \"Kling 2.5 Turbo Video\",\n  \"version\": \"1.0.1\",\n  \"author\": \"影策\",\n  \"description\": \"Kling 2.5 Turbo同版本首帧与首尾帧声明式协议。\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"kling-v25-video\",\n        \"label\": \"Kling 2.5 Turbo Video\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api-beijing.klingai.com\",\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"inputImages\": {\n          \"formats\": [\n            \"jpeg\",\n            \"png\"\n          ],\n          \"maxBytes\": 10000000,\n          \"minShortSide\": 300,\n          \"minAspectRatio\": 0.4,\n          \"maxAspectRatio\": 2.5\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"values\": [\n              \"kling-v2-5-turbo\"\n            ],\n            \"mapping\": \"model_name\",\n            \"description\": \"精确2.5模型版本。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"原始提示词，不能截断。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": true,\n            \"mapping\": \"image/image_tail\",\n            \"description\": \"按显式first_frame和last_frame角色取值。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"values\": [\n              \"5\",\n              \"10\"\n            ],\n            \"mapping\": \"duration\",\n            \"description\": \"5或10秒。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"values\": [\n              \"720p\",\n              \"1080p\"\n            ],\n            \"mapping\": \"mode\",\n            \"description\": \"与std/pro对应。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"mapping\": \"providerOptions.kling-v25-video\",\n            \"description\": \"仅本Provider命名空间mode。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                \"kling-v2-5-turbo\"\n              ]\n            },\n            \"message\": \"此协议只接受实际Kling 2.5 Turbo模型，不能使用3.0或源平台别名\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$ref\": \"request.operation\"\n                },\n                \"image_to_video\"\n              ]\n            },\n            \"message\": \"此入口只承接首帧或首尾帧图生视频\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$trim\": {\n                          \"$ref\": \"request.prompt\"\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.prompt\"\n                      }\n                    },\n                    2500\n                  ]\n                }\n              ]\n            },\n            \"message\": \"原始提示词必须完整且不超过2500字符\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.providerOptions.kling-v25-video.mode\"\n                },\n                [\n                  \"std\",\n                  \"pro\"\n                ]\n              ]\n            },\n            \"message\": \"2.5模式只支持std和pro\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$lower\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.resolution\"\n                      },\n                      {\n                        \"$ref\": \"request.resolution\"\n                      }\n                    ]\n                  }\n                },\n                {\n                  \"$if\": {\n                    \"condition\": {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.providerOptions.kling-v25-video.mode\"\n                        },\n                        \"pro\"\n                      ]\n                    },\n                    \"then\": \"1080p\",\n                    \"else\": \"720p\"\n                  }\n                }\n              ]\n            },\n            \"message\": \"分辨率必须匹配2.5质量档位\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.duration\"\n                    },\n                    {\n                      \"$ref\": \"request.duration\"\n                    },\n                    5\n                  ]\n                },\n                [\n                  5,\n                  10\n                ]\n              ]\n            },\n            \"message\": \"2.5只支持5或10秒\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.aspectRatio\"\n                    },\n                    {\n                      \"$ref\": \"request.aspectRatio\"\n                    },\n                    \"adaptive\"\n                  ]\n                },\n                [\n                  \"\",\n                  \"auto\",\n                  \"adaptive\"\n                ]\n              ]\n            },\n            \"message\": \"图生视频画幅由原图决定，不能忽略固定输出画幅\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.generateAudio\"\n                    },\n                    {\n                      \"$ref\": \"request.generateAudio\"\n                    },\n                    false\n                  ]\n                },\n                false\n              ]\n            },\n            \"message\": \"2.5此入口不生成音频\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.output.count\"\n                    },\n                    1\n                  ]\n                },\n                1\n              ]\n            },\n            \"message\": \"每次只能生成一个视频\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"2.5此入口不接收视频或音频参考\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$ref\": \"request.images\"\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"first_frame\"\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$lte\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$ref\": \"request.images\"\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"last_frame\"\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    1\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    {\n                      \"$add\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$ref\": \"request.images\"\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$ref\": \"request.images\"\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"必须明确一个首帧和至多一个尾帧，不能用普通参考或重复角色代替\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$ref\": \"request.images\"\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"media.role\"\n                              },\n                              \"last_frame\"\n                            ]\n                          }\n                        }\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-v25-video.mode\"\n                    },\n                    \"pro\"\n                  ]\n                }\n              ]\n            },\n            \"message\": \"2.5首尾帧只支持pro高品质\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.providerOptions.kling-v25-video.multiShot\"\n                    },\n                    false\n                  ]\n                },\n                false\n              ]\n            },\n            \"message\": \"2.5此入口不支持智能分镜\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.multiPrompt\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.elements\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.subjects\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.voices\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"2.5此入口不接收分镜、主体或音色ID\"\n          },\n          {\n            \"assert\": {\n              \"$and\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.videoReferenceType\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.providerOptions.kling-v25-video.keepOriginalSound\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"2.5此入口不接收视频编辑控制\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/image2video\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model_name\": {\n              \"$ref\": \"request.model\"\n            },\n            \"prompt\": {\n              \"$ref\": \"request.prompt\"\n            },\n            \"mode\": {\n              \"$ref\": \"request.providerOptions.kling-v25-video.mode\"\n            },\n            \"duration\": {\n              \"$toString\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.duration\"\n                  },\n                  {\n                    \"$ref\": \"request.duration\"\n                  },\n                  5\n                ]\n              }\n            },\n            \"image\": {\n              \"$first\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$ref\": \"request.images\"\n                      },\n                      \"as\": \"media\",\n                      \"where\": {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"media.role\"\n                          },\n                          \"first_frame\"\n                        ]\n                      }\n                    }\n                  },\n                  \"as\": \"media\",\n                  \"in\": {\n                    \"$dataPayload\": {\n                      \"$ref\": \"media.value\"\n                    }\n                  }\n                }\n              }\n            },\n            \"image_tail\": {\n              \"$omitEmpty\": {\n                \"$first\": {\n                  \"$map\": {\n                    \"from\": {\n                      \"$filter\": {\n                        \"from\": {\n                          \"$ref\": \"request.images\"\n                        },\n                        \"as\": \"media\",\n                        \"where\": {\n                          \"$eq\": [\n                            {\n                              \"$ref\": \"media.role\"\n                            },\n                            \"last_frame\"\n                          ]\n                        }\n                      }\n                    },\n                    \"as\": \"media\",\n                    \"in\": {\n                      \"$dataPayload\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                }\n              }\n            },\n            \"watermark_info\": {\n              \"enabled\": {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.output.watermark\"\n                  },\n                  {\n                    \"$ref\": \"request.watermark\"\n                  },\n                  false\n                ]\n              }\n            }\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/image2video/{{taskId}}\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$or\": [\n                  {\n                    \"$and\": [\n                      {\n                        \"$eq\": [\n                          {\n                            \"$ref\": \"response.data.task_status\"\n                          },\n                          \"succeed\"\n                        ]\n                      },\n                      {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$filter\": {\n                                    \"from\": {\n                                      \"$ref\": \"response.data.task_result.videos\"\n                                    },\n                                    \"as\": \"video\",\n                                    \"where\": {\n                                      \"$not\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$coalesce\": [\n                                              {\n                                                \"$ref\": \"video.url\"\n                                              },\n                                              \"\"\n                                            ]\n                                          },\n                                          \"\"\n                                        ]\n                                      }\n                                    }\n                                  }\n                                },\n                                \"as\": \"video\",\n                                \"in\": {\n                                  \"$ref\": \"video.url\"\n                                }\n                              }\n                            }\n                          },\n                          0\n                        ]\n                      }\n                    ]\n                  },\n                  {\n                    \"$and\": [\n                      {\n                        \"$not\": {\n                          \"$ref\": \"response.data.task_id\"\n                        }\n                      },\n                      {\n                        \"$not\": {\n                          \"$ref\": \"taskId\"\n                        }\n                      }\n                    ]\n                  }\n                ]\n              },\n              \"then\": \"failed\",\n              \"else\": {\n                \"$if\": {\n                  \"condition\": {\n                    \"$eq\": [\n                      {\n                        \"$ref\": \"response.data.task_status\"\n                      },\n                      \"succeed\"\n                    ]\n                  },\n                  \"then\": \"succeeded\",\n                  \"else\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"response.data.task_status\"\n                      },\n                      \"pending\"\n                    ]\n                  }\n                }\n              }\n            }\n          },\n          \"messagePaths\": [\n            \"data.task_status_msg\",\n            \"message\"\n          ],\n          \"errorPaths\": [\n            \"code\"\n          ],\n          \"videos\": {\n            \"$if\": {\n              \"condition\": {\n                \"$eq\": [\n                  {\n                    \"$ref\": \"response.data.task_status\"\n                  },\n                  \"succeed\"\n                ]\n              },\n              \"then\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$filter\": {\n                      \"from\": {\n                        \"$ref\": \"response.data.task_result.videos\"\n                      },\n                      \"as\": \"video\",\n                      \"where\": {\n                        \"$not\": {\n                          \"$eq\": [\n                            {\n                              \"$coalesce\": [\n                                {\n                                  \"$ref\": \"video.url\"\n                                },\n                                \"\"\n                              ]\n                            },\n                            \"\"\n                          ]\n                        }\n                      }\n                    }\n                  },\n                  \"as\": \"video\",\n                  \"in\": {\n                    \"$ref\": \"video.url\"\n                  }\n                }\n              },\n              \"else\": []\n            }\n          },\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
+}

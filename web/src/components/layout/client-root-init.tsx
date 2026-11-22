@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
+// 在创作环境渲染前完成注册；匿名展示首页不加载编辑器和制作插件。
+import "@/lib/plugins/builtin";
 import { useEffect, useRef } from "react";
 import { App } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -11,29 +14,37 @@ import { fetchPluginRuntimeState, setUserPluginEnabled } from "@/services/api/pl
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { appQueryClient } from "@/lib/query-client";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
+    
     const config = useConfigStore((state) => state.config);
     const userId = useUserStore((state) => state.user?.id || "");
     const localRuntimeConfigured = config.channels.some((channel) => channel.transport === "local-runtime" && channel.enabled !== false);
     useLocalRuntimeBootstrap(localRuntimeConfigured);
     useLocalDreaminaModelBootstrap();
     const { message } = App.useApp();
+    const { t } = useInterfaceTranslation();
     const handledConfigParams = useRef(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const setRuntimeStatuses = usePluginStore((state) => state.setRuntimeStatuses);
     const setPluginStates = usePluginStore((state) => state.setPluginStates);
     const pluginStoreHydrated = usePluginStore((state) => state.hydrated);
 
-    useEffect(() => () => {
-        usePluginStore.getState().setRuntimeStatuses({});
-        usePluginStore.getState().setPluginStates({});
-    }, []);
+    useEffect(
+        () => () => {
+            usePluginStore.getState().setRuntimeStatuses({});
+            usePluginStore.getState().setPluginStates({});
+        },
+        [],
+    );
 
     useEffect(() => {
         if (!userId || !pluginStoreHydrated) return;
         let cancelled = false;
-        void appQueryClient.fetchQuery({ queryKey: ["plugin-runtime", userId], queryFn: fetchPluginRuntimeState, staleTime: 30_000 })
+        void appQueryClient
+            .fetchQuery({ queryKey: ["plugin-runtime", userId], queryFn: fetchPluginRuntimeState, staleTime: 30_000 })
             .then(async (runtime) => {
                 if (cancelled || useUserStore.getState().user?.id !== userId) return;
                 const statuses = { ...runtime.statuses };
@@ -101,7 +112,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         searchParams.delete("baseurl");
         searchParams.delete("apiKey");
         searchParams.delete("apikey");
-        window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
+        window.history.replaceState(window.history.state, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
         const firstChannel = config.channels[0];
         updateConfig(
             "channels",
@@ -114,13 +125,13 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                             }
                           : channel,
                   )
-                : [createModelChannel({ id: "default", name: "默认渠道", baseUrl: baseUrl || undefined })],
+                : [createModelChannel({ id: "default", name: t("layoutExtrasUi.defaultChannel" as InterfaceMessageKey), baseUrl: baseUrl || undefined })],
         );
         if (baseUrl) updateConfig("baseUrl", baseUrl);
         navigateToSettings({ section: "channels" });
-        if (ignoredApiKey) message.warning("出于安全考虑，链接中的 API Key 已忽略，请在配置中手动填写");
-        else message.success("已导入本地直连地址");
-    }, [config.channels, message, updateConfig]);
+        if (ignoredApiKey) message.warning(t("account.layout.clientInit.apiKeyIgnored"));
+        else message.success(t("account.layout.clientInit.baseUrlImported"));
+    }, [config.channels, message, t, updateConfig]);
 
     return <>{children}</>;
 }

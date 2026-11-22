@@ -4,10 +4,12 @@ import { resolveCanvasAppearance, resolveCanvasGridColor, type CanvasAppearance 
 import { resolveCanvasPointerIntent } from "@/lib/canvas/canvas-selection";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { applyCanvasLiveViewport, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { ViewportTransform } from "@/types/canvas";
 
 type InfiniteCanvasProps = {
+    interactive?: boolean;
+    minScale?: number;
     containerRef: React.RefObject<HTMLDivElement | null>;
     viewport: ViewportTransform;
     appearance?: CanvasAppearance;
@@ -29,8 +31,15 @@ type InfiniteCanvasProps = {
 
 const CANVAS_WHEEL_IGNORE_SELECTOR = "[data-canvas-no-zoom],[data-canvas-wheel-scroll],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
 const CANVAS_POINTER_IGNORE_SELECTOR = "[data-canvas-no-zoom],[data-connection-create-menu],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
+const CANVAS_INTERNAL_DRAG_SELECTOR = "[data-canvas-batch-table]";
 const WHEEL_ZOOM_DELTA = 72;
 const TRACKPAD_PINCH_ZOOM_DELTA = 24;
+
+function isIgnoredCanvasTarget(target: Element | null, selector: string, container: HTMLElement | null) {
+    const boundary = target?.closest(selector);
+    // A canvas may itself live inside a modal; only inner/portaled overlays block its gestures.
+    return Boolean(boundary && !(container && boundary.contains(container)));
+}
 
 type TouchPoint = { x: number; y: number };
 
@@ -43,8 +52,8 @@ type PinchState = {
     initialScale: number;
 };
 
-export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundMode = "lines", onViewportChange, onViewportPreviewChange, onCanvasMouseDown, boxSelectEnabled = false, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, onFileDragEnter, onFileDragLeave, onFileDragOver, graphicsLayer, children }: InfiniteCanvasProps) {
-    const colorTheme = useThemeStore((state) => state.theme);
+export function InfiniteCanvas({ interactive = true, minScale = 0.05, containerRef, viewport, appearance, backgroundMode = "lines", onViewportChange, onViewportPreviewChange, onCanvasMouseDown, boxSelectEnabled = false, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, onFileDragEnter, onFileDragLeave, onFileDragOver, graphicsLayer, children }: InfiniteCanvasProps) {
+    const colorTheme = useActiveTheme();
     const resolvedAppearance = resolveCanvasAppearance(appearance, colorTheme);
     const panState = useRef({
         isPanning: false,
@@ -68,6 +77,27 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
     const spacePressedRef = useRef(false);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
+
+    useLayoutEffect(() => {
+        if (interactive) return;
+        const container = containerRef.current;
+        for (const id of [panState.current.pointerId, ...touchPointsRef.current.keys()]) {
+            if (container?.hasPointerCapture(id)) container.releasePointerCapture(id);
+        }
+        panState.current.isPanning = false;
+        pinchStateRef.current.active = false;
+        touchPointsRef.current.clear();
+        interactingRef.current = false;
+        if (frameRef.current) cancelAnimationFrame(frameRef.current);
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        frameRef.current = null;
+        syncTimerRef.current = null;
+        nextViewportRef.current = null;
+        delete container?.dataset.canvasViewportInteracting;
+        setIsPanning(false);
+        setIsSpacePressed(false);
+        document.body.style.cursor = "default";
+    }, [interactive, containerRef]);
 
     useLayoutEffect(() => {
         if (interactingRef.current) return;
@@ -95,7 +125,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
         [containerRef],
     );
 
-    const syncViewport = useCallback(() => onViewportChange(viewportRef.current), [onViewportChange]);
+    const syncViewport = useCallback(() => { if (interactive) onViewportChange(viewportRef.current); }, [interactive, onViewportChange]);
 
     const scheduleViewportChange = useCallback(
         (next: ViewportTransform, commitAfterIdle = false) => {
@@ -105,8 +135,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             const container = containerRef.current;
             if (container) container.dataset.canvasViewportInteracting = "true";
             nextViewportRef.current = next;
-            if (frameRef.current) return;
-            frameRef.current = requestAnimationFrame((now) => {
+            if (!frameRef.current) frameRef.current = requestAnimationFrame((now) => {
                 frameRef.current = null;
                 const pending = nextViewportRef.current;
                 if (!pending) return;
@@ -127,6 +156,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
     );
 
     useEffect(() => {
+        if (!interactive) return;
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.code !== "Space") return;
             if (event.target instanceof Element && event.target.closest("input,textarea,select,button,[contenteditable='true']")) return;
@@ -154,7 +184,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             window.removeEventListener("keyup", handleKeyUp);
             window.removeEventListener("blur", handleBlur);
         };
-    }, []);
+    }, [interactive]);
 
     const handleWheel = useCallback(
         (event: WheelEvent) => {
@@ -164,7 +194,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             const absX = Math.abs(deltaX);
             const absY = Math.abs(deltaY);
             const isPinchZoom = event.ctrlKey || event.metaKey;
-            if (target?.closest(CANVAS_WHEEL_IGNORE_SELECTOR) && !isPinchZoom) {
+            if (isIgnoredCanvasTarget(target, CANVAS_WHEEL_IGNORE_SELECTOR, containerRef.current) && !isPinchZoom) {
                 // 内部区域保留纵向滚动，但横向手势不能泄漏为 macOS 浏览器前进/后退。
                 if (event.shiftKey || absX > absY) event.preventDefault();
                 return;
@@ -194,7 +224,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             const mouseY = event.clientY - rect.top;
             const zoomDelta = isPinchZoom && !looksLikeMouseWheel ? TRACKPAD_PINCH_ZOOM_DELTA : WHEEL_ZOOM_DELTA;
             const factor = Math.pow(1.1, -deltaY / zoomDelta);
-            const newScale = clampScale(current.k * factor);
+            const newScale = clampScale(current.k * factor, minScale);
             const worldX = (mouseX - current.x) / current.k;
             const worldY = (mouseY - current.y) / current.k;
 
@@ -204,13 +234,14 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
                 k: newScale,
             }, true);
         },
-        [containerRef, scheduleViewportChange],
+        [containerRef, minScale, scheduleViewportChange],
     );
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (!interactive) return;
         const target = event.target instanceof Element ? event.target : null;
         // AntD 浮层通过 Portal 渲染到节点 DOM 之外；若不统一排除，会被误判为画布空白并捕获指针。
-        if (target?.closest(CANVAS_POINTER_IGNORE_SELECTOR)) return;
+        if (isIgnoredCanvasTarget(target, CANVAS_POINTER_IGNORE_SELECTOR, containerRef.current)) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
         const isTouch = event.pointerType === "touch";
 
@@ -297,6 +328,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
     };
 
     useEffect(() => {
+        if (!interactive) return;
         const handlePointerMove = (event: PointerEvent) => {
             if (event.pointerType === "touch" && touchPointsRef.current.has(event.pointerId)) {
                 touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -310,7 +342,7 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
                     const centerX = (first.x + second.x) / 2 - rect.left;
                     const centerY = (first.y + second.y) / 2 - rect.top;
                     const distance = Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1);
-                    const scale = clampScale(pinch.initialScale * (distance / pinch.initialDistance));
+                    const scale = clampScale(pinch.initialScale * (distance / pinch.initialDistance), minScale);
                     scheduleViewportChange({
                         x: centerX - pinch.worldX * scale,
                         y: centerY - pinch.worldY * scale,
@@ -374,11 +406,11 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             window.removeEventListener("pointerup", handlePointerEnd);
             window.removeEventListener("pointercancel", handlePointerEnd);
         };
-    }, [containerRef, onCanvasDeselect, scheduleViewportChange, syncViewport]);
+    }, [interactive, containerRef, onCanvasDeselect, scheduleViewportChange, syncViewport]);
 
     useEffect(() => {
         const container = containerRef.current;
-        if (!container) return;
+        if (!container || !interactive) return;
         const updateRect = () => {
             containerRectRef.current = container.getBoundingClientRect();
         };
@@ -392,11 +424,12 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
             window.removeEventListener("resize", updateRect);
             container.removeEventListener("wheel", handleWheel, { capture: true });
         };
-    }, [containerRef, handleWheel]);
+    }, [interactive, containerRef, handleWheel]);
 
     return (
         <div
             ref={containerRef}
+            data-canvas-viewport
             data-canvas-pan-state={isPanning ? "grabbing" : isSpacePressed || !boxSelectEnabled ? "grab" : undefined}
             className={`relative h-full w-full select-none overflow-hidden touch-none ${isPanning ? "cursor-grabbing" : isSpacePressed || !boxSelectEnabled ? "cursor-grab" : "canvas-cursor-select"}`}
             style={{
@@ -415,13 +448,38 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
                 if (!target?.closest("[data-node-id],[data-connection-id],[data-canvas-no-zoom]")) onCanvasDoubleClick?.(event);
             }}
             onContextMenu={onContextMenu}
-            onDragEnter={onFileDragEnter}
-            onDragLeave={onFileDragLeave}
+            onDragEnter={(event) => {
+                if (isCanvasInternalDragEvent(event)) {
+                    event.preventDefault();
+                    onFileDragEnter?.(event);
+                    return;
+                }
+                onFileDragEnter?.(event);
+            }}
+            onDragLeave={(event) => {
+                if (isCanvasInternalDragEvent(event)) {
+                    event.preventDefault();
+                    onFileDragLeave?.(event);
+                    return;
+                }
+                onFileDragLeave?.(event);
+            }}
             onDragOver={(event) => {
+                if (isCanvasInternalDragEvent(event)) {
+                    event.preventDefault();
+                    onFileDragOver?.(event);
+                    return;
+                }
                 event.preventDefault();
                 onFileDragOver?.(event);
             }}
-            onDrop={onDrop}
+            onDrop={(event) => {
+                if (isCanvasInternalDragEvent(event)) {
+                    event.preventDefault();
+                    return;
+                }
+                onDrop?.(event);
+            }}
         >
             <CanvasGrid appearance={appearance} mode={backgroundMode} />
             {graphicsLayer}
@@ -437,8 +495,13 @@ export function InfiniteCanvas({ containerRef, viewport, appearance, backgroundM
     );
 }
 
-function CanvasGrid({ appearance, mode }: { appearance?: CanvasAppearance; mode: CanvasBackgroundMode }) {
-    const colorTheme = useThemeStore((state) => state.theme);
+function isCanvasInternalDragEvent(event: React.DragEvent<HTMLDivElement>) {
+    const target = event.target instanceof Element ? event.target : null;
+    return Boolean(target?.closest(CANVAS_INTERNAL_DRAG_SELECTOR));
+}
+
+export function CanvasGrid({ appearance, mode }: { appearance?: CanvasAppearance; mode: CanvasBackgroundMode }) {
+    const colorTheme = useActiveTheme();
     const gridColor = resolveCanvasGridColor(appearance, colorTheme, mode);
     const backgroundImage = mode === "dots" ? `radial-gradient(circle, ${gridColor} 0.8px, transparent 1px)` : `linear-gradient(${gridColor} 1px, transparent 1px), linear-gradient(90deg, ${gridColor} 1px, transparent 1px)`;
     if (mode === "blank") return null;
@@ -464,6 +527,6 @@ function wheelDeltaToPixels(delta: number, deltaMode: number) {
     return delta;
 }
 
-function clampScale(scale: number) {
-    return Math.min(Math.max(scale, 0.05), 2);
+function clampScale(scale: number, minScale: number) {
+    return Math.min(Math.max(scale, minScale), 2);
 }

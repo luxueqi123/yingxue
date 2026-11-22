@@ -1,7 +1,6 @@
-// 预览监视器（editor-shell 预设插件贡献 preview-renderer 插槽，M3.2）。
 // 浏览器内近似预览：真实媒体帧（storageKey → resolveMediaUrl）+ 播放头 + 时间码。
-// 近似渲染与导出（M3.7 的 buildTimelineRenderPlan）共享同一条"片段→媒体"解析路径，
-// 但这里只做时序呈现，不承诺像素级预览——像素级交给导出任务（M4）。
+// 预览与 buildTimelineRenderPlan 共享“片段→媒体”解析规则，但浏览器预览只保证时序一致；
+// 最终画面、编码和滤镜结果以后端导出任务为准。
 //
 // 播放模型：时间线 transport（store.transportMs）与监视器共享。
 // - 本地 playbackRef 以 rAF 逐帧推进（60fps 时间码），节流回写 store（~80ms），
@@ -14,6 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
     AlertTriangle,
     Captions,
+    Check,
     ChevronDown,
     Download,
     Film,
@@ -33,50 +33,45 @@ import {
 
 import { useEditorStoreContext } from "@/components/editor/editor-context";
 import { formatTimelineTime } from "@/lib/timeline/timeline-view";
+import { getPreviewClipAtTime } from "@/lib/timeline/timeline-clip-view";
+import { TimelineAudioPlayback } from "@/components/timeline/timeline-audio-playback";
+import { timelineMediaGain } from "@/lib/timeline/timeline-media-gain";
 import { resolveMediaUrl } from "@/services/file-storage";
 import { playbackVariantUrl, refreshResource, resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
-import type { TimelineClip, TimelineProject } from "@/types/timeline";
+import type { TimelineClip } from "@/types/timeline";
 
 // 本地播放时钟 → store.transportMs 的回写节流（毫秒）。太密会让时间线面板每帧重渲染。
 const STORE_PUSH_INTERVAL_MS = 80;
-// 外部 seek 与本地时钟差超过该值（毫秒）视为"拖动跳转"：先暂停再跟随，避免播放中抢时钟。
-const SEEK_JUMP_MS = 500;
 // 视频元素位置校正阈值（秒）：仅当偏差超过该值才硬 seek，避免逐帧写 currentTime。
 const VIDEO_SEEK_TOLERANCE_S = 0.35;
 
-function getClipAtTime(project: TimelineProject, timeMs: number): TimelineClip | null {
-    // 隐藏轨道（visible === false）上的片段不参与预览合成。
-    const hiddenTrackIds = new Set(project.tracks.filter((t) => t.visible === false).map((t) => t.id));
-    const visible = (clip: TimelineClip) => !hiddenTrackIds.has(clip.trackId);
-    return (
-        project.clips.find((clip) => visible(clip) && clip.kind === "video" && clip.startMs <= timeMs && timeMs < clip.startMs + clip.durationMs) ??
-        project.clips.find((clip) => visible(clip) && clip.kind === "image" && clip.startMs <= timeMs && timeMs < clip.startMs + clip.durationMs) ??
-        null
-    );
-}
-
-function useClipMediaUrl(clip: TimelineClip | null): string | null {
+function useClipMediaUrl(clip: TimelineClip | null, onError?: (message: string) => void): string | null {
     const [url, setUrl] = useState<string | null>(null);
     useEffect(() => {
         let cancelled = false;
         setUrl(null);
+        onError?.("");
         if (!clip) return;
         const direct = clip.directMedia;
         const source = direct?.dataUrl ?? direct?.url ?? direct?.storageKey;
         if (direct?.storageKey) {
             resolveMediaUrl(direct.storageKey, direct.url ?? "")
-                .catch(() => null)
+                .catch(() => { if (!cancelled) onError?.("媒体来源解析失败"); return null; })
                 .then((resolved) => {
-                    if (!cancelled && resolved) setUrl(resolved);
+                    if (cancelled) return;
+                    if (resolved) setUrl(resolved);
+                    else onError?.("媒体来源解析失败");
                 });
         } else if (source) {
             setUrl(source);
+        } else {
+            onError?.("片段缺少媒体来源");
         }
         return () => {
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [clip?.id, clip?.nodeId, clip?.directMedia?.storageKey, clip?.directMedia?.url, clip?.directMedia?.dataUrl]);
+    }, [clip?.id, clip?.nodeId, clip?.directMedia?.storageKey, clip?.directMedia?.url, clip?.directMedia?.dataUrl, onError]);
     return url;
 }
 
@@ -110,8 +105,16 @@ function ClipKindIcon({ kind, className }: { kind: TimelineClip["kind"]; classNa
     return <Icon className={className} />;
 }
 
+function EditorAudioPlayback({ clip, timeMs, playing, muted, speed }: {
+    clip: TimelineClip; timeMs: number; playing: boolean; muted: boolean; speed: number;
+}) {
+    const [sourceError, setSourceError] = useState("");
+    const source = useClipMediaUrl(clip, setSourceError);
+    return <TimelineAudioPlayback clip={clip} source={source} sourceError={sourceError} timeMs={timeMs} playing={playing} muted={muted} speed={speed} />;
+}
+
 export function EditorPreviewMonitor() {
-    const { project, transportMs, setTransportMs } = useEditorStoreContext();
+    const { project, loadRevision, transportMs, seekRequest, selectedClipId, setTransportMs } = useEditorStoreContext();
     const durationMs = project?.durationMs ?? 0;
 
     // 本地播放时钟（毫秒）：逐帧刷新本组件；播放态节流回写 store 驱动时间线播放头。
@@ -127,9 +130,12 @@ export function EditorPreviewMonitor() {
     const lastStorePushRef = useRef(0);
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    const activeClip = project ? getClipAtTime(project, playbackMs) : null;
+    const activeClip = project ? getPreviewClipAtTime(project, playbackMs, selectedClipId) : null;
     const activeMediaUrl = useClipMediaUrl(activeClip);
     const activeTrack = project?.tracks.find((t) => t.id === activeClip?.trackId) ?? null;
+    const activeAudioClips = project?.clips.filter(clip => clip.kind === "audio"
+        && project.tracks.some(track => track.id === clip.trackId && track.visible !== false)
+        && clip.startMs <= playbackMs && playbackMs < clip.startMs + clip.durationMs) ?? [];
 
     // 播放回退：H.264 原件直接播放；H.265/HEVC 原件多数浏览器无法解码（黑屏），
     // <video> onError 后切换后端 playback 转码副本（variant=playback），副本就绪前轮询。
@@ -205,6 +211,7 @@ export function EditorPreviewMonitor() {
         if (mediaTerminalRef.current) return;
         // 图片/无资源：无播放副本可切，仅提示。
         if (activeClip?.kind !== "video" || !mediaResourceId) {
+            setMediaErrorHint("媒体素材解码或跨域读取失败，请检查素材来源");
             return;
         }
         if (mediaTier === "primary") {
@@ -221,6 +228,7 @@ export function EditorPreviewMonitor() {
     const videoSrc = isVideoClip && mediaResourceId && mediaTier === "variant" ? playbackVariantUrl(mediaResourceId) : isVideoClip ? activeMediaUrl : null;
     const imageSrc = activeClip?.kind === "image" ? activeMediaUrl : null;
     const videoMuted = activeTrack?.muted === true;
+    const videoVolume = Math.max(0, activeClip?.volume ?? 1);
 
     const syncPlayback = useCallback(
         (ms: number) => {
@@ -246,25 +254,14 @@ export function EditorPreviewMonitor() {
         setTransportMs(playbackRef.current);
     }, [setTransportMs]);
 
-    // 外部 transport 变化（时间线标尺 scrub / 跳转）：回推本地时钟；
-    // 播放中大幅跳动视为拖动跳转，先暂停避免与本地时钟互相抢写。
+    // 用户 seek 与播放节流回写分开，不能凭时间差猜测来源，否则小幅定位会被忽略。
     useEffect(() => {
-        if (transportMs === playbackRef.current) return;
-        if (playingRef.current) {
-            // 播放中收到的 transport 写入只可能是自身节流回写或外部 scrub；
-            // 大幅跳动视为拖动/跳转：暂停并跟随。小幅忽略，避免本地时钟被旧回写值拉回（回跳）。
-            if (Math.abs(transportMs - playbackRef.current) > SEEK_JUMP_MS) {
-                stop();
-                playbackRef.current = transportMs;
-                setPlaybackMs(transportMs);
-            }
-            return;
-        }
-        playbackRef.current = transportMs;
-        setPlaybackMs(transportMs);
-        // stop 已是最新引用；transportMs 为唯一驱动源
+        if (!seekRequest) return;
+        stop();
+        syncPlayback(seekRequest.timeMs);
+        // 请求身份是唯一触发源，时长编辑不能重新执行旧的定位请求。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [transportMs]);
+    }, [seekRequest]);
 
     const toggle = useCallback(() => {
         if (!project || durationMs <= 0) return;
@@ -301,12 +298,12 @@ export function EditorPreviewMonitor() {
         rafRef.current = requestAnimationFrame(tick);
     }, [durationMs, project, stop, setTransportMs]);
 
-    // 项目切换/时长变化时重置播放
+    // 编辑后暂停并保留播放位置；项目加载的归零由显式 seek 请求处理。
     useEffect(() => {
-        syncPlayback(0);
         stop();
+        syncPlayback(playbackRef.current);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [project, durationMs]);
+    }, [loadRevision, durationMs]);
 
     useEffect(() => () => stop(), [stop]);
 
@@ -327,7 +324,7 @@ export function EditorPreviewMonitor() {
         const targetS = clipSourceTimeMs(activeClip, playbackRef.current) / 1000;
         const maxS = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : targetS;
         const t = Math.min(targetS, maxS);
-        if (Math.abs(v.currentTime - t) > VIDEO_SEEK_TOLERANCE_S) v.currentTime = t;
+        if (Math.abs(v.currentTime - t) > (playingRef.current ? VIDEO_SEEK_TOLERANCE_S : 0.001)) v.currentTime = t;
     };
 
     // 时钟推进/外部 seek：校正视频位置（播放同速时偏差小，几乎不触发硬 seek）。
@@ -343,16 +340,33 @@ export function EditorPreviewMonitor() {
     useEffect(() => {
         const v = videoRef.current;
         if (!v || !isVideoClip) return;
+        let cancelled = false;
         if (playing) {
-            const p = v.play();
-            if (p) p.catch(() => {
-                // 浏览器 autoplay/格式限制：onError 已接管提示与回退。
-            });
+            void (async () => {
+                timelineMediaGain.apply(v, videoVolume);
+                await timelineMediaGain.resume(v);
+                if (!cancelled) await v.play();
+            })().catch(() => { if (!cancelled) setMediaErrorHint("视频播放失败，请检查音量增益或重新点击播放"); });
         } else if (!v.paused) {
             v.pause();
         }
+        return () => { cancelled = true; v.pause(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [playing, mediaTier, variantReadyTick, activeClip?.id, videoSrc]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || !isVideoClip) return;
+        try {
+            timelineMediaGain.apply(video, videoVolume);
+            if (playing) void timelineMediaGain.resume(video).catch(() => { video.pause(); setMediaErrorHint("视频音量增益启动失败，请重新点击播放"); });
+        } catch { video.pause(); setMediaErrorHint("视频音量增益初始化失败"); }
+    }, [videoVolume, isVideoClip, activeClip?.id, videoSrc, playing, mediaTier, variantReadyTick]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        return () => { if (video) timelineMediaGain.release(video); };
+    }, [activeClip?.id, videoSrc, mediaTier, variantReadyTick]);
 
     // 变速：同步视频播放速率，保持音画与时钟一致。
     useEffect(() => {
@@ -404,33 +418,33 @@ export function EditorPreviewMonitor() {
     const showEmpty = !activeClip || (!videoSrc && !imageSrc);
 
     return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--director-sequencer-surface)]">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--previs-sequencer-surface)]">
             {/* 顶部信息条：媒体标题/元数据常驻在画面外的标题栏，不再悬浮遮挡画面内容 */}
-            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3">
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-3">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                     {activeClip ? (
                         <>
-                            <ClipKindIcon kind={activeClip.kind} className="size-3.5 shrink-0 text-[var(--director-dock-fg)]/55" />
-                            <span className="truncate text-xs font-medium text-[var(--director-dock-fg-strong)]" title={clipDisplayTitle(activeClip)}>
+                            <ClipKindIcon kind={activeClip.kind} className="size-3.5 shrink-0 text-[var(--previs-dock-fg)]/55" />
+                            <span className="truncate text-xs font-medium text-[var(--previs-dock-fg-strong)]" title={clipDisplayTitle(activeClip)}>
                                 {clipDisplayTitle(activeClip)}
                             </span>
-                            <span className="hidden shrink-0 rounded-full bg-[var(--director-dock-active-surface)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--director-dock-fg)]/85 sm:inline-flex">
+                            <span className="hidden shrink-0 rounded-full bg-[var(--previs-dock-active-surface)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/85 sm:inline-flex">
                                 {clipKindLabel(activeClip.kind)}
                             </span>
                             {activeTrack && (
-                                <span className="hidden shrink-0 rounded-full border border-[var(--director-sequencer-border)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--director-dock-fg)]/55 md:inline-flex">
+                                <span className="hidden shrink-0 rounded-full border border-[var(--previs-sequencer-border)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/55 md:inline-flex">
                                     {activeTrack.label}
                                 </span>
                             )}
                         </>
                     ) : (
-                        <span className="truncate text-xs text-[var(--director-dock-fg)]/40">预览监视器</span>
+                        <span className="truncate text-xs text-[var(--previs-dock-fg)]/40">预览监视器</span>
                     )}
                 </div>
                 {mediaErrorHint && (
                     <span
                         title={mediaErrorHint}
-                        className="flex min-w-0 max-w-[42%] items-center gap-1.5 rounded-md bg-[var(--director-danger)]/10 px-2 py-1 text-[11px] text-[var(--director-danger)]"
+                        className="flex min-w-0 max-w-[42%] items-center gap-2 rounded-md bg-[var(--previs-danger)]/10 px-2 py-1 text-[var(--fs-label)] text-[var(--previs-danger)]"
                     >
                         {mediaErrorHint.includes("正在生成") ? (
                             <LoaderCircle className="size-3 shrink-0 animate-spin" />
@@ -443,7 +457,7 @@ export function EditorPreviewMonitor() {
                                 href={resourceFileUrl(mediaResourceId)}
                                 download
                                 title="下载原片，用本地播放器观看"
-                                className="grid size-4 shrink-0 place-items-center rounded hover:bg-[var(--director-danger)]/15"
+                                className="grid size-4 shrink-0 place-items-center rounded hover:bg-[var(--previs-danger)]/15"
                             >
                                 <Download className="size-3" />
                             </a>
@@ -461,7 +475,7 @@ export function EditorPreviewMonitor() {
                         <div className="max-w-xs text-xs leading-relaxed text-white/70">
                             {project && project.clips.length > 0
                                 ? activeClip
-                                    ? "当前时间点片段无媒体源（占位/字幕/音频）"
+                                    ? "当前时间点没有可显示画面（字幕或音频片段）"
                                     : "播放头位于空白处"
                                 : "时间线暂无片段，导入素材后在此预览"}
                         </div>
@@ -471,6 +485,7 @@ export function EditorPreviewMonitor() {
                         key={`v:${activeClip!.id}:${mediaTier}:${variantReadyTick}`}
                         ref={videoRef}
                         src={videoSrc}
+                        crossOrigin="anonymous"
                         muted={videoMuted}
                         playsInline
                         preload="auto"
@@ -493,13 +508,17 @@ export function EditorPreviewMonitor() {
             {/* 播放控制条：画面下方的独立一行（Concat 布局），不悬浮叠加、无进度条；
                 播放/暂停用反白块 + 图标形态（Play/Pause）表达状态，图标保持中性（无 accent 蓝）。
                 宽度自适应见上方 transportWidth 逻辑。 */}
+            {activeAudioClips.length > 0 && <div className="flex shrink-0 flex-col px-3">
+                {activeAudioClips.map(clip => <EditorAudioPlayback key={clip.id} clip={clip} timeMs={playbackMs}
+                    playing={playing} speed={speed} muted={project?.tracks.find(track => track.id === clip.trackId)?.muted === true}/>) }
+            </div>}
             <div
                 ref={transportRef}
-                className={`grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-t border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] px-3 ${
+                className={`grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-t border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-3 ${
                     allowScroll ? "overflow-x-auto [scrollbar-width:thin]" : ""
                 }`}
             >
-                <span className="truncate text-xs tabular-nums text-[var(--director-dock-fg)]">
+                <span className="truncate text-xs tabular-nums text-[var(--previs-dock-fg)]">
                     {!compact && formatTimelineTime(playbackMs)}
                     {!compact && !hideTotal && (
                         <span className="opacity-60"> / {formatTimelineTime(durationMs)}</span>
@@ -512,7 +531,7 @@ export function EditorPreviewMonitor() {
                         title="回到开头"
                         onClick={() => syncPlayback(0)}
                         disabled={!project || durationMs <= 0}
-                        className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-40"
+                        className="grid size-7 place-items-center rounded-md text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)] disabled:pointer-events-none disabled:opacity-40"
                     >
                         <SkipBack className="size-4" />
                     </button>
@@ -522,7 +541,7 @@ export function EditorPreviewMonitor() {
                         title="后退 1 秒"
                         onClick={() => stepBy(-1000)}
                         disabled={!project || durationMs <= 0}
-                        className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-40"
+                        className="grid size-7 place-items-center rounded-md text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)] disabled:pointer-events-none disabled:opacity-40"
                     >
                         <StepBack className="size-4" />
                     </button>
@@ -533,8 +552,8 @@ export function EditorPreviewMonitor() {
                         disabled={durationMs <= 0}
                         className={`grid size-7 place-items-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-40 ${
                             playing
-                                ? "bg-[var(--director-dock-active-surface)] text-[var(--director-dock-fg-strong)]"
-                                : "text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
+                                ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]"
+                                : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                         }`}
                     >
                         {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
@@ -545,7 +564,7 @@ export function EditorPreviewMonitor() {
                         title="前进 1 秒"
                         onClick={() => stepBy(1000)}
                         disabled={!project || durationMs <= 0}
-                        className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-40"
+                        className="grid size-7 place-items-center rounded-md text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)] disabled:pointer-events-none disabled:opacity-40"
                     >
                         <StepForward className="size-4" />
                     </button>
@@ -555,7 +574,7 @@ export function EditorPreviewMonitor() {
                         title="跳到结尾"
                         onClick={() => syncPlayback(durationMs)}
                         disabled={!project || durationMs <= 0}
-                        className="grid size-7 place-items-center rounded-md text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)] disabled:pointer-events-none disabled:opacity-40"
+                        className="grid size-7 place-items-center rounded-md text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)] disabled:pointer-events-none disabled:opacity-40"
                     >
                         <SkipForward className="size-4" />
                     </button>
@@ -566,7 +585,7 @@ export function EditorPreviewMonitor() {
                         aria-label="播放速度"
                         title="播放速度"
                         onClick={() => setSpeedMenuOpen((v) => !v)}
-                        className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-[var(--director-dock-fg)] hover:bg-[var(--director-control-hover)]"
+                        className="flex h-7 items-center gap-1 rounded-md px-2 text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                     >
                         <Gauge className="size-3.5" />
                         {!compact && <span className="tabular-nums">{speed}x</span>}
@@ -576,8 +595,8 @@ export function EditorPreviewMonitor() {
                     </button>
                     {speedMenuOpen && (
                         <>
-                            <div className="fixed inset-0 z-40" onClick={() => setSpeedMenuOpen(false)} />
-                            <div className="absolute bottom-full right-0 z-50 mb-1 w-24 overflow-hidden rounded-md border border-[var(--director-sequencer-border)] bg-[var(--director-sequencer-surface-raised)] py-1 shadow-xl">
+                            <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setSpeedMenuOpen(false)} />
+                            <div className="absolute bottom-full right-0 z-[calc(var(--z-dropdown)+1)] mb-1 w-24 overflow-hidden rounded-md border border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] py-1 shadow-xl">
                                 {[0.5, 1, 1.5, 2].map((s) => (
                                     <button
                                         key={s}
@@ -586,12 +605,12 @@ export function EditorPreviewMonitor() {
                                             changeSpeed(s);
                                             setSpeedMenuOpen(false);
                                         }}
-                                        className={`flex w-full items-center justify-between px-2.5 py-1.5 text-[11px] transition-colors hover:bg-[var(--director-control-hover)] ${
-                                            s === speed ? "text-[var(--director-dock-fg-strong)]" : "text-[var(--director-dock-fg)]"
+                                        className={`flex w-full items-center justify-between px-2 py-2 text-[var(--fs-label)] transition-colors hover:bg-[var(--previs-control-hover)] ${
+                                            s === speed ? "text-[var(--previs-dock-fg-strong)]" : "text-[var(--previs-dock-fg)]"
                                         }`}
                                     >
                                         <span>{s}x</span>
-                                        {s === speed && <span className="opacity-60">✓</span>}
+                                        {s === speed && <Check aria-hidden="true" className="size-3.5 opacity-60" />}
                                     </button>
                                 ))}
                             </div>

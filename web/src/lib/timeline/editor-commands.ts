@@ -4,6 +4,8 @@
 // 插件可经宿主 API register 自定义 op，与内建命令共用同一注册表与校验纪律。
 
 import type { SrtEntry, TimelineClip, TimelineProject, TimelineTrack, TimelineTrackKind } from "@/types/timeline";
+import { splitTimelineClip } from './split-timeline-clip';
+import { unlinkTimelineAudio } from './linked-timeline-audio';
 
 export type EditCommand = { op: string; payload: unknown };
 export type CommandHandler = (state: TimelineProject, payload: unknown) => TimelineProject;
@@ -17,7 +19,7 @@ export type EditorCommandRegistry = {
 };
 
 // ---------------------------------------------------------------------------
-// 黄金命令集合 payload 类型（首版一期能力，对应 Runbook M2.1）
+// 内置命令的 payload 类型；注册表、AI 命令契约和黄金测试必须共享同一组 op。
 // ---------------------------------------------------------------------------
 
 export type AddClipPayload = { clip: TimelineClip };
@@ -95,6 +97,14 @@ function findClipOrThrow(op: string, state: TimelineProject, id: string): Timeli
     return clip;
 }
 
+function assertClipIdsAvailable(op: string, retained: TimelineClip[], added: TimelineClip[]): void {
+    const occupied = new Set(retained.map((clip) => clip.id));
+    for (const clip of added) {
+        if (occupied.has(clip.id)) fail(op, `clip "${clip.id}" already exists`);
+        occupied.add(clip.id);
+    }
+}
+
 /** 时间线总时长 = 所有片段末端最大值（与 normalizeTimelineProject 同源）。 */
 function recomputeDurationMs(state: TimelineProject): number {
     return state.clips.reduce((max, clip) => Math.max(max, clip.startMs + clip.durationMs), 0);
@@ -113,6 +123,7 @@ function handleAddClip(state: TimelineProject, payload: unknown): TimelineProjec
     assertClipShape("addClip", clip);
     if (clip.kind === "subtitle") fail("addClip", 'subtitle clips must use op "addSubtitle"');
     findTrackOrThrow("addClip", state, clip.trackId);
+    assertClipIdsAvailable("addClip", state.clips, [clip]);
     return withClips(state, [...state.clips, clip]);
 }
 
@@ -145,7 +156,7 @@ function handleTrimClip(state: TimelineProject, payload: unknown): TimelineProje
     }
 
     const trimmed: TimelineClip = {
-        ...clip,
+        ...unlinkTimelineAudio(clip),
         startMs: nextStartMs,
         durationMs: nextDurationMs,
         sourceStartMs: nextSourceStartMs,
@@ -163,16 +174,14 @@ function handleSplitClip(state: TimelineProject, payload: unknown): TimelineProj
         fail("splitClip", `splitAtMs ${splitAtMs} must be strictly inside clip [${clip.startMs}, ${clipEnd})`);
     }
 
-    const leftDuration = splitAtMs - clip.startMs;
-    const rightDuration = clipEnd - splitAtMs;
-    const left: TimelineClip = { ...clip, durationMs: leftDuration };
-    const right: TimelineClip = {
-        ...clip,
-        id: `${clip.id}:split:${splitAtMs}`,
-        startMs: splitAtMs,
-        durationMs: rightDuration,
-        sourceStartMs: (clip.sourceStartMs ?? 0) + leftDuration,
-    };
+    const baseRightId = `${clip.id}:split:${splitAtMs}`;
+    const occupiedIds = new Set(state.clips.map((item) => item.id));
+    let rightId = baseRightId;
+    // 移动后可再次在相同时间点分割；仅由当前状态消解冲突，保持撤销重放确定性。
+    for (let suffix = 1; occupiedIds.has(rightId); suffix += 1) {
+        rightId = `${baseRightId}:${suffix}`;
+    }
+    const [left, right] = splitTimelineClip(clip, splitAtMs, { left: clip.id, right: rightId });
 
     const index = state.clips.findIndex((c) => c.id === id);
     const clips = [...state.clips.slice(0, index), left, right, ...state.clips.slice(index + 1)];
@@ -208,6 +217,7 @@ function handleAddSubtitle(state: TimelineProject, payload: unknown): TimelinePr
     assertClipShape("addSubtitle", clip);
     if (clip.kind !== "subtitle") fail("addSubtitle", `clip.kind must be "subtitle", got "${clip.kind}"`);
     findTrackOrThrow("addSubtitle", state, clip.trackId);
+    assertClipIdsAvailable("addSubtitle", state.clips, [clip]);
     return withClips(state, [...state.clips, clip]);
 }
 
@@ -313,7 +323,9 @@ function handleRebuildSubtitleClips(state: TimelineProject, payload: unknown): T
         subtitleEntryIndex: entry.index,
         text: entry.text,
     }));
-    const clips = [...state.clips.filter((c) => !(c.kind === "subtitle" && c.nodeId === nodeId)), ...rebuilt];
+    const retained = state.clips.filter((c) => !(c.kind === "subtitle" && c.nodeId === nodeId));
+    assertClipIdsAvailable("rebuildSubtitleClips", retained, rebuilt);
+    const clips = [...retained, ...rebuilt];
     return withClips(state, clips);
 }
 

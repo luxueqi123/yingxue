@@ -1,0 +1,7 @@
+.canvas-storyboard-editor-table .ant-table :is(.ant-table-thead, .ant-table-tbody) > tr > .ant-table-cell-fix {
+    background: var(--background);
+}
+
+.canvas-storyboard-editor-table .ant-table .ant-table-tbody > tr:hover > .ant-table-cell-fix {
+    background: var(--muted);
+}

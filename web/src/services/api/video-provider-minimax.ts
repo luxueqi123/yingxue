@@ -11,7 +11,22 @@ import type { MiniMaxVideoCreateResponse, MiniMaxVideoTask, RequestOptions, Reso
 import type { VideoProviderDeps } from "./video-provider-deps";
 import { resolveVideoImageReferences } from "./video-reference-roles";
 
-export async function createMiniMaxVideoTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+export async function createMiniMaxVideoTask(
+    deps: VideoProviderDeps,
+    config: ResolvedAiConfig,
+    model: string,
+    prompt: string,
+    references: ReferenceImage[],
+    videoReferences: ReferenceVideo[],
+    audioReferences: ReferenceAudio[],
+    options?: RequestOptions,
+): Promise<VideoGenerationTask> {
+    const apiModel = modelOptionName(model);
+    if (apiModel !== "MiniMax-H3" && apiModel !== "MiniMax-H3-Max") throw new Error("MiniMax V2 只支持 MiniMax-H3 或 MiniMax-H3-Max，旧海螺版本不能使用此接口。");
+    const resolution = normalizeMiniMaxResolution(config.vquality);
+    const supportedTiers = apiModel === "MiniMax-H3" ? ["768P", "2K"] : ["480P", "768P"];
+    if (!supportedTiers.includes(resolution)) throw new Error("当前 MiniMax V2 模型不支持请求的分辨率，不能替换像素档位。");
+    const duration = normalizeMiniMaxDuration(config.videoSeconds, apiModel);
     const imageUrls = await Promise.all(references.slice(0, 9).map((image) => resolveMiniMaxImageUrl(image)));
     const videoUrls = await Promise.all(videoReferences.slice(0, 3).map((video) => resolveMiniMaxMediaUrl(video, "参考视频")));
     const audioUrls = await Promise.all(audioReferences.slice(0, 3).map((audio) => resolveMiniMaxMediaUrl(audio, "参考音频")));
@@ -26,10 +41,10 @@ export async function createMiniMaxVideoTask(deps: VideoProviderDeps, config: Re
     videoUrls.forEach((url) => content.push({ type: "video_url", video_url: { url }, role: "reference_video" }));
     audioUrls.forEach((url) => content.push({ type: "audio_url", audio_url: { url }, role: "reference_audio" }));
     const payload = {
-        model: modelOptionName(model),
+        model: apiModel,
         content,
-        resolution: normalizeMiniMaxResolution(config.vquality),
-        duration: normalizeMiniMaxDuration(config.videoSeconds),
+        resolution,
+        duration,
         ratio: normalizeMiniMaxRatio(config.size, frameMode),
         aigc_watermark: boolConfig(config.videoWatermark, false),
     };
@@ -70,12 +85,28 @@ function miniMaxVideoUrl(config: ResolvedAiConfig, path: string) {
 
 function normalizeMiniMaxResolution(value: string) {
     const normalized = value.trim().toLowerCase();
-    return ["2k", "4k", "high", "1080", "1080p", "1440p", "2160p"].includes(normalized) ? "2K" : "768P";
+    const tiers: Record<string, string> = {
+        "480": "480P",
+        "480p": "480P",
+        "512": "512P",
+        "512p": "512P",
+        "768": "768P",
+        "768p": "768P",
+        "1080": "1080P",
+        "1080p": "1080P",
+        "2k": "2K",
+        "1440": "2K",
+        "1440p": "2K",
+    };
+    const tier = tiers[normalized];
+    if (!tier) throw new Error("MiniMax 视频分辨率必须明确选择模型支持的像素档位，不能自动替换。");
+    return tier;
 }
 
-function normalizeMiniMaxDuration(value: string) {
-    const seconds = Math.floor(Number(value) || 5);
-    return Math.max(4, Math.min(15, seconds));
+function normalizeMiniMaxDuration(value: string, _model: string) {
+    const seconds = Number(value);
+    if (!Number.isInteger(seconds) || seconds < 4 || seconds > 30) throw new Error("MiniMax H3 视频时长必须为 4 至 30 秒的整数，不能自动裁剪或取整。");
+    return seconds;
 }
 
 function normalizeMiniMaxRatio(value: string, frameMode: boolean) {

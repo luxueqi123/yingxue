@@ -1,10 +1,12 @@
 import localforage from "localforage";
 
 import { nanoid } from "nanoid";
-import { readImageMeta } from "@/lib/image-utils";
+import { loadRasterImage } from "@/lib/image-raster";
+import { translate } from "@/i18n";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { importResourceFromUrl, isResourceUrl, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
-import { cacheResourceObjectUrl, getCachedResourceBlob, getCachedResourceObjectUrl, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { getResourceAccess, importResourceFromUrl, isResourceUrl, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile } from "@/services/api/resources";
+import { getCachedResourceBlob, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { assertLocalMediaSession, localMediaSession, peekLocalMediaObjectUrl, releaseLocalMediaObjectUrls, storeLocalMediaObjectUrl } from "@/services/local-media-object-urls";
 
 export type UploadedImage = {
     url: string;
@@ -13,18 +15,31 @@ export type UploadedImage = {
     height: number;
     bytes: number;
     mimeType: string;
+    /**
+     * true 表示直传失败、文件当前只存在于本机 IndexedDB。
+     * 云端数据同步会用同一幂等键重传，但在那之前它不是一份已持久化的服务端资源：
+     * `url` 是页面级 objectURL，刷新即失效。UI 不得把这种结果说成"已保存"。
+     */
+    pendingRemoteUpload?: boolean;
+    /** 直传失败原因，仅在 pendingRemoteUpload 为 true 时有值，供 UI 如实告知用户。 */
+    remoteUploadError?: string;
 };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
-const objectUrls = new Map<string, string>();
+const store = localforage.createInstance({ name: "yingce", storeName: "image_files" });
 
-export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
+export async function uploadImage(input: string | Blob, onProgress?: (uploadedBytes: number, totalBytes: number) => void, options?: { deduplicateByContent?: boolean; width?: number; height?: number }): Promise<UploadedImage> {
     // 同一个逻辑上传在直传失败后会退回 IndexedDB，并由云端数据同步再次提交。
     // 提前生成本地 key，确保两条路径向后端发送相同的幂等标识。
-    const storageKey = `image:${getActiveUserScope()}:${nanoid()}`;
-    if (typeof input === "string" && shouldImportRemoteImage(input)) {
+    const session = localMediaSession();
+    const scope = session.scope;
+    const requireSameAccount = () => {
+        assertLocalMediaSession(session);
+    };
+    let storageKey = `image:${scope}:${nanoid()}`;
+    if (!options?.deduplicateByContent && typeof input === "string" && shouldImportRemoteImage(input)) {
         try {
             const resource = await importResourceFromUrl(input, "image", { idempotencyKey: storageKey });
+            requireSameAccount();
             return {
                 url: resource.publicUrl || resourceFileUrl(resource.id),
                 storageKey: resourceStorageKey(resource.id),
@@ -34,15 +49,48 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
                 mimeType: resource.mimeType || "image/png",
             };
         } catch {
+            requireSameAccount();
             // Keep the browser-side path as a fallback for CORS-enabled HTTPS images.
         }
     }
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    let blob: Blob;
+    if (typeof input === "string") {
+        const response = await fetch(input, { credentials: isResourceUrl(input) ? "include" : "same-origin" });
+        if (!response.ok) throw new Error(translate("imageUpload.requestFailed", { status: response.status }));
+        blob = await response.blob();
+    } else blob = input;
+    requireSameAccount();
+    if (options?.deduplicateByContent) {
+        // Preview identity is based on actual bytes, not a URL that may serve changed media.
+        const digest = await crypto.subtle.digest("SHA-256", await new Blob([blob.type, "\0", blob]).arrayBuffer());
+        storageKey = `image:${scope}:sha256:${Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("")}`;
+        requireSameAccount();
+    }
     const previewUrl = URL.createObjectURL(blob);
-    const meta = await readImageMeta(previewUrl);
+    let meta: { width: number; height: number; mimeType: string };
     try {
-        const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey });
+        const width = options?.width;
+        const height = options?.height;
+        if (typeof width === "number" && typeof height === "number" && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+            meta = { width, height, mimeType: blob.type || "image/png" };
+        } else {
+            const image = await loadRasterImage(previewUrl);
+            meta = { width: image.naturalWidth, height: image.naturalHeight, mimeType: blob.type || "image/png" };
+        }
+    } catch (cause) {
+        URL.revokeObjectURL(previewUrl);
+        throw new Error(translate("imageUpload.decodeFailed"), { cause });
+    }
+    if (getActiveUserScope() !== scope) {
+        URL.revokeObjectURL(previewUrl);
+        requireSameAccount();
+    }
+    let remoteUploadError = "";
+    try {
+        const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey, expectedUserId: session.scope }, onProgress);
+        requireSameAccount();
         await primeResourceBlobCache(resourceStorageKey(resource.id), blob).catch(() => "");
+        requireSameAccount();
         URL.revokeObjectURL(previewUrl);
         return {
             url: resource.publicUrl || resourceFileUrl(resource.id),
@@ -52,13 +100,28 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
             bytes: resource.size || blob.size,
             mimeType: resource.mimeType || blob.type || meta.mimeType,
         };
-    } catch {
-        // OSS is optional during local/self-hosted setup. Keep the existing local fallback.
+    } catch (error) {
+        if (getActiveUserScope() !== scope) {
+            URL.revokeObjectURL(previewUrl);
+            requireSameAccount();
+        }
+        // 鉴权失效、越权、体积超限这类失败重传也是同样结果，不能退化成"稍后自动同步"。
+        if (error instanceof ResourceUploadError && error.permanent) {
+            URL.revokeObjectURL(previewUrl);
+            throw error;
+        }
+        remoteUploadError = error instanceof Error ? error.message : "图片直传失败";
     }
-    await store.setItem(storageKey, blob);
-    const url = previewUrl;
-    objectUrls.set(storageKey, url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
+    try {
+        await store.setItem(storageKey, blob);
+        requireSameAccount();
+    } catch (error) {
+        URL.revokeObjectURL(previewUrl);
+        throw error;
+    }
+    const url = storeLocalMediaObjectUrl("image", storageKey, blob, session, { replace: true, url: previewUrl });
+    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
 }
 
 function shouldImportRemoteImage(input: string) {
@@ -69,21 +132,16 @@ export async function resolveImageUrl(storageKey?: string, fallback = "", option
     if (!storageKey) return fallback;
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
-        const cached = await getCachedResourceObjectUrl(storageKey).catch(() => "");
-        if (cached) return cached;
-        if (options?.cacheMiss) {
-            const populated = await cacheResourceObjectUrl(storageKey).catch(() => "");
-            if (populated) return populated;
-        }
-        return resourceFileUrl(resourceId);
+        // 远程资源展示直接使用 OSS/CDN 授权地址，不把媒体内容读进浏览器 Blob。
+        return resolveResourceAccessURL((await getResourceAccess(storageKey, "display")).url);
     }
-    const cached = objectUrls.get(storageKey);
+    const session = localMediaSession();
+    const cached = peekLocalMediaObjectUrl("image", storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    assertLocalMediaSession(session);
     if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("image", storageKey, blob, session);
 }
 
 export async function getImageBlob(storageKey: string) {
@@ -93,10 +151,9 @@ export async function getImageBlob(storageKey: string) {
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const session = localMediaSession();
     await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("image", storageKey, blob, session, { replace: true });
 }
 
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string; name?: string; type?: string; mimeType?: string }) {
@@ -116,10 +173,8 @@ export async function deleteStoredImages(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
             if (resourceIdFromStorageKey(key)) return;
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
             await store.removeItem(key);
+            releaseLocalMediaObjectUrls("image", key);
         }),
     );
 }

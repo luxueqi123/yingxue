@@ -1,0 +1,191 @@
+125|const conversationTimeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+126|const messageTimeFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+127|
+128|function newConversation(): CreationConversation {
+129|    return { id: createClientId(), title: "新创作", updatedAt: new Date().toISOString(), messages: [] };
+130|}
+131|
+132|function newMessage(role: CreationMessage["role"], content: string, extra: Partial<CreationMessage> = {}): CreationMessage {
+133|    return { id: createClientId(), role, content, createdAt: new Date().toISOString(), ...extra };
+134|=======
+135|import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+136|import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
+137|import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
+138|import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages } from "./creation-conversations";
+139|import { CreationComposer, CreationEmptySuggest, CreationFeaturedWorks, CreationHistoryDrawer, CreationMessageView, CreationModeTabs, CreationWorkspaceToolbar, creationAssetCategoryLabels } from "./creation-workspace";
+140|import { CreationAgentEntry } from "./creation-agent-entry";
+141|import { createCreationSubmitGate } from "./creation-submit-gate";
+142|
+143|const AssetLibraryPickerModal = lazy(() => import("@/components/assets/asset-library-picker-modal").then((module) => ({ default: module.AssetLibraryPickerModal })));
+144|const loadCreationRuntime = () => import("./creation-runtime");
+145|type CreationRuntime = Awaited<ReturnType<typeof loadCreationRuntime>>;
+146|
+147|const TEXT_STREAMING_PREF_KEY = "creation.composer.text-streaming";
+148|const TEXT_THINKING_PREF_KEY = "creation.composer.text-thinking";
+149|function readComposerPref(key: string, fallback: boolean): boolean {
+150|    try {
+151|        const stored = window.localStorage.getItem(key);
+152|        return stored === null ? fallback : stored === "1";
+153|    } catch {
+154|        return fallback;
+155|    }
+156|>>>>>>> theirs
+157|}
+158|
+159|type CreationShot = { user?: CreationMessage; result?: CreationMessage };
+160|
+225|    const skillLoadsRef = useRef(0);
+226|    const draftEpochRef = useRef(0);
+227|    const [addedSkills, setAddedSkills] = useState<Skill[]>([]);
+228|    const [ratio, setRatio] = useState("16:9");
+229|    const [seconds, setSeconds] = useState("6");
+230|    const [quality, setQuality] = useState("auto");
+231|    const [videoQuality, setVideoQuality] = useState(config.vquality || "720");
+232|    const [count, setCount] = useState(String(Math.max(1, Math.min(4, Number(config.count) || 1))));
+233|    const [busy, setBusy] = useState(false);
+234|    const [viewMode, setViewMode] = useState<CreationViewMode>("chat");
+235|    const [selectedShotIndex, setSelectedShotIndex] = useState(-1);
+236|    const [composingNextShot, setComposingNextShot] = useState(false);
+237|    const [historyOpen, setHistoryOpen] = useState(false);
+238|    const [libraryOpen, setLibraryOpen] = useState(false);
+239|    const externalAssetSources = useExternalAssetSources(libraryOpen);
+240|    const abortRef = useRef<AbortController | null>(null);
+241|    const fileInputRef = useRef<HTMLInputElement>(null);
+242|    const composerFocusRef = useRef<HTMLTextAreaElement>(null);
+243|    const threadScrollRef = useRef<HTMLElement>(null);
+244|    const launchpadRef = useRef<HTMLElement>(null);
+245|    const reducedMotion = useReducedMotion();
+246|    const [launchpadCondensed, setLaunchpadCondensed] = useState(false);
+247|    const followLatestMessageRef = useRef(true);
+248|    const taskSyncWarningRef = useRef(false);
+249|    const retryPreparingRef = useRef(new Set<string>());
+250|    const submitGateRef = useRef(createCreationSubmitGate());
+251|    const pendingRetryRef = useRef<{ context: CreationRetryContext; lockKey: string } | null>(null);
+252|    const [retrySequence, setRetrySequence] = useState(0);
+253|    const promptHandoffAppliedRef = useRef("");
+254|    const draftReplacementBlocked = () => preparingRef.current || agentLaunch.busy || uploadingRef.current || skillLoadsRef.current > 0 || retryPreparingRef.current.size > 0;
+255|
+256|    const activeConversation = useMemo(() => conversations.find((item) => item.id === activeId) || conversations[0], [activeId, conversations]);
+257|    const historyConversations = useMemo(
+258|        () => conversations.filter((conversation) => conversation.id === activeId || conversation.messages.length > 0).sort((left, right) => conversationTimestamp(right.updatedAt) - conversationTimestamp(left.updatedAt)),
+259|        [activeId, conversations],
+260|    );
+261|    const preferredModel = agentIntent || mode === "text" ? config.textModel : mode === "image" ? config.imageModel : config.videoModel;
+262|    const hasPrompt = Boolean(prompt.trim());
+263|    const modelRequirements = useMemo<ModelRequirements>(() => ({
+264|        capability: mode,
+265|        input: {
+266|            textCount: hasPrompt ? 1 : 0,
+267|            imageCount: attachments.filter(isImageAttachment).length,
+268|            videoCount: attachments.filter(isVideoAttachment).length,
+269|            referenceVideoDurationsMs: attachments.filter(isVideoAttachment).map((item) => "durationMs" in item ? item.durationMs || 0 : 0),
+270|            audioCount: attachments.filter((attachment) => creationAttachmentKind(attachment) === "audio").length,
+271|            characterCount: 0,
+272|        },
+273|        videoSeconds: mode === "video" ? seconds : undefined,
+274|        imageSize: mode === "image" ? ratio : undefined,
+275|		options: mode === "image"
+276|			? { size: ratio, quality, count: Number(count), transparentBackground: config.transparentBackground === "true" }
+277|			: mode === "video"
+278|				? { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality, videoGenerateAudio: config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" }
+279|				: {},
+280|	}), [attachments, config.transparentBackground, config.videoGenerateAudio, config.videoWatermark, count, hasPrompt, mode, quality, ratio, seconds, videoQuality]);
+281|    const selectedModel = agentIntent ? config.textModel : resolveCompatibleModel(config, preferredModel, modelRequirements) || preferredModel;
+282|    const imageProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).image!, [config, selectedModel]);
+283|    const videoProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).video!, [config, selectedModel]);
+284|    const inputCapabilities = useMemo(() => modelCapabilityConfigFor(config, selectedModel), [config, selectedModel]);
+285|    const inputLimits = creationInputLimits(agentIntent ? "agent" : mode, inputCapabilities);
+286|    const maxReferences = Object.values(inputLimits).reduce((sum, limit) => sum + limit.count, 0);
+287|    const inputIssues = creationInputIssues(agentIntent ? "agent" : mode, attachments, inputCapabilities);
+288|    const submissionBlocked = uploading || skillLoading || uploadFailures.length > 0 || inputIssues.length > 0;
+289|    const referenceImageSize = useMemo(() => {
+290|        const imageAttachments = attachments.filter(isImageAttachment);
+291|        if (imageAttachments.length !== 1) return undefined;
+292|        const { width, height } = imageAttachments[0];
+293|        if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) return undefined;
+294|        return { width, height };
+295|    }, [attachments]);
+296|    const mentionReferences = useMemo(() => buildCreationMentionReferences(addedSkills, attachments, draftReferences), [addedSkills, attachments, draftReferences]);
+297|    const isEmpty = !activeConversation?.messages.length;
+298|<<<<<<< ours
+299|    const pendingTaskKey = useMemo(() => pendingCreationTaskKey(conversations), [conversations]);
+340|
+341|    useEffect(() => {
+342|        if (!composerPreferencesHydrated || !composerPreferencesInitialized || mode !== "image") return;
+343|        const saved = useCreationPreferencesStore.getState().preferences.image;
+344|        // 优先恢复用户上次选择；只有当前模型不支持该值时，normalizeImageValue 才回退到模型默认值。
+345|>>>>>>> theirs
+346|        const normalized = normalizeImageValue(imageProfile, {
+347|            size: imageProfile.size.default,
+348|            quality: imageProfile.quality.default,
+349|            count,
+350|        });
+351|        setRatio(normalized.size);
+352|        setQuality(normalized.quality);
+353|        setCount(normalized.count);
+354|    }, [agentIntent, mode, selectedModel, imageProfile]);
+355|
+356|    useEffect(() => {
+357|        if (agentIntent || mode !== "video") return;
+358|        // 前台逻辑模型的默认参数必须直接落到创作端状态，提交任务时才不会被旧状态覆盖。
+359|        const normalized = normalizeVideoValue(videoProfile, {
+360|            seconds: String(videoProfile.duration.default),
+361|            ratio: videoProfile.defaultRatio,
+362|            resolution: videoProfile.defaultResolution,
+363|        });
+364|        setSeconds(normalized.seconds);
+365|        setRatio(normalized.ratio);
+366|        setVideoQuality(normalized.resolution.replace(/p$/i, ""));
+367|    }, [agentIntent, mode, selectedModel, videoProfile]);
+368|
+369|    useEffect(() => {
+370|        let cancelled = false;
+371|        void loadCreationConversations<CreationConversation>().then((stored) => {
+372|            if (cancelled) return;
+373|            const next = embedded ? [newConversation(), ...(stored || []).filter(item => item.messages.length)] : stored?.length ? stored : [newConversation()];
+374|            conversationsRef.current = next;
+375|            setConversations(next);
+376|            setActiveId(next[0].id);
+377|            setHydrated(true);
+378|        });
+379|        return () => {
+380|            cancelled = true;
+381|            // 页面卸载只停止当前页面的状态更新，后台任务由任务中心继续执行，返回页面后再恢复状态。
+382|        };
+383|    }, [embedded]);
+384|
+385|    useEffect(() => () => abortRef.current?.abort(), []);
+386|
+387|    useEffect(() => {
+388|        activeIdRef.current = activeId;
+389|    }, [activeId]);
+390|
+391|    useEffect(() => {
+392|        conversationsRef.current = conversations;
+393|        if (hydrated) void saveCreationConversations(conversations);
+394|    }, [conversations, hydrated]);
+395|
+396|    useEffect(() => {
+397|        if (!hydrated || !pendingTaskKey || !pendingTaskIds.length) return;
+398|        let cancelled = false;
+399|        const observationController = new AbortController();
+400|        const applyTasks = async (tasks: GenerationTask[]) => {
+401|            const contextual = attachCreationTaskContexts(tasks, conversations);
+402|            const persistedTasks = await materializeCreationTaskResults(contextual, observationController.signal);
+403|            if (cancelled) return;
+404|            taskSyncWarningRef.current = false;
+405|            const attachable = persistedTasks.filter((task) => task.status === "succeeded" && Boolean(task.clientContext?.messageId) && Boolean(task.creationResultUrls?.length));
+406|            for (const task of attachable) {
+407|                await consumeGenerationTaskMessage(task, task.clientContext!.messageId!, async ({ effectKey, resultUrls }) => {
+408|                    if (cancelled) return;
+409|                    await updateConversationMessage(task.clientContext!.conversationId!, task.clientContext!.messageId!, (item) =>
+410|                        applyGenerationConsumerEffect(item, effectKey, (current) => ({ ...current, status: "done" as const, resultUrls: Array.from(new Set([...(current.resultUrls || []), ...resultUrls])) })).value,
+411|                    );
+412|                }, { signal: observationController.signal, materialize: async () => task, materializedUrls: generationTaskMaterializedUrls });
+413|            }
+414|            if (!attachable.length && !cancelled) setConversations((current) => reconcileCreationTaskMessages(current, persistedTasks));
+415|        };
+416|        const warnSync = (error: unknown) => {
+417|            if (cancelled || observationController.signal.aborted) return;
+418|            console.warn("创作任务状态同步失败", error);
+419|            if (!taskSyncWarningRef.current) {

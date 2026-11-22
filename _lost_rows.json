@@ -1,0 +1,234 @@
+[
+ {
+  "path": "web/src/pages/settings/index.tsx",
+  "up_add": 38,
+  "up_del": 43,
+  "missing": 26,
+  "samples": [
+   "import { App, Button, InputNumber } from \"antd\";",
+   "import { ArrowLeft, Boxes, Brain, Bug, Cloud, MessageSquareText, RadioTower, SlidersHorizontal, Work",
+   "import AgentMemoryPane from \"./agent-memory-pane\";",
+   "import { RUNNINGHUB_PLUGIN_ID } from \"@/lib/plugins/builtin/workflows\";"
+  ]
+ },
+ {
+  "path": "web/src/pages/tasks/index.tsx",
+  "up_add": 19,
+  "up_del": 56,
+  "missing": 16,
+  "samples": [
+   "import { CollectionToolbar } from \"@/components/layout/collection-toolbar\";",
+   "import { PageHeader, PaginationBar, WorkspacePage } from \"@/components/layout/workspace-page\";",
+   "import { formatTaskKind, operationOptions, statusLabel } from \"@/lib/generation-task-display\";",
+   "import { createGenerationTask, formatTaskLog, listGenerationTasks, listTaskLogs, queryFailedVideoPro"
+  ]
+ },
+ {
+  "path": "web/src/pages/admin/channels/channels-page.tsx",
+  "up_add": 24,
+  "up_del": 16,
+  "missing": 15,
+  "samples": [
+   "import { Copy, Pencil, Plus, Power, Search, Trash2 } from \"lucide-react\";",
+   "import { PaginationBar } from \"@/pages/admin/components/admin-ui\";",
+   "import { createAdminChannel, deleteAdminChannel, duplicateAdminChannel, listAdminChannels, updateAdm",
+   "export function adminChannelSavePayload(values: ChannelFormValues) {"
+  ]
+ },
+ {
+  "path": "web/src/pages/settings/channel-settings-pane.tsx",
+  "up_add": 10,
+  "up_del": 45,
+  "missing": 10,
+  "samples": [
+   "import { App, Button, Form, Input, Popconfirm, Segmented, Select, Tooltip } from \"antd\";",
+   "import { Pencil, Plus, RefreshCw, Trash2, Workflow } from \"lucide-react\";",
+   "export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelSettingsPaneProps) {",
+   "const result = await fetchChannelModels(channel, true);"
+  ]
+ },
+ {
+  "path": "web/src/services/api/custom-channel-relay.ts",
+  "up_add": 10,
+  "up_del": 1,
+  "missing": 9,
+  "samples": [
+   "import { apiBaseURL } from \"@/services/api/request\";",
+   "import { isSystemProxyBaseUrl, type AiConfig, type ChannelHeader } from \"@/stores/use-config-store\";",
+   "type RelayConfig = Pick<AiConfig, \"baseUrl\" | \"apiKey\" | \"apiFormat\"> & { headers?: ChannelHeader[] ",
+   "if (isSystemProxyBaseUrl(config.baseUrl)) {"
+  ]
+ },
+ {
+  "path": "web/src/pages/canvas/use-canvas-assistant-visibility.ts",
+  "up_add": 8,
+  "up_del": 1,
+  "missing": 8,
+  "samples": [
+   "import { useCallback, useState } from \"react\";",
+   "const [assistantOpen, setAssistantOpen] = useState(false);",
+   "const openAgent = useCallback(() => {",
+   "setAssistantOpen(true);"
+  ]
+ },
+ {
+  "path": "backend/internal/app/workflow_plugins.go",
+  "up_add": 6,
+  "up_del": 4,
+  "missing": 6,
+  "samples": [
+   "statuses := make(map[string]string, 1)",
+   "for _, pluginID := range []string{WorkflowPluginRunningHub} {",
+   "statuses := make(map[string]string, 1)",
+   "for _, pluginID := range []string{WorkflowPluginRunningHub} {"
+  ]
+ },
+ {
+  "path": "backend/internal/handler/custom_proxy.go",
+  "up_add": 6,
+  "up_del": 0,
+  "missing": 6,
+  "samples": [
+   "var customRelayClient = service.CustomRelayHTTPClient",
+   "proxyCustomRelayRequestWithService(c, policy.Request, svc)",
+   "proxyCustomRelayRequestWithService(c, policy, nil)",
+   "func proxyCustomRelayRequestWithService(c *gin.Context, policy service.RuntimeRequestPolicy, svc *se"
+  ]
+ },
+ {
+  "path": "web/src/services/api/image-models.ts",
+  "up_add": 6,
+  "up_del": 2,
+  "missing": 6,
+  "samples": [
+   "export async function fetchImageModels(config: Pick<AiConfig, \"baseUrl\" | \"apiKey\" | \"apiFormat\">) {",
+   "const models = await fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat:",
+   "baseUrl: channel.baseUrl,",
+   "apiKey: channel.apiKey,"
+  ]
+ },
+ {
+  "path": "backend/cmd/server/main.go",
+  "up_add": 3,
+  "up_del": 0,
+  "missing": 3,
+  "samples": [
+   "svc := service.New(repo, dataDir)",
+   "const corsAllowedHeaders = \"Accept, Content-Type, Authorization, X-Requested-With, X-Canvas-Scene, X",
+   "c.Header(\"Access-Control-Allow-Headers\", corsAllowedHeaders)"
+  ]
+ },
+ {
+  "path": "web/src/lib/generation-task-display.ts",
+  "up_add": 3,
+  "up_del": 14,
+  "missing": 3,
+  "samples": [
+   "type GenerationTaskDisplayTarget = Pick<GenerationTask, \"status\" | \"stage\">;",
+   "return task.stage === \"submission_unknown\";",
+   "return true;"
+  ]
+ },
+ {
+  "path": "web/src/components/workflow-test-workbench.tsx",
+  "up_add": 2,
+  "up_del": 2,
+  "missing": 2,
+  "samples": [
+   "type WorkflowProvider = \"runninghub\";",
+   "RunningHub · {capabilityName(capability)}工作流 · 测试值不会覆盖保存配置"
+  ]
+ },
+ {
+  "path": "web/src/lib/canvas/canvas-workflow.ts",
+  "up_add": 2,
+  "up_del": 1,
+  "missing": 2,
+  "samples": [
+   "export type CanvasWorkflowProvider = \"model\" | \"runninghub\";",
+   "return provider === \"runninghub\";"
+  ]
+ },
+ {
+  "path": "web/src/lib/generation-workflow-execution.ts",
+  "up_add": 5,
+  "up_del": 4,
+  "missing": 2,
+  "samples": [
+   "provider: \"runninghub\";",
+   "throw new Error(\"未知工作流提供方\");"
+  ]
+ },
+ {
+  "path": "web/src/lib/plugins/builtin/workflows.ts",
+  "up_add": 2,
+  "up_del": 20,
+  "missing": 2,
+  "samples": [
+   "export type WorkflowProvider = \"runninghub\";",
+   "return RUNNINGHUB_PLUGIN_ID;"
+  ]
+ },
+ {
+  "path": "web/src/main.tsx",
+  "up_add": 3,
+  "up_del": 1,
+  "missing": 2,
+  "samples": [
+   "// The public film entry checks its availability independently of workspace bootstrap.",
+   "else void bootstrapAppearance().finally(() => import(\"./application\"));"
+  ]
+ },
+ {
+  "path": "web/src/pages/canvas/canvas-media-generation-executors.ts",
+  "up_add": 2,
+  "up_del": 0,
+  "missing": 2,
+  "samples": [
+   "const isExistingAudioNode = sourceNode?.type === CanvasNodeType.Audio && Boolean(sourceNode.metadata",
+   "if (!isEmptyAudioNode && !isExistingAudioNode) setConnections((current) => [...current, { id: nanoid"
+  ]
+ },
+ {
+  "path": "backend/internal/app/platform_bridge.go",
+  "up_add": 0,
+  "up_del": 14,
+  "missing": 0,
+  "samples": []
+ },
+ {
+  "path": "backend/internal/app/upload_quota.go",
+  "up_add": 0,
+  "up_del": 8,
+  "missing": 0,
+  "samples": []
+ },
+ {
+  "path": "backend/internal/platform/host.go",
+  "up_add": 0,
+  "up_del": 9,
+  "missing": 0,
+  "samples": []
+ },
+ {
+  "path": "backend/internal/service/aliases_funcs.go",
+  "up_add": 0,
+  "up_del": 4,
+  "missing": 0,
+  "samples": []
+ },
+ {
+  "path": "web/src/components/canvas/canvas-node-action-context.ts",
+  "up_add": 0,
+  "up_del": 1,
+  "missing": 0,
+  "samples": []
+ },
+ {
+  "path": "web/src/pages/admin/settings/runtime-policy-settings-page.tsx",
+  "up_add": 0,
+  "up_del": 4,
+  "missing": 0,
+  "samples": []
+ }
+]

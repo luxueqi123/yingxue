@@ -1,0 +1,50 @@
+.yx-auth-scene { position: relative; height: 100dvh; min-height: 0; overflow-y: auto; overflow-x: hidden; isolation: isolate; }
+.yx-auth-scene > .yx-cinema { position: fixed; }
+.yx-auth-scene .yx-cinema-shade { background: linear-gradient(90deg, rgb(3 12 27 / 32%), rgb(4 14 28 / 12%) 45%, rgb(5 14 28 / 67%)), linear-gradient(180deg, rgb(3 12 25 / 28%), transparent 35%, rgb(3 12 25 / 85%)); }
+.yx-auth-nav { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: 24px 4%; }
+.yx-auth-brand { height: 55px; }
+.yx-auth-back { display: inline-flex; align-items: center; gap: 9px; padding: 10px 15px; border: 1px solid var(--yx-border); border-radius: var(--yx-pill); font-size: 11px; color: var(--yx-white); background: rgb(7 18 34 / 30%); backdrop-filter: blur(15px); }
+.yx-auth-layout { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr minmax(400px, 470px); align-items: center; gap: 7%; max-width: 1390px; min-height: calc(100dvh - 145px); padding: 30px 6% 80px; margin: auto; }
+.yx-auth-story > p { margin: 0 0 30px; font-size: 10px; letter-spacing: 2.6px; color: #b5ccde; }
+.yx-auth-story h1 { font-size: clamp(58px, 5.2vw, 82px); font-weight: 300; line-height: 1.22; margin: 0 0 30px; letter-spacing: 1px; }
+.yx-auth-story h1 span { color: var(--yx-ice); }
+.yx-auth-story > div { color: #b5ccde; font-size: 14px; line-height: 2; }
+.yx-auth-story > a { display: inline-flex; align-items: center; gap: 25px; font-size: 12px; color: var(--yx-ice); margin-top: 48px; }
+.yx-auth-panel { min-width: 0; }
+.yx-auth-card { border: 1px solid rgb(178 216 251 / 20%); border-radius: 26px; background: linear-gradient(145deg, rgb(23 43 67 / 84%), rgb(7 19 36 / 89%)); box-shadow: inset 0 1px 0 rgb(226 243 255 / 9%), 0 30px 100px rgb(1 10 24 / 38%); backdrop-filter: blur(36px) saturate(140%); overflow: hidden; }
+.yx-auth-card-heading { padding: 34px 34px 22px; }
+.yx-auth-card-heading > p { font-size: 9px; letter-spacing: 2.6px; color: var(--yx-ice); margin: 0 0 18px; }
+.yx-auth-card-heading > h2 { font-size: 27px; font-weight: 400; letter-spacing: -.5px; margin: 0 0 12px; }
+.yx-auth-card-heading > span { display: block; color: #a4b5c9; font-size: 12px; line-height: 1.8; }
+.yx-auth-tabs { padding: 0 34px; }
+.yx-auth-form { padding: 24px 34px 34px; }
+.yx-auth-scene .yx-cinema-control { position: fixed; }
+.yx-account-modal .ant-modal-container { border: 1px solid var(--yx-border); background: linear-gradient(145deg, #15283d, var(--yx-ink)); border-radius: var(--yx-radius); }
+.yx-account-modal .ant-modal-header { background: transparent; }
+.yx-account-modal .ant-modal-title { color: var(--yx-white); }
+.yx-account-modal .ant-modal-close { color: var(--yx-muted); }
+.yx-account-modal .yx-account-heading { display: flex; align-items: center; gap: 18px; padding-right: 20px; font-weight: 400; }
+.yx-account-modal .yx-account-brand { height: auto; width: 128px; aspect-ratio: 66 / 17; }
+.yx-account-modal .yx-account-fields { padding-top: 12px; }
+.yx-account-modal .auth-card-dark label { color: var(--yx-white); }
+.yx-account-modal .ant-tabs { margin-top: 12px; }
+@media (max-height: 700px) { .yx-account-modal .yx-account-fields { padding-top: 0; } }
+@media (max-width: 1000px) { .yx-auth-layout { grid-template-columns: 1fr minmax(370px, 430px); gap: 5%; padding-left: 4%; padding-right: 4%; } .yx-auth-story h1 { font-size: 56px; } }
+@media (max-width: 760px) {
+    .yx-auth-nav { padding: 19px 22px; }
+    .yx-auth-brand { height: 46px; }
+    .yx-auth-layout { display: flex; flex-direction: column; align-items: stretch; max-width: 490px; padding: 32px 22px 90px; gap: 34px; }
+    .yx-auth-story { text-align: center; }
+    .yx-auth-story > p { font-size: 8px; margin-bottom: 19px; }
+    .yx-auth-story h1 { font-size: 40px; line-height: 1.4; margin-bottom: 17px; }
+    .yx-auth-story h1 br { display: none; }
+    .yx-auth-story > div { font-size: 11px; }
+    .yx-auth-story > div br { display: none; }
+    .yx-auth-story > a { display: none; }
+    .yx-auth-card { border-radius: 22px; }
+    .yx-auth-card-heading { padding: 28px 24px 18px; }
+    .yx-auth-card-heading > h2 { font-size: 24px; }
+    .yx-auth-tabs { padding: 0 24px; }
+    .yx-auth-form { padding: 20px 24px 28px; }
+    .yx-auth-scene .yx-cinema-control { position: absolute; bottom: 22px; }
+}

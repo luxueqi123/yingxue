@@ -1,0 +1,78 @@
+package service
+
+import "infinite-canvas/backend/internal/app"
+
+var (
+	ErrPlaybackNotReady                        = app.ErrPlaybackNotReady
+	ErrNotBuiltinSkill                         = app.ErrNotBuiltinSkill
+	AllowedPrivateUpstreamHost                 = app.AllowedPrivateUpstreamHost
+	AppearanceAssetMaxBytes                    = app.AppearanceAssetMaxBytes
+	ApplyDefaultOutboundHeaders                = app.ApplyDefaultOutboundHeaders
+	ApplyOutboundHeaders                       = app.ApplyOutboundHeaders
+	BadAuthRequest                             = app.BadAuthRequest
+	CapabilitySpecFromModelCapabilityConfig    = app.CapabilitySpecFromModelCapabilityConfig
+	ChannelAPIURL                              = app.ChannelAPIURL
+	ChannelAPIURLForProtocol                   = app.ChannelAPIURLForProtocol
+	ChannelSlotFailureDetails                  = app.ChannelSlotFailureDetails
+	ComputePriceConfigured                     = app.ComputePriceConfigured
+	ComputeTierPriceConfigured                 = app.ComputeTierPriceConfigured
+	CustomRelayHTTPClient                      = app.CustomRelayHTTPClient
+	CustomRelayHTTPClientForChannel            = app.CustomRelayHTTPClientForChannel
+	DecodeCapabilitySpec                       = app.DecodeCapabilitySpec
+	DecodeModelCapabilityConfig                = app.DecodeModelCapabilityConfig
+	DecodeRelayOutboundHeaders                 = app.DecodeRelayOutboundHeaders
+	DefaultImageCapabilityConfig               = app.DefaultImageCapabilityConfig
+	DefaultModelCapabilityConfig               = app.DefaultModelCapabilityConfig
+	DefaultModelCapabilityConfigForModel       = app.DefaultModelCapabilityConfigForModel
+	EncodeOutboundHeadersJSON                  = app.EncodeOutboundHeadersJSON
+	EnsureChatCompletionStreamUsageRequest     = app.EnsureChatCompletionStreamUsageRequest
+	Forbidden                                  = app.Forbidden
+	FormatModelError                           = app.FormatModelError
+	GetModelErrorCode                          = app.GetModelErrorCode
+	HasValidPrice                              = app.HasValidPrice
+	InvalidModelSelection                      = app.InvalidModelSelection
+	IsModelError                               = app.IsModelError
+	IsProjectNotFound                          = app.IsProjectNotFound
+	MatchCapability                            = app.MatchCapability
+	ModelCapabilityNotSupported                = app.ModelCapabilityNotSupported
+	ModelCatalogMismatch                       = app.ModelCatalogMismatch
+	ModelPriceNotConfigured                    = app.ModelPriceNotConfigured
+	ModelRequestIntentFromTaskInput            = app.ModelRequestIntentFromTaskInput
+	ModelRouteUnavailable                      = app.ModelRouteUnavailable
+	New                                        = app.New
+	NewAppError                                = app.NewAppError
+	NewModelError                              = app.NewModelError
+	NewWithRuntimeCapabilities                 = app.NewWithRuntimeCapabilities
+	NormalizeCapabilitySpec                    = app.NormalizeCapabilitySpec
+	NormalizeModelCapabilityConfig             = app.NormalizeModelCapabilityConfig
+	NormalizeModelCapabilityConfigForModel     = app.NormalizeModelCapabilityConfigForModel
+	NormalizeOutboundHeaders                   = app.NormalizeOutboundHeaders
+	NotFound                                   = app.NotFound
+	OutboundHTTPClient                         = app.OutboundHTTPClient
+	ParseOutboundHeadersJSON                   = app.ParseOutboundHeadersJSON
+	PaymentNotificationResponseFor             = app.PaymentNotificationResponseFor
+	PaymentNotificationResponseForWithRegistry = app.PaymentNotificationResponseForWithRegistry
+	ProviderRequestFailed                      = app.ProviderRequestFailed
+	QuotaExceeded                              = app.QuotaExceeded
+	RateLimited                                = app.RateLimited
+	ReasonForStatus                            = app.ReasonForStatus
+	RuntimeCapabilitiesForDeployment           = app.RuntimeCapabilitiesForDeployment
+	SanitizeAPICallPayload                     = app.SanitizeAPICallPayload
+	StreamUsageOptionRejectedResponse          = app.StreamUsageOptionRejectedResponse
+	SystemProxyChatCompletionPath              = app.SystemProxyChatCompletionPath
+	Unauthorized                               = app.Unauthorized
+	ValidateCapabilitySpec                     = app.ValidateCapabilitySpec
+	ValidateChannelModelPrice                  = app.ValidateChannelModelPrice
+	ValidateCustomRelayChannelURL              = app.ValidateCustomRelayChannelURL
+	ValidateCustomRelayURL                     = app.ValidateCustomRelayURL
+	ValidateLogicalModelPrice                  = app.ValidateLogicalModelPrice
+	ValidateOutboundHost                       = app.ValidateOutboundHost
+	ValidateOutboundURL                        = app.ValidateOutboundURL
+	ValidatePriceTierPrice                     = app.ValidatePriceTierPrice
+	WrapAppError                               = app.WrapAppError
+)
+var (
+	OutboundHTTPClientWithProxy = app.OutboundHTTPClientWithProxy
+
+	ValidateProxyURL = app.ValidateProxyURL
+)

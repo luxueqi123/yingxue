@@ -1,6 +1,6 @@
 # OpenAI Audio Speech
 
-该插件调用 OpenAI 风格的同步文字转语音接口，把宿主提示词映射为 `input`。当前只发送模型与文本，声音、格式、语速和其他 TTS 选项尚未纳入 adapter。
+该插件调用 OpenAI 风格的同步文字转语音接口，把映雪提示词映射为 `input`，并传递音色、格式、语速与可选的配音要求。
 
 ## 接口与鉴权
 
@@ -14,7 +14,7 @@ Content-Type: application/json
 
 ## 模型、声音与输出格式
 
-模型、voice、格式、单次文本长度、流式能力和价格以 OpenAI 或兼容渠道实际文档为准。当前宿主 metadata 没有声明参数表，这意味着只有 `model` 和 `prompt` 的内部映射稳定，不意味着上游没有必填 `voice`。若上游要求 voice，管理员必须先扩展 adapter，不能依赖未白名单的字段自动透传。
+模型、voice、格式、单次文本长度、流式能力和价格以 OpenAI 或兼容渠道实际文档为准。音色可填写渠道提供的 ID；预设声音不代表所有渠道都支持。模型未配置与缺少制作协议是不同状态。
 
 ## 参数与字段映射
 
@@ -23,7 +23,7 @@ Content-Type: application/json
 实际请求正文固定为：
 
 ```json
-{"model":"YOUR_TTS_MODEL","input":"请在午夜前离开这座城市。"}
+{"model":"YOUR_TTS_MODEL","input":"请在午夜前离开这座城市。","voice":"YOUR_VOICE","response_format":"mp3","speed":1.25,"instructions":"自然、克制的旁白"}
 ```
 
 完整上游常见请求参考：
@@ -36,11 +36,11 @@ curl "{channel_base_url}/v1/audio/speech" \
   --output speech.mp3
 ```
 
-第二个示例包含当前 adapter 尚未发送的 `voice` 和 `response_format`，用于说明必须补齐的协议字段。
+节点设置经公共任务合同进入声明式插件。`instructions` 为空时省略；音色、格式与语速保持节点选择。
 
 ## 响应与当前实现差异
 
-OpenAI 官方 Speech API 通常直接返回音频二进制流；当前 `parseAudioResponse` 却按 JSON 中的 `url/audio_url/data` 解析。因此本插件当前更适合“返回音频 URL JSON”的兼容渠道，不能宣称已经正确处理 OpenAI 官方二进制响应。直连官方服务前必须增加二进制响应合同、MIME/文件名处理和资源保存测试。
+随包插件声明 `binaryPayload`，同步响应按音频二进制读取并进入映雪资源保存链路。音乐作曲、声音克隆、参考音频、变声和独立采样率控制不属于这个语音合同，不能通过省略这些要求来冒充兼容。
 
 ## 官方资料
 

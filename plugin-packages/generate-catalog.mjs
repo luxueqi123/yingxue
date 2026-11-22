@@ -1,37 +1,42 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { packageDirectories } from "./package-directories.mjs";
+import { klingV4Spec } from "./kling-v4-official/protocol.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const scopes = ["admin.system-channel", "user.custom-channel", "canvas", "creation", "agent"];
 const ref = (path) => ({ $ref: path });
 const omit = (value) => ({ $omitEmpty: value });
 const coalesce = (...values) => ({ $coalesce: values });
+const addNumbers = (...values) => ({ $add: values });
+const multiply = (...values) => ({ $multiply: values });
 const map = (from, as, body) => ({ $map: { from, as, in: body } });
 const filter = (from, as, where) => ({ $filter: { from, as, where } });
 const eq = (left, right) => ({ $eq: [left, right] });
 const ne = (left, right) => ({ $ne: [left, right] });
 const gt = (left, right) => ({ $gt: [left, right] });
+const gte = (left, right) => ({ $gte: [left, right] });
+const lt = (left, right) => ({ $lt: [left, right] });
+const lte = (left, right) => ({ $lte: [left, right] });
+const and = (...values) => ({ $and: values });
 const len = (value) => ({ $len: value });
+const lower = (value) => ({ $lower: value });
+const trim = (value) => ({ $trim: value });
+const toFloat = (value) => ({ $toFloat: value });
+const toInt = (value) => ({ $toInt: value });
+const split = (value, separator) => ({ $split: [value, separator] });
+const at = (value, index) => ({ $at: [value, index] });
+const divide = (left, right) => ({ $divide: [left, right] });
 const conditional = (condition, thenValue, elseValue = null) => ({ $if: { condition, then: thenValue, else: elseValue } });
+const nonZeroFloat = (value) => conditional(ne(toFloat(value), 0), toFloat(value));
 const first = (value) => ({ $first: value });
 const sorted = (value) => ({ $sortByOrder: value });
+const numberedImages = (layout) => ({ layout, token: "参考图{n}" });
 const mediaWithRoles = (path, roles) => filter(sorted(ref(path)), "media", { $in: [ref("media.role"), roles] });
 const firstMediaWithRoles = (path, roles) => first(mediaWithRoles(path, roles));
 const firstMediaFieldWithRoles = (path, roles, field) => first(map(mediaWithRoles(path, roles), "media", ref(`media.${field}`)));
-
-const textParams = [
-  ["model", "string", true, "model", "上游模型 ID。"],
-  ["messages", "message[]", true, "provider message container", "包含历史消息和当前用户输入。"],
-  ["instructions", "string", false, "system/instructions", "系统指令。"],
-  ["temperature", "number", false, "temperature", "采样温度。"],
-  ["top_p", "number", false, "top_p", "核采样参数。"],
-  ["max_tokens", "integer", false, "max_tokens/max_output_tokens", "最大输出 token。"],
-  ["tools", "array", false, "tools/toolConfig", "工具定义。"],
-  ["tool_choice", "object|string", false, "tool_choice", "工具选择策略。"],
-  ["response_format", "object", false, "response_format/text", "结构化输出配置。"],
-  ["stream", "boolean", false, "stream", "流式开关；后台任务当前以最终响应归一。"]
-];
 
 const imageParams = [
   ["model", "string", true, "model", "图片模型 ID。"],
@@ -55,6 +60,12 @@ const videoParams = [
   ["resolution", "string", false, "resolution", "分辨率档位。"],
   ["generateAudio", "boolean", false, "generate_audio", "是否生成音频。"],
   ["watermark", "boolean", false, "watermark", "水印开关。"],
+  ["providerOptions", "object", false, "provider-specific fields", "插件命名空间内的厂商扩展字段。"]
+];
+
+const audioParams = [
+  ["model", "string", true, "model", "音频模型 ID。"],
+  ["prompt", "string", true, "input", "待合成文本。"],
   ["providerOptions", "object", false, "provider-specific fields", "插件命名空间内的厂商扩展字段。"]
 ];
 
@@ -83,169 +94,124 @@ function add(spec) {
   specs.push(spec);
 }
 
-add({
-  id: "openai-chat-completions", providerId: "chat-completion", name: "OpenAI Chat Completions", vendor: "OpenAI", capability: "text",
-  baseUrl: "https://api.openai.com", auth: bearer, params: textParams,
-  create: jsonCreate("/chat/completions", {
-    model: ref("request.model"), messages: ref("request.messages"),
-    temperature: omit(ref("request.providerOptions.chat-completion.temperature")),
-    top_p: omit(ref("request.providerOptions.chat-completion.top_p")),
-    max_tokens: omit(coalesce(ref("request.extra.max_tokens"), ref("request.providerOptions.chat-completion.max_tokens"))),
-    tools: omit(ref("request.providerOptions.chat-completion.tools")),
-    tool_choice: omit(ref("request.providerOptions.chat-completion.tool_choice")),
-    response_format: omit(ref("request.providerOptions.chat-completion.response_format")),
-    stream: omit(ref("request.providerOptions.chat-completion.stream")),
-    stop: omit(ref("request.providerOptions.chat-completion.stop")),
-    seed: omit(ref("request.providerOptions.chat-completion.seed")),
-    frequency_penalty: omit(ref("request.providerOptions.chat-completion.frequency_penalty")),
-    presence_penalty: omit(ref("request.providerOptions.chat-completion.presence_penalty")),
-    logprobs: omit(ref("request.providerOptions.chat-completion.logprobs")),
-    top_logprobs: omit(ref("request.providerOptions.chat-completion.top_logprobs")),
-    user: omit(ref("request.providerOptions.chat-completion.user"))
-  }),
-  agent: jsonCreate("/chat/completions", { $merge: [ref("request.extra.agent.chatCompletion"), { model: ref("request.model") }] }),
-  agentResponse: { textPaths: ["choices.0.message.content", "choices.0.text"], reasoningPaths: ["choices.0.message.reasoning_content"], toolCallsPath: "choices.0.message.tool_calls", toolCallIdPaths: ["id"], toolCallNamePaths: ["function.name"], toolCallArgumentsPaths: ["function.arguments"] },
-  response: { status: "succeeded", textPaths: ["choices.0.message.content", "choices.0.text"], reasoningPaths: ["choices.0.message.reasoning_content"], usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
-});
+add(klingV4Spec({ ref, omit, coalesce, addNumbers, multiply, map, filter, eq, ne, gt, gte, lte, and, len, trim, at, conditional, first, sorted }));
 
 add({
-  id: "openai-responses", providerId: "openai-response", name: "OpenAI Responses", vendor: "OpenAI", capability: "text",
-  baseUrl: "https://api.openai.com", auth: bearer, params: textParams,
-  create: jsonCreate("/responses", {
-    model: ref("request.model"), input: ref("request.messages"), instructions: omit(ref("request.instructions")),
-    temperature: omit(ref("request.providerOptions.openai-response.temperature")),
-    top_p: omit(ref("request.providerOptions.openai-response.top_p")),
-    max_output_tokens: omit(coalesce(ref("request.extra.max_output_tokens"), ref("request.providerOptions.openai-response.max_output_tokens"))),
-    tools: omit(ref("request.providerOptions.openai-response.tools")), tool_choice: omit(ref("request.providerOptions.openai-response.tool_choice")),
-    text: omit(ref("request.providerOptions.openai-response.text")), reasoning: omit(ref("request.providerOptions.openai-response.reasoning")),
-    previous_response_id: omit(ref("request.providerOptions.openai-response.previous_response_id")),
-    store: omit(ref("request.providerOptions.openai-response.store")), metadata: omit(ref("request.providerOptions.openai-response.metadata")),
-    stream: omit(ref("request.providerOptions.openai-response.stream")), truncation: omit(ref("request.providerOptions.openai-response.truncation")),
-    user: omit(ref("request.providerOptions.openai-response.user"))
-  }),
-  agent: jsonCreate("/responses", { $merge: [ref("request.extra.agent.responses"), { model: ref("request.model") }] }),
-  agentResponse: { textPaths: ["output_text"], reasoningPaths: ["reasoning.summary.0.text"], toolCallsPath: "output", toolCallIdPaths: ["call_id", "id"], toolCallNamePaths: ["name"], toolCallArgumentsPaths: ["arguments"] },
-  response: { status: "succeeded", textPaths: ["output_text"], reasoningPaths: ["reasoning.summary.0.text"], usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
-});
-
-add({
-  id: "anthropic-messages", providerId: "claude-api", name: "Anthropic Messages", vendor: "Anthropic", capability: "text",
-  baseUrl: "https://api.anthropic.com", auth: { type: "anthropic", field: "apiKey" }, params: textParams,
-  create: jsonCreate("/v1/messages", {
-    model: ref("request.model"),
-    max_tokens: coalesce(ref("request.extra.max_tokens"), ref("request.providerOptions.claude-api.max_tokens"), 4096),
-    system: omit(coalesce(ref("request.instructions"), ref("request.providerOptions.claude-api.system"))),
-    messages: filter(ref("request.messages"), "message", ne(ref("message.role"), "system")),
-    temperature: omit(ref("request.providerOptions.claude-api.temperature")), top_p: omit(ref("request.providerOptions.claude-api.top_p")),
-    top_k: omit(ref("request.providerOptions.claude-api.top_k")), stop_sequences: omit(ref("request.providerOptions.claude-api.stop_sequences")),
-    tools: omit(ref("request.providerOptions.claude-api.tools")), tool_choice: omit(ref("request.providerOptions.claude-api.tool_choice")),
-    metadata: omit(ref("request.providerOptions.claude-api.metadata")), stream: omit(ref("request.providerOptions.claude-api.stream")),
-    thinking: omit(ref("request.providerOptions.claude-api.thinking")), service_tier: omit(ref("request.providerOptions.claude-api.service_tier"))
-  }, { headers: { "anthropic-version": coalesce(ref("request.providerOptions.claude-api.anthropic-version"), "2023-06-01"), "anthropic-beta": omit(ref("request.providerOptions.claude-api.anthropic-beta")) } }),
-  agent: jsonCreate("/v1/messages", { $merge: [ref("request.extra.agent.claude"), { model: ref("request.model") }] }, { headers: { "anthropic-version": "2023-06-01" } }),
-  agentResponse: { textPaths: ["content.0.text"], reasoningPaths: ["content.0.thinking"], toolCallsPath: "content", toolCallIdPaths: ["id"], toolCallNamePaths: ["name"], toolCallArgumentsPaths: ["input"] },
+  id: "openai-images", providerId: "openai-image", name: "OpenAI Images", vendor: "OpenAI", capability: "image",
+  version: "2.2.2",
+  baseUrl: "https://api.openai.com", auth: bearer,
+  params: imageParams.map((parameter) => parameter[0] === "resolution"
+    ? ["resolution", "string", false, "size", "仅用于宿主选择像素尺寸与计价，不发送独立 resolution 字段。"]
+    : parameter),
+  imageParameters: [
+    { name: "size", label: "画幅 / 尺寸", type: "string", binding: "aspectRatio", encoding: "pixels", pricing: true },
+    { name: "imageResolution", label: "分辨率", type: "string", binding: "resolution", enabled: false, pricing: true },
+    { name: "quality", label: "图片质量", type: "string", binding: "quality", pricing: true },
+    { name: "count", label: "生成数量", type: "integer", binding: "imageCount", min: 1, max: 100, step: 1, default: 1 },
+    { name: "transparentBackground", label: "透明背景", type: "boolean", binding: "transparentBackground", default: false, enabled: false },
+    { name: "outputFormat", label: "输出格式", type: "string", binding: "providerOptions.openai-image.output_format", values: ["png", "jpeg", "webp", "gif"], default: "png", enabled: false },
+    { name: "outputCompression", label: "压缩质量", type: "integer", binding: "providerOptions.openai-image.output_compression", min: 0, max: 100, step: 1, enabled: false }
+  ],
+  notes: "无参考图走 JSON generations；有参考图或蒙版走 multipart edits（官方与 LiteLLM 等网关的通用格式），单张参考图用 image 字段、多张用 image[]，蒙版用 mask。1K/2K/4K 档位只用于选择 size 像素预设及计价，不向上游发送 resolution；自动尺寸由模型决定。quality 独立发送，auto 时省略，不把分辨率档位转换为质量。输出格式通过 providerOptions.openai-image.output_format 发送；管理员须按渠道实际能力启用并限定枚举，支持 GIF 的 GPT Image 2.6 渠道可使用对应能力模板。Base64 响应读取单张或顶层 output_format，并按实际文件头识别格式；GIF 下载保留原文件动画。",
+  create: {
+    method: "POST",
+    path: "/v1/images/generations",
+    pathTemplate: conditional(gt(len(ref("request.images")), 0), "/v1/images/edits", "/v1/images/generations"),
+    contentType: "application/json",
+    contentTypeTemplate: conditional(gt(len(ref("request.images")), 0), "multipart/form-data", "application/json"),
+    files: [
+      { name: "image", source: conditional(eq(len(filter(ref("request.images"), "media", ne(ref("media.role"), "mask"))), 1), filter(sorted(ref("request.images")), "media", ne(ref("media.role"), "mask"))), filename: "image.png" },
+      { name: "image[]", source: conditional(gt(len(filter(ref("request.images"), "media", ne(ref("media.role"), "mask"))), 1), filter(sorted(ref("request.images")), "media", ne(ref("media.role"), "mask"))) },
+      { name: "mask", source: first(filter(sorted(ref("request.images")), "media", eq(ref("media.role"), "mask"))), filename: "mask.png" }
+    ],
+    body: {
+      model: ref("request.model"),
+      prompt: ref("request.prompt"),
+      n: omit(conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1)),
+      size: omit(conditional({ $in: [lower(trim(ref("request.aspectRatio"))), ["", "auto"]] }, null, ref("request.aspectRatio"))),
+      quality: omit(conditional({ $in: [lower(trim(ref("request.quality"))), ["", "auto"]] }, null, ref("request.quality"))),
+      background: omit(coalesce(
+        ref("request.providerOptions.openai-image.background"),
+        conditional(eq(ref("request.extra.transparentBackground"), "true"), "transparent", null)
+      )),
+      output_format: omit(coalesce(ref("request.providerOptions.openai-image.output_format"), "png")),
+      output_compression: omit(ref("request.providerOptions.openai-image.output_compression")),
+      moderation: omit(ref("request.providerOptions.openai-image.moderation")),
+      response_format: omit(ref("request.providerOptions.openai-image.response_format")),
+      style: omit(ref("request.providerOptions.openai-image.style")),
+      user: omit(ref("request.providerOptions.openai-image.user"))
+    },
+    files: [
+      { name: "image", source: filter(sorted(ref("request.images")), "media", ne(ref("media.role"), "mask")) },
+      { name: "mask", source: filter(sorted(ref("request.images")), "media", eq(ref("media.role"), "mask")) }
+    ]
+  },
   response: {
     status: "succeeded",
-    text: map(filter(ref("response.content"), "part", eq(ref("part.type"), "text")), "part", ref("part.text")),
-    reasoning: map(filter(ref("response.content"), "part", eq(ref("part.type"), "thinking")), "part", ref("part.thinking")),
-    usage: ref("response.usage"), errorPaths: ["error.type"], messagePaths: ["error.message"]
+    images: map(ref("response.data"), "item", {
+      url: omit(ref("item.url")),
+      b64_json: omit(ref("item.b64_json")),
+      output_format: omit(coalesce(ref("item.output_format"), ref("response.output_format")))
+    }),
+    usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"]
+  }
+});
+
+const grokAspectSource = lower(trim(ref("request.aspectRatio")));
+const grokSizeParts = split(grokAspectSource, "x");
+const grokSizeWidth = toFloat(at(grokSizeParts, 0));
+const grokSizeHeight = toFloat(at(grokSizeParts, 1));
+const grokSizeRatio = divide(grokSizeWidth, grokSizeHeight);
+const grokHasPixelSize = and(eq(len(grokSizeParts), 2), gt(grokSizeWidth, 0), gt(grokSizeHeight, 0));
+const grokAspectRatio = omit({
+  $switch: {
+    cases: [
+      { when: { $in: [grokAspectSource, ["", "auto"]] }, then: null },
+      { when: { $in: [grokAspectSource, ["1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "9:19.5", "19.5:9", "1:2", "2:1"]] }, then: grokAspectSource },
+      { when: and(grokHasPixelSize, eq(grokSizeWidth, grokSizeHeight)), then: "1:1" },
+      { when: and(grokHasPixelSize, gte(grokSizeRatio, 1.7), lte(grokSizeRatio, 1.8)), then: "16:9" },
+      { when: and(grokHasPixelSize, gte(grokSizeRatio, 1.0 / 1.8), lte(grokSizeRatio, 1.0 / 1.7)), then: "9:16" },
+      { when: and(grokHasPixelSize, gt(grokSizeRatio, 1.2), lt(grokSizeRatio, 1.4)), then: "4:3" },
+      { when: and(grokHasPixelSize, gt(grokSizeRatio, 0.7), lt(grokSizeRatio, 0.85)), then: "3:4" },
+      { when: and(grokHasPixelSize, gte(grokSizeRatio, 0.6), lt(grokSizeRatio, 0.72)), then: "2:3" },
+      { when: and(grokHasPixelSize, gt(grokSizeRatio, 1.35), lt(grokSizeRatio, 1.6)), then: "3:2" },
+      { when: and(grokHasPixelSize, gt(grokSizeRatio, 0.45), lt(grokSizeRatio, 0.55)), then: "1:2" },
+      { when: and(grokHasPixelSize, gt(grokSizeRatio, 1.85), lt(grokSizeRatio, 2.2)), then: "2:1" },
+      { when: and(grokHasPixelSize, gt(grokSizeWidth, grokSizeHeight)), then: "16:9" },
+      { when: grokHasPixelSize, then: "9:16" }
+    ],
+    default: null
+  }
+});
+const grokResolutionSource = lower(trim(coalesce(ref("request.resolution"), ref("request.quality"))));
+const grokResolution = omit({
+  $switch: {
+    cases: [
+      { when: { $in: [grokResolutionSource, ["1k", "low", "standard"]] }, then: "1k" },
+      { when: { $in: [grokResolutionSource, ["2k", "medium", "hd", "high", "4k"]] }, then: "2k" }
+    ],
+    default: null
   }
 });
 
 add({
-  id: "google-gemini-generate-content", providerId: "gemini-generate-content", name: "Google Gemini generateContent", vendor: "Google", capability: "text",
-  baseUrl: "https://generativelanguage.googleapis.com", auth: { type: "google-api-key", field: "apiKey" }, params: textParams,
-  create: jsonCreate("/v1beta/models/{{model}}:generateContent", {
-    contents: map(ref("request.messages"), "message", {
-      role: conditional(eq(ref("message.role"), "assistant"), "model", "user"),
-      parts: [{ text: ref("message.content") }]
-    }),
-    systemInstruction: conditional(ref("request.instructions"), { parts: [{ text: ref("request.instructions") }] }),
-    generationConfig: omit(ref("request.providerOptions.gemini-generate-content.generationConfig")),
-    safetySettings: omit(ref("request.providerOptions.gemini-generate-content.safetySettings")),
-    tools: omit(ref("request.providerOptions.gemini-generate-content.tools")),
-    toolConfig: omit(ref("request.providerOptions.gemini-generate-content.toolConfig")),
-    cachedContent: omit(ref("request.providerOptions.gemini-generate-content.cachedContent"))
-  }),
-  agent: jsonCreate("/v1beta/models/{{model}}:generateContent", ref("request.extra.agent.gemini")),
-  agentResponse: { textPaths: ["candidates.0.content.parts.0.text"], toolCallsPath: "candidates.0.content.parts", toolCallIdPaths: ["functionCall.id"], toolCallNamePaths: ["functionCall.name"], toolCallArgumentsPaths: ["functionCall.args"], toolCallThoughtSignaturePaths: ["thoughtSignature", "thought_signature"] },
-  response: { status: "succeeded", text: map(ref("response.candidates.0.content.parts"), "part", omit(ref("part.text"))), usage: ref("response.usageMetadata"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
-});
-
-add({
-  id: "cohere-chat-v2", providerId: "cohere-chat-v2", name: "Cohere Chat v2", vendor: "Cohere", capability: "text",
-  baseUrl: "https://api.cohere.com", auth: bearer, params: textParams,
-  create: jsonCreate("/v2/chat", {
-    model: ref("request.model"), messages: ref("request.messages"),
-    temperature: omit(ref("request.providerOptions.cohere-chat-v2.temperature")), max_tokens: omit(ref("request.extra.max_tokens")),
-    stop_sequences: omit(ref("request.providerOptions.cohere-chat-v2.stop_sequences")), tools: omit(ref("request.providerOptions.cohere-chat-v2.tools")),
-    tool_choice: omit(ref("request.providerOptions.cohere-chat-v2.tool_choice")), response_format: omit(ref("request.providerOptions.cohere-chat-v2.response_format")),
-    documents: omit(ref("request.providerOptions.cohere-chat-v2.documents")), citation_options: omit(ref("request.providerOptions.cohere-chat-v2.citation_options")),
-    safety_mode: omit(ref("request.providerOptions.cohere-chat-v2.safety_mode")), seed: omit(ref("request.providerOptions.cohere-chat-v2.seed")), stream: omit(ref("request.providerOptions.cohere-chat-v2.stream"))
-  }),
-  response: { status: "succeeded", textPaths: ["message.content.0.text", "text"], usage: ref("response.usage"), errorPaths: ["error.type"], messagePaths: ["message"] }
-});
-
-add({
-  id: "ollama-chat", providerId: "ollama-chat", name: "Ollama Chat", vendor: "Ollama", capability: "text",
-  baseUrl: "http://127.0.0.1:11434", auth: { type: "none", field: "apiKey" }, params: textParams,
-  create: jsonCreate("/api/chat", {
-    model: ref("request.model"), messages: ref("request.messages"), stream: false,
-    format: omit(ref("request.providerOptions.ollama-chat.format")), options: omit(ref("request.providerOptions.ollama-chat.options")),
-    keep_alive: omit(ref("request.providerOptions.ollama-chat.keep_alive")), tools: omit(ref("request.providerOptions.ollama-chat.tools")),
-    think: omit(ref("request.providerOptions.ollama-chat.think"))
-  }),
-  response: { status: "succeeded", textPaths: ["message.content", "response"], reasoningPaths: ["message.thinking", "thinking"], errorPaths: ["error"], messagePaths: ["error"] }
-});
-
-for (const [id, name, vendor, baseUrl] of [
-  ["xai-grok-chat", "xAI Grok Chat", "xAI", "https://api.x.ai"],
-  ["deepseek-chat", "DeepSeek Chat", "DeepSeek", "https://api.deepseek.com"],
-  ["mistral-chat", "Mistral Chat", "Mistral AI", "https://api.mistral.ai"],
-  ["kimi-chat", "Kimi OpenAI-Compatible", "Moonshot AI", "https://api.moonshot.cn"],
-  ["zhipu-glm-chat", "智谱 GLM Chat", "Zhipu AI", "https://open.bigmodel.cn/api/paas"],
-  ["baichuan-chat", "百川 Chat", "Baichuan", "https://api.baichuan-ai.com"],
-  ["yi-chat", "零一万物 Yi Chat", "01.AI", "https://api.lingyiwanwu.com"],
-  ["siliconflow-chat", "SiliconFlow Chat", "SiliconFlow", "https://api.siliconflow.cn"],
-  ["together-chat", "Together AI Chat", "Together AI", "https://api.together.xyz"],
-  ["groq-chat", "Groq Chat", "Groq", "https://api.groq.com/openai"],
-  ["fireworks-chat", "Fireworks Chat", "Fireworks AI", "https://api.fireworks.ai/inference"],
-  ["nvidia-nim-chat", "NVIDIA NIM Chat", "NVIDIA", "https://integrate.api.nvidia.com"],
-  ["openrouter-chat", "OpenRouter Chat", "OpenRouter", "https://openrouter.ai/api"],
-  ["litellm-proxy-chat", "LiteLLM Proxy Chat", "LiteLLM", "http://127.0.0.1:4000"],
-  ["newapi-chat", "NewAPI Chat", "NewAPI", "http://127.0.0.1:3000"],
-  ["vllm-chat", "vLLM OpenAI-Compatible", "vLLM", "http://127.0.0.1:8000"],
-  ["localai-chat", "LocalAI Chat", "LocalAI", "http://127.0.0.1:8080"]
-]) {
-  add({
-    id, providerId: id, name, vendor, capability: "text", baseUrl, auth: bearer, params: textParams,
-    notes: "该插件实现该平台公开的 OpenAI Chat Completions 线协议 profile；平台专有字段通过 providerOptions 命名空间透传，未声明支持的 OpenAI 字段仍由模型 capability profile 校验。",
-    create: jsonCreate("/v1/chat/completions", {
-      model: ref("request.model"), messages: ref("request.messages"),
-      temperature: omit(ref(`request.providerOptions.${id}.temperature`)), top_p: omit(ref(`request.providerOptions.${id}.top_p`)),
-      max_tokens: omit(coalesce(ref("request.extra.max_tokens"), ref(`request.providerOptions.${id}.max_tokens`))),
-      tools: omit(ref(`request.providerOptions.${id}.tools`)), tool_choice: omit(ref(`request.providerOptions.${id}.tool_choice`)),
-      response_format: omit(ref(`request.providerOptions.${id}.response_format`)), stream: omit(ref(`request.providerOptions.${id}.stream`)),
-      provider: omit(ref(`request.providerOptions.${id}.provider`)), transforms: omit(ref(`request.providerOptions.${id}.transforms`)),
-      extra_body: omit(ref(`request.providerOptions.${id}.extra_body`))
-    }),
-    agent: jsonCreate("/v1/chat/completions", { $merge: [ref("request.extra.agent.chatCompletion"), { model: ref("request.model") }] }),
-    agentResponse: { textPaths: ["choices.0.message.content", "choices.0.text"], reasoningPaths: ["choices.0.message.reasoning_content"], toolCallsPath: "choices.0.message.tool_calls", toolCallIdPaths: ["id"], toolCallNamePaths: ["function.name"], toolCallArgumentsPaths: ["function.arguments"] },
-    response: { status: "succeeded", textPaths: ["choices.0.message.content", "choices.0.text"], reasoningPaths: ["choices.0.message.reasoning_content"], usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
-  });
-}
-
-add({
   id: "xai-grok-images", providerId: "grok-image", name: "xAI Grok Images", vendor: "xAI", capability: "image",
   baseUrl: "https://api.x.ai", auth: bearer, params: imageParams,
-  create: jsonCreate("/v1/images/generations", {
-    model: ref("request.model"), prompt: ref("request.prompt"),
-    image: conditional(gt(len(ref("request.images")), 0), { url: firstMediaFieldWithRoles("request.images", ["edit_source", "reference_image", ""], "value") }),
-    n: conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1),
-    response_format: coalesce(ref("request.providerOptions.grok-image.response_format"), "url"),
-    aspect_ratio: omit(ref("request.aspectRatio")), resolution: omit(coalesce(ref("request.resolution"), ref("request.quality"))),
-    user: omit(ref("request.providerOptions.grok-image.user"))
-  }),
+  notes: "有参考图时改走 /v1/images/edits；resolution 只接受 1k/2k；像素尺寸会换算为 aspect_ratio。",
+  create: {
+    method: "POST",
+    path: "/v1/images/generations",
+    pathTemplate: conditional(gt(len(ref("request.images")), 0), "/v1/images/edits", "/v1/images/generations"),
+    contentType: "application/json",
+    body: {
+      model: ref("request.model"), prompt: ref("request.prompt"),
+      image: conditional(gt(len(ref("request.images")), 0), { url: firstMediaFieldWithRoles("request.images", ["edit_source", "reference_image", ""], "value") }),
+      n: conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1),
+      response_format: coalesce(ref("request.providerOptions.grok-image.response_format"), "url"),
+      aspect_ratio: grokAspectRatio, resolution: grokResolution,
+      user: omit(ref("request.providerOptions.grok-image.user"))
+    }
+  },
   response: { status: "succeeded", images: map(ref("response.data"), "item", { url: omit(ref("item.url")), dataUrl: conditional(ref("item.b64_json"), { $concat: ["data:image/png;base64,", ref("item.b64_json")] }) }), errorPaths: ["error.code"], messagePaths: ["error.message"] }
 });
 
@@ -254,25 +220,189 @@ const arkSeedreamRatioSizes = [
   ["3:2", "2496x1664"], ["2:3", "1664x2496"], ["21:9", "3024x1296"]
 ];
 
+const arkSeedreamImageBody = (optionNamespace) => ({
+  model: ref("request.model"), prompt: ref("request.prompt"),
+  // Ark 的 size 只接受 WIDTHxHEIGHT 或 2k/3k/4k；统一层的比例值在这里换算成 2K 档像素尺寸，像素或档位值原样透传。
+  size: omit({ $switch: { cases: arkSeedreamRatioSizes.map(([ratio, size]) => ({ when: eq(ref("request.aspectRatio"), ratio), then: size })), default: ref("request.aspectRatio") } }),
+  image: omit(conditional(
+    eq(len(ref("request.images")), 1),
+    first(map(ref("request.images"), "media", ref("media.value"))),
+    conditional(gt(len(ref("request.images")), 1), map(ref("request.images"), "media", ref("media.value")), null)
+  )),
+  sequential_image_generation: omit(ref(`request.providerOptions.${optionNamespace}.sequential_image_generation`)),
+  sequential_image_generation_options: omit(ref(`request.providerOptions.${optionNamespace}.sequential_image_generation_options`)),
+  watermark: coalesce(ref(`request.providerOptions.${optionNamespace}.watermark`), ref("request.watermark"), false),
+  seed: omit(ref(`request.providerOptions.${optionNamespace}.seed`)),
+  response_format: coalesce(ref(`request.providerOptions.${optionNamespace}.response_format`), "b64_json")
+});
+
 add({
-  id: "volcengine-ark-seedream", providerId: "volcengine-ark-image", name: "Volcengine Ark Seedream Images", vendor: "Volcengine", capability: "image",
+  id: "volcengine-ark-seedream", providerId: "volcengine-ark-image", name: "火山方舟 Seedream 官方图片生成", vendor: "Volcengine", capability: "image",
+  version: "2.1.0",
+  description: "火山方舟官方 Seedream 图片生成接口，使用普通 /api/v3 推理 API Key；支持图片生成和参考图编辑。",
+  readmeIntro: "火山方舟官方声明式图片协议插件，面向普通 `/api/v3` Seedream 图片生成接口。使用方舟推理 API Key，可生成图片或通过参考图编辑。",
+
   baseUrl: "https://ark.cn-beijing.volces.com", auth: bearer, params: imageParams,
+  imageParameters: [
+    { name: "size", label: "画幅 / 尺寸", type: "string", pricing: true, binding: "aspectRatio", encoding: "pixels" },
+    { name: "imageResolution", label: "分辨率", type: "string", values: ["1k", "1.5k", "2k"], default: "2k", pricing: true, binding: "resolution" },
+    { name: "layerDecomposition", label: "图层拆分", type: "boolean", default: false, pricing: true, binding: "providerOptions.volcengine-ark-image.layer_decomposition" },
+    { name: "maxImages", label: "最多输出张数（含底图）", type: "integer", min: 2, max: 100, step: 1, default: 30, binding: "providerOptions.volcengine-ark-image.max_images" },
+    { name: "layerSize", label: "拆层输出尺寸", type: "string", values: ["1K", "1.5K", "2K", "auto"], default: "auto", binding: "providerOptions.volcengine-ark-image.layer_size" },
+    { name: "background", label: "图片背景", type: "string", values: ["auto", "opaque", "transparent"], default: "auto", binding: "providerOptions.volcengine-ark-image.background" },
+    { name: "outputFormat", label: "输出格式", type: "string", values: ["png", "jpeg"], default: "png", binding: "providerOptions.volcengine-ark-image.output_format" },
+    { name: "textRecognition", label: "拆层时识别文字", type: "boolean", default: false, binding: "providerOptions.volcengine-ark-image.text_recognition" }
+  ].map((parameter) => ({ ...parameter, models: ["doubao-seedream-5-5-261028"] })),
+  notes: "官方 Ark 推理接入：Base URL 使用 /api/v3，API Key 来自方舟推理接入控制台，不可与 Agent Plan 专属 Key 混用。",
   create: jsonCreate("/api/v3/images/generations", {
-    model: ref("request.model"), prompt: ref("request.prompt"),
-    // Ark 的 size 只接受 WIDTHxHEIGHT 或 2k/3k/4k；统一层的比例值在这里换算成 2K 档像素尺寸，像素或档位值原样透传。
-    size: omit({ $switch: { cases: arkSeedreamRatioSizes.map(([ratio, size]) => ({ when: eq(ref("request.aspectRatio"), ratio), then: size })), default: ref("request.aspectRatio") } }),
-    image: omit(map(ref("request.images"), "media", ref("media.value"))),
-    sequential_image_generation: omit(ref("request.providerOptions.volcengine-ark-image.sequential_image_generation")),
-    sequential_image_generation_options: omit(ref("request.providerOptions.volcengine-ark-image.sequential_image_generation_options")),
-    watermark: ref("request.watermark"), seed: omit(ref("request.providerOptions.volcengine-ark-image.seed")),
-    response_format: omit(ref("request.providerOptions.volcengine-ark-image.response_format"))
+    ...arkSeedreamImageBody("volcengine-ark-image"),
+    size: conditional(eq(ref("request.providerOptions.volcengine-ark-image.layer_decomposition"), true), coalesce(ref("request.providerOptions.volcengine-ark-image.layer_size"), "auto"), arkSeedreamImageBody("volcengine-ark-image").size),
+    layer_decomposition: omit(ref("request.providerOptions.volcengine-ark-image.layer_decomposition")),
+    layer_decomposition_options: omit(conditional(eq(ref("request.providerOptions.volcengine-ark-image.layer_decomposition"), true), {
+      max_images: coalesce(ref("request.providerOptions.volcengine-ark-image.max_images"), 30),
+      text_recognition: coalesce(ref("request.providerOptions.volcengine-ark-image.text_recognition"), false)
+    })),
+    background: omit(conditional(eq(ref("request.providerOptions.volcengine-ark-image.layer_decomposition"), true), null, ref("request.providerOptions.volcengine-ark-image.background"))),
+    output_format: omit(ref("request.providerOptions.volcengine-ark-image.output_format"))
   }),
   response: { status: "succeeded", images: ref("response.data"), usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
 });
 
 add({
+  id: "volcengine-ark-agent-plan-seedream", providerId: "volcengine-ark-agent-plan-image", name: "火山方舟 Seedream Agent Plan 图片接口", vendor: "Volcengine", capability: "image",
+  description: "火山方舟 Agent Plan 专用 Seedream /api/plan/v3 图片生成接口，需要专用 API Key 和 AFP 额度；与普通 /api/v3 分开配置。",
+  readmeIntro: "火山方舟 Agent Plan 专用声明式图片协议插件，使用 `/api/plan/v3` 图片生成接口。需要 Agent Plan 专用 API Key 和 AFP 额度，不能与普通 `/api/v3` 方舟接口混用。",
+
+  baseUrl: "https://ark.cn-beijing.volces.com", auth: bearer, params: imageParams,
+  notes: "Agent Plan 专属接入：请求路径为 /api/plan/v3/images/generations，必须使用 Agent Plan 控制台专属 API Key；请求体与官方 Seedream 协议一致，但凭证与额度按 AFP 套餐结算，不能与 /api/v3 官方 Key 混用。",
+  create: jsonCreate("/api/plan/v3/images/generations", arkSeedreamImageBody("volcengine-ark-agent-plan-image")),
+  response: { status: "succeeded", images: ref("response.data"), usage: ref("response.usage"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
+});
+
+const arkSeedanceValidations = [
+  { assert: { $lte: [len(ref("request.images")), 9] }, message: "Seedance 最多支持 9 张参考图片" },
+  { assert: { $lte: [len(ref("request.videos")), 3] }, message: "Seedance 最多支持 3 个参考视频" },
+  { assert: { $lte: [len(ref("request.audios")), 3] }, message: "Seedance 最多支持 3 个参考音频" },
+  { assert: { $or: [eq(len(ref("request.audios")), 0), gt({ $add: [len(ref("request.images")), len(ref("request.videos"))] }, 0)] }, message: "Seedance 不支持纯音频或文本+音频，请同时添加参考图片或参考视频" }
+];
+
+const arkSeedanceParams = [
+  ["model", "string", true, "model", "Ark endpoint/model ID。"],
+  ["prompt", "string", true, "content[type=text].text", "视频提示词。"],
+  ["images", "media[]", false, "content[type=image_url]", "first_frame、last_frame、reference_image 等 role 原样映射。"],
+  ["videos", "media[]", false, "content[type=video_url]", "reference_video。"],
+  ["audios", "media[]", false, "content[type=audio_url]", "reference_audio/reference_voice。"],
+  ["aspectRatio", "string", false, "ratio", "输出画幅。"],
+  ["resolution", "string", false, "resolution", "输出分辨率档位。"],
+  ["duration", "integer", false, "duration", "输出时长秒数。"],
+  ["generateAudio", "boolean", false, "generate_audio", "是否生成音频。"],
+  ["watermark", "boolean", false, "watermark", "是否带水印。"],
+  ["seed", "integer", false, "seed", "providerOptions seed。"],
+  ["camera_fixed", "boolean", false, "camera_fixed", "providerOptions camera_fixed。"]
+];
+
+const arkSeedanceBody = (optionNamespace) => ({
+  model: ref("request.model"),
+  content: {
+    $concatArrays: [
+      [{ type: "text", text: ref("request.prompt") }],
+      map(sorted(ref("request.images")), "media", {
+        type: "image_url",
+        image_url: { url: ref("media.value") },
+        role: coalesce(ref("media.role"), "reference_image")
+      }),
+      map(sorted(ref("request.videos")), "media", {
+        type: "video_url",
+        video_url: { url: ref("media.value") },
+        role: coalesce(ref("media.role"), "reference_video")
+      }),
+      map(sorted(ref("request.audios")), "media", {
+        type: "audio_url",
+        audio_url: { url: ref("media.value") },
+        role: coalesce(ref("media.role"), "reference_audio")
+      })
+    ]
+  },
+  ratio: coalesce(ref("request.aspectRatio"), "16:9"),
+  resolution: coalesce(ref("request.resolution"), "720p"),
+  duration: conditional(gt(ref("request.duration"), 0), ref("request.duration"), 5),
+  generate_audio: ref("request.generateAudio"),
+  watermark: ref("request.watermark"),
+  seed: omit(ref(`request.providerOptions.${optionNamespace}.seed`)),
+  camera_fixed: omit(ref(`request.providerOptions.${optionNamespace}.camera_fixed`))
+});
+
+const arkSeedanceResponse = {
+  taskId: coalesce(ref("response.id"), ref("response.task_id"), ref("response.data.id"), ref("taskId")),
+  status: coalesce(ref("response.status"), ref("response.data.status"), "pending"),
+  message: coalesce(ref("response.error.message"), ref("response.message"), ref("response.fail_reason")),
+  videos: coalesce(ref("response.content.video_url"), ref("response.video_url"), ref("response.output.video_url"), ref("response.data.video_url")),
+  usage: ref("response.usage"),
+  errorPaths: ["error.code"],
+  resultEphemeral: true
+};
+
+add({
+  id: "volcengine-ark-seedance", providerId: "volcengine-ark-video", name: "火山方舟 Seedance 官方视频生成", vendor: "Volcengine", capability: "video",
+  videoReferences: numberedImages("content"),
+  description: "火山方舟官方 Seedance 视频生成接口，使用普通 /api/v3 Contents Generations Tasks 和方舟推理 API Key；不是 Agent Plan 专用线路。",
+  readmeIntro: "火山方舟官方声明式协议插件，面向普通 `/api/v3` Contents Generations Tasks 视频生成接口。使用普通方舟 API Key 和 Endpoint，可接入 Seedance 视频模型。",
+
+  baseUrl: "https://ark.cn-beijing.volces.com", auth: bearer, params: arkSeedanceParams, requiresPublicMediaUrls: true,
+  validations: arkSeedanceValidations,
+  notes: "官方 Ark 推理接入：创建/查询/取消走 /api/v3/contents/generations/tasks；插件不根据图片下标推断首尾帧，role 由业务层确定。API Key 来自方舟推理接入控制台。",
+  create: jsonCreate("/api/v3/contents/generations/tasks", arkSeedanceBody("volcengine-ark-video")),
+  poll: { method: "GET", path: "/api/v3/contents/generations/tasks/{{taskId}}" },
+  cancel: { method: "DELETE", path: "/api/v3/contents/generations/tasks/{{taskId}}" },
+  response: arkSeedanceResponse
+});
+
+add({
+  id: "volcengine-ark-agent-plan-seedance", providerId: "volcengine-ark-agent-plan-video", name: "火山方舟 Seedance Agent Plan 视频接口", vendor: "Volcengine", capability: "video",
+  videoReferences: numberedImages("content"),
+  description: "火山方舟 Agent Plan 专用 Seedance /api/plan/v3 视频生成接口，需要专用 API Key 和 AFP 额度；与普通 /api/v3 分开配置。",
+  readmeIntro: "火山方舟 Agent Plan 专用声明式协议插件，使用 `/api/plan/v3` 视频生成接口。需要 Agent Plan 专用 API Key 和 AFP 额度，不能与普通 `/api/v3` 方舟接口混用。",
+
+  baseUrl: "https://ark.cn-beijing.volces.com", auth: bearer, params: arkSeedanceParams, requiresPublicMediaUrls: true,
+  validations: arkSeedanceValidations,
+  notes: "Agent Plan 专属接入：创建/查询/取消走 /api/plan/v3/contents/generations/tasks；请求体与官方 Seedance 协议一致，但必须使用 Agent Plan 专属 API Key 与 AFP 额度，不能与 /api/v3 官方 Key 混用。",
+  create: jsonCreate("/api/plan/v3/contents/generations/tasks", arkSeedanceBody("volcengine-ark-agent-plan-video")),
+  poll: { method: "GET", path: "/api/plan/v3/contents/generations/tasks/{{taskId}}" },
+  cancel: { method: "DELETE", path: "/api/plan/v3/contents/generations/tasks/{{taskId}}" },
+  response: arkSeedanceResponse
+});
+
+// Gemini imageConfig.imageSize 只接受 1K/2K/4K；画布统一层用 1k/2k/4k 或 low/medium/high。
+const geminiImageSize = omit({
+  $coalesce: [
+    {
+      $switch: {
+        cases: [
+          { when: { $in: [lower(ref("request.quality")), ["1k", "low"]] }, then: "1K" },
+          { when: { $in: [lower(ref("request.quality")), ["2k", "medium"]] }, then: "2K" },
+          { when: { $in: [lower(ref("request.quality")), ["4k", "high"]] }, then: "4K" }
+        ],
+        default: null
+      }
+    },
+    {
+      $switch: {
+        cases: [
+          { when: { $in: [lower(ref("request.resolution")), ["1k", "low"]] }, then: "1K" },
+          { when: { $in: [lower(ref("request.resolution")), ["2k", "medium"]] }, then: "2K" },
+          { when: { $in: [lower(ref("request.resolution")), ["4k", "high"]] }, then: "4K" }
+        ],
+        default: null
+      }
+    }
+  ]
+});
+
+add({
   id: "google-gemini-image", providerId: "gemini-image", name: "Google Gemini Image", vendor: "Google", capability: "image",
+  version: "2.1.0",
   baseUrl: "https://generativelanguage.googleapis.com", auth: { type: "google-api-key", field: "apiKey" }, params: imageParams,
+  notes: "imageSize 只映射 1K/2K/4K；未知质量值（如视频清晰度 720）必须省略。多图输出由宿主按次创建，不映射 candidateCount。googleSearch=true 映射 Google 搜索工具，仅用于支持联网的 Gemini 3 Pro Image / 3.1 Flash Image。groundingMetadata 随产物保存，客户端展示搜索建议及来源。",
   create: jsonCreate("/v1beta/models/{{model}}:generateContent", {
     contents: [{ role: "user", parts: { $concatArrays: [
       [{ text: ref("request.prompt") }],
@@ -280,10 +410,12 @@ add({
     ] } }],
     generationConfig: {
       responseModalities: coalesce(ref("request.providerOptions.gemini-image.responseModalities"), ["TEXT", "IMAGE"]),
-      imageConfig: { aspectRatio: omit(ref("request.aspectRatio")), imageSize: omit(coalesce(ref("request.resolution"), ref("request.quality"))) },
-      candidateCount: omit(ref("request.imageCount")), temperature: omit(ref("request.providerOptions.gemini-image.temperature")), topP: omit(ref("request.providerOptions.gemini-image.topP")), topK: omit(ref("request.providerOptions.gemini-image.topK")), seed: omit(ref("request.providerOptions.gemini-image.seed"))
+      imageConfig: { aspectRatio: omit(ref("request.aspectRatio")), imageSize: geminiImageSize },
+      temperature: omit(ref("request.providerOptions.gemini-image.temperature")), topP: omit(ref("request.providerOptions.gemini-image.topP")), topK: omit(ref("request.providerOptions.gemini-image.topK")), seed: omit(ref("request.providerOptions.gemini-image.seed"))
     },
-    safetySettings: omit(ref("request.providerOptions.gemini-image.safetySettings")), systemInstruction: omit(ref("request.providerOptions.gemini-image.systemInstruction"))
+    tools: omit(conditional(eq(ref("request.providerOptions.gemini-image.googleSearch"), true), [{ googleSearch: {} }], null)),
+    safetySettings: omit(ref("request.providerOptions.gemini-image.safetySettings")),
+    systemInstruction: omit(coalesce(ref("request.providerOptions.gemini-image.systemInstruction"), conditional(ref("request.instructions"), { parts: [{ text: ref("request.instructions") }] }, null)))
   }),
   response: {
     status: "succeeded",
@@ -291,33 +423,197 @@ add({
       dataUrl: { $concat: ["data:", coalesce(ref("part.inlineData.mimeType"), ref("part.inline_data.mime_type"), "image/png"), ";base64,", coalesce(ref("part.inlineData.data"), ref("part.inline_data.data"))] }
     }),
     text: map(filter(ref("response.candidates.0.content.parts"), "part", ref("part.text")), "part", ref("part.text")),
+    groundingMetadata: ref("response.candidates.0.groundingMetadata"),
     usage: ref("response.usageMetadata"), errorPaths: ["error.code"], messagePaths: ["error.message"]
   }
 });
 
-add({
-  id: "volcengine-jimeng-image", providerId: "volcengine-jimeng-image", name: "Volcengine Jimeng Image", vendor: "Volcengine", capability: "image",
-  baseUrl: "https://visual.volcengineapi.com", auth: { type: "volcengine-v4", field: "apiKey", secretField: "secretKey", service: "cv", region: "cn-north-1" }, params: imageParams,
-  configuration: config([{ name: "secretKey", type: "secret", label: "Secret Key", required: true }]),
-  create: jsonCreate("/", {
-    req_key: ref("request.model"), prompt: ref("request.prompt"), image_urls: omit(map(ref("request.images"), "media", ref("media.value"))),
-    seed: omit(ref("request.providerOptions.volcengine-jimeng-image.seed")), width: omit(ref("request.output.width")), height: omit(ref("request.output.height")),
-    req_json: omit(ref("request.providerOptions.volcengine-jimeng-image.req_json"))
-  }, { originPath: true, query: { Action: "CVSync2AsyncSubmitTask", Version: "2022-08-31" } }),
-  poll: { method: "POST", path: "/", originPath: true, contentType: "application/json", query: { Action: "CVSync2AsyncGetResult", Version: "2022-08-31" }, body: { req_key: ref("request.model"), task_id: ref("taskId"), req_json: "{\"return_url\":true}" } },
-  response: asyncResponse("image", { taskId: coalesce(ref("response.data.task_id"), ref("response.task_id"), ref("taskId")), status: coalesce(ref("response.data.status"), ref("response.status"), "pending"), images: coalesce(ref("response.data.image_urls"), ref("response.data.binary_data_base64")), errorPaths: ["code"], messagePaths: ["message"] })
+const jimengSizeParts = split(lower(trim(ref("request.aspectRatio"))), "x");
+const jimengHasPixelSize = and(eq(len(jimengSizeParts), 2), gt(toFloat(at(jimengSizeParts, 0)), 0), gt(toFloat(at(jimengSizeParts, 1)), 0));
+// 火山视觉 OpenAPI 的成功码是 code=10000，其余 code 都是业务失败，不能按“非零即失败”的 errorPaths 处理。
+// data.status=done 只表示处理结束，成败仍看 code；not_found / expired 是任务失效的终态。
+const volcVisualBusinessFailed = and(ref("response.code"), ne({ $toString: ref("response.code") }, "10000"));
+const jimengTaskGone = { $in: [lower(ref("response.data.status")), ["not_found", "expired"]] };
+const jimengResponse = (kind, results) => asyncResponse(kind, {
+  taskId: coalesce(ref("response.data.task_id"), ref("response.task_id"), ref("taskId")),
+  status: { $switch: { cases: [{ when: volcVisualBusinessFailed, then: "failed" }, { when: jimengTaskGone, then: "failed" }], default: coalesce(ref("response.data.status"), "pending") } },
+  message: conditional(and({ $not: volcVisualBusinessFailed }, jimengTaskGone), "即梦任务不存在或已过期，请重新生成", coalesce(ref("response.message"), ref("response.error.message"))),
+  [kind + "s"]: results,
+  errorPaths: undefined,
+  messagePaths: ["message"]
 });
 
 add({
-  id: "openai-videos", providerId: "newapi", name: "OpenAI Videos / Sora", vendor: "OpenAI", capability: "video",
+  id: "volcengine-jimeng-image", providerId: "volcengine-jimeng-image", name: "火山即梦 官方图片生成", vendor: "Volcengine", capability: "image",
+  description: "火山即梦 Visual API 图片生成接口，使用 API Key 与 Secret Key；协议和凭证不同于火山方舟 Seedream。",
+  readmeIntro: "火山即梦 Visual API 官方声明式图片协议插件，使用 API Key 与 Secret Key。它与火山方舟 Seedream 使用不同的接口协议和凭证。",
+
+  baseUrl: "https://visual.volcengineapi.com", auth: { type: "volcengine-v4", field: "apiKey", secretField: "secretKey", service: "cv", region: "cn-north-1" }, params: imageParams,
+  configuration: config([{ name: "secretKey", type: "secret", label: "Secret Key", required: true }]),
+  notes: "本地参考图走 binary_data_base64；公网 URL 走 image_urls。WxH 尺寸拆成 width/height。",
+  create: jsonCreate("/", {
+    req_key: ref("request.model"), prompt: ref("request.prompt"), force_single: true,
+    binary_data_base64: omit(map(filter(ref("request.images"), "media", ref("media.dataUrl")), "media", { $dataPayload: ref("media.dataUrl") })),
+    image_urls: omit(map(filter(ref("request.images"), "media", and({ $not: ref("media.dataUrl") }, ref("media.url"))), "media", ref("media.url"))),
+    seed: omit(ref("request.providerOptions.volcengine-jimeng-image.seed")),
+    width: omit(conditional(jimengHasPixelSize, toInt(at(jimengSizeParts, 0)), ref("request.output.width"))),
+    height: omit(conditional(jimengHasPixelSize, toInt(at(jimengSizeParts, 1)), ref("request.output.height"))),
+    req_json: omit(ref("request.providerOptions.volcengine-jimeng-image.req_json"))
+  }, { originPath: true, query: { Action: "CVSync2AsyncSubmitTask", Version: "2022-08-31" } }),
+  poll: { method: "POST", path: "/", originPath: true, contentType: "application/json", query: { Action: "CVSync2AsyncGetResult", Version: "2022-08-31" }, body: { req_key: ref("request.model"), task_id: ref("taskId"), req_json: "{\"return_url\":true}" } },
+  response: jimengResponse("image", coalesce(ref("response.data.image_urls"), ref("response.data.binary_data_base64")))
+});
+
+add({
+  id: "doubao-streaming-tts", providerId: "doubao-streaming-tts", name: "豆包音频生成", vendor: "Volcengine", capability: "audio",
+  baseUrl: "https://openspeech.bytedance.com", auth: { type: "header", field: "apiKey", header: "X-Api-Key" }, params: audioParams,
+  notes: "火山引擎 seed-audio-1.0 非流式音频生成。POST /api/v3/tts/create。不传 references 为纯文本生成；连接音频时写入 references 的 audio_url 或 audio_data，最多 3 段，参考音频少于 3 段且指定了音色时再追加一个 speaker；连接图片时写入 image_url 或 image_data，最多 1 张。图片和音频不能同时使用。没有参考素材时，speaker 只在用户明确指定音色时发送，且官方仅接受语音合成 2.0 音色或复刻音色。text_prompt 引用参考音频时使用 @Audio1、@Audio2。响应是单个 JSON，audio 为 Base64，url 两小时过期。",
+  create: jsonCreate("/api/v3/tts/create", {
+    model: ref("request.model"),
+    text_prompt: ref("request.prompt"),
+    references: omit(conditional(
+      gt(len(ref("request.images")), 0),
+      map(ref("request.images"), "media", {
+        image_url: omit(conditional(eq(ref("media.source.type"), "url"), ref("media.url"))),
+        image_data: omit(conditional(eq(ref("media.source.type"), "data"), { $dataPayload: ref("media.value") }))
+      }),
+      conditional(
+        gt(len(ref("request.audios")), 0),
+        {
+          $concatArrays: [
+            map(ref("request.audios"), "media", {
+              audio_url: omit(conditional(eq(ref("media.source.type"), "url"), ref("media.url"))),
+              audio_data: omit(conditional(eq(ref("media.source.type"), "data"), { $dataPayload: ref("media.value") }))
+            }),
+            conditional(and(ref("request.extra.audioVoice"), lt(len(ref("request.audios")), 3)), [{ speaker: ref("request.extra.audioVoice") }], [])
+          ]
+        },
+        conditional(ref("request.extra.audioVoice"), [{ speaker: ref("request.extra.audioVoice") }], null)
+      )
+    )),
+    audio_config: {
+      format: coalesce(ref("request.extra.audioFormat"), "mp3"),
+      speech_rate: omit(conditional(ne(toFloat(ref("request.extra.audioSpeed")), 0), addNumbers(multiply(toFloat(ref("request.extra.audioSpeed")), 100), -100)))
+    }
+  }, {
+    headers: {
+      "X-Api-Request-Id": ref("request.extra.idempotencyKey")
+    }
+  }),
+  response: {
+    errorPaths: ["code"],
+    messagePaths: ["message"],
+    status: "succeeded",
+    resultKind: "audio",
+    audios: conditional(
+      ref("response.url"),
+      { url: ref("response.url"), ephemeral: true },
+      conditional(ref("response.audio"), {
+        dataUrl: ref("response.audio"),
+        mimeType: conditional(eq(ref("request.extra.audioFormat"), "wav"), "audio/wav", conditional(eq(ref("request.extra.audioFormat"), "pcm"), "audio/pcm", conditional(eq(ref("request.extra.audioFormat"), "ogg_opus"), "audio/ogg", "audio/mpeg")))
+      })
+    )
+  }
+});
+
+add({
+  id: "openai-audio", providerId: "openai-audio", name: "OpenAI Audio Speech", vendor: "OpenAI", capability: "audio",
+  baseUrl: "https://api.openai.com", auth: bearer, params: audioParams,
+  notes: "同步 /v1/audio/speech 返回原始音频流，由 binaryPayload 包装为统一音频结果。",
+  create: jsonCreate("/v1/audio/speech", {
+    model: ref("request.model"),
+    input: ref("request.prompt"),
+    voice: coalesce(ref("request.extra.audioVoice"), ref("request.providerOptions.openai-audio.voice"), "alloy"),
+    response_format: coalesce(ref("request.extra.audioFormat"), ref("request.providerOptions.openai-audio.response_format"), "mp3"),
+    speed: coalesce(nonZeroFloat(ref("request.extra.audioSpeed")), ref("request.providerOptions.openai-audio.speed"), 1),
+    instructions: omit(coalesce(ref("request.extra.audioInstructions"), ref("request.providerOptions.openai-audio.instructions")))
+  }),
+  response: { binaryPayload: true, resultKind: "audio", status: "succeeded", errorPaths: ["error.code"], messagePaths: ["error.message"] }
+});
+
+add({
+  id: "topaz-image-enhance", providerId: "topaz-image-enhance", name: "Topaz Image Enhance", vendor: "Topaz Labs", capability: "image",
+  baseUrl: "https://api.topazlabs.com/image/v1", auth: { type: "header", field: "apiKey", header: "X-API-Key" },
+  params: [["model", "string", true, "model", "原增强模型名称。"], ["images", "media[]", true, "image", "唯一待增强原图。"], ["providerOptions", "object", true, "output_width/output_height", "topaz-image-enhance 命名空间中指定精确输出尺寸。"]],
+  notes: "依据官方 Image Quickstart 与 Gigapixel 各模型文档。提交 multipart 后按 process_id 查询，完成后由宿主带鉴权下载二进制，不能把私有下载地址当作公开图片。输出尺寸须由原图尺寸和原放大倍数计算，不裁剪。源模型保持 Standard V2/Low Resolution V2/CGI/High Fidelity V2/Text Refine。",
+  validations: [
+    { assert: { $in: [ref("request.model"), ["Standard V2", "Low Resolution V2", "CGI", "High Fidelity V2", "Text Refine"]] }, message: "请选择支持的 Topaz 精确增强模型" },
+    { assert: and(eq(len(ref("request.images")), 1), eq(len(ref("request.videos")), 0), eq(len(ref("request.audios")), 0)), message: "Topaz 图像增强需要且仅支持一张原图" },
+    { assert: eq(coalesce(ref("request.imageCount"), 1), 1), message: "单次增强只返回一张图片" },
+    ...["output_width", "output_height"].map(field => ({ assert: and(gt(ref(`request.providerOptions.topaz-image-enhance.${field}`), 0), eq(toInt(ref(`request.providerOptions.topaz-image-enhance.${field}`)), ref(`request.providerOptions.topaz-image-enhance.${field}`))), message: "Topaz 输出尺寸必须为正整数像素" }))
+  ],
+  create: { method: "POST", path: "/enhance/async", contentType: "multipart/form-data", body: {
+    model: ref("request.model"), output_width: ref("request.providerOptions.topaz-image-enhance.output_width"), output_height: ref("request.providerOptions.topaz-image-enhance.output_height"), output_format: "png", crop_to_fill: false
+  }, files: [{ name: "image", source: first(ref("request.images")), filename: "source-image.png" }] },
+  poll: { method: "GET", path: "/status/{{taskId}}" },
+  cancel: { method: "DELETE", path: "/cancel/{{taskId}}" },
+  result: { method: "GET", path: "/download/{{taskId}}", headers: { Accept: "image/*" } },
+  response: { taskId: coalesce(ref("response.process_id"), ref("taskId")), status: lower(coalesce(ref("response.status"), "pending")), message: coalesce(ref("response.message"), ref("response.error")), resultKind: "image" }
+});
+
+add({
+  id: "elevenlabs-music", providerId: "elevenlabs-music", name: "ElevenLabs Music", vendor: "ElevenLabs", capability: "audio",
+  baseUrl: "https://api.elevenlabs.io", auth: { type: "header", field: "apiKey", header: "xi-api-key" },
+  params: [
+    ["model", "string", true, "model_id", "明确选择当前渠道支持的音乐模型版本。"],
+    ["prompt", "string", true, "prompt", "完整音乐描述，不能当作配音文本提交。"],
+    ["providerOptions", "object", false, "music_length_ms/force_instrumental", "elevenlabs-music 命名空间；曲长为毫秒。"]
+  ],
+  notes: "协议依据 https://elevenlabs.io/docs/api-reference/music/compose 。POST /v1/music 返回音频文件。音乐曲长保留毫秒，未指定时交由模型决定。仅承接描述作曲，不冒充参考音频、声音克隆或音乐编辑。模型版本必须由用户选择，不根据 LTV 显示名称猜测。",
+  validations: [
+    { assert: { $in: [ref("request.model"), ["music_v1", "music_v2", "music_v2_5"]] }, message: "请选择文档支持的 ElevenLabs 音乐模型版本" },
+    { assert: gt(len(trim(ref("request.prompt"))), 0), message: "请填写音乐描述" },
+    { assert: and(eq(len(ref("request.images")), 0), eq(len(ref("request.videos")), 0), eq(len(ref("request.audios")), 0)), message: "描述作曲接口不承接参考素材，不能忽略已连接素材" },
+    { assert: { $or: [{ $eq: [ref("request.providerOptions.elevenlabs-music.music_length_ms"), null] }, and(gte(ref("request.providerOptions.elevenlabs-music.music_length_ms"), 3000), lte(ref("request.providerOptions.elevenlabs-music.music_length_ms"), 600000), eq(toInt(ref("request.providerOptions.elevenlabs-music.music_length_ms")), ref("request.providerOptions.elevenlabs-music.music_length_ms")))] }, message: "音乐时长必须为 3000 至 600000 的整数毫秒" }
+  ],
+  create: { ...jsonCreate("/v1/music", {
+    model_id: ref("request.model"), prompt: ref("request.prompt"),
+    music_length_ms: omit(ref("request.providerOptions.elevenlabs-music.music_length_ms")),
+    force_instrumental: coalesce(ref("request.providerOptions.elevenlabs-music.force_instrumental"), false)
+  }), query: { output_format: "auto" } },
+  response: { binaryPayload: true, resultKind: "audio", status: "succeeded" }
+});
+
+add({
+  id: "async-audio", providerId: "async-audio", name: "Async Audio Tasks", vendor: "OpenAI compatible", capability: "audio",
+  baseUrl: "https://api.openai.com", auth: bearer, params: audioParams,
+  notes: "异步音频任务：创建 /v1/audio/tasks，轮询同一路径，结果优先 URL，否则下载 /content。",
+  create: jsonCreate("/v1/audio/tasks", {
+    model: ref("request.model"),
+    input: ref("request.prompt"),
+    voice: coalesce(ref("request.extra.audioVoice"), ref("request.providerOptions.async-audio.voice"), "alloy"),
+    response_format: coalesce(ref("request.extra.audioFormat"), ref("request.providerOptions.async-audio.response_format"), "mp3"),
+    speed: coalesce(nonZeroFloat(ref("request.extra.audioSpeed")), ref("request.providerOptions.async-audio.speed"), 1),
+    instructions: omit(coalesce(ref("request.extra.audioInstructions"), ref("request.providerOptions.async-audio.instructions")))
+  }),
+  poll: { method: "GET", path: "/v1/audio/tasks/{{taskId}}" },
+  result: { method: "GET", path: "/v1/audio/tasks/{{taskId}}/content", headers: { Accept: "audio/*" } },
+  response: asyncResponse("audio", {
+    taskId: coalesce(ref("response.id"), ref("response.task_id"), ref("response.data.id"), ref("taskId")),
+    status: coalesce(ref("response.status"), ref("response.data.status"), "pending"),
+    audios: coalesce(ref("response.audio_url"), ref("response.audioUrl"), ref("response.result_url"), ref("response.url"), ref("response.data.audio_url"), ref("response.output.url")),
+    errorPaths: ["error.code"], messagePaths: ["error.message"]
+  })
+});
+
+const openAIVideoImages = filter(sorted(ref("request.images")), "media", ne(ref("media.role"), "mask"));
+const openAIVideoImageCount = len(openAIVideoImages);
+add({
+  id: "openai-videos", providerId: "newapi", name: "OpenAI Videos / Sora", vendor: "OpenAI", capability: "video", version: "2.1.0",
+  videoReferences: { ...numberedImages("multipart-references"), maxImagesByOperation: { text_to_video: 0, image_to_video: 1, reference_to_video: null } },
+  notes: "标准图生视频以单个 input_reference 文件发送。兼容网关的模型显式启用 reference_to_video 时支持多图，单图沿用 input_reference，多图按顺序发送所有 input_reference[] 文件。参考上限应按上游配置。",
   baseUrl: "https://api.openai.com", auth: bearer, params: videoParams, requiresPublicMediaUrls: false,
   create: {
     method: "POST", path: "/v1/videos", contentType: "multipart/form-data",
     body: {
       model: ref("request.model"), prompt: ref("request.prompt"), seconds: { $toString: ref("request.duration") },
-      size: omit(ref("request.aspectRatio")), variants: omit(ref("request.providerOptions.newapi.variants"))
+      size: omit(ref("request.aspectRatio")), resolution_name: omit(ref("request.resolution")),
+      variants: omit(ref("request.providerOptions.newapi.variants"))
     },
-    files: [{ name: "input_reference", source: first(filter(sorted(ref("request.images")), "media", ne(ref("media.role"), "mask"))), filename: "input-reference.png" }]
+    files: [
+      { name: "input_reference", source: conditional(eq(openAIVideoImageCount, 1), openAIVideoImages), filename: "input-reference.png" },
+      { name: "input_reference[]", source: conditional(gt(openAIVideoImageCount, 1), openAIVideoImages) }
+    ]
   },
   poll: { method: "GET", path: "/v1/videos/{{taskId}}" },
   cancel: { method: "DELETE", path: "/v1/videos/{{taskId}}" },
@@ -325,8 +621,15 @@ add({
   response: asyncResponse("video", { videos: coalesce(ref("response.url"), ref("response.video_url"), ref("response.output.url")), errorPaths: ["error.code"], messagePaths: ["error.message"] })
 });
 
+// NewAPI 任务查询的失败原因在 data.fail_reason（外层 message 为空），兼容直接返回的扁平结构。
+const newAPITaskMessage = coalesce(
+  ref("response.error.message"), ref("response.message"), ref("response.fail_reason"),
+  ref("response.data.fail_reason"), ref("response.data.error.message")
+);
+
 add({
   id: "newapi-media-task-v1", providerId: "newapi-channel-1", name: "NewAPI Media Task Channel 1", vendor: "NewAPI", capability: "video",
+  videoReferences: numberedImages("input-media"),
   baseUrl: "http://127.0.0.1:3000", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   create: jsonCreate("/v1/videos", {
     model: ref("request.model"),
@@ -344,23 +647,38 @@ add({
       prompt_extend: coalesce(ref("request.providerOptions.newapi-channel-1.prompt_extend"), false)
     }
   }),
-  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video")
+  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video", { message: newAPITaskMessage })
 });
 
+const artdance25 = { $in: [ref("request.model"), ["Artdance 2.5-480p", "Artdance 2.5-720p", "Artdance 2.5-1080p"]] };
+const artdanceResolution = at(split(ref("request.model"), "-"), 1);
+const nonFrameImages = filter(sorted(ref("request.images")), "media", and(ne(ref("media.role"), "first_frame"), ne(ref("media.role"), "last_frame")));
 add({
   id: "newapi-video-generations-v1", providerId: "newapi-channel-2", name: "NewAPI Video Generations Channel 2", vendor: "NewAPI", capability: "video",
+  version: "2.0.1",
+  videoReferences: numberedImages("image-urls"),
   baseUrl: "http://127.0.0.1:3000", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   create: jsonCreate("/v1/video/generations", {
     model: ref("request.model"), prompt: ref("request.prompt"), seconds: { $toString: ref("request.duration") },
-    aspect_ratio: coalesce(ref("request.aspectRatio"), "16:9"), resolution: omit(ref("request.resolution")), generate_audio: ref("request.generateAudio"),
-    image_urls: omit(map({ $sortByOrder: ref("request.images") }, "media", ref("media.value"))),
+    aspect_ratio: coalesce(ref("request.aspectRatio"), "16:9"), resolution: omit(conditional(artdance25, null, ref("request.resolution"))), generate_audio: ref("request.generateAudio"),
+    image_urls: omit(map(conditional(artdance25, nonFrameImages, sorted(ref("request.images"))), "media", ref("media.value"))),
+    start_image_url: omit(conditional(artdance25, firstMediaFieldWithRoles("request.images", ["first_frame"], "value"))),
+    end_image_url: omit(conditional(artdance25, firstMediaFieldWithRoles("request.images", ["last_frame"], "value"))),
     video_urls: omit(map({ $sortByOrder: ref("request.videos") }, "media", ref("media.value"))),
     audio_urls: omit(map({ $sortByOrder: ref("request.audios") }, "media", ref("media.value")))
   }),
+  validations: [
+    { assert: conditional(artdance25, eq(lower(coalesce(ref("request.resolution"), artdanceResolution)), artdanceResolution), true), message: "Artdance 模型名称已固定分辨率，请选择匹配档位" },
+    { assert: conditional(artdance25, and(lte(len(ref("request.images")), 30), lte(len(ref("request.videos")), 10), lte(len(ref("request.audios")), 10)), true), message: "Artdance 2.5 最多支持30图、10视频、10音频" },
+    { assert: conditional(artdance25, and(lte(len(mediaWithRoles("request.images", ["first_frame"])), 1), lte(len(mediaWithRoles("request.images", ["last_frame"])), 1)), true), message: "首帧和尾帧各只能绑定一张图片" }
+  ],
+  notes: "Artdance 2.5-480p/720p/1080p按artbox.top/docs映射显式首尾帧、30/10/10参考及模型固定分辨率。其他模型保持通用URL数组协议。该映射不表示支持LTV联网搜索、独立textList或素材认证。",
   poll: { method: "GET", path: "/v1/video/generations/{{taskId}}" },
   response: asyncResponse("video", {
     taskId: coalesce(ref("response.data.task_id"), ref("response.data.taskId"), ref("response.task_id"), ref("response.taskId"), ref("response.data.id"), ref("response.id"), ref("taskId")),
+    message: newAPITaskMessage,
     videos: coalesce(
+      map(ref("response.data"), "item", coalesce(ref("item.url"), ref("item.video_url"), ref("item.videoUrl"), ref("item.output_url"), ref("item.outputUrl"))),
       ref("response.data.result_url"), ref("response.data.video_url"), ref("response.data.output_url"), ref("response.data.url"), ref("response.data.metadata.url"),
       ref("response.data.data.video_url"), ref("response.data.data.output_url"), ref("response.data.data.result_url"), ref("response.data.data.url"), ref("response.data.data.metadata.url"),
       ref("response.video_url"), ref("response.videoUrl"), ref("response.result_url"), ref("response.output_url"), ref("response.url"), ref("response.metadata.url"), ref("response.output.url")
@@ -370,6 +688,7 @@ add({
 
 add({
   id: "rolldek-wan-video", providerId: "rolldek-wan-video", name: "RollDek WAN 3.0 Video", vendor: "RollDek", capability: "video",
+  videoReferences: numberedImages("role-reference-images"),
   baseUrl: "https://rolldek.com", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   notes: "该协议严格对应 RollDek WAN 3.0 的 JSON /v1/videos 合同。RollDek 同时暴露的其他兼容创建入口不共享任务查询路径，不能与 NewAPI Video Generations Channel 2 混用。",
   create: jsonCreate("/v1/videos", {
@@ -392,7 +711,8 @@ add({
 });
 
 add({
-  id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video",
+  id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video", version: "2.0.1",
+  videoReferences: numberedImages("reference-only-images"),
   baseUrl: "https://api.x.ai", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   validations: [
     { assert: { $lte: [len(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["first_frame", "last_frame"]] })), 1] }, message: "xAI Video 最多支持一个帧输入，当前 profile 不支持尾帧" },
@@ -404,8 +724,127 @@ add({
     image: conditional(gt(len(mediaWithRoles("request.images", ["first_frame", ""])), 0), { url: firstMediaFieldWithRoles("request.images", ["first_frame", ""], "value") }),
     reference_images: omit(map(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["reference_image", "subject_reference", "style_reference"]] }), "media", { url: ref("media.value") }))
   }),
-  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video")
+  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video", {
+    taskId: coalesce(ref("response.request_id"), ref("response.id"), ref("response.task_id"), ref("response.taskId"), ref("response.data.id"), ref("taskId")),
+    videos: coalesce(ref("response.video.url"), ref("response.video_url"), ref("response.videoUrl"), ref("response.result_url"), ref("response.url"), ref("response.data.video_url"), ref("response.output.url"))
+  })
 });
+
+const arkModelParts = split(ref('request.model'), '-');
+const arkSecondGeneration = and(eq(at(arkModelParts, 0), 'doubao'), eq(at(arkModelParts, 1), 'seedance'), eq(at(arkModelParts, 2), '2'), { $in: [at(arkModelParts, 3), ['0', '5']] });
+const arkExpanded = and(arkSecondGeneration, eq(at(arkModelParts, 3), '5'));
+add({
+  id: 'volcengine-ark-seedance', providerId: 'volcengine-ark-video', name: 'Volcengine Ark Seedance', vendor: 'Volcengine', capability: 'video',
+  baseUrl: 'https://ark.cn-beijing.volces.com', auth: bearer, params: [...videoParams,
+    ['seed', 'integer', false, 'seed', 'providerOptions seed。'],
+    ['camera_fixed', 'boolean', false, 'camera_fixed', 'providerOptions camera_fixed。'],
+  ], requiresPublicMediaUrls: true,
+  notes: '依据 https://docs.volcengine.com/docs/82379/1520757 。Seedance 2.0系列与2.5支持webSearch开关，映射tools:[{type:web_search}]；关闭时不调用搜索工具。usage.tool_usage.web_search是实际搜索次数，0不代表请求失败。原始参考角色和顺序保留。2.5最多30图/10视频/10音频，2.0最多9图/3视频/3音频；具体媒体时长、尺寸、肖像素材和模型规格仍由配置及供应商校验。',
+  validations: [
+    { assert: { $or: [eq(ref('request.providerOptions.volcengine-ark-video.webSearch'), null), { $in: [ref('request.providerOptions.volcengine-ark-video.webSearch'), [true, false]] }] }, message: '视频联网参数必须是布尔值' },
+    { assert: { $or: [{ $not: ref('request.providerOptions.volcengine-ark-video.webSearch') }, arkSecondGeneration] }, message: '视频联网搜索需要Seedance 2.0系列或2.5模型' },
+    { assert: and(lte(len(ref('request.images')), conditional(arkExpanded, 30, 9)), lte(len(ref('request.videos')), conditional(arkExpanded, 10, 3)), lte(len(ref('request.audios')), conditional(arkExpanded, 10, 3))), message: '参考数量超过当前Seedance版本限制' },
+    { assert: { $or: [arkExpanded, eq(len(ref('request.audios')), 0), gt(len(ref('request.images')), 0), gt(len(ref('request.videos')), 0)] }, message: 'Seedance 2.0的音频参考需要同时提供图片或视频' },
+  ],
+  create: jsonCreate('/api/v3/contents/generations/tasks', {
+    model: ref('request.model'),
+    content: { $concatArrays: [
+      conditional(ref('request.prompt'), [{ type: 'text', text: ref('request.prompt') }], []),
+      map(sorted(ref('request.images')), 'media', { type: 'image_url', image_url: { url: ref('media.value') }, role: coalesce(ref('media.role'), 'reference_image') }),
+      map(sorted(ref('request.videos')), 'media', { type: 'video_url', video_url: { url: ref('media.value') }, role: coalesce(ref('media.role'), 'reference_video') }),
+      map(sorted(ref('request.audios')), 'media', { type: 'audio_url', audio_url: { url: ref('media.value') }, role: coalesce(ref('media.role'), 'reference_audio') }),
+    ] },
+    ratio: coalesce(ref('request.aspectRatio'), '16:9'),
+    resolution: conditional(eq(lower(ref('request.resolution')), '2160p'), '4k', coalesce(ref('request.resolution'), '720p')),
+    duration: coalesce(ref('request.duration'), 5),
+    generate_audio: coalesce(ref('request.generateAudio'), false),
+    watermark: coalesce(ref('request.watermark'), false),
+    seed: omit(ref('request.providerOptions.volcengine-ark-video.seed')),
+    camera_fixed: omit(ref('request.providerOptions.volcengine-ark-video.camera_fixed')),
+    tools: omit(conditional(eq(ref('request.providerOptions.volcengine-ark-video.webSearch'), true), [{ type: 'web_search' }], null)),
+  }),
+  poll: { method: 'GET', path: '/api/v3/contents/generations/tasks/{{taskId}}' },
+  cancel: { method: 'DELETE', path: '/api/v3/contents/generations/tasks/{{taskId}}' },
+  response: asyncResponse('video', { videos: coalesce(ref('response.content.video_url'), ref('response.video_url'), ref('response.output.video_url'), ref('response.data.video_url')), usage: ref('response.usage'), resultEphemeral: true }),
+});
+
+const klingOptions = 'request.providerOptions.kling-omni-video';
+const klingShots = ref(`${klingOptions}.multiPrompt`);
+const klingHasCustomShots = gt(len(klingShots), 0);
+const klingShotShape = { index: ref('shot.index'), prompt: ref('shot.prompt'), duration: ref('shot.duration') };
+const klingValidShot = and(
+  eq(ref('shot.index'), { $add: [ref('shotIndex'), 1] }),
+  eq(ref('shot.prompt'), { $toString: ref('shot.prompt') }),
+  gt(len(trim(ref('shot.prompt'))), 0), lte(len(ref('shot.prompt')), 2500),
+  { $in: [ref('shot.duration'), Array.from({ length: 15 }, (_, i) => i + 1).flatMap(n => [n, String(n)])] },
+);
+// The maximum is six shots; a bounded sum keeps validation in the existing declarative DSL.
+const klingShotDuration = { $add: Array.from({ length: 6 }, (_, i) => coalesce(ref(`${klingOptions}.multiPrompt.${i}.duration`), 0)) };
+const klingHasVideo = gt(len(ref('request.videos')), 0);
+const klingStart = len(mediaWithRoles('request.images', ['first_frame']));
+const klingEnd = len(mediaWithRoles('request.images', ['last_frame']));
+add({
+  id: 'kling-omni-video', providerId: 'kling-omni-video', version: '2.1.0', name: 'Kling 3.0 Omni Video', vendor: 'Kuaishou', capability: 'video',
+  baseUrl: 'https://api-beijing.klingai.com', auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
+  notes: '官方合同 https://klingai.com/document-api/api/video/3-0-omni/video-omni/legacy 。使用model_name、mode和image_list/video_list；std标准720p、pro高品质1080p、4k高品质4K。首帧first_frame、尾帧end_frame，普通参考省略type。结果为30天临时资源，必须转存。仅承接kling-v3-omni；主体注册及自定义分镜须有对应适配，不能传入LTV私有ID或忽略分镜。',
+  validations: [
+    { assert: eq(ref('request.model'), 'kling-v3-omni'), message: '此协议要求实际Kling 3.0 Omni模型，不接受源平台别名或其它版本' },
+    { assert: and(gt(len(trim(ref('request.prompt'))), 0), lte(len(ref('request.prompt')), 2500)), message: 'Omni提示词必须完整且不超过2500字符' },
+    { assert: { $in: [ref(`${klingOptions}.mode`), ['std','pro','4k']] }, message: '必须明确选择标准、高品质或4K模式' },
+    { assert: { $or: [eq(ref('request.resolution'), ''), eq(lower(ref('request.resolution')), conditional(eq(ref(`${klingOptions}.mode`),'std'),'720p',conditional(eq(ref(`${klingOptions}.mode`),'pro'),'1080p','4k'))), and(eq(ref(`${klingOptions}.mode`),'4k'),eq(lower(ref('request.resolution')),'2160p'))] }, message: '独立分辨率不能与质量模式冲突' },
+    { assert: and(eq(len(ref('request.audios')),0),lte(len(ref('request.videos')),1),lte(len(ref('request.images')),conditional(klingHasVideo,4,7))), message: 'Omni支持最多7图，有视频时最多4图1视频；独立音频需其它合同' },
+    { assert: and(lte(klingStart,1),lte(klingEnd,1),{ $or:[eq(klingEnd,0),eq(klingStart,1)] }), message: '首尾帧不可重复，尾帧必须同时提供首帧' },
+    { assert: eq(len(filter(ref('request.images'),'media',{ $not: { $in:[ref('media.role'),['','reference_image','first_frame','last_frame']] } })),0), message: '图片包含未适配的参考角色' },
+    { assert: { $or: [eq(ref(`${klingOptions}.multiShot`), null), { $in: [ref(`${klingOptions}.multiShot`), [true, false]] }] }, message: '智能分镜必须是布尔值' },
+    { assert: eq(len(ref(`${klingOptions}.elements`)),0), message: '主体ID需要独立的主体注册适配' },
+    { assert: { $or: [eq(klingShots, null), eq(klingShots, map(klingShots, 'shot', klingShotShape))] }, message: '自定义分镜必须是仅含index、prompt、duration的数组' },
+    { assert: lte(len(klingShots), 6), message: '自定义分镜最多6个镜头' },
+    { assert: eq(len(filter(klingShots, 'shot', { $not: klingValidShot })), 0), message: '分镜须连续编号，正文1至2500字符，每个镜头1至15秒整数' },
+    { assert: { $or: [{ $not: klingHasCustomShots }, and(eq(ref(`${klingOptions}.multiShot`), true), eq(klingShotDuration, ref('request.duration')))] }, message: '自定义分镜须开启多镜头，分镜时长之和须等于视频总时长' },
+    { assert: { $or:[{ $not:klingHasVideo },and(eq(ref('request.generateAudio'),false),{ $in:[ref(`${klingOptions}.videoReferenceType`),['feature','base']] },{ $in:[ref(`${klingOptions}.keepOriginalSound`),['yes','no']] })] }, message: '视频参考需关闭生成声音并明确参考用途与原声设置' },
+    { assert: { $or:[{ $not:and(klingHasVideo,eq(ref(`${klingOptions}.videoReferenceType`),'base')) },and(eq(klingStart,0),eq(klingEnd,0),{ $not:ref(`${klingOptions}.multiShot`) })] }, message: '视频编辑不能同时使用首尾帧或多镜头' },
+    { assert: { $or:[and(klingHasVideo,eq(ref(`${klingOptions}.videoReferenceType`),'base')),and(gte(ref('request.duration'),3),lte(ref('request.duration'),15))] }, message: '视频生成时长必须在3至15秒，视频编辑按原视频时长' },
+    { assert: { $or:[gt(klingStart,0),and(klingHasVideo,eq(ref(`${klingOptions}.videoReferenceType`),'base')),{ $in:[ref('request.aspectRatio'),['16:9','9:16','1:1']] }] }, message: '未提供首帧或待编辑视频时必须指定支持的画幅' },
+  ],
+  create: jsonCreate('/v1/videos/omni-video', {
+    model_name: ref('request.model'), prompt: ref('request.prompt'), mode: ref(`${klingOptions}.mode`),
+    duration: omit(conditional(and(klingHasVideo,eq(ref(`${klingOptions}.videoReferenceType`),'base')),null,{$toString:ref('request.duration')})),
+    aspect_ratio: omit(conditional({$in:[ref('request.aspectRatio'),['16:9','9:16','1:1']]},ref('request.aspectRatio'),null)), sound: conditional(ref('request.generateAudio'),'on','off'),
+    multi_shot: coalesce(ref(`${klingOptions}.multiShot`),false),
+    shot_type: omit(conditional(ref(`${klingOptions}.multiShot`),conditional(klingHasCustomShots,'customize','intelligence'),null)),
+    multi_prompt: omit(map(klingShots, 'shot', { ...klingShotShape, duration: { $toString: ref('shot.duration') } })),
+    image_list: omit(map(sorted(ref('request.images')),'media',{image_url:ref('media.value'),type:omit(conditional(eq(ref('media.role'),'first_frame'),'first_frame',conditional(eq(ref('media.role'),'last_frame'),'end_frame',null)))})),
+    video_list: omit(map(sorted(ref('request.videos')),'media',{video_url:ref('media.value'),refer_type:ref(`${klingOptions}.videoReferenceType`),keep_original_sound:ref(`${klingOptions}.keepOriginalSound`)})),
+  }),
+  poll: {method:'GET',path:'/v1/videos/omni-video/{{taskId}}'},
+  response: asyncResponse('video',{
+    taskId:coalesce(ref('response.data.task_id'),ref('taskId')),
+    status:conditional(eq(ref('response.data.task_status'),'succeed'),'succeeded',ref('response.data.task_status')),
+    message:coalesce(ref('response.data.task_status_msg'),ref('response.message')),
+    videos:map(ref('response.data.task_result.videos'),'video',ref('video.url')),
+    errorPaths:['code'],
+  }),
+});
+
+// These versions share quality/storyboard semantics, but use different endpoints and image fields.
+const klingV3Spec = JSON.parse(JSON.stringify(specs.find(spec => spec.id === 'kling-omni-video')).replaceAll('request.providerOptions.kling-omni-video', 'request.providerOptions.kling-v3-video'));
+klingV3Spec.id = klingV3Spec.providerId = 'kling-v3-video';
+klingV3Spec.name = 'Kling 3.0 Video';
+klingV3Spec.notes = '官方合同 https://klingai.com/document-api/api/video/3-0-omni/text-to-video/legacy 与 image-to-video/legacy 。普通3.0使用model_name:kling-v3；文生text2video，图生image2video；首帧image、尾帧image_tail。与Omni区分，不将参考图片拼成首帧，不忽略主体、音色或自定义分镜。API Key Bearer适用于所有模型，鉴权依据/document-api/api/get-started/authentication。';
+klingV3Spec.validations[0] = {assert:eq(ref('request.model'),'kling-v3'),message:'此协议要求普通Kling 3.0模型，不接受Omni或源平台别名'};
+klingV3Spec.validations.push(
+  {assert:and(eq(len(ref('request.videos')),0),lte(len(ref('request.images')),2),eq(len(filter(ref('request.images'),'media',{$not:{$in:[ref('media.role'),['first_frame','last_frame']]}})),0)),message:'普通3.0只支持首尾帧输入，此入口不承接多图参考或视频编辑'},
+  {assert:eq(len(ref('request.providerOptions.kling-v3-video.voices')),0),message:'音色ID必须完成对应音色适配，不能静默忽略'},
+);
+klingV3Spec.create.path='/v1/videos/text2video';
+klingV3Spec.create.pathTemplate=conditional(gt(len(ref('request.images')),0),'/v1/videos/image2video','/v1/videos/text2video');
+delete klingV3Spec.create.body.image_list;
+delete klingV3Spec.create.body.video_list;
+klingV3Spec.create.body.image=omit(firstMediaFieldWithRoles('request.images',['first_frame'],'value'));
+klingV3Spec.create.body.image_tail=omit(firstMediaFieldWithRoles('request.images',['last_frame'],'value'));
+klingV3Spec.poll.path='/v1/videos/text2video/{{taskId}}';
+klingV3Spec.poll.pathTemplate=conditional(gt(len(ref('request.images')),0),'/v1/videos/image2video/{{taskId}}','/v1/videos/text2video/{{taskId}}');
+add(klingV3Spec);
 
 add({
   id: "google-gemini-veo", providerId: "gemini-veo", name: "Google Gemini Veo", vendor: "Google", capability: "video",
@@ -435,11 +874,22 @@ add({
     aspect_ratio: coalesce(ref("request.aspectRatio"), "16:9"), image_url: omit(firstMediaFieldWithRoles("request.images", ["first_frame", ""], "value")),
     seed: omit(ref("request.providerOptions.novita-video.seed")), negative_prompt: omit(ref("request.providerOptions.novita-video.negative_prompt"))
   }),
-  poll: { method: "GET", path: "/v3/async/task-result", query: { task_id: ref("taskId") } }, response: asyncResponse("video")
+  poll: { method: "GET", path: "/v3/async/task-result", query: { task_id: ref("taskId") } },
+  // Novita 统一任务查询把状态和失败原因放在 task.status / task.reason（TASK_STATUS_* 枚举），结果在 videos[].video_url。
+  response: asyncResponse("video", {
+    taskId: coalesce(ref("response.task.task_id"), ref("response.id"), ref("response.task_id"), ref("response.taskId"), ref("response.data.id"), ref("taskId")),
+    status: coalesce(ref("response.task.status"), ref("response.status"), ref("response.state"), ref("response.data.status"), "pending"),
+    message: coalesce(ref("response.task.reason"), ref("response.error.message"), ref("response.message"), ref("response.fail_reason")),
+    videos: coalesce(ref("response.videos"), ref("response.video_url"), ref("response.videoUrl"), ref("response.result_url"), ref("response.url"), ref("response.data.video_url"), ref("response.output.url"))
+  })
 });
 
 add({
-  id: "volcengine-jimeng-video", providerId: "volcengine-jimeng-video", name: "Volcengine Jimeng Video", vendor: "Volcengine", capability: "video",
+  id: "volcengine-jimeng-video", providerId: "volcengine-jimeng-video", name: "火山即梦 官方视频生成", vendor: "Volcengine", capability: "video",
+  videoReferences: numberedImages("image-urls"),
+  description: "火山即梦 Visual API 视频生成接口，使用 API Key 与 Secret Key；协议和凭证不同于火山方舟 Seedance。",
+  readmeIntro: "火山即梦 Visual API 官方声明式视频协议插件，使用 API Key 与 Secret Key。它与火山方舟 Seedance 使用不同的接口协议和凭证。",
+
   baseUrl: "https://visual.volcengineapi.com", auth: { type: "volcengine-v4", field: "apiKey", secretField: "secretKey", service: "cv", region: "cn-north-1" }, params: videoParams,
   configuration: config([{ name: "secretKey", type: "secret", label: "Secret Key", required: true }]),
   create: jsonCreate("/", {
@@ -448,7 +898,7 @@ add({
     req_json: omit(ref("request.providerOptions.volcengine-jimeng-video.req_json"))
   }, { originPath: true, query: { Action: "CVSync2AsyncSubmitTask", Version: "2022-08-31" } }),
   poll: { method: "POST", path: "/", originPath: true, contentType: "application/json", query: { Action: "CVSync2AsyncGetResult", Version: "2022-08-31" }, body: { req_key: ref("request.model"), task_id: ref("taskId") } },
-  response: asyncResponse("video", { taskId: coalesce(ref("response.data.task_id"), ref("response.task_id"), ref("taskId")), status: coalesce(ref("response.data.status"), ref("response.status"), "pending"), videos: coalesce(ref("response.data.video_urls"), ref("response.data.video_url")), errorPaths: ["code"], messagePaths: ["message"] })
+  response: jimengResponse("video", coalesce(ref("response.data.video_urls"), ref("response.data.video_url")))
 });
 
 const agnesFrameImages = mediaWithRoles("request.images", ["first_frame", "last_frame"]);
@@ -457,6 +907,7 @@ const agnesReferenceMode = { $or: [gt(len(agnesReferenceImages), 0), gt(len(ref(
 
 add({
   id: "agnes-video-25", providerId: "agnes-video", name: "Agnes Video 2.5 / 2.5 Flash", vendor: "Agnes AI", capability: "video",
+  videoReferences: numberedImages("images"),
   baseUrl: "https://apihub.agnes-ai.com/v1", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   validations: [
     { assert: { $in: [ref("request.model"), ["agnes-video-2.5", "agnes-video-2.5-flash"]] }, message: "Agnes 2.5 插件仅支持 agnes-video-2.5 与 agnes-video-2.5-flash" },
@@ -485,6 +936,57 @@ add({
     videos: coalesce(ref("response.data.metadata.url"), ref("response.metadata.url"), ref("response.data.url"), ref("response.url")),
     message: coalesce(ref("response.data.error.message"), ref("response.error.message"), ref("response.message"), ref("response.detail"))
   })
+});
+
+// Agnes 图像是同步端点，文生图与图生图共用 POST /v1/images/generations：
+// 不传 image 为文生图，传 image 为图生图或多图合成。官方参数表只承认
+// model、prompt、size（必填，档位 1K/2K/3K/4K 或 WxH 精确尺寸）、ratio、image、
+// return_base64 和 extra_body，因此这里不发送 n、output_format、quality、
+// background 等 OpenAI 兼容字段。顶层 response_format 是官方明确列出的错误写法，
+// 输出格式只能声明在 extra_body 内。参考图放 extra_body.image，支持公共 HTTPS URL
+// 和 Data URI Base64，所以不强制公共媒体 URL，本地开发也能直接联调。
+const agnesImageRatios = ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"];
+const agnesImageAspect = trim(ref("request.aspectRatio"));
+const agnesImageIsRatio = { $in: [agnesImageAspect, agnesImageRatios] };
+const agnesImageIsPixel = eq(len(split(agnesImageAspect, "x")), 2);
+// size 是官方必填项：像素尺寸原样透传，其余情况（比例、auto、空值）一律落到分辨率档位，不能省略。
+const agnesImageSize = conditional(agnesImageIsPixel, agnesImageAspect, {
+  $switch: {
+    cases: [
+      { when: { $in: [lower(trim(ref("request.quality"))), ["1k", "low", "standard"]] }, then: "1K" },
+      { when: { $in: [lower(trim(ref("request.quality"))), ["2k", "medium", "hd", "high"]] }, then: "2K" },
+      { when: { $in: [lower(trim(ref("request.quality"))), ["3k"]] }, then: "3K" },
+      { when: { $in: [lower(trim(ref("request.quality"))), ["4k"]] }, then: "4K" }
+    ],
+    default: "1K"
+  }
+});
+
+add({
+  id: "agnes-image", providerId: "agnes-image", name: "Agnes Image", vendor: "Agnes AI", capability: "image",
+  baseUrl: "https://api.agnes-ai.cn", auth: bearer, params: imageParams, requiresPublicMediaUrls: false,
+  notes: "Agnes 官方图像端点，同步返回。文生图与图生图共用 /v1/images/generations：不传 image 为文生图，传 image 为图生图或多图合成。size 必填，取 1K/2K/3K/4K 档位或 WxH 精确尺寸；画面比例走独立的 ratio 字段。参考图放在 extra_body.image，支持公共 HTTPS URL 或 Data URI Base64。顶层 response_format 是官方明确列出的错误写法，输出格式只能声明在 extra_body.response_format。该端点不接受 n，单次请求固定返回一张图片，需要多张时由上层拆分为多个任务。",
+  validations: [
+    { assert: { $or: [{ $in: [agnesImageAspect, ["", "auto", ...agnesImageRatios]] }, eq(len(split(agnesImageAspect, "x")), 2)] }, message: "Agnes 图像只支持 1:1、3:4、4:3、16:9、9:16、2:3、3:2、21:9 比例或 WxH 像素尺寸" }
+  ],
+  create: jsonCreate("/v1/images/generations", {
+    model: ref("request.model"),
+    prompt: ref("request.prompt"),
+    size: omit(agnesImageSize),
+    ratio: omit(conditional(agnesImageIsRatio, agnesImageAspect)),
+    extra_body: omit({
+      image: omit(map(sorted(ref("request.images")), "media", coalesce(ref("media.dataUrl"), ref("media.url")))),
+      response_format: coalesce(ref("request.providerOptions.agnes-image.response_format"), "url")
+    })
+  }, { originPath: true }),
+  response: {
+    status: "succeeded",
+    images: map(ref("response.data"), "item", {
+      url: omit(ref("item.url")),
+      dataUrl: conditional(ref("item.b64_json"), { $concat: ["data:image/png;base64,", ref("item.b64_json")] })
+    }),
+    errorPaths: ["error.code", "code"], messagePaths: ["error.message", "message", "msg"]
+  }
 });
 
 add({
@@ -562,8 +1064,252 @@ add({
   response: { status: "succeeded", images: coalesce(ref("response.data"), ref("response.images")), errorPaths: ["error.code"], messagePaths: ["error.message", "message"] }
 });
 
+// MiniMax H3 Image 使用 OpenAI 风格的 /v1/images/generations 与 /v1/images/edits，
+// 与旧 minimax-image（/v1/image_generation）是不同线协议，独立成包以免影响已配置的旧渠道。
+const minimaxH3Models = ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"];
+const minimaxH3Areas = ["1K", "2K", "4K"];
+const minimaxH3Aspect = lower(trim(ref("request.aspectRatio")));
+const minimaxH3PixelParts = split(minimaxH3Aspect, "x");
+const minimaxH3PixelWidth = toFloat(at(minimaxH3PixelParts, 0));
+const minimaxH3PixelHeight = toFloat(at(minimaxH3PixelParts, 1));
+const minimaxH3HasPixelSize = and(eq(len(minimaxH3PixelParts), 2), gt(minimaxH3PixelWidth, 0), gt(minimaxH3PixelHeight, 0));
+const minimaxH3RatioParts = split(minimaxH3Aspect, ":");
+const minimaxH3RatioWidth = toFloat(at(minimaxH3RatioParts, 0));
+const minimaxH3RatioHeight = toFloat(at(minimaxH3RatioParts, 1));
+const minimaxH3IsInteger = (value) => eq(value, toInt(value));
+// 1:3 到 3:1（含边界）用乘法比较，避免浮点除法误差和除零。
+const minimaxH3WithinRatio = (width, height) => and(lte(width, multiply(height, 3)), lte(height, multiply(width, 3)));
+const minimaxH3ValidPixelSize = and(
+  minimaxH3HasPixelSize, minimaxH3IsInteger(minimaxH3PixelWidth), minimaxH3IsInteger(minimaxH3PixelHeight),
+  gte(multiply(minimaxH3PixelWidth, minimaxH3PixelHeight), 655360), lte(multiply(minimaxH3PixelWidth, minimaxH3PixelHeight), 20000000),
+  minimaxH3WithinRatio(minimaxH3PixelWidth, minimaxH3PixelHeight)
+);
+const minimaxH3ValidRatio = and(
+  eq(len(minimaxH3RatioParts), 2), gte(minimaxH3RatioWidth, 1), lte(minimaxH3RatioWidth, 300), gte(minimaxH3RatioHeight, 1), lte(minimaxH3RatioHeight, 300),
+  minimaxH3IsInteger(minimaxH3RatioWidth), minimaxH3IsInteger(minimaxH3RatioHeight), minimaxH3WithinRatio(minimaxH3RatioWidth, minimaxH3RatioHeight)
+);
+const minimaxH3Resolution = { $upper: trim(ref("request.resolution")) };
+const minimaxH3OptionPath = "request.providerOptions.minimax-h3-image";
+const minimaxH3SuccessItems = filter(ref("response.data"), "item", { $or: [ref("item.url"), ref("item.b64_json")] });
+
+add({
+  id: "minimax-h3-image", providerId: "minimax-h3-image", name: "MiniMax H3 Image", vendor: "MiniMax", capability: "image",
+  baseUrl: "https://api.minimax.cn", auth: bearer, requiresPublicMediaUrls: false,
+  imageParameters: [
+    { name: "size", label: "画幅比例", type: "string", binding: "aspectRatio", encoding: "ratio", values: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9", "3:1", "1:3"], default: "1:1", pricing: true },
+    { name: "imageResolution", label: "分辨率", type: "string", binding: "resolution", values: minimaxH3Areas, default: "2K", pricing: true },
+    { name: "count", label: "生成数量", type: "integer", binding: "imageCount", min: 1, max: 10, step: 1, default: 1 },
+    { name: "quality", label: "图片质量", type: "string", binding: "quality", enabled: false },
+    { name: "transparentBackground", label: "透明背景", type: "boolean", binding: "transparentBackground", default: false, enabled: false },
+    // 渠道套用 GPT Image 能力模板时会带上 outputFormat/outputCompression；这里声明本插件自己的安全映射，默认停用。
+    { name: "outputFormat", label: "输出格式", type: "string", binding: "providerOptions.minimax-h3-image.output_format", values: ["jpeg", "png", "webp"], default: "jpeg", enabled: false },
+    { name: "outputCompression", label: "压缩质量", type: "integer", binding: "providerOptions.minimax-h3-image.output_compression", min: 0, max: 100, step: 1, enabled: false }
+  ],
+  params: [
+    ["model", "string", true, "model", "MiniMax-H3-Image 或 MiniMax-H3-Image-Highspeed。"],
+    ["prompt", "string", true, "prompt", "图片提示词，去除首尾空白后不能为空，最长 32000 个字符。"],
+    ["images", "media[]", false, "images[].image_url", "参考图，1 到 16 张，按 order 顺序下发；有参考图时改走 /v1/images/edits。不支持 mask。"],
+    ["imageCount", "integer", false, "n", "输出数量，1 到 10，未设置时为 1。"],
+    ["aspectRatio", "string", false, "aspect_ratio / size", "X:Y 比例（1 到 300 的整数，1:3 到 3:1）映射到 aspect_ratio，并固定 size=auto；宽x高像素尺寸映射到 size，不再发送 aspect_ratio 和 area。"],
+    ["resolution", "string", false, "area", "分辨率档位 1K、2K、4K；未设置时为 2K，避免落到上游默认的 4K。"],
+    ["providerOptions", "object", false, "output_format / output_compression", "仅开放 providerOptions.minimax-h3-image.output_format（jpeg/png/webp）与 output_compression（0-100）。"]
+  ],
+  validations: [
+    { assert: { $in: [ref("request.model"), minimaxH3Models] }, message: "MiniMax H3 Image 仅支持 MiniMax-H3-Image 或 MiniMax-H3-Image-Highspeed" },
+    { assert: and(gt(len(trim(ref("request.prompt"))), 0), lte(len(trim(ref("request.prompt"))), 32000)), message: "MiniMax H3 Image 提示词不能为空且不能超过 32000 个字符" },
+    { assert: lte(len(ref("request.images")), 16), message: "MiniMax H3 Image 最多支持 16 张参考图" },
+    { assert: eq(len(filter(ref("request.images"), "media", eq(ref("media.role"), "mask"))), 0), message: "MiniMax H3 Image 不支持蒙版（mask）局部编辑，请改用提示词描述需要修改的区域" },
+    { assert: { $or: [eq(ref("request.imageCount"), null), eq(ref("request.imageCount"), 0), and(gte(ref("request.imageCount"), 1), lte(ref("request.imageCount"), 10))] }, message: "MiniMax H3 Image 生成数量必须为 1 到 10" },
+    { assert: { $or: [{ $in: [minimaxH3Aspect, ["", "auto"]] }, minimaxH3ValidRatio, minimaxH3ValidPixelSize] }, message: "MiniMax H3 Image 比例须在 1:3 到 3:1 之间；像素尺寸须为「宽x高」整数，总像素 655360 到 20000000" },
+    { assert: { $in: [minimaxH3Resolution, ["", "AUTO", ...minimaxH3Areas]] }, message: "MiniMax H3 Image 分辨率仅支持 1K、2K、4K" },
+    { assert: { $in: [coalesce(lower(trim(ref(`${minimaxH3OptionPath}.output_format`))), "jpeg"), ["jpeg", "jpg", "png", "webp"]] }, message: "MiniMax H3 Image 输出格式仅支持 jpeg、png、webp" }
+  ],
+  create: {
+    method: "POST",
+    path: "/v1/images/generations",
+    pathTemplate: conditional(gt(len(ref("request.images")), 0), "/v1/images/edits", "/v1/images/generations"),
+    contentType: "application/json",
+    body: {
+      model: ref("request.model"),
+      prompt: ref("request.prompt"),
+      n: conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1),
+      // 宿主会为 /images/generations 补全 OpenAI 像素 size；这里必须显式声明 size，比例输入时固定为 auto。
+      size: conditional(minimaxH3HasPixelSize, minimaxH3Aspect, "auto"),
+      // 上游规定像素尺寸模式下不能出现 aspect_ratio 与 area（即使是 auto）。
+      aspect_ratio: conditional({ $or: [minimaxH3HasPixelSize, { $in: [minimaxH3Aspect, ["", "auto"]] }] }, null, minimaxH3Aspect),
+      area: conditional(minimaxH3HasPixelSize, null, conditional({ $in: [minimaxH3Resolution, minimaxH3Areas] }, minimaxH3Resolution, "2K")),
+      images: conditional(gt(len(ref("request.images")), 0), map(sorted(ref("request.images")), "media", { image_url: ref("media.value") })),
+      response_format: "url",
+      output_format: omit(lower(trim(ref(`${minimaxH3OptionPath}.output_format`)))),
+      output_compression: conditional({ $ne: [ref(`${minimaxH3OptionPath}.output_compression`), null] }, toInt(ref(`${minimaxH3OptionPath}.output_compression`))),
+      // 显式占位但不发送：阻止宿主按 OpenAI 规则补 quality/background，H3 不支持这两个字段。
+      quality: null,
+      background: null
+    }
+  },
+  response: {
+    // data[] 中失败的单张只有 error 字段；全部失败时上游返回 4xx/5xx，宿主按 HTTP 错误处理。
+    status: conditional(gt(len(minimaxH3SuccessItems), 0), "succeeded", "failed"),
+    message: coalesce(ref("response.error.message"), first(map(filter(ref("response.data"), "item", ref("item.error")), "item", ref("item.error.message"))), conditional(eq(len(minimaxH3SuccessItems), 0), "MiniMax H3 Image 没有返回可用图片")),
+    images: map(minimaxH3SuccessItems, "item", {
+      url: omit(ref("item.url")),
+      dataUrl: omit(ref("item.b64_json")),
+      output_format: omit(ref("response.output_format"))
+    }),
+    usage: ref("response.usage"),
+    resultEphemeral: true,
+    errorPaths: ["error.code", "error.type"],
+    messagePaths: ["error.message"]
+  },
+  notes: `适配 MiniMax 开放平台 H3 图片接口，模型为 MiniMax-H3-Image 与 MiniMax-H3-Image-Highspeed（参数和限制相同）。默认 Base URL 为国内站 https://api.minimax.cn，国际站可改为 https://api.minimax.io；API Key 需与站点对应。\n\n无参考图走 POST /v1/images/generations，有参考图走 POST /v1/images/edits（JSON，images[].image_url），参考图 1 到 16 张、按 order 保持顺序，支持公网 URL 或 data URI；请求体总大小上限 64 MiB。不支持 mask、透明背景和质量档位：mask 会在校验阶段明确拒绝，quality/background 不会发送。区域改色等局部修改只能通过提示词描述实现。\n\n比例输入发送 size=auto + aspect_ratio + area；「宽x高」像素输入只发送 size（总像素 655360 到 20000000，比例 1:3 到 3:1），不发送 aspect_ratio 与 area。area 未设置时固定发送 2K，避免落到上游默认的 4K。output_format 与 output_compression 只能通过本插件 providerOptions 命名空间设置，默认不发送（上游默认 jpeg、95）。\n\n同步返回，response_format 固定为 url；图片 URL 不保证长期可用，已声明 resultEphemeral，由宿主立即下载持久化。data[] 中只有 error 的失败项会被跳过，至少一张成功即成功；全部失败时上游返回 402/422/500，按 HTTP 错误失败。usage 原样保留供核对，不改写本地计费规则。\n\n风险：上游最长处理 600 秒，而宿主请求超时固定为 5 分钟，4K 多图可能先超时；上游接口不幂等，客户端超时或断开后仍会完成生成并对成功图片扣费，重试会再次扣费。\n\n官方接口：[文生图](https://platform.minimax.io/docs/api-reference/image-generation-h3-generations)、[图片编辑](https://platform.minimax.io/docs/api-reference/image-generation-h3-edits)、[国内站图片生成指南](https://platform.minimax.cn/docs/guides/image-generation)。`
+});
+
+const minimaxInputs = coalesce({ $concatArrays: [
+  ...[["images", "image"], ["videos", "video"], ["audios", "audio"]].map(([field, kind]) =>
+    map(ref(`request.${field}`), "media", { $merge: [ref("media"), { kind }] })
+  )
+] }, ref("request.inputs"));
+const minimaxMedia = (kind, roles) => filter(minimaxInputs, "media", and(
+  eq(ref("media.kind"), kind), ...(roles ? [{ $in: [ref("media.role"), roles] }] : [])
+));
+const minimaxKeyframes = filter(minimaxInputs, "media", { $in: [ref("media.role"), ["first_frame", "last_frame"]] });
+const minimaxRatio = ref("request.output.aspectRatio");
+
+add({
+  id: "dashscope-minimax-video", providerId: "dashscope-minimax-video", name: "百炼 MiniMax H3 Video", vendor: "Alibaba Cloud", capability: "video",
+  videoReferences: numberedImages("input-image-media"),
+  baseUrl: "", auth: bearer, requiresPublicMediaUrls: true,
+  params: [
+    ["model", "string", true, "model", "固定为 MiniMax/MiniMax-H3。"],
+    ["prompt", "string", true, "input.prompt", "中英文提示词，最多 7000 个字符。"],
+    ["images", "media[]", false, "input.media", "显式首帧、尾帧或参考图；支持仅尾帧。"],
+    ["videos", "media[]", false, "input.media[type=feature]", "最多 3 个参考视频。"],
+    ["audios", "media[]", false, "input.media[type=driving_audio]", "最多 3 个参考音频。"],
+    ["duration", "integer", true, "parameters.duration", "4-15 秒整数，不沿用原生 MiniMax 的 30 秒上限。"],
+    ["aspectRatio", "string", false, "parameters.ratio", "文生视频必须指定具体比例；首尾帧恒为 adaptive，多模态默认 adaptive。"],
+    ["resolution", "string", true, "parameters.resolution", "768P 或 2K。"],
+    ["watermark", "boolean", false, "parameters.watermark", "是否添加 AI 生成水印，默认关闭。"]
+  ],
+  validations: [
+    { assert: eq(ref("request.model"), "MiniMax/MiniMax-H3"), message: "百炼 MiniMax 视频仅支持 MiniMax/MiniMax-H3" },
+    { assert: and(gt(len(trim(ref("request.prompt"))), 0), lte(len(ref("request.prompt")), 7000)), message: "百炼 MiniMax 提示词不能为空且不能超过 7000 个字符" },
+    { assert: { $in: [ref("request.output.duration"), Array.from({ length: 12 }, (_, index) => index + 4)] }, message: "百炼 MiniMax duration 必须为 4-15 秒整数" },
+    { assert: { $in: [{ $upper: ref("request.output.resolution") }, ["768P", "2K"]] }, message: "百炼 MiniMax resolution 仅支持 768P 或 2K" },
+    { assert: eq(len(filter(minimaxInputs, "media", { $not: { $or: [
+      and(eq(ref("media.kind"), "image"), { $in: [ref("media.role"), ["", "first_frame", "last_frame", "reference_image", "subject_reference", "style_reference"]] }),
+      and(eq(ref("media.kind"), "video"), { $in: [ref("media.role"), ["", "reference_video"]] }),
+      and(eq(ref("media.kind"), "audio"), { $in: [ref("media.role"), ["", "reference_audio", "reference_voice"]] })
+    ] } })), 0), message: "百炼 MiniMax 媒体类型或角色不受支持" },
+    { assert: eq(len(filter(minimaxInputs, "media", { $not: { $in: [first(split(ref("media.value"), "://")), ["http", "https"]] } })), 0), message: "百炼 MiniMax 媒体必须使用 HTTP 或 HTTPS 公网 URL" },
+    { assert: lte(len(minimaxMedia("image")), 9), message: "百炼 MiniMax 最多支持 9 张参考图片" },
+    { assert: lte(len(minimaxMedia("video")), 3), message: "百炼 MiniMax 最多支持 3 个参考视频" },
+    { assert: lte(len(minimaxMedia("audio")), 3), message: "百炼 MiniMax 最多支持 3 个参考音频" },
+    ...[["first_frame", "首帧"], ["last_frame", "尾帧"]].map(([role, label]) => ({
+      assert: lte(len(minimaxMedia("image", [role])), 1), message: `百炼 MiniMax 最多只能有一个${label}`
+    })),
+    { assert: { $or: [eq(len(minimaxKeyframes), 0), eq(len(minimaxKeyframes), len(minimaxInputs))] }, message: "百炼 MiniMax 首尾帧不能与参考图片、视频或音频混用" },
+    { assert: { $or: [gt(len(minimaxKeyframes), 0), { $in: [coalesce(minimaxRatio, "adaptive"), ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]] }] }, message: "百炼 MiniMax ratio 不受支持" },
+    { assert: { $or: [gt(len(minimaxInputs), 0), { $in: [minimaxRatio, ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]] }] }, message: "百炼 MiniMax 文生视频必须指定具体画幅比例，不能使用 adaptive" }
+  ],
+  create: jsonCreate("/api/v1/services/aigc/video-generation/video-synthesis", {
+    model: ref("request.model"),
+    input: {
+      prompt: ref("request.prompt"),
+      media: omit(map(sorted(minimaxInputs), "media", {
+        type: conditional(eq(ref("media.kind"), "image"),
+          conditional({ $in: [ref("media.role"), ["first_frame", "last_frame"]] }, ref("media.role"), "image_url"),
+          conditional(eq(ref("media.kind"), "video"), "feature", "driving_audio")),
+        url: ref("media.value")
+      }))
+    },
+    parameters: {
+      resolution: { $upper: ref("request.output.resolution") },
+      ratio: conditional(gt(len(minimaxKeyframes), 0), "adaptive", coalesce(minimaxRatio, "adaptive")),
+      duration: ref("request.output.duration"),
+      watermark: coalesce(ref("request.output.watermark"), false)
+    }
+  }, { headers: { "X-DashScope-Async": "enable" }, originPath: true }),
+  poll: { method: "GET", path: "/api/v1/tasks/{{taskId}}", originPath: true },
+  response: {
+    taskId: coalesce(ref("response.output.task_id"), ref("taskId")),
+    status: conditional(eq(ref("response.output.task_status"), "UNKNOWN"), "failed", ref("response.output.task_status")),
+    message: coalesce(ref("response.output.message"), ref("response.message"), conditional(eq(ref("response.output.task_status"), "UNKNOWN"), "百炼 MiniMax 任务不存在或已超过 24 小时查询有效期")),
+    videos: ref("response.output.video_url"), usage: ref("response.usage"),
+    errorPaths: ["code", "output.code"], resultEphemeral: true
+  },
+  notes: `适配阿里云百炼 MiniMax/MiniMax-H3，渠道 Base URL 使用百炼业务空间 Endpoint。\n\n首帧、尾帧各最多 1 张，支持仅尾帧；首尾帧与多模态参考互斥。参考图最多 9 张、每张 30 MB，JPG/JPEG/PNG/WEBP/HEIC/HEIF，宽高 256-5760、宽高比 0.4-2.5。参考视频最多 3 个、每个 50 MB、2-15 秒且总时长不超过 15 秒，MP4/MOV、23.976-60 fps，宽高和比例限制同图片。音频最多 3 个、每个 15 MB、2-15 秒且总时长不超过 15 秒，WAV/MP3。插件校验已提供的角色、数量、URL、提示词和生成规格；媒体编码、尺寸、帧率及参考总时长仍需满足上游限制，不在协议模板内执行媒体探测。\n\n不发送原生 content[]、generate_audio、seed 或 prompt_optimizer，也不开放绕过统一媒体校验的 raw media 扩展。创建任务后仅轮询原 task_id，UNKNOWN 终止为失败；任务查询有效期 24 小时，结果 URL 有效期 30 天，宿主持久化临时结果。usage 保留输入视频、输出视频和图片计数，不把供应商统计直接改写为本地计费规则。\n\n官方接口：[MiniMax 视频生成 API](https://docs.bailian.console.aliyun.com/zh/model-studio/minimax-video-generation-api-reference)。`
+});
+
+const wan3MediaType = coalesce(
+  conditional({ $in: [ref("media.role"), ["subject_reference", "style_reference"]] }, "reference_image", conditional(eq(ref("media.role"), "reference_voice"), "reference_audio", ref("media.role"))),
+  conditional(eq(ref("media.kind"), "image"), "reference_image", conditional(
+    eq(ref("media.kind"), "video"), "reference_video", conditional(
+      eq(ref("media.kind"), "audio"), "reference_audio", ref("media.kind")
+    )
+  ))
+);
+const wan3Inputs = ref("request.inputs");
+const wan3ExtraMedia = ref("request.providerOptions.dashscope-wan3-video.media");
+const wan3ExtraURL = split(ref("extra.url"), "://");
+const wan3Files = filter(wan3ExtraMedia, "extra", and({ $in: [ref("extra.type"), ["file", "link"]] }, at(wan3ExtraURL, 1), { $in: [lower(first(wan3ExtraURL)), conditional(eq(ref("extra.type"), "file"), ["http", "https", "oss"], ["http", "https"])] }));
+const wan3Frames = len(filter(wan3Inputs, "media", { $in: [wan3MediaType, ["first_frame", "last_frame"]] }));
+const wan3Count = (type) => len(filter(wan3Inputs, "media", eq(wan3MediaType, type)));
+const wan3PromptExtend = coalesce(ref("request.providerOptions.dashscope-wan3-video.prompt_extend"), true);
+const wan3DurationMs = (kind) => {
+  const durations = map(filter(wan3Inputs, "media", eq(ref("media.kind"), kind)), "media", ref("media.metadata.durationMs"));
+  return addNumbers(...Array.from({ length: 5 }, (_, index) => at(durations, index)));
+};
+
+add({
+  id: "dashscope-wan3-video", providerId: "dashscope-wan3-video", name: "DashScope Wan 3.0 Video", vendor: "Alibaba Cloud", capability: "video",
+  version: "2.1.0", videoReferences: numberedImages("input-media"),
+  baseUrl: "", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
+  validations: [
+    { assert: { $in: [lower(ref("request.model")), ["wan3.0-video-prime", "wan3.0-video"]] }, message: "Wan 3.0 Video 仅支持 wan3.0-video-prime 或 wan3.0-video" },
+    { assert: { $or: [trim(ref("request.prompt")), gt(len(wan3Inputs), 0), gt(len(wan3ExtraMedia), 0)] }, message: "Wan 3.0 需要提示词或输入素材" },
+    { assert: { $in: [lower(ref("request.resolution")), ["", "480p", "720p", "1080p"]] }, message: "Wan 3.0 只支持 480P、720P、1080P" },
+    { assert: { $in: [ref("request.aspectRatio"), ["", "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]] }, message: "Wan 3.0 不支持该画幅比例" },
+    { assert: { $or: [{ $in: [ref("request.duration"), [0, -1]] }, and(gte(ref("request.duration"), 2), lte(ref("request.duration"), 30))] }, message: "Wan 3.0 输出时长须为 2～30 秒或智能时长 -1" },
+    { assert: lte(wan3Count("first_frame"), 1), message: "Wan 3.0 最多一个首帧" },
+    { assert: lte(wan3Count("last_frame"), wan3Count("first_frame")), message: "Wan 3.0 尾帧必须与首帧配对" },
+    { assert: { $or: [eq(wan3Frames, 0), eq(wan3Frames, addNumbers(len(wan3Inputs), len(wan3ExtraMedia)))] }, message: "Wan 3.0 首尾帧不能与全能参考素材混用" },
+    ...[["reference_image", 10], ["reference_video", 5], ["reference_audio", 5]].map(([role, max]) => ({ assert: lte(wan3Count(role), max), message: `Wan 3.0 ${role} 上限为 ${max}` })),
+    ...["video", "audio"].map((kind) => ({ assert: lte(wan3DurationMs(kind), 15000), message: `Wan 3.0 ${kind} 素材总时长不能超过 15 秒` })),
+    { assert: lte(addNumbers(wan3DurationMs("video"), multiply(ref("request.duration"), 1000)), 30000), message: "Wan 3.0 输入视频和输出时长之和不能超过 30 秒" },
+    { assert: eq(len(wan3Inputs), len(filter(wan3Inputs, "media", { $in: [wan3MediaType, ["first_frame", "last_frame", "reference_image", "reference_video", "reference_audio"]] }))), message: "Wan 3.0 不支持该输入角色" },
+    ...[["image", ["first_frame", "last_frame", "reference_image"]], ["audio", ["reference_audio"]], ["video", ["reference_video"]]].map(([kind, roles]) => ({ assert: eq(len(filter(wan3Inputs, "media", and(eq(ref("media.kind"), kind), { $not: { $in: [wan3MediaType, roles] } }))), 0), message: `Wan 3.0 ${kind} 素材与所选角色不匹配` })),
+    { assert: { $or: [eq(wan3ExtraMedia, null), and(eq(wan3ExtraMedia, wan3Files), lte(len(wan3Files), 1))] }, message: "Wan 3.0 媒体扩展仅接受一个文件或网页，图像、视频和音频须使用宿主引用" },
+    { assert: { $or: [eq(len(wan3ExtraMedia), 0), eq(wan3PromptExtend, true)] }, message: "Wan 3.0 文件或网页输入必须开启 prompt_extend" }
+  ],
+  create: jsonCreate("/api/v1/services/aigc/video-generation/video-synthesis", {
+    model: ref("request.model"),
+    input: {
+      prompt: omit(ref("request.prompt")),
+      media: omit({ $concatArrays: [map(sorted(wan3Inputs), "media", { type: wan3MediaType, url: ref("media.value") }), map(wan3ExtraMedia, "extra", { type: ref("extra.type"), url: ref("extra.url") })] })
+    },
+    parameters: {
+      resolution: omit({ $upper: ref("request.resolution") }),
+      ratio: omit(ref("request.aspectRatio")),
+      duration: omit(ref("request.duration")),
+      audio: coalesce(ref("request.providerOptions.dashscope-wan3-video.audio"), ref("request.generateAudio")),
+      seed: omit(ref("request.providerOptions.dashscope-wan3-video.seed")),
+      prompt_extend: wan3PromptExtend,
+      watermark: ref("request.watermark")
+    }
+  }, { headers: { "X-DashScope-Async": "enable" }, originPath: true }),
+  poll: { method: "GET", path: "/api/v1/tasks/{{taskId}}", originPath: true },
+  response: asyncResponse("video", {
+    taskId: ref("response.output.task_id"),
+    status: conditional(eq(lower(ref("response.output.task_status")), "unknown"), "failed", ref("response.output.task_status")),
+    videos: ref("response.output.video_url"),
+    usage: ref("response.usage"), errorPaths: ["code", "output.code"], messagePaths: ["message", "output.message"]
+  }),
+  notes: "渠道 Base URL 应填写已开通地域的百炼业务空间 Endpoint。关键帧仅限首帧或首尾帧，不能混用全能参考。全能参考支持图、视频、音频组合；可附一个 file 或 link，此时必须开启 prompt_extend。参考视频和音频各自总长不超过 15 秒；输入视频总时长与输出时长之和不超过 30 秒。音频素材与输出声轨开关是不同能力。参考来源：[万相 3.0 视频生成 API](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)。"
+});
+
 add({
   id: "dashscope-wan-video", providerId: "dashscope-wan-video", name: "DashScope Wan Video", vendor: "Alibaba Cloud", capability: "video",
+  videoReferences: numberedImages("input-reference-images"),
   baseUrl: "https://dashscope.aliyuncs.com", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   validations: [
     { assert: { $lte: [len(mediaWithRoles("request.images", ["first_frame"])), 1] }, message: "Wan 视频最多只能有一个首帧" },
@@ -624,13 +1370,104 @@ add({
   })
 });
 
+// Qwen-Image 3.0 / Wan 2.7 图像属于百炼多模态模型，必须走多模态端点：
+// 用 OpenAI 的 /v1/images/generations 或 /v1/images/edits 会被网关判为“模型与端点不匹配”，
+// 官方错误码把它表现为 url error；参考图只能放在 input.messages[].content[].image。
+// size 使用 DashScope 的 “宽*高”（星号），未登记的档位直接省略，由模型按提示词自动推荐分辨率。
+const dashscopeMultimodalImageSizes = [
+  ["1:1", "1024*1024"], ["3:4", "960*1280"], ["4:3", "1280*960"], ["2:3", "1024*1536"], ["3:2", "1536*1024"],
+  ["9:16", "864*1536"], ["16:9", "1536*864"],
+  ["1024x1024", "1024*1024"], ["1024x1536", "1024*1536"], ["1536x1024", "1536*1024"],
+  ["1024x1280", "1024*1280"], ["1280x1024", "1280*1024"], ["960x1280", "960*1280"], ["1280x960", "1280*960"]
+];
+
+add({
+  id: "dashscope-qwen-image", providerId: "dashscope-qwen-image", name: "DashScope Qwen / Wan Image", vendor: "Alibaba Cloud", capability: "image",
+  baseUrl: "https://dashscope.aliyuncs.com", auth: bearer, params: imageParams, requiresPublicMediaUrls: false,
+  notes: "百炼多模态图像端点（image-generation 异步任务）。文生图与图生图共用同一入口：不传 image 为文生图，传 1-3 张 image 为图生图。参考图通过 input.messages[].content[].image 传输（优先 Base64 data URL），不使用 OpenAI 的 /v1/images/edits multipart。size 采用“宽*高”，未登记的档位省略并由模型自动推荐；enable_thinking 固定为 false，因为官方要求非流式调用关闭思考模式。",
+  create: jsonCreate("/api/v1/services/aigc/image-generation/generation", {
+    model: ref("request.model"),
+    input: {
+      messages: [{
+        role: "user",
+        content: {
+          $concatArrays: [
+            map(sorted(ref("request.images")), "media", { image: coalesce(ref("media.dataUrl"), ref("media.url")) }),
+            [{ text: ref("request.prompt") }]
+          ]
+        }
+      }]
+    },
+    parameters: {
+      size: omit({ $switch: { cases: dashscopeMultimodalImageSizes.map(([ratio, size]) => ({ when: eq(ref("request.aspectRatio"), ratio), then: size })), default: null } }),
+      n: conditional(gt({ $toInt: ref("request.imageCount") }, 0), { $toInt: ref("request.imageCount") }, 1),
+      prompt_extend: true,
+      enable_thinking: false,
+      negative_prompt: omit(ref("request.providerOptions.dashscope-qwen-image.negative_prompt")),
+      seed: omit(ref("request.providerOptions.dashscope-qwen-image.seed")),
+      watermark: omit(ref("request.watermark"))
+    }
+  }, { headers: { "X-DashScope-Async": "enable" }, originPath: true }),
+  poll: { method: "GET", path: "/api/v1/tasks/{{taskId}}", originPath: true },
+  response: asyncResponse("image", {
+    taskId: coalesce(ref("response.output.task_id"), ref("response.task_id"), ref("taskId")),
+    status: coalesce(ref("response.output.task_status"), ref("response.status"), "pending"),
+    message: coalesce(ref("response.output.message"), ref("response.message")),
+    images: map(ref("response.output.choices.0.message.content"), "item", { url: omit(ref("item.image")) }),
+    errorPaths: ["code", "output.code"], messagePaths: ["message", "output.message"]
+  })
+});
+
+// 千问 AI 平台（QianWenAI MAAS）是阿里独立的 MaaS 站点，网关域名是
+// maas.qianwenaiapi.com，与百炼的 dashscope.aliyuncs.com 不是同一入口，因此单列一个插件。
+// 它同样走多模态图像端点 multimodal-generation/generation，报文形状与百炼一致
+// （input.messages[].content[].image + text），但不能复用百炼插件：改 Base URL 后仍指向
+// dashscope.aliyuncs.com，请求会打到没有开通该模型的站点。
+const qianwenaiMaasImageSizes = [
+  ["1:1", "1024*1024"], ["3:4", "960*1280"], ["4:3", "1280*960"], ["2:3", "1024*1536"], ["3:2", "1536*1024"],
+  ["9:16", "864*1536"], ["16:9", "1536*864"],
+  ["1024x1024", "1024*1024"], ["1024x1536", "1024*1536"], ["1536x1024", "1536*1024"],
+  ["1024x1280", "1024*1280"], ["1280x1024", "1280*1024"], ["960x1280", "960*1280"], ["1280x960", "1280*960"]
+];
+
+add({
+  id: "qianwenai-maas-image", providerId: "qianwenai-maas-image", name: "QianWenAI MAAS", vendor: "Alibaba QianWenAI", capability: "image",
+  baseUrl: "https://maas.qianwenaiapi.com", auth: bearer, params: imageParams, requiresPublicMediaUrls: false,
+  notes: "千问 AI 平台（QianWenAI MAAS）多模态图像端点（multimodal-generation 异步任务）。文生图与图生图共用同一入口：不传 image 为文生图，传参考图为图生图。参考图通过 input.messages[].content[].image 传输（优先 Base64 data URL）。size 采用“宽*高”，未登记的档位省略并由模型自动推荐；enable_thinking 固定为 false，因为官方要求非流式调用关闭思考模式。",
+  create: jsonCreate("/api/v1/services/aigc/multimodal-generation/generation", {
+    model: ref("request.model"),
+    input: {
+      messages: [{
+        role: "user",
+        content: {
+          $concatArrays: [
+            map(sorted(ref("request.images")), "media", { image: coalesce(ref("media.dataUrl"), ref("media.url")) }),
+            [{ text: ref("request.prompt") }]
+          ]
+        }
+      }]
+    },
+    parameters: {
+      size: omit({ $switch: { cases: qianwenaiMaasImageSizes.map(([ratio, size]) => ({ when: eq(ref("request.aspectRatio"), ratio), then: size })), default: null } }),
+      n: conditional(gt({ $toInt: ref("request.imageCount") }, 0), { $toInt: ref("request.imageCount") }, 1),
+      prompt_extend: true,
+      enable_thinking: false,
+      negative_prompt: omit(ref("request.providerOptions.qianwenai-maas-image.negative_prompt")),
+      seed: omit(ref("request.providerOptions.qianwenai-maas-image.seed")),
+      watermark: omit(ref("request.watermark"))
+    }
+  }, { headers: { "X-DashScope-Async": "enable" }, originPath: true }),
+  poll: { method: "GET", path: "/api/v1/tasks/{{taskId}}", originPath: true },
+  response: asyncResponse("image", {
+    taskId: coalesce(ref("response.output.task_id"), ref("response.task_id"), ref("taskId")),
+    status: coalesce(ref("response.output.task_status"), ref("response.status"), "pending"),
+    message: coalesce(ref("response.output.message"), ref("response.message")),
+    images: map(ref("response.output.choices.0.message.content"), "item", { url: omit(ref("item.image")) }),
+    errorPaths: ["code", "output.code"], messagePaths: ["message", "output.message"]
+  })
+});
+
 for (const [id, name, vendor, capability, baseUrl, createPath, pollPath, requestShape] of [
-  ["dashscope-qwen-native", "DashScope Qwen Native", "Alibaba Cloud", "text", "https://dashscope.aliyuncs.com", "/api/v1/services/aigc/text-generation/generation", null, "input+parameters"],
-  ["minimax-text-native", "MiniMax Text Native", "MiniMax", "text", "https://api.minimax.chat", "/v1/text/chatcompletion_v2", null, "messages+tokens_to_generate"],
-  ["azure-openai", "Azure OpenAI", "Microsoft Azure", "text", "https://{resource}.openai.azure.com", "/openai/deployments/{{model}}/chat/completions", null, "OpenAI body + api-version query"],
-  ["vertex-gemini", "Vertex AI Gemini", "Google Cloud", "text", "https://{location}-aiplatform.googleapis.com", "/v1/projects/{{request.providerOptions.vertex-gemini.project}}/locations/{{request.providerOptions.vertex-gemini.location}}/publishers/google/models/{{model}}:generateContent", null, "Gemini contents/parts"],
-  ["aws-bedrock-converse", "AWS Bedrock Converse", "AWS", "text", "https://bedrock-runtime.{region}.amazonaws.com", "/model/{{model}}/converse", null, "messages+system+inferenceConfig+toolConfig"],
-  ["aws-bedrock-invoke-model", "AWS Bedrock InvokeModel", "AWS", "text", "https://bedrock-runtime.{region}.amazonaws.com", "/model/{{model}}/invoke", null, "model-specific arbitrary body"],
   ["vertex-imagen", "Vertex Imagen", "Google Cloud", "image", "https://{location}-aiplatform.googleapis.com", "/v1/projects/{{request.providerOptions.vertex-imagen.project}}/locations/{{request.providerOptions.vertex-imagen.location}}/publishers/google/models/{{model}}:predict", null, "instances+parameters"],
   ["minimax-image", "MiniMax Image", "MiniMax", "image", "https://api.minimax.io", "/v1/image_generation", null, "model-specific image body"],
   ["kling-image", "Kling Image", "Kuaishou", "image", "https://api.klingai.com", "/v1/images/generations", "/v1/images/generations/{{taskId}}", "task JSON"],
@@ -652,36 +1489,27 @@ for (const [id, name, vendor, capability, baseUrl, createPath, pollPath, request
   ["tencent-hunyuan-image", "腾讯混元图片", "Tencent Cloud", "image", "https://hunyuan.tencentcloudapi.com", "/", "/", "TC3 Action task"],
   ["baidu-qianfan-image", "百度千帆图片", "Baidu AI Cloud", "image", "https://qianfan.baidubce.com", "/v2/images/generations", null, "model-specific image input"]
 ]) {
-  const params = capability === "text" ? textParams : capability === "image" ? imageParams : videoParams;
+  const params = capability === "image" ? imageParams : videoParams;
   const optionPath = `request.providerOptions.${id}`;
-  const standardFields = capability === "text"
-    ? { model: ref("request.model"), messages: ref("request.messages"), input: omit(ref("request.prompt")), parameters: omit(ref(`${optionPath}.parameters`)) }
-    : capability === "image"
+  const standardFields = capability === "image"
       ? { model: ref("request.model"), prompt: ref("request.prompt"), images: omit(map(ref("request.images"), "media", ref("media.value"))), parameters: omit(ref(`${optionPath}.parameters`)) }
       : { model: ref("request.model"), prompt: ref("request.prompt"), images: omit(map(ref("request.images"), "media", ref("media.value"))), videos: omit(map(ref("request.videos"), "media", ref("media.value"))), audios: omit(map(ref("request.audios"), "media", ref("media.value"))), duration: omit(ref("request.duration")), aspect_ratio: omit(ref("request.aspectRatio")), resolution: omit(ref("request.resolution")), parameters: omit(ref(`${optionPath}.parameters`)) };
   const standard = { $merge: [standardFields, coalesce(ref(`${optionPath}.body`), ref(`${optionPath}.extra_body`), {})] };
   let auth = bearer;
   let configuration;
   let operationExtra = id.startsWith("dashscope-") ? { headers: { "X-DashScope-Async": "enable" } } : {};
-  if (id.startsWith("aws-bedrock-")) {
-    auth = { type: "aws-sigv4", field: "apiKey", secretField: "secretKey", service: "bedrock" };
-    configuration = { fields: [{ name: "apiKey", type: "secret", label: "Access Key ID", required: true }, { name: "secretKey", type: "secret", label: "Secret Access Key", required: true }] };
-  } else if (id.startsWith("tencent-")) {
+  if (id.startsWith("tencent-")) {
     auth = { type: "tc3", field: "apiKey", secretField: "secretKey", service: "hunyuan" };
     configuration = { fields: [{ name: "apiKey", type: "secret", label: "SecretId", required: true }, { name: "secretKey", type: "secret", label: "SecretKey", required: true }] };
     operationExtra = { headers: { "X-TC-Action": ref(`${optionPath}.action`), "X-TC-Version": ref(`${optionPath}.version`) } };
-  } else if (id === "azure-openai") {
-    auth = { type: "header", field: "apiKey", header: "api-key" };
-    operationExtra = { query: { "api-version": coalesce(ref(`${optionPath}.api-version`), "2024-10-21") } };
   }
   add({
     id, providerId: id, name, vendor, capability, baseUrl, auth, params, configuration,
+    videoReferences: id === "seedance-videos-compatible" ? numberedImages("images") : undefined,
     notes: `该协议的模型级字段变化快或依赖云资源配置。插件固定线协议入口和统一字段，完整厂商对象通过 providerOptions.${id} 的 parameters/input/extra_body 传入；${requestShape}。云签名型入口在未配置对应鉴权驱动时会明确失败，不会伪装成 Bearer 成功。`,
     create: jsonCreate(createPath, standard, operationExtra),
     poll: pollPath ? { method: "GET", path: pollPath } : undefined,
-    response: capability === "text"
-      ? { status: "succeeded", textPaths: ["output.text", "output_text", "choices.0.message.content", "result"], reasoningPaths: ["reasoning_content"], usage: ref("response.usage"), errorPaths: ["error.code", "code"], messagePaths: ["error.message", "message"] }
-      : pollPath ? asyncResponse(capability) : { status: "succeeded", [capability + "s"]: coalesce(ref("response.data"), ref("response.output"), ref("response.url")), errorPaths: ["error.code", "code"], messagePaths: ["error.message", "message"] }
+    response: pollPath ? asyncResponse(capability) : { status: "succeeded", [capability + "s"]: coalesce(ref("response.data"), ref("response.output"), ref("response.url")), errorPaths: ["error.code", "code"], messagePaths: ["error.message", "message"] }
   });
 }
 
@@ -690,7 +1518,6 @@ for (const [id, name, capability, createPath, pollPath, resultPath] of [
   ["fal-queue-video", "fal.ai Queue Video", "video", "/{{model}}", "/{{request.providerOptions.fal-queue-video.statusPath}}", "response.video"],
   ["replicate-prediction-image", "Replicate Predictions Image", "image", "/v1/predictions", "/v1/predictions/{{taskId}}", "response.output"],
   ["replicate-prediction-video", "Replicate Predictions Video", "video", "/v1/predictions", "/v1/predictions/{{taskId}}", "response.output"],
-  ["comfyui-workflow", "ComfyUI Workflow", "video", "/prompt", "/history/{{taskId}}", "response.output"],
   ["runninghub-workflow", "RunningHub Workflow", "video", "/task/openapi/create", "/task/openapi/status", "response.data"],
   ["pika-via-fal", "Pika via fal.ai", "video", "/{{model}}", "/{{request.providerOptions.pika-via-fal.statusPath}}", "response.video"]
 ]) {
@@ -717,9 +1544,9 @@ function manifestFor(spec) {
     apiVersion: "yingce.plugin/v2",
     id: spec.id,
     name: spec.name,
-    version: "2.0.0",
+    version: spec.version || "2.0.0",
     author: `${spec.vendor} / 影策`,
-    description: `${spec.name} 独立请求协议插件。`,
+    description: spec.description || `${spec.name} 独立请求协议插件。`,
     documentation: `# ${spec.name}\n\n完整字段、映射、响应、鉴权和兼容边界见包内 README.md 与 docs/interface.md。\n\n## 影策运行时合同\n\n用户只操作统一的文本、图片或视频能力；插件负责把统一请求转换为 ${spec.name} 上游协议。`,
     permissions: ["generation.run", "media.read"],
     configuration: spec.configuration || config(),
@@ -731,14 +1558,21 @@ function manifestFor(spec) {
         scopes,
         baseUrl: spec.baseUrl,
         requiresPublicMediaUrls: spec.requiresPublicMediaUrls === true,
+        ...(spec.detachedPolling ? { detachedPolling: true } : {}),
         auth: spec.auth,
+        ...(spec.imageParameters ? { imageParameters: spec.imageParameters } : {}),
+        ...(spec.videoReferences ? { videoReferences: spec.videoReferences } : {}),
+        ...(spec.videoModes ? { videoModes: spec.videoModes } : {}),
+        ...(spec.videoOutputs ? { videoOutputs: spec.videoOutputs } : {}),
         parameters: parameters(spec.params),
+        ...(spec.requestBindings ? { requestBindings: spec.requestBindings } : {}),
         ...(spec.validations ? { validations: spec.validations } : {}),
         create: spec.create,
         ...(spec.agent ? { agent: spec.agent } : {}),
         ...(spec.poll ? { poll: spec.poll } : {}),
         ...(spec.cancel ? { cancel: spec.cancel } : {}),
         ...(spec.result ? { result: spec.result } : {}),
+        ...(spec.upload ? { upload: spec.upload } : {}),
         response: spec.response,
         ...(spec.agentResponse ? { agentResponse: spec.agentResponse } : {})
       }]
@@ -768,15 +1602,8 @@ function collectTemplateFields(value, prefix, rows) {
 
 function operationFieldRows(operation, label) {
   if (!operation) return [];
-  const rows = [
-    [`${label}.method`, JSON.stringify(operation.method)],
-    [`${label}.path`, JSON.stringify(operation.path || "dynamic")],
-    [`${label}.contentType`, JSON.stringify(operation.contentType || "application/json")]
-  ];
-  collectTemplateFields(operation.body, `${label}.body`, rows);
-  collectTemplateFields(operation.query, `${label}.query`, rows);
-  collectTemplateFields(operation.headers, `${label}.headers`, rows);
-  collectTemplateFields(operation.files, `${label}.files`, rows);
+  const rows = [];
+  collectTemplateFields(operation, label, rows);
   return rows;
 }
 
@@ -800,6 +1627,75 @@ function docsFor(spec) {
   return `# ${spec.name} 接口字段\n\n## 协议身份\n\n- 插件 ID：\`${spec.id}\`。\n- Provider ID：\`${spec.providerId}\`。\n- 能力：\`${spec.capability}\`。\n- 默认 Base URL：\`${spec.baseUrl}\`。\n- 鉴权驱动：\`${spec.auth?.type || "默认"}\`。\n- 创建：\`${spec.create.method} ${spec.create.path || "动态路径"}\`。\n${spec.agent ? `- Agent：\`${spec.agent.method} ${spec.agent.path || "动态路径"}\`。\n` : ""}${spec.poll ? `- 查询：\`${spec.poll.method} ${spec.poll.path}\`。\n` : "- 生命周期：同步响应。\n"}${spec.cancel ? `- 取消：\`${spec.cancel.method} ${spec.cancel.path}\`。\n` : ""}\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n${configRows}\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n${rows}\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n${operationRows || "| `create` | 无请求字段 |"}\n\n## Provider 扩展键\n\n${optionRows}\n\n动态模型或工作流允许使用文档声明的完整 \`parameters/input/extra_body\` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n${mappedResponseRows || "| `response` | 无显式映射 |"}\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n${spec.notes || "该包只代表上述线协议 profile；同一品牌的其他 endpoint、云区域或网关包装必须使用独立插件，不能根据模型名猜测。"}\n`;
 }
 
+const topazOption = (field) => ref(`request.providerOptions.topazVideo.${field}`);
+add({
+  id: 'topaz-video-enhance', providerId: 'topaz-video-enhance', name: 'Topaz Video Enhance', vendor: 'Topaz Labs', capability: 'video',
+  baseUrl: 'https://api.topazlabs.com', auth: { type: 'header', field: 'apiKey', header: 'X-API-Key' },
+  params: [['model','string',true,'filters','prob-4增强或apo-8增强加插帧。'],['videos','media[]',true,'upload','唯一原片，通过宿主签名PUT上传。'],['providerOptions','object',true,'source/filters/output','topazVideo命名空间保留原片容器、处理模型、尺寸、声音和编码质量。']],
+  notes: '使用 /video/express 单原片上传，不调用accept或complete-upload。宿主加密保存上传进度，状态返回urls时可恢复。2K映射2560长边；无插帧不得启用隐藏fps。缺渠道保留配置要求；无源数据或未接完的原操作不冒充可用。原音策略必须显式指定。',
+  validations: [
+    { assert: and(eq(len(ref('request.videos')),1),eq(len(ref('request.images')),0),eq(len(ref('request.audios')),0)), message:'Topaz视频增强需要唯一原片' },
+    { assert: eq(trim(coalesce(ref('request.prompt'),'')),''), message:'Topaz视频增强不接收创作文本' },
+    { assert: { $in:[topazOption('source.container'),['mp4','mov','mkv','webm']] }, message:'需要明确原片容器' },
+    { assert: eq(coalesce(topazOption('source.external'),null),null), message:'原片通过宿主上传，不能替换为外部凭据源' },
+    { assert: and(gte(len(topazOption('filters')),1),lte(len(topazOption('filters')),2),eq(ref('request.providerOptions.topazVideo.filters.0.model'),'prob-4')), message:'缺少明确的原片增强模型' },
+    { assert: conditional(eq(len(topazOption('filters')),2),and(eq(ref('request.model'),'apo-8'),eq(ref('request.providerOptions.topazVideo.filters.1.model'),'apo-8'),{ $in:[ref('request.providerOptions.topazVideo.filters.1.fps'),[24,30,60,90,120]] },{ $in:[ref('request.providerOptions.topazVideo.filters.1.slowmo'),[1,2,3,5]] }),and(eq(ref('request.model'),'prob-4'),eq(coalesce(topazOption('output.frameRate'),null),null))), message:'增强模型与插帧慢放设置不匹配' },
+    ...['width','height'].map(field=>({ assert:and(gt(topazOption(`output.resolution.${field}`),0),eq(divide(topazOption(`output.resolution.${field}`),4),toInt(divide(topazOption(`output.resolution.${field}`),4)))),message:'输出像素必须为正数且对齐4像素' })),
+    { assert:{ $in:[topazOption('output.audioTransfer'),['Copy','Convert','None']] },message:'必须明确原声处理方式' },
+    { assert:conditional(eq(topazOption('output.audioTransfer'),'None'),true,{ $in:[topazOption('output.audioCodec'),['AAC','AC3','PCM']] }),message:'保留声音需要音频编码' },
+    { assert:{ $in:[topazOption('output.videoEncoder'),['H264','H265','AV1','VP9']] },message:'缺少输出视频编码' },
+    { assert:{ $in:[topazOption('output.dynamicCompressionLevel'),['Low','Mid','High']] },message:'必须明确压缩质量' }
+  ],
+  create:{method:'POST',path:'/video/express',originPath:true,contentType:'application/json',body:ref('request.providerOptions.topazVideo')},
+  poll:{method:'GET',path:'/video/{{taskId}}/status',originPath:true,contentType:'application/json'},
+  cancel:{method:'DELETE',path:'/video/{{taskId}}',originPath:true,contentType:'application/json'},
+  upload:{createUrlsPath:'uploadUrls',pendingUrlsPath:'urls',statusPath:'status',receivedStatuses:['initializing','preprocessing','processing','postprocessing','complete'],pendingStatuses:['accepted']},
+  response:{taskId:coalesce(ref('response.requestId'),ref('taskId')),status:conditional(and(eq(ref('response.status'),'complete'),eq(trim(coalesce(ref('response.download.url'),'')),'')),'failed',lower(coalesce(ref('response.status'),'pending'))),message:conditional(and(eq(ref('response.status'),'complete'),eq(trim(coalesce(ref('response.download.url'),'')),'')),'Topaz已完成但缺少成片下载地址',ref('response.message')),videos:ref('response.download.url'),resultEphemeral:true}
+});
+
+// Manifests own text policies; do not keep a second
+// catalog of vendor templates that can silently revert protocol repairs.
+for (const id of await packageDirectories(root)) {
+  const manifest = JSON.parse(await readFile(join(root, id, "manifest.json"), "utf8"));
+  const providers = manifest.contributes?.providers || [];
+  if (!providers.some((provider) => provider.capabilities?.includes("text"))) continue;
+  if (manifest.id !== id) {
+    throw new Error(`text package ${id} must use its canonical directory`);
+  }
+  const provider = providers.find((provider) => provider.capabilities?.includes("text"));
+  add({
+    ...provider,
+    id,
+    providerId: provider.id,
+    name: manifest.name,
+    capability: provider.capabilities.join(", "),
+    configuration: manifest.configuration,
+    params: (provider.parameters || []).map(({ name, type, required, mapping, description }) => [name, type, required, mapping, description]),
+    sourceManifest: manifest
+  });
+}
+
+function refreshTextDocumentation(source, spec) {
+  const generated = docsFor(spec);
+  // Only inventories are generated. Keep custom sections and surrounding prose.
+  for (const heading of ["协议身份", "配置字段", "统一字段映射", "上游请求模板逐字段清单", "Provider 扩展键", "响应映射逐字段清单"]) {
+    const section = new RegExp(`(^## ${heading}\\n)([\\s\\S]*?)(?=^## |^<!-- YINGCE_MANIFEST_CONTRACT_START -->|(?![\\s\\S]))`, "m");
+    const fresh = generated.match(section);
+    if (!fresh) throw new Error(`missing generated section ${heading}`);
+    const block = heading === "协议身份" || heading === "Provider 扩展键" ? /(?:^- .*\n)+/m : /(?:^\|.*\n)+/m;
+    const inventory = fresh[2].match(block)?.[0];
+    if (!inventory) throw new Error(`missing generated inventory ${heading}`);
+    if (section.test(source)) {
+      source = source.replace(section, (_, title, body) => title + (block.test(body) ? body.replace(block, () => inventory) : `\n${inventory}\n${body}`));
+    } else {
+      const inventorySection = `\n## ${heading}\n\n${inventory}\n`;
+      const contractStart = source.indexOf("<!-- YINGCE_MANIFEST_CONTRACT_START -->");
+      source = contractStart < 0 ? source + inventorySection : source.slice(0, contractStart) + inventorySection + source.slice(contractStart);
+    }
+  }
+  return source;
+}
+
 const requestedPackageIDs = new Set(process.argv.slice(2).map((value) => value.trim()).filter(Boolean));
 const selectedSpecs = requestedPackageIDs.size > 0 ? specs.filter((spec) => requestedPackageIDs.has(spec.id)) : specs;
 if (requestedPackageIDs.size > 0 && selectedSpecs.length !== requestedPackageIDs.size) {
@@ -810,9 +1706,16 @@ if (requestedPackageIDs.size > 0 && selectedSpecs.length !== requestedPackageIDs
 
 for (const spec of selectedSpecs) {
   const dir = join(root, spec.id);
+  if (spec.sourceManifest) {
+    const interfacePath = join(dir, "docs", "interface.md");
+    const source = (await readFile(interfacePath, "utf8")).replace(/\r\n?/g, "\n");
+    await writeFile(interfacePath, refreshTextDocumentation(source, spec));
+    continue;
+  }
   await mkdir(join(dir, "docs"), { recursive: true });
   await writeFile(join(dir, "manifest.json"), JSON.stringify(manifestFor(spec), null, 2) + "\n");
-  await writeFile(join(dir, "README.md"), `# ${spec.name}\n\n该目录是独立官方协议插件源码。后端从生成的 \`${spec.id}.yingce-plugin\` 包加载，不依赖系统内置 \`host:\` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n`);
+  const readmeIntro = spec.readmeIntro || "该目录是独立官方协议插件源码。";
+  await writeFile(join(dir, "README.md"), `# ${spec.name}\n\n${readmeIntro}\n\n后端从生成的 \`${spec.id}.yingce-plugin\` 包加载，不依赖系统内置 \`host:\` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n`);
   await writeFile(join(dir, "docs", "interface.md"), docsFor(spec));
 }
 

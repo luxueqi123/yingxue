@@ -3,15 +3,19 @@ import { Tag } from "antd";
 import { Bell } from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { getAnnouncementFeed, markAnnouncementsRead } from "@/services/api/announcements";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 const AnnouncementTimelineModal = lazy(() => import("@/components/ui/aceternity/announcement-timeline-modal").then((module) => ({ default: module.AnnouncementTimelineModal })));
 
 const ANNOUNCEMENT_REFRESH_INTERVAL_MS = 5 * 60_000;
 const ANNOUNCEMENT_CACHE_TTL_MS = 60_000;
 const ANNOUNCEMENT_DISMISS_TODAY_PREFIX = "yingce.announcements.dismiss-today";
+const ANNOUNCEMENT_DISMISS_SESSION_PREFIX = "yingce.announcements.dismiss-session";
 
 type AnnouncementFeed = Awaited<ReturnType<typeof getAnnouncementFeed>>;
 
@@ -26,6 +30,7 @@ type SystemAnnouncementCenterProps = {
 };
 
 export function SystemAnnouncementCenter({ userId, className, style, showLabel = false, labelClassName, staticMotion = false, autoOpen = false }: SystemAnnouncementCenterProps) {
+    const { t } = useInterfaceTranslation();
     const reducedMotion = useReducedMotion();
     const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
@@ -43,12 +48,12 @@ export function SystemAnnouncementCenter({ userId, className, style, showLabel =
     });
     const announcements = feedQuery.data?.announcements || [];
     const unreadCount = Math.max(0, feedQuery.data?.unreadCount || 0);
-    const error = feedQuery.error instanceof Error ? feedQuery.error.message : feedQuery.error ? "读取公告失败" : "";
+    const error = feedQuery.error instanceof Error ? feedQuery.error.message : feedQuery.error ? t("layoutExtrasUi.announcementsReadFailed" as InterfaceMessageKey) : "";
 
     useEffect(() => {
-        if (!autoOpen || open || !feedQuery.isSuccess || unreadCount <= 0 || announcements.length === 0) return;
+        if (!autoOpen || open || !feedQuery.isSuccess || announcements.length === 0) return;
         const fingerprint = announcementFeedFingerprint(announcements);
-        if (!fingerprint || fingerprint === dismissedFingerprint || announcementAutoPromptSuppressed(userId)) return;
+        if (!fingerprint || fingerprint === dismissedFingerprint || announcementAutoPromptSuppressed(userId, fingerprint)) return;
         setAutomaticPrompt(true);
         setOpen(true);
     }, [announcements, autoOpen, dismissedFingerprint, feedQuery.isSuccess, open, unreadCount, userId]);
@@ -71,7 +76,8 @@ export function SystemAnnouncementCenter({ userId, className, style, showLabel =
     const dismissAutomaticPrompt = (duration: "once" | "today") => {
         const fingerprint = announcementFeedFingerprint(announcements);
         if (fingerprint) setDismissedFingerprint(fingerprint);
-        if (duration === "today") rememberAnnouncementDismissalToday(userId);
+        if (fingerprint) rememberAnnouncementDismissalSession(userId, fingerprint);
+        if (duration === "today") rememberAnnouncementDismissalToday(userId, fingerprint);
         setAutomaticPrompt(false);
         setOpen(false);
     };
@@ -86,8 +92,9 @@ export function SystemAnnouncementCenter({ userId, className, style, showLabel =
                 whileTap={reducedMotion || staticMotion ? undefined : { scale: 0.94 }}
                 transition={aceternityMotion.spring.dock}
                 onClick={() => void openAnnouncements()}
-                aria-label={unreadCount ? `系统公告，${unreadCount} 条未读` : "系统公告"}
-                title="系统公告"
+                aria-label={unreadCount ? t("account.layout.announcements.unreadLabel", { count: unreadCount }) : t("account.layout.announcements.title")}
+                title={t("account.layout.announcements.title")}
+                data-icon-only={showLabel ? undefined : true}
             >
                 <span className="relative shrink-0">
                     <Bell className="size-4" />
@@ -107,8 +114,8 @@ export function SystemAnnouncementCenter({ userId, className, style, showLabel =
                 </span>
                 {showLabel ? (
                     <span className={`min-w-0 flex-1 items-center justify-between gap-2 whitespace-nowrap ${labelClassName || ""}`}>
-                        <span>系统公告</span>
-                        <Tag color={unreadCount > 0 ? "gold" : undefined} className="!m-0 !min-w-6 !px-1.5 !text-center !text-[var(--fs-micro)] !font-medium !leading-[18px] tabular-nums">{announcements.length}</Tag>
+                        <span>{t("account.layout.announcements.title")}</span>
+                        <Tag color={unreadCount > 0 ? "gold" : undefined} className="!m-0 !min-w-6 !px-2 !text-center !text-[var(--fs-micro)] !font-medium !leading-[18px] tabular-nums">{announcements.length}</Tag>
                     </span>
                 ) : null}
             </motion.button>
@@ -138,17 +145,36 @@ function announcementFeedFingerprint(announcements: AnnouncementFeed["announceme
         .join("|");
 }
 
-function announcementAutoPromptSuppressed(userId: string) {
+function announcementAutoPromptSuppressed(userId: string, fingerprint: string) {
+    if (hasAnnouncementDismissalSession(userId, fingerprint)) return true;
     try {
-        return localStorage.getItem(`${ANNOUNCEMENT_DISMISS_TODAY_PREFIX}.${userId}`) === localDateKey();
+        const value = localStorage.getItem(`${ANNOUNCEMENT_DISMISS_TODAY_PREFIX}.${userId}`);
+        const parsed = value ? JSON.parse(value) as { date?: string; fingerprint?: string } : null;
+        return parsed?.date === localDateKey() && parsed.fingerprint === fingerprint;
     } catch {
         return false;
     }
 }
 
-function rememberAnnouncementDismissalToday(userId: string) {
+function hasAnnouncementDismissalSession(userId: string, fingerprint: string) {
     try {
-        localStorage.setItem(`${ANNOUNCEMENT_DISMISS_TODAY_PREFIX}.${userId}`, localDateKey());
+        return sessionStorage.getItem(`${ANNOUNCEMENT_DISMISS_SESSION_PREFIX}.${userId}`) === fingerprint;
+    } catch {
+        return false;
+    }
+}
+
+function rememberAnnouncementDismissalSession(userId: string, fingerprint: string) {
+    try {
+        sessionStorage.setItem(`${ANNOUNCEMENT_DISMISS_SESSION_PREFIX}.${userId}`, fingerprint);
+    } catch {
+        // sessionStorage 不可用时保留页内 dismissedFingerprint 作为降级。
+    }
+}
+
+function rememberAnnouncementDismissalToday(userId: string, fingerprint: string) {
+    try {
+        localStorage.setItem(`${ANNOUNCEMENT_DISMISS_TODAY_PREFIX}.${userId}`, JSON.stringify({ date: localDateKey(), fingerprint }));
     } catch {
         // 浏览器禁用存储时仍允许关闭弹窗，本次组件生命周期内不会重复打开。
     }

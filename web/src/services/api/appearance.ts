@@ -1,7 +1,12 @@
-import { apiClient, request } from "@/services/api/request";
+import { http } from "@/services/api/request";
 import type { SkinDefinition } from "@/lib/skin-themes";
+import type { AgentAvatarBundleManifest, CanvasAppearance } from "@/lib/canvas/agent-appearance";
+import { apiBaseURL } from "@/services/api/request";
+import type { UpdateAnnouncement } from "@/lib/update-announcement";
 
 export type PublicAppearance = {
+    updates?: UpdateAnnouncement;
+    canvas?: CanvasAppearance;
     schemaVersion: number;
     brandName: string;
     brandSlug: string;
@@ -21,6 +26,7 @@ export type PublicAppearance = {
     footerCopyright: string;
     icpFilingEnabled: boolean;
     icpFilingNumber: string;
+    redeemPurchaseUrl: string;
     logoConfigured: boolean;
     darkLogoConfigured: boolean;
     authVideoConfigured: boolean;
@@ -31,6 +37,8 @@ export type PublicAppearance = {
 };
 
 export type AdminAppearance = {
+    updates?: UpdateAnnouncement;
+    canvas?: CanvasAppearance;
     schemaVersion: number;
     brandName: string;
     brandSlug: string;
@@ -50,6 +58,7 @@ export type AdminAppearance = {
     footerCopyright: string;
     icpFilingEnabled: boolean;
     icpFilingNumber: string;
+    redeemPurchaseUrl: string;
     public: PublicAppearance;
     configured: boolean;
     updatedBy?: string;
@@ -58,6 +67,7 @@ export type AdminAppearance = {
 };
 
 export type AppearanceAssetSlot = "logo" | "logo-dark" | "video" | "poster";
+export type AppearanceAssetUploadSlot = AppearanceAssetSlot;
 
 export type AppearanceResource = {
     id: string;
@@ -67,13 +77,38 @@ export type AppearanceResource = {
     size: number;
 };
 
+export type AgentAvatarBundleImport = {
+    resourceId: string;
+    manifest: AgentAvatarBundleManifest;
+};
+
 export async function getPublicAppearance(signal?: AbortSignal) {
-    const result = await request<{ appearance: PublicAppearance }>(apiClient.get("/public/appearance", { signal }));
+    const result = await http.get<{ appearance: PublicAppearance }>("/public/appearance", { signal });
     return result.appearance;
 }
 
 export async function getAdminAppearance(signal?: AbortSignal) {
-    const result = await request<{ setting: AdminAppearance }>(apiClient.get("/admin/settings/appearance", { signal }));
+    const result = await http.get<{ setting: AdminAppearance }>("/admin/settings/appearance", { signal });
+    return result.setting;
+}
+
+export type AdminTurnstileSetting = {
+    enabled: boolean;
+    siteKey: string;
+    hasSecretKey: boolean;
+    updatedBy?: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+export async function getAdminTurnstileSetting(signal?: AbortSignal) {
+    const result = await http.get<{ setting: AdminTurnstileSetting }>("/admin/settings/turnstile", { signal });
+    return result.setting;
+}
+
+/** An empty secret key intentionally preserves the encrypted server value. */
+export async function updateAdminTurnstileSetting(input: { enabled: boolean; siteKey: string; secretKey?: string }) {
+    const result = await http.patch<{ setting: AdminTurnstileSetting }>("/admin/settings/turnstile", input);
     return result.setting;
 }
 
@@ -81,6 +116,8 @@ export async function updateAdminAppearance(
     input: Pick<
         AdminAppearance,
         | "brandName"
+        | "canvas"
+        | "updates"
         | "brandSlug"
         | "authHeroTitle"
         | "authHeroDescription"
@@ -98,20 +135,59 @@ export async function updateAdminAppearance(
         | "footerCopyright"
         | "icpFilingEnabled"
         | "icpFilingNumber"
+        | "redeemPurchaseUrl"
     >,
 ) {
-    const result = await request<{ setting: AdminAppearance }>(apiClient.patch("/admin/settings/appearance", input));
+    const result = await http.patch<{ setting: AdminAppearance }>("/admin/settings/appearance", input);
     return result.setting;
 }
 
 export async function resetAdminAppearance() {
-    const result = await request<{ setting: AdminAppearance }>(apiClient.delete("/admin/settings/appearance"));
+    const result = await http.delete<{ setting: AdminAppearance }>("/admin/settings/appearance");
     return result.setting;
 }
 
-export async function uploadAppearanceAsset(slot: AppearanceAssetSlot, file: File) {
+export async function uploadAppearanceAsset(slot: AppearanceAssetUploadSlot | "update-image" | "update-video", file: File) {
     const body = new FormData();
     body.append("file", file);
-    const result = await request<{ resource: AppearanceResource }>(apiClient.post(`/admin/settings/appearance/assets/${slot}`, body));
+    const result = await http.post<{ resource: AppearanceResource }>(`/admin/settings/appearance/assets/${slot}`, body);
     return result.resource;
+}
+
+export function appearanceAssetURL(slot: AppearanceAssetUploadSlot, revision = "") {
+    const query = revision ? `?v=${encodeURIComponent(revision)}` : "";
+    return `${apiBaseURL.replace(/\/$/, "")}/public/appearance/assets/${encodeURIComponent(slot)}${query}`;
+}
+
+export function updateAnnouncementPreviewURL(resourceId: string) {
+    return `${apiBaseURL.replace(/\/$/, "")}/admin/settings/appearance/updates/${encodeURIComponent(resourceId)}`;
+}
+
+export async function uploadLive2D(file: File, scope: "admin" | "personal" = "admin") {
+    const body = new FormData();
+    body.append("file", file);
+    const result = await http.post<{ model: { resourceId: string; entry: string } }>(`${appearanceEndpoint(scope)}/live2d`, body);
+    return result.model;
+}
+
+export async function uploadAgentAvatarBundle(file: File, scope: "admin" | "personal" = "admin") {
+    const body = new FormData();
+    body.append("file", file);
+    const result = await http.post<{ bundle: AgentAvatarBundleImport }>(`${appearanceEndpoint(scope)}/avatar-bundles`, body);
+    return result.bundle;
+}
+
+type AppearanceAssetScope = "public" | "admin" | "personal";
+
+function appearanceEndpoint(scope: AppearanceAssetScope) {
+    return scope === "personal" ? "/appearance" : `/${scope === "admin" ? "admin/settings" : "public"}/appearance`;
+}
+
+export function agentAvatarBundleFileURL(resourceId: string, file: string, scope: AppearanceAssetScope = "public", revision = "") {
+    const query = scope === "public" && revision ? `?v=${encodeURIComponent(revision)}` : "";
+    return `${apiBaseURL.replace(/\/$/, "")}${appearanceEndpoint(scope)}/avatar/${encodeURIComponent(resourceId)}/${encodeURIComponent(file)}${query}`;
+}
+
+export function live2DModelURL(resourceId: string, entry: string, scope: AppearanceAssetScope = "public") {
+    return `${apiBaseURL.replace(/\/$/, "")}${appearanceEndpoint(scope)}/live2d/${encodeURIComponent(resourceId)}/${entry.split("/").map(encodeURIComponent).join("/")}`;
 }

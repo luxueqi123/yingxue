@@ -1,0 +1,49 @@
+.creation-skill-menu {
+    display: flex;
+    flex-direction: column;
+    width: min(360px, calc(100vw - 48px));
+    max-height: min(480px, calc(100dvh - 48px));
+    gap: var(--space-3);
+    color: var(--foreground);
+}
+
+.creation-skill-menu > header,
+.creation-skill-menu > footer,
+.creation-skill-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+
+.creation-skill-menu > header,
+.creation-skill-menu > footer {
+    justify-content: space-between;
+}
+
+.creation-skill-menu > header a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--fs-label);
+}
+
+.creation-skill-search {
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    background: var(--user-surface-muted);
+}
+
+.creation-skill-search input { width: 100%; min-width: 0; outline: none; background: transparent; }
+.creation-skill-menu > nav { display: flex; gap: var(--space-1); flex-shrink: 0; }
+.creation-skill-menu > nav button { flex: 1; padding: var(--space-2); border-radius: var(--radius-md); font-size: var(--fs-label); }
+.creation-skill-menu > nav button[aria-pressed="true"] { background: var(--control-selected-bg); color: var(--control-selected-fg); }
+.creation-skill-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.creation-skill-results > button { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2); text-align: left; border-radius: var(--radius-md); }
+.creation-skill-results > button:hover { background: var(--user-surface-muted); }
+.creation-skill-results > button > span:not(.creation-skill-thumb) { flex: 1; min-width: 0; }
+.creation-skill-results strong { display: block; font-size: var(--fs-label); }
+.creation-skill-results small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: var(--space-1); font-size: var(--fs-tiny); opacity: .7; }
+.creation-skill-thumb { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; overflow: hidden; border-radius: var(--radius-md); background: var(--user-surface-muted); }
+.creation-skill-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.creation-skill-menu :is(button, a, input):focus-visible { outline: 2px solid var(--palette-yingxue-blue-700); outline-offset: 2px; }

@@ -1,19 +1,26 @@
-import { App, Button, Dropdown, Input, Select } from "antd";
-import { Checkbox } from "@/components/ui/base/checkbox";
-import { Ban, Search, Settings2, UserPlus } from "lucide-react";
+import { App, Button, Dropdown, Input } from "antd";
+import { Checkbox } from "@/pages/admin/ui/controls";
+import { Ban, Crown, Search, Settings2, UserPlus } from "lucide-react";
+import { Link } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { PaginationBar } from "@/components/layout/workspace-page";
+import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { bulkDisableAdminUsers, deleteAdminUser, listAdminUsers, updateAdminUser, type AdminUser, type LocalUser } from "@/services/api/auth";
+import { listAdminUserGroups, type UserGroup } from "@/services/api/user-groups";
 import { useUserStore } from "@/stores/use-user-store";
 import { AdminBatchBar, AdminDataTable, AdminTableEmpty } from "../components/admin-ui";
 import { useTableUrlState } from "../lib/use-table-url-state";
 import { AdminUserDetailDrawer } from "../components/admin-user-detail-drawer";
 import { createUserColumns, userColumnOptions, type UserColumnKey } from "./users-columns";
-import { AdminUserCreateDrawer, AdminUserEditDrawer } from "./users-drawer";
+import { AdminUserCreateModal, AdminUserEditModal } from "./users-modals";
+import { UserCreditAdjustModal } from "./user-credit-adjust-modal";
+import "./users-page.css";
+import { Select } from "@/components/ui/base/select";
+import { AdminSearchInput } from "../components/admin-search-input";
 
-const columnStorageKey = "admin-users-visible-columns";
+// v2：新增累计充值、累计消耗、最近登录列，旧的显示列偏好不再适用。
+const columnStorageKey = "admin-users-visible-columns-v2";
 const allColumnKeys = userColumnOptions.map((item) => item.key);
 
 export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: LocalUser) => void }) {
@@ -24,11 +31,15 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState("");
+    const [retry, setRetry] = useState(0);
     const [detailUserId, setDetailUserId] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+    const [adjustingUser, setAdjustingUser] = useState<AdminUser | null>(null);
     const [createUserOpen, setCreateUserOpen] = useState(false);
     const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
     const [bulkDisabling, setBulkDisabling] = useState(false);
+    const [groups, setGroups] = useState<UserGroup[]>([]);
     const [visibleColumns, setVisibleColumns] = useState<Set<UserColumnKey>>(() => {
         if (typeof window === "undefined") return new Set(allColumnKeys);
         try {
@@ -40,7 +51,7 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
         }
     });
     const requestSequence = useRef(0);
-    const hasFilters = Boolean(state.filter || state.role !== "all" || state.status !== "all");
+    const hasFilters = Boolean(state.filter || state.role !== "all" || state.status !== "all" || state.group !== "all");
     const detailIndex = detailUserId ? users.findIndex((user) => user.id === detailUserId) : -1;
     const previousUserId = detailIndex > 0 ? users[detailIndex - 1]?.id : undefined;
     const nextUserId = detailIndex >= 0 && detailIndex < users.length - 1 ? users[detailIndex + 1]?.id : undefined;
@@ -50,14 +61,24 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
     }, [visibleColumns]);
 
     useEffect(() => {
+        void listAdminUserGroups()
+            .then((result) => setGroups(result.groups))
+            .catch((error) => message.error(error instanceof Error ? error.message : "读取用户分组失败"));
+    }, [message]);
+
+    useEffect(() => {
         const sequence = ++requestSequence.current;
         setLoading(true);
+        setLoadError("");
+        setUsers([]);
+        setTotal(0);
         void listAdminUsers({
             keyword: debouncedFilter || undefined,
             role: state.role === "all" ? undefined : state.role,
             status: state.status === "all" ? undefined : state.status,
+            group: state.group === "all" ? undefined : state.group,
             page: state.page,
-            limit: state.pageSize,
+            pageSize: state.pageSize,
         })
             .then((result) => {
                 if (sequence !== requestSequence.current) return;
@@ -67,12 +88,15 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
                 if (result.total > 0 && result.users.length === 0 && state.page > 1) update({ page: 1 }, true);
             })
             .catch((error) => {
-                if (sequence === requestSequence.current) message.error(error instanceof Error ? error.message : "读取用户失败");
+                if (sequence !== requestSequence.current) return;
+                const text = error instanceof Error ? error.message : "读取用户失败";
+                setLoadError(text);
+                message.error(text);
             })
             .finally(() => {
                 if (sequence === requestSequence.current) setLoading(false);
             });
-    }, [debouncedFilter, message, state.page, state.pageSize, state.role, state.status, update]);
+    }, [debouncedFilter, message, retry, state.group, state.page, state.pageSize, state.role, state.status, update]);
 
     const replaceUser = useCallback((nextUser: LocalUser) => {
         setUsers((items) => items.map((item) => item.id === nextUser.id ? { ...item, ...nextUser } : item));
@@ -105,12 +129,14 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
     const columns = useMemo(() => createUserColumns({
         actorId: actor?.id,
         visibleColumns,
+        groups,
         onView: (user) => setDetailUserId(user.id),
         onEdit: (user) => { setCreateUserOpen(false); setEditingUser(user); },
+        onAdjustCredits: setAdjustingUser,
         onToggleStatus: toggleStatus,
-    }), [actor?.id, toggleStatus, visibleColumns]);
+    }), [actor?.id, groups, toggleStatus, visibleColumns]);
 
-    const resetFilters = () => update({ filter: "", role: "all", status: "all", page: 1 });
+    const resetFilters = () => update({ filter: "", role: "all", status: "all", group: "all", page: 1 });
 
     const bulkDisable = () => {
         modal.confirm({
@@ -140,14 +166,14 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
             <AdminDataTable
                 toolbar={
                     <>
-                        <Input
+                        <AdminSearchInput
                             allowClear
                             className="app-list-search"
                             prefix={<Search className="size-4 text-foreground/40" />}
                             value={state.filter}
                             aria-label="搜索用户"
                             placeholder="搜索用户名、名称或邮箱"
-                            onChange={(event) => update({ filter: event.target.value, page: 1 }, true)}
+                            onValueChange={(value) => update({ filter: value, page: 1 }, true)}
                         />
                     </>
                 }
@@ -169,10 +195,18 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
                             options={[{ value: "all", label: "全部状态" }, { value: "active", label: "已启用" }, { value: "disabled", label: "已停用" }]}
                             onChange={(status) => update({ status, page: 1 })}
                         />
+                        <Select
+                            aria-label="筛选用户分组"
+                            className="w-36"
+                            value={state.group}
+                            options={[{ value: "all", label: "全部分组" }, ...groups.map((group) => ({ value: group.code, label: group.name }))]}
+                            onChange={(group) => update({ group, page: 1 })}
+                        />
                     </>
                 }
                 trailing={
                     <div className="flex items-center gap-2">
+                        <Link to="/admin/user-groups"><Button icon={<Crown className="size-4" />}>分组管理</Button></Link>
                         <Button icon={<UserPlus className="size-4" />} onClick={() => { setEditingUser(null); setCreateUserOpen(true); }}>{"\u6dfb\u52a0\u7528\u6237"}</Button>
                         <Dropdown
                             trigger={["click"]}
@@ -181,7 +215,7 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
                                     <div className="px-2 pb-2 text-xs font-medium text-foreground/55">显示列</div>
                                     <div className="space-y-0.5">
                                         {userColumnOptions.map((option) => (
-                                            <label key={option.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                                            <label key={option.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted/60">
                                                 <Checkbox
                                                     bare
                                                     checked={visibleColumns.has(option.key)}
@@ -207,7 +241,7 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
                 batchActions={<AdminBatchBar count={selectedUserIds.length} onClear={() => setSelectedUserIds([])}><Button danger size="small" icon={<Ban className="size-3.5" />} loading={bulkDisabling} onClick={bulkDisable}>批量停用</Button></AdminBatchBar>}
                 skeletonColumns={Math.max(4, columns.length)}
                 table={{
-                    className: "app-data-table",
+                    className: "app-data-table admin-users-table",
                     size: "small",
                     rowKey: "id",
                     loading,
@@ -220,15 +254,16 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
                     columns,
                     dataSource: users,
                     pagination: false,
-                    scroll: { x: 860 },
+                    scroll: { x: 1320 },
                 }}
-                empty={<AdminTableEmpty filtered={hasFilters} />}
+                empty={loadError ? <div className="admin-inline-load-error" role="status"><span>用户数据暂不可用：{loadError}</span><Button size="small" onClick={() => setRetry((value) => value + 1)}>重试</Button></div> : <AdminTableEmpty filtered={hasFilters} />}
                 footer={<PaginationBar alwaysShow current={state.page} pageSize={state.pageSize} total={total} onChange={(page, pageSize) => update({ page: pageSize !== state.pageSize ? 1 : page, pageSize })} />}
             />
 
             <AdminUserDetailDrawer userId={detailUserId} previousUserId={previousUserId} nextUserId={nextUserId} onNavigate={setDetailUserId} onClose={() => setDetailUserId(null)} />
-            <AdminUserCreateDrawer open={createUserOpen} onClose={() => setCreateUserOpen(false)} onCreated={addUser} />
-            <AdminUserEditDrawer user={editingUser} actorId={actor?.id} onClose={() => setEditingUser(null)} onSaved={replaceUser} />
+            <AdminUserCreateModal open={createUserOpen} groups={groups} onClose={() => setCreateUserOpen(false)} onCreated={addUser} />
+            <AdminUserEditModal user={editingUser} actorId={actor?.id} groups={groups} onClose={() => setEditingUser(null)} onSaved={replaceUser} />
+            <UserCreditAdjustModal user={adjustingUser} onClose={() => setAdjustingUser(null)} onAdjusted={(patch) => setUsers((items) => items.map((item) => (item.id === patch.id ? { ...item, ...patch } : item)))} />
         </>
     );
 }

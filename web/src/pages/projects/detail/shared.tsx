@@ -1,8 +1,10 @@
 import { StatusBadge } from "@/components/ui/base/badges";
 import type { ReactNode } from "react";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 import type { ProjectDetail, ProjectUnit } from "@/services/api/projects";
-import { ASSET_CATEGORY_LABELS, assetCategoryLabel as sharedAssetCategoryLabel } from "@/lib/asset-category";
+import { normalizeAssetCategory, type AssetCategory } from "@/lib/asset-category";
+import type { InterfaceMessageKey, InterfaceTranslate } from "@/lib/interface-locale";
 
 export type ProjectDetailViewProps = {
     detail: ProjectDetail;
@@ -10,71 +12,74 @@ export type ProjectDetailViewProps = {
     onCreateCanvas: () => void;
 };
 
-export const categoryLabels: Record<string, string> = ASSET_CATEGORY_LABELS;
-
-export const mediaLabels: Record<string, string> = {
-    image: "图片",
-    video: "视频",
-    audio: "音频",
-    text: "文本",
-    model: "3D 模型",
-    entity: "角色卡",
+export const categoryLabels: Record<AssetCategory, string> = {
+    ark: "library.ark.title",
+    character: "projectUi.assetCategoryCharacter" as InterfaceMessageKey,
+    environment: "projectUi.assetCategoryEnvironment" as InterfaceMessageKey,
+    prop: "projectUi.assetCategoryProp" as InterfaceMessageKey,
+    material: "projectUi.assetCategoryMaterial" as InterfaceMessageKey,
+    other: "projectUi.assetCategoryOther" as InterfaceMessageKey,
 };
 
-const statusLabels: Record<string, string> = {
-    active: "进行中",
-    archived: "已归档",
-    draft: "草稿",
-    ready: "待制作",
-    completed: "已完成",
-    review: "待审核",
-    confirmed: "已确认",
-    pending: "待处理",
-    pending_confirmation: "待确认",
-    running: "进行中",
-    failed: "失败",
-    ignored: "已忽略",
-    skipped: "已跳过",
-    cancelled: "已取消",
-    succeeded: "已完成",
-    disabled: "已停用",
-    idle: "待开始",
-    loading: "处理中",
-    queued: "排队中",
-    success: "已完成",
-    error: "异常",
-    deleted: "已删除",
-    reserved: "已冻结",
-    settled: "已结算",
-    refunded: "已退款",
-    uncertain: "待核对",
+const mediaMessageKeys: Record<string, InterfaceMessageKey> = {
+    image: "projectUi.mediaImage" as InterfaceMessageKey,
+    video: "projectUi.mediaVideo" as InterfaceMessageKey,
+    audio: "projectUi.mediaAudio" as InterfaceMessageKey,
+    text: "projectUi.mediaText" as InterfaceMessageKey,
+    model: "projectUi.mediaModel3d" as InterfaceMessageKey,
+    entity: "projectUi.mediaCharacterCard" as InterfaceMessageKey,
 };
 
-const sourceTypeLabels: Record<string, string> = {
-    blank: "空白开始",
-    novel: "导入小说",
-    text: "粘贴文本",
+const statusMessageKeys: Record<string, InterfaceMessageKey> = {
+    active: "projectUi.statusActive" as InterfaceMessageKey,
+    archived: "projectUi.summaryStageArchived" as InterfaceMessageKey,
+    draft: "projectUi.statusDraft" as InterfaceMessageKey,
+    ready: "projectUi.statusReady" as InterfaceMessageKey,
+    completed: "projectUi.statusCompleted" as InterfaceMessageKey,
+    review: "projectUi.statusReview" as InterfaceMessageKey,
+    confirmed: "projectUi.statusConfirmed" as InterfaceMessageKey,
+    pending: "projectUi.statusPending" as InterfaceMessageKey,
+    pending_confirmation: "projectUi.statusPendingConfirmation" as InterfaceMessageKey,
+    running: "projectUi.statusRunning" as InterfaceMessageKey,
+    failed: "projectUi.statusFailed" as InterfaceMessageKey,
+    ignored: "projectUi.statusIgnored" as InterfaceMessageKey,
+    skipped: "projectUi.statusSkipped" as InterfaceMessageKey,
+    cancelled: "projectUi.statusCancelled" as InterfaceMessageKey,
+    succeeded: "projectUi.statusSucceeded" as InterfaceMessageKey,
+    disabled: "projectUi.statusDisabled" as InterfaceMessageKey,
+    idle: "projectUi.statusIdle" as InterfaceMessageKey,
+    loading: "projectUi.statusLoading" as InterfaceMessageKey,
+    queued: "projectUi.statusQueued" as InterfaceMessageKey,
+    success: "projectUi.statusSuccess" as InterfaceMessageKey,
+    error: "projectUi.statusError" as InterfaceMessageKey,
+    deleted: "projectUi.statusDeleted" as InterfaceMessageKey,
+    reserved: "projectUi.statusReserved" as InterfaceMessageKey,
+    settled: "projectUi.statusSettled" as InterfaceMessageKey,
+    refunded: "projectUi.statusRefunded" as InterfaceMessageKey,
+    uncertain: "projectUi.statusUncertain" as InterfaceMessageKey,
 };
 
-export function categoryLabel(value: string) {
-    return sharedAssetCategoryLabel(value);
+export function categoryLabel(value: string, t: InterfaceTranslate) {
+    return t(categoryLabels[normalizeAssetCategory(value)]);
 }
 
-export function statusLabel(value: string) {
-    return statusLabels[value] || "未知状态";
+export function statusLabel(value: string, t: InterfaceTranslate) {
+    return t(statusMessageKeys[value] || ("projectUi.statusUnknown" as InterfaceMessageKey));
 }
 
-export function mediaLabel(value: string) {
-    return mediaLabels[value] || "其他类型";
+export function mediaLabel(value: string, t: InterfaceTranslate) {
+    return t(mediaMessageKeys[value] || ("projectUi.mediaOther" as InterfaceMessageKey));
 }
 
-export function sourceTypeLabel(value: string) {
-    return sourceTypeLabels[value] || "其他来源";
+export function sourceTypeLabel(value: string, t: InterfaceTranslate) {
+    const key = value === "blank" ? "projectUi.sourceBlank" : value === "novel" ? "projectUi.sourceNovel" : value === "text" ? "projectUi.sourceText" : "projectUi.sourceOther";
+    return t(key as InterfaceMessageKey);
 }
 
 export function StatusPill({ status }: { status: string }) {
+    const { t } = useInterfaceTranslation();
     const tone = status === "completed" || status === "confirmed" || status === "succeeded" ? "success" : status === "failed" ? "error" : status === "running" || status === "active" ? "loading" : status === "review" || status === "pending_confirmation" ? "warning" : "neutral";
-    return <StatusBadge tone={tone} label={statusLabel(status)} className="m-0" />;
+    return <StatusBadge tone={tone} label={statusLabel(status, t)} className="m-0" />;
 }
 
 export function SectionTitle({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: ReactNode }) {
@@ -104,13 +109,13 @@ export function UnitProgress({ unit }: { unit: ProjectUnit }) {
     return <div className="h-1.5 w-20 overflow-hidden rounded-full bg-foreground/10"><div className="h-full rounded-full bg-[var(--workspace-accent)] transition-[width] duration-200" style={{ width: `${progress}%` }} /></div>;
 }
 
-export function formatTime(value?: string) {
+export function formatTime(value: string | undefined, locale: string) {
     if (!value) return "-";
-    return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    return new Date(value).toLocaleString(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-export function formatCount(value: number) {
-    return new Intl.NumberFormat("zh-CN").format(value);
+export function formatCount(value: number, locale: string) {
+    return new Intl.NumberFormat(locale).format(value);
 }
 
 export function textValue(value: unknown) {

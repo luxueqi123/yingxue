@@ -1,31 +1,22 @@
-import { StatusBadge } from "@/components/ui/base/badges";
-import { EmptyState } from "@/components/ui/product/empty-state";
 import { App, Button, Dropdown, Table } from "antd";
 import type { ButtonProps, MenuProps, TableProps } from "antd";
 import { saveAs } from "file-saver";
-import { CheckSquare2, ChevronDown, Download, SearchX, X } from "lucide-react";
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { CheckSquare2, ChevronDown, Download, Inbox, ListFilter, RotateCcw, SearchX, X } from "lucide-react";
+import { createContext, useContext, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 
-import { ListToolbar } from "@/components/layout/workspace-page";
 import { cn } from "@/lib/utils";
+export { PaginationBar } from "@/components/layout/workspace-page";
 
 export const configuredSecretText = "已配置 · 留空不改";
 
 export type AdminStatusTone = "neutral" | "success" | "warning" | "error" | "info";
 
-/** admin 状态徽章：归并到自研 StatusBadge（outline 圆点胶囊），admin 全部页面零改动统一视觉。
- * tone 归一：info 在 admin 中本就是前景中性（--admin-status-info: var(--foreground)）→ neutral。 */
-const adminToneToBadgeTone: Record<AdminStatusTone, "neutral" | "success" | "warning" | "error"> = {
-    neutral: "neutral",
-    success: "success",
-    warning: "warning",
-    error: "error",
-    info: "neutral",
-};
-
-export function AdminStatusBadge({ label, tone = "neutral", title }: { label: string; tone?: AdminStatusTone; title?: string }) {
-    return <StatusBadge tone={adminToneToBadgeTone[tone]} title={title} label={label} />;
+export function AdminStatusBadge({ label, tone = "neutral", title }: { label: string; tone?: AdminStatusTone; title?: string; variant?: string }) {
+    return (
+        <span className={cn("admin-status-badge", tone !== "neutral" && `is-${tone}`)} title={title}>
+            {label}
+        </span>
+    );
 }
 
 export function AdminStatTile({ label, value, detail, trend }: { label: string; value: string | number; detail?: string; trend?: { value: string; tone?: AdminStatusTone } }) {
@@ -36,13 +27,71 @@ export function AdminStatTile({ label, value, detail, trend }: { label: string; 
             {trend || detail ? (
                 <div className="admin-stat-tile-detail">
                     {trend ? <AdminStatusBadge label={trend.value} tone={trend.tone || "neutral"} /> : null}
-                    {trend && detail ? <span className="mx-1.5 text-foreground/25">·</span> : null}
+                    {trend && detail ? <span className="mx-1.5">·</span> : null}
                     {detail ? <span>{detail}</span> : null}
                 </div>
             ) : null}
         </div>
     );
 }
+
+export function ListToolbar({
+    children,
+    filters,
+    filtersAlwaysVisible = false,
+    activeFilters,
+    trailing,
+    active,
+    onReset,
+    className,
+}: {
+    children: ReactNode;
+    filters?: ReactNode;
+    filtersAlwaysVisible?: boolean;
+    activeFilters?: ReactNode;
+    trailing?: ReactNode;
+    active?: boolean;
+    onReset?: () => void;
+    className?: string;
+}) {
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const filtersId = useId();
+
+    useEffect(() => {
+        if (active) setFiltersOpen(true);
+    }, [active]);
+
+    return (
+        <div className={cn("admin-list-toolbar", className)}>
+            <div className="admin-list-toolbar-main">
+                {children}
+                {filters ? (
+                    <>
+                        {!filtersAlwaysVisible ? (
+                            <Button type="default" className="admin-filter-toggle" aria-expanded={filtersOpen} aria-controls={filtersId} icon={<ListFilter className="size-3.5" />} onClick={() => setFiltersOpen((open) => !open)}>
+                                筛选{active ? <span className="admin-filter-active-dot" aria-label="有已应用筛选" /> : null}
+                            </Button>
+                        ) : null}
+                        <div id={filtersId} className={cn("admin-list-toolbar-filters", (filtersAlwaysVisible || filtersOpen) && "is-open")}>
+                            {filters}
+                        </div>
+                    </>
+                ) : null}
+                {activeFilters ? <div className="admin-list-toolbar-chips">{activeFilters}</div> : null}
+            </div>
+            <div className="admin-list-toolbar-actions">
+                {active && onReset ? (
+                    <Button type="text" icon={<RotateCcw className="size-3.5" />} onClick={onReset}>
+                        重置
+                    </Button>
+                ) : null}
+                {trailing}
+            </div>
+        </div>
+    );
+}
+
+const TableResetFilters = createContext<(() => void) | undefined>(undefined);
 
 export function AdminDataTable<RecordType extends object>({
     toolbar,
@@ -76,7 +125,8 @@ export function AdminDataTable<RecordType extends object>({
     className?: string;
 }) {
     const dataSource = table.dataSource as readonly RecordType[] | undefined;
-    const showSkeleton = Boolean(table.loading) && !dataSource?.length;
+    const loading = typeof table.loading === "object" ? table.loading.spinning !== false : Boolean(table.loading);
+    const showSkeleton = loading && !dataSource?.length;
 
     return (
         <div className="admin-data-table">
@@ -87,8 +137,16 @@ export function AdminDataTable<RecordType extends object>({
             ) : null}
             {batchActions}
             <div className={cn("admin-table-frame", footer && "has-pagination")}>
-                <div className={cn("admin-table-surface", className)}>
-                    <div className="admin-table-scroll">{showSkeleton ? <AdminTableSkeleton rows={skeletonRows} columns={skeletonColumns} /> : <Table {...table} locale={{ ...table.locale, emptyText: empty ?? table.locale?.emptyText }} />}</div>
+                <div className={cn("admin-table-surface", className)} aria-busy={loading}>
+                    <div className="admin-table-scroll">
+                        {showSkeleton ? (
+                            <AdminTableSkeleton rows={skeletonRows} columns={skeletonColumns} />
+                        ) : (
+                            <TableResetFilters.Provider value={onReset}>
+                                <Table {...table} locale={{ ...table.locale, emptyText: empty ?? table.locale?.emptyText }} />
+                            </TableResetFilters.Provider>
+                        )}
+                    </div>
                 </div>
                 {footer ? <div className="admin-table-pagination">{footer}</div> : null}
             </div>
@@ -140,7 +198,27 @@ export function AdminExportButton({
 }
 
 export function AdminTableEmpty({ filtered = false, title, description, action }: { filtered?: boolean; title?: string; description?: string; action?: ReactNode }) {
-    return <EmptyState size="compact" icon={SearchX} title={title || (filtered ? "没有符合筛选条件的数据" : "暂无数据")} description={description} action={action} className="min-h-40 w-full justify-center" />;
+    const resetFilters = useContext(TableResetFilters);
+    const Icon = filtered ? SearchX : Inbox;
+    return (
+        <div className="admin-empty">
+            <span className="admin-empty-icon" aria-hidden>
+                <Icon className="size-5" />
+            </span>
+            <h3>{title || (filtered ? "没有符合筛选条件的数据" : "暂无数据")}</h3>
+            {description ? <p>{description}</p> : null}
+            {action ??
+                (filtered && resetFilters ? (
+                    <Button size="small" icon={<RotateCcw className="size-3.5" />} onClick={resetFilters}>
+                        清除筛选
+                    </Button>
+                ) : null)}
+        </div>
+    );
+}
+
+export function AdminEmpty({ title, description, action }: { title?: string; description?: string; action?: ReactNode; size?: string; icon?: unknown }) {
+    return <AdminTableEmpty title={title} description={description} action={action} />;
 }
 
 export function AdminFilterChip({ label, onRemove }: { label: ReactNode; onRemove: () => void }) {
@@ -155,16 +233,16 @@ export function AdminFilterChip({ label, onRemove }: { label: ReactNode; onRemov
 
 export function AdminTableSkeleton({ rows = 8, columns = 6 }: { rows?: number; columns?: number }) {
     return (
-        <div className="animate-pulse motion-reduce:animate-none" aria-label="正在加载表格" role="status">
-            <div className="grid h-11 items-center gap-4 border-b border-border bg-muted/30 px-4" style={{ gridTemplateColumns: `repeat(${columns}, minmax(72px, 1fr))` }}>
+        <div className="admin-table-skeleton" style={{ "--skeleton-columns": columns } as CSSProperties} aria-label="正在加载表格" role="status">
+            <div className="admin-table-skeleton-heading" aria-hidden>
                 {Array.from({ length: columns }).map((_, index) => (
-                    <span key={index} className="h-3 w-16 max-w-full rounded bg-foreground/10" />
+                    <span key={index} />
                 ))}
             </div>
-            {Array.from({ length: Math.max(8, rows) }).map((_, rowIndex) => (
-                <div key={rowIndex} className="grid min-h-14 items-center gap-4 border-b border-border/70 px-4 last:border-b-0" style={{ gridTemplateColumns: `repeat(${columns}, minmax(72px, 1fr))` }}>
+            {Array.from({ length: rows }).map((_, rowIndex) => (
+                <div key={rowIndex} aria-hidden>
                     {Array.from({ length: columns }).map((_, columnIndex) => (
-                        <span key={columnIndex} className={cn("h-3 rounded bg-foreground/[0.07]", columnIndex === 0 ? "w-4/5" : columnIndex === columns - 1 ? "w-10" : "w-2/3")} />
+                        <span key={columnIndex} />
                     ))}
                 </div>
             ))}
@@ -175,9 +253,9 @@ export function AdminTableSkeleton({ rows = 8, columns = 6 }: { rows?: number; c
 export function AdminBatchBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
     if (count <= 0) return null;
     return (
-        <div className="admin-batch-bar sticky top-0 z-20 mt-3 flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
+        <div className="admin-batch-bar sticky top-0 z-20 flex min-h-11 flex-wrap items-center justify-between gap-3 px-3 py-2">
             <div className="flex items-center gap-2 text-sm font-medium">
-                <CheckSquare2 className="size-4 text-foreground/60" />
+                <CheckSquare2 className="size-4" />
                 已选择 {count} 项
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -206,8 +284,8 @@ export type AdminRowAction = {
 
 export function AdminRowActions({ primary, actions, visibleActionCount }: { primary?: { label: ReactNode; icon?: ReactNode; onClick: () => void | Promise<void>; disabled?: boolean }; actions: AdminRowAction[]; visibleActionCount?: number }) {
     const { modal } = App.useApp();
-    // 行内只保留一个最常用的次操作；低频或危险操作收进菜单，避免操作列堆成一排文字链接。
-    const resolvedVisibleActionCount = visibleActionCount ?? (actions.length <= 1 ? actions.length : 1);
+    // 行内操作默认全部外露；只有超过 3 个次要操作时才把其余收进“更多”，避免只藏一两个按钮。
+    const resolvedVisibleActionCount = visibleActionCount ?? (actions.length <= 3 ? actions.length : 2);
     const visibleActions = actions.slice(0, Math.max(0, resolvedVisibleActionCount));
     const menuActions = actions.slice(Math.max(0, resolvedVisibleActionCount));
     const items: MenuProps["items"] = menuActions.map((action) => ({
@@ -292,12 +370,12 @@ export function SettingsSectionCard({
     const isStacked = layout === "stacked";
     return (
         <section className={cn("admin-settings-section", isStacked && "is-stacked", className)}>
-            <div className={cn("admin-settings-section-summary flex flex-wrap items-start justify-between gap-3 px-4 py-4", icon && "has-icon")}>
-                <div className="admin-settings-section-summary-main flex min-w-0 items-start gap-3">
-                    {icon ? <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/40">{icon}</span> : null}
+            <div className={cn("admin-settings-section-summary", icon && "has-icon")}>
+                <div className="admin-settings-section-summary-main flex min-w-0 items-center gap-3">
+                    {icon ? <span className="admin-feature-domain-icon">{icon}</span> : null}
                     <div className="min-w-0">
-                        <h2 className="text-sm font-semibold leading-5">{title}</h2>
-                        {description ? <p className="mt-1 text-xs leading-5 text-foreground/55">{description}</p> : null}
+                        <h2>{title}</h2>
+                        {description ? <p>{description}</p> : null}
                     </div>
                 </div>
                 {status ? (
@@ -312,7 +390,7 @@ export function SettingsSectionCard({
             </div>
             <div className={cn("admin-settings-section-content min-w-0", contentClassName)}>
                 {children}
-                {footer ? <div className="admin-settings-section-footer flex flex-wrap items-center justify-between gap-3 px-4 py-3">{footer}</div> : null}
+                {footer ? <div className="admin-settings-section-footer flex flex-wrap items-center justify-between gap-3 px-3 py-3">{footer}</div> : null}
             </div>
         </section>
     );

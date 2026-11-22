@@ -1,27 +1,37 @@
 import { useEffect, useRef, useState, type ImgHTMLAttributes, type ReactNode } from "react";
 
-import { resourceIdFromStorageKey } from "@/services/api/resources";
-import { cacheResourceObjectUrl } from "@/services/resource-blob-cache";
+import { getResourceAccess, resolveResourceAccessURL, resourceIdFromStorageKey, type ResourceAccessVariant } from "@/services/api/resources";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { resolveImageUrl } from "@/services/image-storage";
+import { prepareCanvasImage } from "@/services/canvas-image-loader";
 
 type CachedResourceImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
     storageKey?: string;
     src?: string;
     fallback?: ReactNode;
+    loadingFallback?: ReactNode;
     eager?: boolean;
+    variant?: ResourceAccessVariant;
 };
 
 /**
- * 资源图片优先读取按用户隔离的本地 Blob 缓存，避免刷新后再次从对象存储下载。
- * 本地 image: 类型的 storageKey 也会自动从 LocalForage 恢复有效的 Object URL。
+ * 远程资源图片统一使用 OSS/CDN 授权地址。
+ * Blob 缓存仍可用于导出、抽帧等字节处理，但不作为媒体展示 src，避免把
+ * `blob:http(s)://...` 泄露到节点、素材库和浏览器媒体链路中。
  */
-export function CachedResourceImage({ storageKey, src = "", fallback = null, eager = false, onError, ...props }: CachedResourceImageProps) {
-    const remoteResource = Boolean(resourceIdFromStorageKey(storageKey));
+export function CachedResourceImage({ storageKey, src = "", fallback = null, loadingFallback = fallback, eager = false, variant = "original", onError, ...props }: CachedResourceImageProps) {
+    const resourceId = resourceIdFromStorageKey(storageKey);
+    const remoteResource = Boolean(resourceId);
     const localImageResource = Boolean(storageKey && storageKey.startsWith("image:"));
+    const scope = getActiveUserScope();
+    const identity = `${scope}:${resourceId || storageKey || src}`;
     const targetRef = useRef<HTMLSpanElement>(null);
     const [nearViewport, setNearViewport] = useState(eager || !remoteResource);
-    const [cachedSrc, setCachedSrc] = useState(remoteResource ? "" : src);
-    const [cacheFailed, setCacheFailed] = useState(false);
+    const [displayed, setDisplayed] = useState<{ identity: string; src: string } | null>(null);
+    const displayedRef = useRef(displayed);
+    displayedRef.current = displayed;
+    const [failedIdentity, setFailedIdentity] = useState("");
+    const cachedSrc = displayed?.identity === identity ? displayed.src : "";
 
     useEffect(() => {
         if (!remoteResource || eager) {
@@ -47,80 +57,83 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, eag
     }, [eager, remoteResource]);
 
     useEffect(() => {
+        if (remoteResource && !nearViewport) return;
+        const controller = new AbortController();
         let cancelled = false;
-        setCacheFailed(false);
-
-        if (remoteResource && storageKey) {
-            if (!nearViewport) {
-                setCachedSrc("");
-                return () => {
-                    cancelled = true;
-                };
+        const isCurrent = () => !cancelled && !controller.signal.aborted && getActiveUserScope() === scope;
+        const load = async () => {
+            let candidate = src;
+            if (remoteResource && resourceId) {
+                try {
+                    const access = await getResourceAccess(storageKey, "display", variant);
+                    candidate = resolveResourceAccessURL(access.url);
+                } catch (error) {
+                    if (variant !== "thumbnail") throw error;
+                    const access = await getResourceAccess(storageKey, "display", "original");
+                    candidate = resolveResourceAccessURL(access.url);
+                }
+            } else if (localImageResource && storageKey) {
+                candidate = (await resolveImageUrl(storageKey, src)) || src;
             }
-            setCachedSrc("");
-            const resolve = cacheResourceObjectUrl(storageKey);
-            void resolve
-                .then((url) => {
-                    if (!cancelled) setCachedSrc(url || src);
-                })
-                .catch(() => {
-                    if (!cancelled) {
-                        setCacheFailed(true);
-                        setCachedSrc(src);
-                    }
-                });
-            return () => {
-                cancelled = true;
-            };
-        }
-
-        if (localImageResource && storageKey) {
-            void resolveImageUrl(storageKey, src)
-                .then((url) => {
-                    if (!cancelled) setCachedSrc(url || src);
-                })
-                .catch(() => {
-                    if (!cancelled) setCachedSrc(src);
-                });
-            return () => {
-                cancelled = true;
-            };
-        }
-
-        setCachedSrc(src);
+            if (!candidate) throw new Error("图片地址为空");
+            try {
+                await prepareCanvasImage(candidate, controller.signal);
+            } catch (error) {
+                if (!remoteResource || variant !== "thumbnail") {
+                    if (candidate !== src && src) await prepareCanvasImage(src, controller.signal);
+                    else throw error;
+                } else {
+                    const access = await getResourceAccess(storageKey, "display", "original");
+                    const originalURL = resolveResourceAccessURL(access.url);
+                    if (!originalURL || originalURL === candidate) throw error;
+                    await prepareCanvasImage(originalURL, controller.signal);
+                    candidate = originalURL;
+                }
+            }
+            if (isCurrent()) {
+                setDisplayed({ identity, src: candidate });
+                setFailedIdentity("");
+            }
+        };
+        void load().catch(() => {
+            if (isCurrent() && displayedRef.current?.identity !== identity) setFailedIdentity(identity);
+        });
         return () => {
             cancelled = true;
+            controller.abort();
         };
-    }, [localImageResource, nearViewport, remoteResource, src, storageKey]);
+    }, [identity, localImageResource, nearViewport, remoteResource, resourceId, scope, src, storageKey, variant]);
 
     const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
         if (localImageResource && storageKey && cachedSrc.startsWith("blob:")) {
             void resolveImageUrl(storageKey)
                 .then((url) => {
                     if (url && url !== cachedSrc) {
-                        setCachedSrc(url);
+                        const controller = new AbortController();
+                        void prepareCanvasImage(url, controller.signal).then(() => setDisplayed({ identity, src: url })).catch(() => {
+                            setFailedIdentity(identity);
+                            onError?.(e);
+                        });
                         return;
                     }
-                    setCacheFailed(true);
+                    setFailedIdentity(identity);
                     onError?.(e);
                 })
                 .catch(() => {
-                    setCacheFailed(true);
+                    setFailedIdentity(identity);
                     onError?.(e);
                 });
             return;
         }
-        setCacheFailed(true);
+        setFailedIdentity(identity);
         onError?.(e);
     };
 
-    if (!remoteResource) {
-        if (cacheFailed && fallback) return <>{fallback}</>;
-        return <img {...props} src={cachedSrc} onError={handleImgError} />;
-    }
+    if (failedIdentity === identity && fallback) return <>{fallback}</>;
+    if (!remoteResource) return <img {...props} src={cachedSrc || undefined} onError={handleImgError} />;
     return (
         <span ref={targetRef} className="cached-resource-image-shell">
-            {cachedSrc && !(cacheFailed && !src) ? <img {...props} src={cachedSrc} onError={handleImgError} /> : fallback}
+            {cachedSrc ? <img {...props} src={cachedSrc} onError={handleImgError} /> : failedIdentity === identity ? fallback : loadingFallback}
         </span>
     );
 }

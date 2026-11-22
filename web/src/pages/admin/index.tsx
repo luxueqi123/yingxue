@@ -1,6 +1,10 @@
+import { Navigate } from "react-router";
+
 import { useUserStore } from "@/stores/use-user-store";
 import { AdminProvider } from "./admin-context";
 import { AdminShell } from "./components/admin-shell";
+import "./theme/admin-tokens.css";
+import "./theme/admin-chrome.css";
 
 export default function AdminPage() {
     const actor = useUserStore((state) => state.user);
@@ -8,14 +12,7 @@ export default function AdminPage() {
 
     if (!hydrated) return null;
     if (actor?.role !== "admin") {
-        return (
-            <main className="app-workspace-page min-h-dvh px-6 py-10 text-foreground">
-                <div className="mx-auto max-w-3xl rounded-lg border border-border bg-[var(--workspace-surface)] p-6">
-                    <h1 className="text-2xl font-semibold">无权限</h1>
-                    <p className="mt-2 text-sm text-foreground/55">当前账号不是管理员，无法访问后台。</p>
-                </div>
-            </main>
-        );
+            return <Navigate to="/create" replace />;
     }
 
     return (

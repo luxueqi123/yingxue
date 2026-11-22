@@ -20,6 +20,8 @@ export type ClientDiagnosticEvent = {
     taskId?: string;
     projectId?: string;
     canvasId?: string;
+    nodes_before?: number;
+    nodes_after?: number;
     stack?: string;
 };
 
@@ -52,7 +54,7 @@ export function initializeClientDiagnostics() {
     apiClient.interceptors.request.use(
         (config) => {
             const route = normalizeRoute(config.url);
-            if (config.method?.toLowerCase() === "post" && (route === "/tasks" || route === "/sessions")) {
+            if (config.method?.toLowerCase() === "post" && route === "/tasks") {
                 activeTraceId = createDiagnosticId("trace");
             }
             const traceId = activeTraceId;
@@ -111,8 +113,9 @@ export function initializeClientDiagnostics() {
 export function setDiagnosticUserScope(userId: string) {
     const next = userId.trim();
     if (next === scopedUserId) return;
+    const preserveStartupEvents = !scopedUserId && Boolean(next);
     scopedUserId = next;
-    events.length = 0;
+    if (!preserveStartupEvents) events.length = 0;
     activeTraceId = createDiagnosticId("trace");
 }
 
@@ -124,7 +127,7 @@ export function recordDiagnosticEvent(input: DiagnosticEventInput) {
         category: input.category,
         code: redactClientText(input.code),
         message: redactClientText(input.message) || "未命名诊断事件",
-        route: normalizeRoute(input.route || (typeof window !== "undefined" ? window.location.pathname : "")),
+        route: normalizeRoute(input.route || browserLocation()?.pathname || ""),
         durationMs: input.durationMs === undefined ? undefined : clampNumber(input.durationMs, 0, 86_400_000),
         httpStatus: input.httpStatus === undefined ? undefined : clampNumber(input.httpStatus, 0, 599),
         requestId: safeDiagnosticId(input.requestId),
@@ -132,6 +135,8 @@ export function recordDiagnosticEvent(input: DiagnosticEventInput) {
         taskId: safeDiagnosticId(input.taskId),
         projectId: safeDiagnosticId(input.projectId),
         canvasId: safeDiagnosticId(input.canvasId),
+        nodes_before: input.nodes_before === undefined ? undefined : clampNumber(input.nodes_before, 0, 10_000_000),
+        nodes_after: input.nodes_after === undefined ? undefined : clampNumber(input.nodes_after, 0, 10_000_000),
         stack: redactClientText(input.stack, 4000),
     };
     events.push(event);
@@ -153,6 +158,7 @@ export function getDiagnosticRuntime() {
     return {
         appVersion: String(import.meta.env.VITE_APP_VERSION || "dev"),
         buildCommit: String(import.meta.env.VITE_BUILD_COMMIT || "unknown"),
+        buildTime: String(import.meta.env.VITE_BUILD_TIME || "unknown"),
         browser: typeof navigator !== "undefined" ? navigator.userAgent : "",
         os: typeof navigator !== "undefined" ? navigator.platform : "",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
@@ -177,11 +183,17 @@ function readHeader(headers: unknown, key: string) {
     return typeof value === "string" ? value : undefined;
 }
 
+// 诊断只在真实浏览器里有地址。测试与 SSR 环境里 `window` 可能存在但 `window.location` 不存在
+// （bun test 就是这样），所以两个都要探测，不能只看 typeof window。
+function browserLocation(): Location | undefined {
+    return typeof window !== "undefined" && window.location ? window.location : undefined;
+}
+
 function normalizeRoute(value?: string) {
     const raw = String(value || "").trim();
-    if (!raw) return typeof window !== "undefined" ? window.location.pathname : "/";
+    if (!raw) return browserLocation()?.pathname || "/";
     try {
-        const parsed = new URL(raw, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+        const parsed = new URL(raw, browserLocation()?.origin || "http://localhost");
         return parsed.pathname || "/";
     } catch {
         return raw.split(/[?#]/, 1)[0] || "/";

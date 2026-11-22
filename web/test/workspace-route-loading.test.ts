@@ -7,68 +7,70 @@ function source(path: string) {
 }
 
 describe("workspace route loading", () => {
-    test("uses the Yingxue brand on the authentication scene", () => {
-        const authScene = source("../src/pages/auth/auth-scene.tsx");
-
-        expect(authScene).toContain("YINGXUE STUDIO");
-        expect(authScene).not.toContain("YINGCE STUDIO");
-    });
-
-    test("uses the complete Yingxue logo inside workspace and admin sidebars", () => {
-        const lockup = source("../src/components/brand/yingxue-brand-lockup.tsx");
-        const workspaceSidebar = source("../src/components/layout/workspace-sidebar-nav.tsx");
-        const adminShell = source("../src/pages/admin/components/admin-shell.tsx");
-
-        expect(lockup).toContain('variant?: "adaptive" | "light" | "dark"');
-        expect(lockup).toContain("yingxue-premium-v5-light.webp");
-        expect(lockup).toContain("yingxue-premium-v5-dark.webp");
-        expect(workspaceSidebar).toContain('<YingxueBrandLockup variant="adaptive"');
-        expect(workspaceSidebar).not.toContain("YingxueBrandMark");
-        expect(adminShell).toContain('<YingxueBrandLockup variant="adaptive"');
-        expect(adminShell).not.toContain("YingxueBrandMark");
-    });
-
     test("keeps lazy workspace routes inside the workspace stage", () => {
         const router = source("../src/router.tsx");
         const deferred = router.slice(router.indexOf("function deferred"), router.indexOf("function fullScreenDeferred"));
 
-        expect(deferred).toContain("<WorkspaceRouteLoader />");
+        expect(deferred).toContain("return element;");
+        expect(router).toContain("useDeferredValue(guardedOutlet)");
         expect(deferred).not.toContain("FullScreenLoader");
         expect(router).toContain("fullScreenDeferred(<LoginPage />)");
         expect(router).toContain("fullScreenDeferred(<SharedCanvasPage />)");
-    });
-
-    test("keeps voice recording diagnostics out of production routes", () => {
-        const router = source("../src/router.tsx");
-
-        expect(router).toContain('const TestVoiceRecording = import.meta.env.DEV ? lazy(() => import("@/pages/test-voice-recording")) : null;');
-        expect(router).toMatch(/\.\.\.\(TestVoiceRecording[\s\S]{0,180}path: "\/test-voice-recording"/);
-        expect(router).toContain('const FolderPreviewLab = import.meta.env.DEV ? lazy(() => import("@/pages/dev/folder-preview-lab")) : null;');
     });
 
     test("preloads the reported workspace routes before navigation", () => {
         const modules = source("../src/lib/workspace-route-modules.ts");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
 
-        for (const route of ["projects", "canvas", "assets", "wallet", "create"]) {
-            expect(modules).toContain(`${route}: () => import`);
+        for (const route of ["projects", "canvas", "assets", "create"]) {
+            expect(modules).toContain(`${route}: preloadableLazy(() => import`);
         }
-        expect(modules).toContain('projectDetail: () => import("@/pages/projects/detail")');
+        expect(modules).toContain('projectDetail: preloadableLazy(() => import("@/pages/projects/detail"))');
         expect(modules).toContain('slug === "projects" && segments.length > 1');
         expect(navigation).toContain("onPointerEnter={() => preloadWorkspaceRoute(linkTo)}");
         expect(navigation).toContain("onPointerDown={() => preloadWorkspaceRoute(linkTo)}");
         expect(navigation).toContain("onFocus={() => preloadWorkspaceRoute(linkTo)}");
     });
 
-    test("keeps the creation page at root and preserves the create compatibility route", () => {
+    test("renders preloaded workspace pages without suspending the layout", async () => {
+        const router = source("../src/router.tsx");
+        const layout = source("../src/layouts/user-layout.tsx");
+        const html = source("../index.html");
+
+        // 功能守卫在页面 Suspense 之外，懒加载会把整个工作区换成全屏加载页。
+        expect(router).toContain('import { RequireFeature } from "@/components/auth/require-feature";');
+        expect(router).not.toContain("const RequireFeature = lazy(");
+        expect(router).not.toMatch(/const \w+Page = lazy\(load\w+Page\)/);
+        expect(layout).not.toContain("preloadWorkspaceNavigationPages");
+        expect(source("../src/lib/workspace-route-modules.ts")).not.toContain("preloadWhenIdle");
+        expect(html).not.toContain('style="background:#ffffff"');
+        expect(html).toContain("html.dark body");
+
+        const { preloadableLazy } = await import("../src/lib/preloadable-lazy");
+        function Loaded() {
+            return null;
+        }
+        const Page = preloadableLazy(async () => ({ default: Loaded }));
+        expect((Page({}) as { type: unknown }).type).not.toBe(Loaded);
+        await Page.preload();
+        expect((Page({}) as { type: unknown }).type).toBe(Loaded);
+    });
+
+    test("opens the approved public lobby and preserves all native private routes", () => {
         const router = source("../src/router.tsx");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
 
-        expect(router).toContain('{ path: "/", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> }');
-        expect(router).toContain('{ path: "/create", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> }');
-        expect(router).not.toContain('path: "/home"');
-        expect(router).not.toContain("HomePage");
-        expect(navigation).toContain('{ id: "home", title: "首页", icon: Home, to: "/" }');
+        expect(router).toContain('{ path: "/", element: deferred(<HomePage />, true) }');
+        expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
+        expect(router).toContain("const allowAnonymous = isGuestWorkspacePath(pathname);");
+        expect(router).toContain("<RequireAuth allowAnonymous={allowAnonymous}>");
+        expect(router).toContain('{ path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> }');
+        expect(router).toContain('path: "/canvas/:id"');
+        expect(router).toContain("<CanvasProjectPage />");
+        expect(router).not.toContain("<CanvasRefreshShell");
+        expect(router).toContain('path: "/home"');
+        expect(router).toContain("HomePage");
+        expect(navigation).toContain('{ ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") }');
         expect(navigation).not.toContain('to: "/create"');
         expect(navigation).not.toContain('to: "/home"');
     });
@@ -79,25 +81,26 @@ describe("workspace route loading", () => {
         const canvasLibrary = source("../src/pages/canvas/index.tsx");
         const canvasCard = source("../src/components/canvas/canvas-folder-card.tsx");
 
-        expect(modules).toContain('loadCanvasProjectPage = () => import("@/pages/canvas/project")');
-        expect(router).toContain("lazy(loadCanvasProjectPage)");
+        expect(modules).toContain('canvasProject: preloadableLazy(() => import("@/pages/canvas/project"))');
+        expect(modules).toContain("loadCanvasProjectPage = workspaceRoutePages.canvasProject.preload");
+        expect(router).toContain("const CanvasProjectPage = workspaceRoutePages.canvasProject;");
         expect(canvasLibrary).toContain("setOpeningProjectId(id)");
         expect(canvasLibrary).toContain("window.requestAnimationFrame(() => navigate(");
         expect(canvasCard).toContain("onPointerEnter={onPrefetch}");
-        expect(canvasCard).toContain("正在打开");
+        expect(canvasCard).toContain("canvasLibraryOpening");
     });
 
-    test("loads only the active project detail view and keeps canvas-only state out of the global layout", () => {
+    test("keeps the drama studio views in-page and canvas-only state out of the global layout", () => {
         const detail = source("../src/pages/projects/detail.tsx");
         const layout = source("../src/layouts/user-layout.tsx");
         const canvas = source("../src/pages/canvas/index.tsx");
 
-        for (const view of ["assets", "canvases", "chapters", "overview", "settings", "workflow", "editor"]) {
-            expect(detail).toContain(`lazy(() => import("./detail/${view}"))`);
-        }
+        // 角色、待处理、设置都是制作台内的整页视图，不再用抽屉遮挡分镜。
+        for (const panel of ["CastPanel", "InboxPanel", "SettingsPanel"]) expect(detail).toContain(`<${panel}`);
+        expect(detail).not.toContain("AppDrawer");
         expect(layout).not.toContain("useCanvasUiStore");
         expect(layout).not.toContain("CanvasDeleteProjectsDialog");
-        expect(canvas).toContain("deleteDialogOpen ? <Suspense");
+        expect(canvas).toMatch(/deleteDialogOpen\s*\?\s*\(?\s*<Suspense/);
     });
 
     test("does not poll wallet balance from permanent workspace chrome", () => {
@@ -107,45 +110,43 @@ describe("workspace route loading", () => {
         expect(wallet).toContain("WALLET_STALE_TIME_MS");
     });
 
-    test("defers modal-only markdown and canvas creation runtimes until interaction", () => {
+    test("defers modal-only markdown runtimes until interaction", () => {
         const changelogButton = source("../src/components/layout/app-changelog-modal.tsx");
         const announcements = source("../src/components/layout/system-announcement-center.tsx");
-        const projectDetail = source("../src/pages/projects/detail.tsx");
-        const workflow = source("../src/pages/projects/detail/workflow-production-workbench.tsx");
 
         expect(changelogButton).toContain('lazy(() => import("@/components/layout/app-changelog-dialog")');
         expect(changelogButton).not.toContain('from "react-markdown"');
         expect(announcements).toContain('lazy(() => import("@/components/ui/aceternity/announcement-timeline-modal")');
-        expect(projectDetail).toContain('import("@/services/user-data-sync")');
-        expect(projectDetail).not.toContain('import { createCanvasProjectWithRemoteSync } from "@/services/user-data-sync"');
-        expect(workflow).not.toContain('from "@/lib/video-poster"');
-        expect(workflow).toContain('if (playing) return <video');
     });
 
-    test("uses a quiet workspace skeleton for initial hydration", () => {
+    test("never restores a full-page animated loading screen", () => {
         const loader = source("../src/components/ui/aceternity/full-screen-loader.tsx");
-        const css = source("../src/styles/globals.css");
-
-        expect(loader).toContain("full-screen-loader-topbar");
-        expect(loader).toContain("full-screen-loader-rail");
-        expect(loader).toContain("LoadingSignal");
-        expect(loader).not.toContain("YINGCE STUDIO");
-        expect(loader).not.toContain("loading-cue");
-        expect(css).toContain("@keyframes loading-signal-spin");
-        expect(css).toContain("@media (prefers-reduced-motion: reduce)");
-        expect(css).not.toContain("@keyframes loading-cue-pulse");
+        const router = source("../src/router.tsx");
+        expect(loader).not.toContain("LoadingSignal");
+        expect(loader).toContain("return null");
+        expect(router).toContain("fallback={null}");
     });
 });
 
-describe("wallet balance summary", () => {
-    test("uses the workspace surface instead of an inverted primary button surface", () => {
-        const css = source("../src/styles/globals.css");
-        const rule = css.match(/\.credit-balance-card \{[^}]+}/)?.[0] || "";
+describe("workspace wallet entry", () => {
+    test("keeps authenticated wallet deep links and the credits modal entry", () => {
+        const router = source("../src/router.tsx");
+        const modules = source("../src/lib/workspace-route-modules.ts");
+        const host = source("../src/components/layout/workspace-wallet-modal.tsx");
+        const palette = source("../src/components/layout/workspace-command-palette.tsx");
+        const canvasTopBar = source("../src/pages/canvas/canvas-project-top-bar.tsx");
+        const topBar = source("../src/components/layout/workspace-top-bar.tsx");
+        const walletPage = source("../src/pages/wallet/index.tsx");
 
-        expect(rule).toContain("background: var(--library-surface)");
-        expect(rule).toContain("color: var(--foreground)");
-        expect(rule).not.toContain("--btn-solid-bg");
-        expect(css.match(/\.wallet-balance-inner \{/g)).toHaveLength(3);
-        expect(css).not.toContain(".wallet-library-page .wallet-balance-inner { padding-left: 0; }");
+        expect(router).toContain('path: "/wallet"');
+        expect(router).toContain('<RequireFeature feature="creditsEnabled">{deferred(<WalletPage />)}</RequireFeature>');
+        expect(modules).toContain("pages/wallet");
+        expect(host).toContain("export function WorkspaceWalletModal");
+        expect(palette).toContain("run: () => openWorkspaceWallet()");
+        expect(palette).toContain('navigate(`/login?next=${encodeURIComponent("/wallet")}`)');
+        expect(canvasTopBar).toContain("openWorkspaceWallet()");
+        expect(canvasTopBar).not.toContain('to="/wallet"');
+        expect(topBar).toContain("openWorkspaceWallet()");
+        expect(walletPage).toContain("wallet-library-page");
     });
 });

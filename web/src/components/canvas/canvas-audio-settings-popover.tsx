@@ -1,114 +1,57 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
 import { AudioSettingsPanel } from "@/components/audio-settings-panel";
-import { audioFormatLabel, audioSpeedLabel, audioVoiceLabel } from "@/lib/audio-generation";
+import { audioFormatLabelForConfig, audioSpeedLabel, canvasAudioSource } from "@/lib/audio-generation";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
+import type { CanvasNodeMetadata } from "@/types/canvas";
+import { CanvasSettingsPopover, type CanvasSettingsPlacement } from "./canvas-settings-popover";
+import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import type { CanvasAudioVoiceBinding } from "@/lib/canvas/canvas-audio-voice-bindings";
 
-export type CanvasAudioSettingKey = "audioVoice" | "audioFormat" | "audioSpeed" | "audioInstructions";
-
-type CanvasAudioSettingsPopoverProps = {
-    config: AiConfig;
+export type CanvasAudioSettingKey =
+    | "audioMode"
+    | "audioVoice"
+    | "audioFormat"
+    | "audioSpeed"
+    | "audioLanguage"
+    | "audioDialect"
+    | "audioInstructions"
+    | "audioEmotionControlMethod"
+    | "audioEmotionRandom"
+    | "audioEmotionHappy"
+    | "audioEmotionAngry"
+    | "audioEmotionSad"
+    | "audioEmotionAfraid"
+    | "audioEmotionDisgusted"
+    | "audioEmotionMelancholic"
+    | "audioEmotionSurprised"
+    | "audioEmotionCalm";
+type AudioPopoverProps = {
+    config: AiConfig & { audioVoiceBindings?: CanvasAudioVoiceBinding[] };
+    referenceAudioLabels?: string[];
+    references?: CanvasResourceReference[];
+    onBindingsChange?: (bindings: CanvasAudioVoiceBinding[]) => void;
     onConfigChange: (key: CanvasAudioSettingKey, value: string) => void;
     buttonClassName?: string;
-    placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
+    placement?: CanvasSettingsPlacement;
 };
 
-export function CanvasAudioSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft" }: CanvasAudioSettingsPopoverProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const buttonRef = useRef<HTMLSpanElement>(null);
-    const panelRef = useRef<HTMLDivElement>(null);
-    const [open, setOpen] = useState(false);
-    const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
-    const summary = `${audioVoiceLabel(config.audioVoice)} · ${audioFormatLabel(config.audioFormat)} · ${audioSpeedLabel(config.audioSpeed)}`;
-
-    useEffect(() => {
-        if (!open) return;
-        const syncPosition = () => setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
-        const closeOnOutsidePointer = (event: PointerEvent) => {
-            const target = event.target;
-            if (!(target instanceof Node)) return;
-            if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-            setOpen(false);
-        };
-
-        syncPosition();
-        window.addEventListener("resize", syncPosition);
-        window.addEventListener("scroll", syncPosition, true);
-        window.addEventListener("pointerdown", closeOnOutsidePointer, true);
-        return () => {
-            window.removeEventListener("resize", syncPosition);
-            window.removeEventListener("scroll", syncPosition, true);
-            window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-        };
-    }, [open]);
-
-    const panel = open && buttonRect ? <AudioSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} /> : null;
-
+export function CanvasAudioSettingsPopover({ config, referenceAudioLabels = [], references, onBindingsChange, onConfigChange, ...popover }: AudioPopoverProps) {
+    const { t } = useTranslation();
+    const theme = canvasThemes[useActiveTheme()];
+    const source = canvasAudioSource(config, referenceAudioLabels);
+    const referenceVoice = source.mode === "unified_edit" && referenceAudioLabels.length > 0;
+    const parts = [source.label, audioFormatLabelForConfig(config, config.audioFormat), ...(referenceVoice ? [] : [audioSpeedLabel(config.audioSpeed)])];
     return (
-        <>
-            <span ref={buttonRef} className="inline-flex min-w-0">
-                <Button size="small" type="text" className={`canvas-generation-settings-trigger ${buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"}`} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} aria-expanded={open} aria-label={`音频设置：${summary}`} title={`音频设置 · ${summary}`} onClick={() => setOpen((current) => !current)}>
-                    <span className="truncate">{summary}</span>
-                </Button>
-            </span>
-            {panel}
-        </>
+        <CanvasSettingsPopover {...popover} label={t("canvasA.audioSettings.label")} summary={parts.join(" · ")}>
+            <AudioSettingsPanel config={{ ...config, audioMode: source.mode }} referenceAudioLabels={referenceAudioLabels} references={references} onBindingsChange={onBindingsChange} onConfigChange={onConfigChange} theme={theme} className="space-y-4" />
+        </CanvasSettingsPopover>
     );
 }
-
-function AudioSettingsPortal({
-    buttonRect,
-    panelRef,
-    placement,
-    theme,
-    config,
-    onConfigChange,
-}: {
-    buttonRect: DOMRect;
-    panelRef: RefObject<HTMLDivElement | null>;
-    placement: CanvasAudioSettingsPopoverProps["placement"];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-    config: AiConfig;
-    onConfigChange: (key: CanvasAudioSettingKey, value: string) => void;
-}) {
-    const width = 356;
-    const gap = 8;
-    const margin = 12;
-    const alignRight = placement?.endsWith("Right");
-    const alignCenter = placement === "top" || placement === "bottom";
-    const left = alignCenter ? buttonRect.left + buttonRect.width / 2 - width / 2 : alignRight ? buttonRect.right - width : buttonRect.left;
-    const topPlacement = placement?.startsWith("top");
-    const style = {
-        position: "fixed",
-        zIndex: "var(--z-dialog-popover)",
-        width,
-        left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
-        ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),
-        background: theme.spatial.elevated,
-        border: `1px solid ${theme.toolbar.border}`,
-        borderRadius: 10,
-        boxShadow: `0 24px 72px ${theme.spatial.shadow}, inset 0 1px 0 rgba(255,255,255,.08)`,
-        padding: 12,
-        overflowY: "auto",
-        color: theme.node.text,
-    } as const;
-
-    return createPortal(
-        <div
-            ref={panelRef}
-            className="canvas-image-settings-popover aceternity-floating-panel backdrop-blur-2xl"
-            style={style}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-        >
-            <AudioSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
-        </div>,
-        document.body,
-    );
-}
+import { useTranslation } from "react-i18next";

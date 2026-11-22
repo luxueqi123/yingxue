@@ -9,9 +9,11 @@ const (
 	PhaseChecking           Phase = "checking"
 	PhaseReady              Phase = "ready"
 	PhaseNoUpdate           Phase = "no_update"
+	PhaseWaitingRelease     Phase = "waiting_release"
 	PhasePreflight          Phase = "preflight"
 	PhaseBackingUp          Phase = "backing_up"
 	PhasePulling            Phase = "pulling"
+	PhaseWarming            Phase = "warming"
 	PhaseDraining           Phase = "draining"
 	PhaseMigrating          Phase = "migrating"
 	PhaseSwitching          Phase = "switching"
@@ -25,7 +27,7 @@ const (
 
 func (p Phase) Active() bool {
 	switch p {
-	case PhasePreflight, PhaseBackingUp, PhasePulling, PhaseDraining, PhaseMigrating, PhaseSwitching, PhaseVerifying, PhaseRollingBack:
+	case PhaseChecking, PhasePreflight, PhaseBackingUp, PhasePulling, PhaseWarming, PhaseDraining, PhaseMigrating, PhaseSwitching, PhaseVerifying, PhaseRollingBack:
 		return true
 	default:
 		return false
@@ -33,12 +35,13 @@ func (p Phase) Active() bool {
 }
 
 type Release struct {
-	Version     string    `json:"version"`
-	Name        string    `json:"name"`
-	Body        string    `json:"body"`
-	URL         string    `json:"url"`
-	PublishedAt time.Time `json:"publishedAt"`
-	Prerelease  bool      `json:"prerelease"`
+	Version     string           `json:"version"`
+	Name        string           `json:"name"`
+	Body        string           `json:"body"`
+	URL         string           `json:"url"`
+	PublishedAt time.Time        `json:"publishedAt"`
+	Prerelease  bool             `json:"prerelease"`
+	Manifest    *releaseManifest `json:"manifest,omitempty"`
 }
 
 type Check struct {
@@ -65,6 +68,7 @@ type LogEntry struct {
 }
 
 type Operation struct {
+	Sources           *Sources   `json:"sources,omitempty"`
 	ID                string     `json:"id,omitempty"`
 	Phase             Phase      `json:"phase"`
 	FromVersion       string     `json:"fromVersion,omitempty"`
@@ -78,17 +82,36 @@ type Operation struct {
 }
 
 type Status struct {
-	Supported       bool      `json:"supported"`
-	Connected       bool      `json:"connected"`
-	Repository      string    `json:"repository"`
-	Deployment      string    `json:"deployment"`
-	CurrentVersion  string    `json:"currentVersion"`
-	LatestRelease   *Release  `json:"latestRelease,omitempty"`
-	UpdateAvailable bool      `json:"updateAvailable"`
-	Checks          []Check   `json:"checks"`
-	LastBackup      *Backup   `json:"lastBackup,omitempty"`
-	RollbackVersion string    `json:"rollbackVersion,omitempty"`
-	Operation       Operation `json:"operation"`
+	Sources         *Sources     `json:"sources,omitempty"`
+	SourceProbe     *SourceProbe `json:"sourceProbe,omitempty"`
+	Supported       bool         `json:"supported"`
+	Connected       bool         `json:"connected"`
+	Repository      string       `json:"repository"`
+	Deployment      string       `json:"deployment"`
+	Rolling         bool         `json:"rolling,omitempty"`
+	CurrentVersion  string       `json:"currentVersion"`
+	UpstreamVersion string       `json:"upstreamVersion,omitempty"`
+	LatestRelease   *Release     `json:"latestRelease,omitempty"`
+	UpdateAvailable bool         `json:"updateAvailable"`
+	Checks          []Check      `json:"checks"`
+	LastBackup      *Backup      `json:"lastBackup,omitempty"`
+	RollbackVersion string       `json:"rollbackVersion,omitempty"`
+	Operation       Operation    `json:"operation"`
+}
+
+type Sources struct {
+	GitHubSource string `json:"githubSource"`
+	ImageSource  string `json:"imageSource"`
+}
+
+type SourceProbe struct {
+	ID            string     `json:"id"`
+	Status        string     `json:"status"`
+	Sources       Sources    `json:"sources"`
+	TargetVersion string     `json:"targetVersion,omitempty"`
+	Checks        []Check    `json:"checks"`
+	StartedAt     time.Time  `json:"startedAt"`
+	FinishedAt    *time.Time `json:"finishedAt,omitempty"`
 }
 
 type StartRequest struct {

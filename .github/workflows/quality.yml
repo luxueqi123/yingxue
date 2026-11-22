@@ -2,17 +2,22 @@ name: Quality checks
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+  workflow_call:
 
 permissions:
   contents: read
 
+# 同一个 PR 连续推送时取消旧的检查，只保留最新提交；被发布流程调用（workflow_call）时
+# 每次运行使用独立分组，绝不互相取消，避免中间提交的镜像发布被跳过。
+concurrency:
+  group: quality-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  backend:
-    name: Backend checks
+  agent-lint:
+    name: Agent architecture and static checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
@@ -21,11 +26,102 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      # v2.5.0 supports Go 1.25. This job scopes linting to Agent domain packages;
+      # the existing backend job continues to own the full integration suite.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          working-directory: backend
+          args: --config=.golangci.yml ./internal/agent/...
+      - name: Check Agent architecture
+        run: go test -count=1 ./internal/agent/architecture
+
+  # internal/app 约 1350 个用例在同一进程里串行执行（单包约 5 分钟），是后端检查的关键路径。
+  # 这里把它按用例名轮转分成 4 片，其余包作为第 5 片，5 个 Runner 并行；汇总由 Backend checks 完成。
+  backend-tests:
+    name: Backend tests (${{ matrix.shard }})
+    # 固定测试环境，避免 ubuntu-latest 滚动升级改变 Redis 软件源与运行时。
+    runs-on: ubuntu-24.04
+    # go test 自身有 20 分钟超时；这里兜底防止依赖服务卡死时占用 Runner 数小时。
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    # 后端有 5 个用例默认会静默跳过：3 个需要 CANVAS_TEST_POSTGRES_DSN（PostgreSQL 迁移、
+    # 素材字节修复、画布版本历史），2 个用 exec.LookPath("redis-server") 自起临时实例
+    # （Redis 租约、缓存白名单）。只跑 go test ./... 而不备齐这两样，这些路径永远不会被执行。
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: canvas_test
+          POSTGRES_DB: canvas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CANVAS_TEST_POSTGRES_DSN: postgres://postgres:canvas_test@127.0.0.1:5432/canvas_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: backend/agent-runtime/pi/package-lock.json
+      - name: Install Pi Agent runtime dependencies
+        working-directory: backend/agent-runtime/pi
+        run: npm ci --omit=dev --ignore-scripts
+      - name: Test Pi Agent runtime
+        if: matrix.shard == 'rest'
+        working-directory: backend/agent-runtime/pi
+        run: node --test *.test.mjs
+      - name: Checkout Redis source for integration tests
+        uses: actions/checkout@v4
+        with:
+          repository: redis/redis
+          # Redis 7.4.7；与部署的 7.4 系列一致，固定源码避免系统软件源故障阻塞验证。
+          ref: 4d1a341aaf0b96f9d2c43418efac732e31dc28ad
+          path: .local/cache/ci-redis
+          persist-credentials: false
+      - name: Build redis-server for integration tests
+        # 用例自己拉起临时 Unix socket 实例，不需要安装或启动系统 Redis 服务。
+        run: |
+          make -C ../.local/cache/ci-redis -j2 MALLOC=libc BUILD_TLS=no REDIS_CFLAGS= REDIS_LDFLAGS= redis-server
+          install -Dm755 ../.local/cache/ci-redis/src/redis-server "$RUNNER_TEMP/redis/bin/redis-server"
+          echo "$RUNNER_TEMP/redis/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/redis/bin/redis-server" --version
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - name: Run Go tests
-        run: go test ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          # internal/app 约 1000 个用例串行执行，是后端检查的关键路径（本地约 2–3 分钟）。
+          # 此前每个用例构造 Service 时都会完整解压 85MB 官方插件包（约 4 秒/次，累计 7 分钟以上），
+          # 现已改为只读清单 + 进程内缓存；若该包耗时再次明显上涨，先查 newPluginRuntime。
+          go test -json -timeout=20m ./... | tee "$RUNNER_TEMP/go-tests.jsonl"
+      - name: Ensure dependency-backed tests were not skipped
+        shell: bash
+        run: |
+          python3 ../.github/scripts/test_check_dependency_tests.py
+          python3 ../.github/scripts/check-dependency-tests.py "$RUNNER_TEMP/go-tests.jsonl"
+      - name: Upload Go test timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-test-timings
+          path: ${{ runner.temp }}/go-tests.jsonl
+          if-no-files-found: ignore
 
   payment-plugins:
     name: Payment plugin artifacts
@@ -35,20 +131,28 @@ jobs:
       - name: Verify canonical payment packages
         env:
           PAYMENT_PLUGIN_SMOKE_TEST: "1"
-        run: sh plugin-packages/verify-payment-packages.sh linux amd64
+        run: sh plugin-packages/verify-payment-packages.sh --all linux amd64
+      # 发布时 backend/Dockerfile 会在两种架构的原生 Runner 上执行 smoke。
+      # PR 仍独立验证双架构，不能因没有发布任务而遗漏 ARM64 验收。
       - uses: docker/setup-qemu-action@v3
+        if: github.event_name == 'pull_request'
       - uses: docker/setup-buildx-action@v3
+        if: github.event_name == 'pull_request'
       - name: Build and execute payment packages for every image platform
-        run: >-
-          docker buildx build
-          --platform linux/amd64,linux/arm64
-          --target payment-package-smoke
-          --file backend/Dockerfile
-          .
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: payment-package-smoke
+          file: backend/Dockerfile
+          cache-from: type=gha,scope=payment-smoke
+          cache-to: type=gha,mode=max,scope=payment-smoke
 
   web:
     name: Web checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -59,48 +163,35 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.9
+      - name: Reject leftover package manager lockfiles
+        working-directory: ${{ github.workspace }}
+        run: |
+          leftover=0
+          for file in web/pnpm-lock.yaml web/package-lock.json web/yarn.lock; do
+            if [ -f "$file" ]; then
+              echo "forbidden lockfile: $file"
+              leftover=1
+            fi
+          done
+          if [ "$leftover" -ne 0 ]; then
+            echo "web installs from bun.lock only"
+            exit 1
+          fi
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Install Canvas Agent dependencies
-        working-directory: canvas-agent
         run: bun install --frozen-lockfile
       - name: Check formatting
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          changed_files=()
-          repo_prefix="$(git rev-parse --show-prefix)"
-          format_probe_dir="$(mktemp -d)"
-          trap 'rm -rf "$format_probe_dir"' EXIT
-          while IFS= read -r -d '' file; do
-            case "$file" in
-              *.css|*.html|*.json|*.js|*.jsx|*.md|*.mdx|*.mjs|*.cjs|*.ts|*.tsx|*.yaml|*.yml)
-                base_path="${repo_prefix}${file}"
-                if git cat-file -e "$BASE_SHA:$base_path" 2>/dev/null; then
-                  git show "$BASE_SHA:$base_path" >"$format_probe_dir/base"
-                  bunx prettier --ignore-path /dev/null --stdin-filepath "$file" \
-                    <"$format_probe_dir/base" >"$format_probe_dir/formatted"
-                  if ! diff -q "$format_probe_dir/base" "$format_probe_dir/formatted" >/dev/null; then
-                    echo "Skipping legacy unformatted file: $file"
-                    continue
-                  fi
-                fi
-                changed_files+=("$file")
-                ;;
-            esac
-          done < <(git diff --relative --name-only --diff-filter=ACMR -z "$BASE_SHA" "$GITHUB_SHA" -- .)
-          if (( ${#changed_files[@]} > 0 )); then
-            bunx prettier --check "${changed_files[@]}"
-          else
-            echo "No changed web files require formatting checks."
-          fi
+        run: bun scripts/check-changed-formatting.mjs
       - name: Typecheck
         run: bun run typecheck
+      - name: Lint retired Ant Design APIs
+        run: bun run lint
       - name: Run tests
         run: bun run test
       # ubuntu-latest 预装 google-chrome；脚本的解析顺序已覆盖该路径，
       # 因此不引入第三方 setup action，也不需要任何 secret。
-      - name: Director P0 Chrome E2E
+      - name: Previs P0 Chrome E2E
         run: |
           google-chrome --version || chromium --version
-          bun run test:director:e2e
+          bun run test:previs:e2e

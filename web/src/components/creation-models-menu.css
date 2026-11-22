@@ -1,0 +1,3 @@
+.creation-agent-models { display: grid; gap: 14px; width: min(310px, calc(100vw - 50px)); padding: 6px; color: var(--foreground); }
+.creation-agent-models label { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12px; }
+.creation-agent-models small { font-size: 11px; line-height: 1.6; color: var(--muted-foreground); }

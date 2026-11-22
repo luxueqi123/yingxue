@@ -15,7 +15,7 @@ Content-Type: application/json
 
 ## 模型与约束
 
-当前 MiniMax V2 官方文档列出 `MiniMax-H3`，时长为 4–15 秒整数，分辨率为 `768P` 或 `2K`，比例支持 `adaptive`、`21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。当前 adapter 默认 6 秒；模型名和其他限制仍以账户实际开放能力为准。
+当前 MiniMax V2 官方文档列出 `MiniMax-H3`，时长为 4–30 秒整数，分辨率为 `768P` 或 `2K`，比例支持 `adaptive`、`21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。当前 adapter 默认 6 秒；模型名和其他限制仍以账户实际开放能力为准。
 
 ## 参数与字段映射
 
@@ -49,7 +49,7 @@ curl "{channel_base_url}/v2/query/video_generation/task_xxx" \
   -H "Authorization: Bearer <MINIMAX_API_KEY>"
 ```
 
-当前 V2 官方成功响应在 `task.content.url` 返回视频地址，通用 parser 会先合并 `task`，再从 `content.url` 提取结果。官方仅允许查询最近 7 天任务，视频 URL 有时效，应立即转存。当前 adapter 尚未发送参考视频、参考音频、`callback_url` 或 `aigc_watermark`；虽然 V2 上游支持这些字段，宿主不能宣称已支持。
+当前 V2 官方成功响应在 `task.content.url` 返回视频地址，通用 parser 会先合并 `task`，再从 `content.url` 提取结果。官方仅允许查询最近 7 天任务，视频 URL 有时效，应立即转存。当前 adapter 尚未发送参考视频、参考音频、`callback_url` 或 `aigc_watermark`；虽然 V2 上游支持这些字段，映雪不能宣称已支持。
 
 ## 官方资料
 

@@ -22,27 +22,27 @@ import (
 const maxReleaseResponseBytes = 4 << 20
 
 type Config struct {
-	Repository   string
-	InstallDir   string
-	ComposeFile  string
-	EnvFile      string
-	StateDir     string
-	BackupDir    string
-	HealthURL    string
-	GitHubToken  string
-	StableWindow time.Duration
-	StepTimeout  time.Duration
-	BinaryPath   string
-	ServiceName  string
-	SelfUpdate   bool
+	Repository         string
+	UpstreamRepository string
+	InstallDir         string
+	NginxUpstreamFile  string
+	NginxConfigFile    string
+	RolloutPorts       [2]int
+	ComposeFile        string
+	EnvFile            string
+	StateDir           string
+	BackupDir          string
+	HealthURL          string
+	GitHubToken        string
+	StableWindow       time.Duration
+	StepTimeout        time.Duration
+	BinaryPath         string
+	ServiceName        string
+	SelfUpdate         bool
 }
 
 type commandRunner interface {
 	Run(context.Context, string, []string, []string, io.Writer, io.Writer) error
-}
-
-type inputCommandRunner interface {
-	RunWithInput(context.Context, string, []string, []string, io.Reader, io.Writer, io.Writer) error
 }
 
 type execRunner struct{ dir string }
@@ -56,21 +56,15 @@ func (r execRunner) Run(ctx context.Context, name string, args, environment []st
 	return command.Run()
 }
 
-func (r execRunner) RunWithInput(ctx context.Context, name string, args, environment []string, input io.Reader, stdout, stderr io.Writer) error {
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = r.dir
-	command.Env = append(os.Environ(), environment...)
-	command.Stdin = input
-	command.Stdout = stdout
-	command.Stderr = stderr
-	return command.Run()
-}
-
 type persistedState struct {
-	LatestRelease   *Release  `json:"latestRelease,omitempty"`
-	LastBackup      *Backup   `json:"lastBackup,omitempty"`
-	RollbackVersion string    `json:"rollbackVersion,omitempty"`
-	Operation       Operation `json:"operation"`
+	Sources         Sources      `json:"sources"`
+	SourceProbe     *SourceProbe `json:"sourceProbe,omitempty"`
+	UpstreamVersion string       `json:"upstreamVersion,omitempty"`
+	LatestRelease   *Release     `json:"latestRelease,omitempty"`
+	LastBackup      *Backup      `json:"lastBackup,omitempty"`
+	RollbackVersion string       `json:"rollbackVersion,omitempty"`
+	RollbackSlot    *appSlot     `json:"rollbackSlot,omitempty"`
+	Operation       Operation    `json:"operation"`
 }
 
 type Manager struct {
@@ -84,7 +78,11 @@ type Manager struct {
 func NewManager(config Config) (*Manager, error) {
 	config.Repository = strings.TrimSpace(config.Repository)
 	if config.Repository == "" {
-		config.Repository = "luxueqi123/yingxue"
+		config.Repository = "ddcat-ai/open-ai-canvas"
+	}
+	config.UpstreamRepository = strings.TrimSpace(config.UpstreamRepository)
+	if config.UpstreamRepository != "" && strings.EqualFold(config.Repository, config.UpstreamRepository) {
+		return nil, errors.New("映雪发布仓库与上游仓库必须分开")
 	}
 	if config.InstallDir == "" {
 		config.InstallDir = "/opt/open-ai-canvas"
@@ -107,6 +105,21 @@ func NewManager(config Config) (*Manager, error) {
 	if config.StepTimeout <= 0 {
 		config.StepTimeout = 20 * time.Minute
 	}
+	if config.NginxUpstreamFile != "" {
+		if config.HealthURL == "" || !filepath.IsAbs(config.NginxUpstreamFile) || config.UpstreamRepository == "" {
+			return nil, errors.New("无感更新需要独立的 Nginx upstream 文件、网站健康检查 URL 和映雪发布仓库")
+		}
+		for i, port := range config.RolloutPorts {
+			if port == 0 {
+				config.RolloutPorts[i] = 13001 + i
+			} else if port < 1 || port > 65535 {
+				return nil, errors.New("无感更新端口无效")
+			}
+		}
+		if config.RolloutPorts[0] == config.RolloutPorts[1] {
+			return nil, errors.New("无感更新的两个应用端口必须不同")
+		}
+	}
 	if err := os.MkdirAll(config.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("创建更新器状态目录：%w", err)
 	}
@@ -122,7 +135,33 @@ func NewManager(config Config) (*Manager, error) {
 	if err := manager.loadState(); err != nil {
 		return nil, err
 	}
-	if manager.state.Operation.Phase.Active() {
+	if manager.state.RollbackSlot != nil && !manager.rollingEnabled() {
+		return nil, errors.New("此部署已有在线版本记录，需要保留 Nginx 切流配置")
+	}
+	if manager.state.Sources == (Sources{}) {
+		manager.state.Sources = Sources{GitHubSource: "direct", ImageSource: "ghcr"}
+	}
+	if err := manager.state.Sources.Validate(); err != nil {
+		return nil, fmt.Errorf("读取更新来源配置：%w", err)
+	}
+	if probe := manager.state.SourceProbe; probe != nil && probe.Status == "running" {
+		now := time.Now().UTC()
+		probe.Status, probe.FinishedAt = "failed", &now
+		for i := range probe.Checks {
+			if probe.Checks[i].Status == "pending" {
+				probe.Checks[i].Status, probe.Checks[i].Detail = "failed", "更新器已重启，请重新检测"
+			}
+		}
+		if err := manager.saveStateLocked(); err != nil {
+			return nil, err
+		}
+	}
+	if manager.state.Operation.Phase == PhaseChecking {
+		manager.state.Operation.Phase = PhaseIdle
+		manager.state.LatestRelease = nil
+		manager.appendLogLocked(PhaseIdle, "更新器已重启，请重新检查版本")
+		_ = manager.saveStateLocked()
+	} else if manager.state.Operation.Phase.Active() {
 		manager.state.Operation.Phase = PhaseManualIntervention
 		manager.state.Operation.Error = "更新器进程在操作期间退出，请检查容器与数据库状态后手动处理"
 		manager.appendLogLocked(PhaseManualIntervention, manager.state.Operation.Error)
@@ -139,20 +178,35 @@ func (m *Manager) Snapshot() Status {
 
 func (m *Manager) Check(ctx context.Context) (Status, error) {
 	m.mu.Lock()
-	if m.state.Operation.Phase.Active() {
+	if m.state.Operation.Phase == PhaseManualIntervention {
 		status := m.snapshotLocked()
 		m.mu.Unlock()
-		return status, errors.New("更新操作正在进行，暂时不能检查新版本")
+		return status, errors.New("需先恢复上次更新")
 	}
+	if m.busyLocked() {
+		status := m.snapshotLocked()
+		m.mu.Unlock()
+		return status, ErrBusy
+	}
+	sources := m.state.Sources
+	previous := m.state
 	m.state.Operation.Phase = PhaseChecking
 	m.state.Operation.Error = ""
-	m.appendLogLocked(PhaseChecking, "正在读取 GitHub Release")
-	_ = m.saveStateLocked()
+	m.state.LatestRelease = nil
+	m.state.UpstreamVersion = ""
+	m.appendLogLocked(PhaseChecking, "正在读取 GitHub Release："+sources.description())
+	if err := m.saveStateLocked(); err != nil {
+		m.state = previous
+		status := m.snapshotLocked()
+		m.mu.Unlock()
+		return status, fmt.Errorf("保存版本检查任务：%w", err)
+	}
 	m.mu.Unlock()
 
-	release, err := m.latestRelease(ctx)
+	upstreamVersion, release, err := m.updateCandidate(ctx, sources)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.state.UpstreamVersion = upstreamVersion
 	if err != nil {
 		m.state.Operation.Phase = PhaseFailed
 		m.state.Operation.Error = err.Error()
@@ -168,9 +222,16 @@ func (m *Manager) Check(ctx context.Context) (Status, error) {
 		_ = m.saveStateLocked()
 		return m.snapshotLocked(), currentErr
 	}
-	if CompareVersions(current, release.Version) < 0 {
+	if release == nil {
+		m.state.Operation.Phase = PhaseWaitingRelease
+		m.appendLogLocked(PhaseWaitingRelease, fmt.Sprintf("影策 %s 尚无通过验收的映雪更新包", upstreamVersion))
+	} else if CompareVersions(current, release.Version) < 0 {
 		m.state.Operation.Phase = PhaseReady
-		m.appendLogLocked(PhaseReady, fmt.Sprintf("发现新版本 %s", release.Version))
+		if IsReleaseVersion(current) {
+			m.appendLogLocked(PhaseReady, fmt.Sprintf("发现新版本 %s", release.Version))
+		} else {
+			m.appendLogLocked(PhaseReady, fmt.Sprintf("当前部署为 %s，可更新到正式版 %s", current, release.Version))
+		}
 	} else {
 		m.state.Operation.Phase = PhaseNoUpdate
 		m.appendLogLocked(PhaseNoUpdate, "当前已是最新版本")
@@ -183,11 +244,18 @@ func (m *Manager) StartUpdate(targetVersion string) (Status, error) {
 	targetVersion = strings.TrimSpace(targetVersion)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.state.Operation.Phase.Active() {
-		return m.snapshotLocked(), errors.New("已有更新操作正在进行")
+	if m.busyLocked() {
+		return m.snapshotLocked(), ErrBusy
+	}
+	if m.state.Operation.Phase == PhaseManualIntervention {
+		return m.snapshotLocked(), errors.New("需先恢复上次更新")
 	}
 	if m.state.LatestRelease == nil || m.state.LatestRelease.Version != targetVersion {
 		return m.snapshotLocked(), errors.New("目标版本与最近一次检查结果不一致，请重新检查更新")
+	}
+	release := *m.state.LatestRelease
+	if !m.canInstall(release) {
+		return m.snapshotLocked(), errors.New("目标版本缺少与影策上游对应的映雪验收清单")
 	}
 	current, err := m.currentVersion()
 	if err != nil {
@@ -197,40 +265,43 @@ func (m *Manager) StartUpdate(targetVersion string) (Status, error) {
 		return m.snapshotLocked(), errors.New("目标版本必须高于当前版本")
 	}
 	now := time.Now().UTC()
+	sources := m.state.Sources
+	previous := m.state.Operation
 	m.state.Operation = Operation{
+		Sources:       &sources,
 		ID:            randomID(),
 		Phase:         PhasePreflight,
 		FromVersion:   current,
 		TargetVersion: targetVersion,
 		StartedAt:     &now,
-		Logs:          []LogEntry{{At: now, Phase: PhasePreflight, Message: "开始更新前检查"}},
+		Logs:          []LogEntry{{At: now, Phase: PhasePreflight, Message: "开始更新前检查，来源：" + sources.description()}},
 	}
-	_ = m.saveStateLocked()
-	go m.runUpdate(current, targetVersion)
+	if err := m.saveStateLocked(); err != nil {
+		m.state.Operation = previous
+		return m.snapshotLocked(), fmt.Errorf("保存更新任务：%w", err)
+	}
+	go m.runUpdate(current, release, sources)
 	return m.snapshotLocked(), nil
 }
 
 func (m *Manager) StartRollback(reason string) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.state.Operation.Phase.Active() {
-		return m.snapshotLocked(), errors.New("已有更新操作正在进行")
+	if m.busyLocked() {
+		return m.snapshotLocked(), ErrBusy
 	}
 	if m.state.RollbackVersion == "" || m.state.LastBackup == nil {
 		return m.snapshotLocked(), errors.New("没有可用的回退版本或已校验备份")
+	}
+	if m.rollingEnabled() && m.state.RollbackSlot == nil {
+		return m.snapshotLocked(), errors.New("没有可用的在线回退版本")
 	}
 	current, err := m.currentVersion()
 	if err != nil {
 		return m.snapshotLocked(), err
 	}
-	target := m.state.RollbackVersion
-	switch comparison := CompareVersions(current, target); {
-	case comparison == 0:
-		return m.snapshotLocked(), errors.New("当前已是回退版本，不能重复恢复同一份备份")
-	case comparison < 0:
-		return m.snapshotLocked(), errors.New("回退目标必须低于当前版本")
-	}
 	now := time.Now().UTC()
+	target := m.state.RollbackVersion
 	m.state.Operation = Operation{
 		ID:            randomID(),
 		Phase:         PhaseRollingBack,
@@ -240,23 +311,29 @@ func (m *Manager) StartRollback(reason string) (Status, error) {
 		Logs:          []LogEntry{{At: now, Phase: PhaseRollingBack, Message: "管理员发起人工回退：" + strings.TrimSpace(reason)}},
 	}
 	_ = m.saveStateLocked()
+	if m.rollingEnabled() {
+		go m.runRollingRollback(*m.state.RollbackSlot)
+		return m.snapshotLocked(), nil
+	}
 	backup := *m.state.LastBackup
 	go m.runRollback(target, backup, false)
 	return m.snapshotLocked(), nil
 }
 
-func (m *Manager) runUpdate(fromVersion, targetVersion string) {
-	nextCompose, err := m.prepareTargetCompose(targetVersion)
+func (m *Manager) runUpdate(fromVersion string, release Release, sources Sources) {
+	targetVersion := release.Version
+	targetImages := sources.releaseImages(m.config.Repository, release)
+	nextCompose, err := m.prepareTargetCompose(release, sources)
 	if err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
 	}
 	defer os.Remove(nextCompose)
-	if err := m.preflight(nextCompose, targetVersion); err != nil {
+	if err := m.preflight(nextCompose, targetVersion, targetImages); err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
 	}
-	updaterBinary, err := m.prepareUpdaterBinary(targetVersion)
+	updaterBinary, err := m.prepareUpdaterBinary(targetVersion, sources)
 	if err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
@@ -265,10 +342,40 @@ func (m *Manager) runUpdate(fromVersion, targetVersion string) {
 		defer os.Remove(updaterBinary)
 	}
 
-	m.setPhase(PhaseBackingUp, "创建 PostgreSQL 与数据目录 ZIP 备份")
-	backup, err := m.createBackup(fromVersion)
+	m.setPhase(PhasePulling, "拉取目标版本镜像："+sources.description())
+	if err := m.composeWithImages(nextCompose, targetVersion, targetImages, m.config.StepTimeout, nil, "pull", "backend", "web", "yingce-agent"); err != nil {
+		m.failWithoutRollback(PhaseFailed, err)
+		return
+	}
+	targetImages, err = m.verifyImages(targetImages)
 	if err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
+		return
+	}
+	if m.rollingEnabled() {
+		m.runRollingUpdate(fromVersion, release, nextCompose, updaterBinary, targetImages)
+		return
+	}
+
+	m.setPhase(PhaseDraining, "停止 Web、Backend 与 Agent，等待后台任务优雅退出")
+	if err := m.compose(m.composePath(), fromVersion, m.config.StepTimeout, nil, "stop", "web", "backend", "yingce-agent"); err != nil {
+		m.failBeforeMigration(err, fromVersion)
+		return
+	}
+
+	// 最终备份必须包含旧服务退出前的全部写入；镜像下载不占用停服窗口。
+	m.setPhase(PhaseBackingUp, "创建停服后的 PostgreSQL 与数据目录 ZIP 备份")
+	backup, err := m.createBackup(fromVersion)
+	if err != nil {
+		m.failBeforeMigration(err, fromVersion)
+		return
+	}
+	if err := replaceFile(m.composePath(), m.previousComposePath(), 0o600); err != nil {
+		m.failBeforeMigration(fmt.Errorf("保存旧 Compose 配置：%w", err), fromVersion)
+		return
+	}
+	if err := replaceFile(m.envPath(), m.previousEnvPath(), 0o600); err != nil {
+		m.failBeforeMigration(fmt.Errorf("保存旧部署环境：%w", err), fromVersion)
 		return
 	}
 	m.mu.Lock()
@@ -276,35 +383,15 @@ func (m *Manager) runUpdate(fromVersion, targetVersion string) {
 	m.state.RollbackVersion = fromVersion
 	_ = m.saveStateLocked()
 	m.mu.Unlock()
-	if err := replaceFile(m.composePath(), m.previousComposePath(), 0o600); err != nil {
-		m.failWithoutRollback(PhaseFailed, fmt.Errorf("保存旧 Compose 配置：%w", err))
-		return
-	}
-
-	m.setPhase(PhasePulling, "拉取目标版本镜像")
-	if err := m.compose(nextCompose, targetVersion, m.config.StepTimeout, nil, "pull", "backend", "web"); err != nil {
-		m.failWithoutRollback(PhaseFailed, err)
-		return
-	}
-	if err := m.verifyImages(targetVersion); err != nil {
-		m.failWithoutRollback(PhaseFailed, err)
-		return
-	}
-
-	m.setPhase(PhaseDraining, "停止 Web 与 Backend，等待后台任务优雅退出")
-	if err := m.compose(m.composePath(), fromVersion, m.config.StepTimeout, nil, "stop", "web", "backend"); err != nil {
-		m.failWithRollback(err, fromVersion, backup)
-		return
-	}
 
 	m.setPhase(PhaseMigrating, "执行目标版本数据库迁移")
-	if err := m.compose(nextCompose, targetVersion, m.config.StepTimeout, nil, "run", "--rm", "migrate"); err != nil {
+	if err := m.composeWithImages(nextCompose, targetVersion, targetImages, m.config.StepTimeout, nil, "run", "--rm", "migrate"); err != nil {
 		m.failWithRollback(err, fromVersion, backup)
 		return
 	}
 
 	m.setPhase(PhaseSwitching, "切换 Compose 配置与镜像版本")
-	if err := setEnvValue(m.envPath(), "CANVAS_IMAGE_TAG", strings.TrimPrefix(targetVersion, "v")); err != nil {
+	if err := setDeploymentImages(m.envPath(), targetVersion, targetImages); err != nil {
 		m.failWithRollback(err, fromVersion, backup)
 		return
 	}
@@ -313,7 +400,7 @@ func (m *Manager) runUpdate(fromVersion, targetVersion string) {
 		m.failWithRollback(err, fromVersion, backup)
 		return
 	}
-	if err := m.compose(m.composePath(), targetVersion, m.config.StepTimeout, nil, "up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "600"); err != nil {
+	if err := m.composeWithImages(m.composePath(), targetVersion, targetImages, m.config.StepTimeout, nil, "up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "600"); err != nil {
 		m.failWithRollback(err, fromVersion, backup)
 		return
 	}
@@ -323,6 +410,10 @@ func (m *Manager) runUpdate(fromVersion, targetVersion string) {
 		m.failWithRollback(err, fromVersion, backup)
 		return
 	}
+	m.finishUpdate(targetVersion, updaterBinary)
+}
+
+func (m *Manager) finishUpdate(targetVersion, updaterBinary string) {
 	if updaterBinary != "" {
 		if err := replaceFile(updaterBinary, m.config.BinaryPath, 0o755); err != nil {
 			m.mu.Lock()
@@ -363,6 +454,19 @@ func (m *Manager) failWithoutRollback(phase Phase, err error) {
 	_ = m.saveStateLocked()
 }
 
+// 迁移前只有容器被停止，恢复旧容器即可，不能恢复更早的数据库快照。
+func (m *Manager) failBeforeMigration(cause error, version string) {
+	err := m.compose(m.composePath(), version, m.config.StepTimeout, nil, "start", "backend", "yingce-agent", "web")
+	if err == nil {
+		err = m.verifyHealthy(version)
+	}
+	if err != nil {
+		m.failWithoutRollback(PhaseManualIntervention, errors.Join(cause, fmt.Errorf("恢复旧服务：%w", err)))
+		return
+	}
+	m.failWithoutRollback(PhaseFailed, cause)
+}
+
 func (m *Manager) failWithRollback(cause error, targetVersion string, backup Backup) {
 	m.mu.Lock()
 	m.state.Operation.Error = safeOperationError(cause)
@@ -384,17 +488,16 @@ func (m *Manager) runRollback(targetVersion string, backup Backup, automatic boo
 			failures = append(failures, fmt.Errorf("恢复旧 Compose 配置：%w", err))
 		}
 	}
-	if err := m.restoreBackendData(backup); err != nil {
-		failures = append(failures, err)
+	if _, err := os.Stat(m.previousEnvPath()); err == nil {
+		if err := replaceFile(m.previousEnvPath(), m.envPath(), 0o600); err != nil {
+			failures = append(failures, fmt.Errorf("恢复旧部署环境：%w", err))
+		}
 	}
 	if err := m.restoreDatabase(backup); err != nil {
 		failures = append(failures, err)
 	}
-	if err := setEnvValue(m.envPath(), "CANVAS_IMAGE_TAG", strings.TrimPrefix(targetVersion, "v")); err != nil {
-		failures = append(failures, err)
-	}
 	started := true
-	if err := m.compose(m.composePath(), targetVersion, m.config.StepTimeout, nil, "up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "600"); err != nil {
+	if err := m.compose(m.composePath(), targetVersion, m.config.StepTimeout, nil, "up", "-d", "--pull", "never", "--remove-orphans", "--wait", "--wait-timeout", "600"); err != nil {
 		started = false
 		failures = append(failures, err)
 	}
@@ -416,8 +519,6 @@ func (m *Manager) runRollback(targetVersion string, backup Backup, automatic boo
 	} else {
 		m.state.Operation.Phase = PhaseRolledBack
 		m.state.Operation.RollbackError = ""
-		m.state.RollbackVersion = ""
-		m.state.LastBackup = nil
 		m.appendLogLocked(PhaseRolledBack, fmt.Sprintf("已恢复到 %s", targetVersion))
 	}
 	_ = m.saveStateLocked()
@@ -427,18 +528,22 @@ func (m *Manager) snapshotLocked() Status {
 	current, err := m.currentVersion()
 	checks := m.checks(current, err)
 	status := Status{
+		Sources:         cloneSources(&m.state.Sources),
+		SourceProbe:     cloneSourceProbe(m.state.SourceProbe),
 		Supported:       true,
 		Connected:       true,
 		Repository:      m.config.Repository,
 		Deployment:      "docker-compose-host-updater",
+		Rolling:         m.rollingEnabled(),
 		CurrentVersion:  current,
 		LatestRelease:   cloneRelease(m.state.LatestRelease),
+		UpstreamVersion: m.state.UpstreamVersion,
 		Checks:          checks,
 		LastBackup:      cloneBackup(m.state.LastBackup),
 		RollbackVersion: m.state.RollbackVersion,
 		Operation:       cloneOperation(m.state.Operation),
 	}
-	if status.LatestRelease != nil && err == nil {
+	if status.LatestRelease != nil && err == nil && m.canInstall(*status.LatestRelease) {
 		status.UpdateAvailable = CompareVersions(current, status.LatestRelease.Version) < 0
 	}
 	return status
@@ -455,10 +560,16 @@ func (m *Manager) checks(current string, currentErr error) []Check {
 	if currentErr != nil {
 		items[1].Status = "failed"
 		items[1].Detail = currentErr.Error()
+	} else if current != "" && !IsReleaseVersion(current) {
+		items[1].Detail = current + " · 非正式镜像标签，可切换到正式 Release"
 	}
 	if m.state.LastBackup != nil {
 		items[2].Status = "passed"
 		items[2].Detail = m.state.LastBackup.ID + " · " + m.state.LastBackup.Checksum
+	}
+	if m.rollingEnabled() {
+		items[4].Label = "在线迁移兼容性"
+		items[4].Detail = "启动新版前只读校验现有迁移账本"
 	}
 	return items
 }
@@ -532,6 +643,9 @@ func (m *Manager) envPath() string { return filepath.Join(m.config.InstallDir, m
 func (m *Manager) previousComposePath() string {
 	return filepath.Join(m.config.StateDir, "previous-compose.yml")
 }
+func (m *Manager) previousEnvPath() string {
+	return filepath.Join(m.config.StateDir, "previous.env")
+}
 
 func randomID() string {
 	buffer := make([]byte, 12)
@@ -557,6 +671,10 @@ func cloneRelease(value *Release) *Release {
 		return nil
 	}
 	cloned := *value
+	if value.Manifest != nil {
+		manifest := *value.Manifest
+		cloned.Manifest = &manifest
+	}
 	return &cloned
 }
 
@@ -570,6 +688,24 @@ func cloneBackup(value *Backup) *Backup {
 }
 
 func cloneOperation(value Operation) Operation {
+	value.Sources = cloneSources(value.Sources)
 	value.Logs = append([]LogEntry(nil), value.Logs...)
 	return value
+}
+
+func cloneSources(value *Sources) *Sources {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneSourceProbe(value *SourceProbe) *SourceProbe {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.Checks = append([]Check(nil), value.Checks...)
+	return &cloned
 }

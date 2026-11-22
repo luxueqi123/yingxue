@@ -1,0 +1,250 @@
+1151|            toast.warning("专业技能尚未加载完整，请稍后重试或重新选择技能。");
+1152|            return;
+1153|        }
+1154|        if (!text || busy || preparingRef.current || agentLaunch.busy || retryPreparingRef.current.size > 0) return;
+1155|        const skills = selectedCreationReferences(text, mentionReferences).flatMap(reference => reference.skill ? [reference.skill] : []);
+1156|        try {
+1157|            await agentLaunch.launch({
+1158|                prompt: text,
+1159|                attachments,
+1160|                skills,
+1161|                models: { text: config.textModel, image: config.imageModel, video: config.videoModel },
+1162|                confirmTools,
+1163|                entryMode: agentIntent ? "agent" : mode,
+1164|                requireTextModel: false,
+1165|            });
+1166|        } catch (reason) {
+1167|            toast.error(reason instanceof Error ? reason.message : "创作草稿未能交给映雪画布，输入内容已保留。");
+1168|        }
+1169|    };
+1170|
+1171|    const composerProps = {
+1172|        agentIntent,
+1173|        onAgentIntentChange: () => { if (!preparingRef.current && !agentLaunch.busy) { setAgentIntent(true); setMode("text"); } },
+1174|        confirmTools,
+1175|        onConfirmToolsChange: (confirmTools: boolean) => setAgentState({ confirmTools }),
+1176|        onSelectSkill: selectSkill,
+1177|        uploading,
+1178|        uploadFailures,
+1179|        inputIssues,
+1180|        submissionBlocked,
+1181|        onAddFiles: (files: File[]) => void addAttachments(files),
+1182|        onRetryUploads: () => void addAttachments(uploadFailures.map(item => item.file)),
+1183|        onDismissUploadFailure: (file: File) => setUploadFailures(current => current.filter(item => item.file !== file)),
+1184|        mode,
+1185|        prompt,
+1186|        setPrompt: (value: string) => { if (!preparingRef.current && !agentLaunch.busy) setPrompt(value); },
+1187|        busy: busy || agentLaunch.busy || preparing,
+1188|        attachments,
+1189|        referenceImageSize,
+1190|        maxReferences,
+1191|        references: mentionReferences,
+1192|        onRemoveAttachment: removeAttachment,
+1193|        onReorderAttachments: reorderAttachments,
+1194|        onOpenLibrary: () => setLibraryOpen(true),
+1195|        fileInputRef,
+1196|        onFileChange: handleFileChange,
+1197|        onModeChange: selectMode,
+1198|        model: selectedModel,
+1199|        modelRequirements,
+1200|        imageProfile,
+1201|        videoProfile,
+1202|        config,
+1203|        onModelChange: (value: string) => updateConfig(agentIntent || mode === "text" ? "textModel" : mode === "image" ? "imageModel" : "videoModel", value),
+1204|        onAgentModelChange: (kind: "text" | "image" | "video", value: string) => updateConfig(kind === "text" ? "textModel" : kind === "image" ? "imageModel" : "videoModel", value),
+1205|        ratio,
+1206|        setRatio,
+1207|        seconds,
+1208|        setSeconds,
+1209|        quality,
+1210|        setQuality,
+1211|        videoQuality,
+1212|        setVideoQuality,
+1213|        count,
+1214|        setCount,
+1215|        promptOptimizerProvider,
+1216|        composerFocusRef,
+1217|        placeholderOverride: viewMode === "storyboard" && composingNextShot ? `SC.${String(nextShotNumber).padStart(2, "0")} · 写下这一镜的镜头、画面或故事` : undefined,
+1218|        onSubmit: () => void submit(),
+1219|    };
+1220|
+1221|    const visibleShot = shots[visibleShotIndex];
+1222|    const visibleShotResultIndex = visibleShot?.result ? activeConversation.messages.indexOf(visibleShot.result) : -1;
+1223|
+1224|    const workspace = <div className="creation-home relative flex h-full min-h-0 flex-col overflow-hidden">
+1225|            {isEmpty ? <>
+1226|                <div className="creation-top-actions">
+1227|                    <Tooltip title="历史对话"><button type="button" aria-label="查看历史对话" aria-expanded={historyOpen} className="creation-top-action" onClick={() => setHistoryOpen(true)}><History /></button></Tooltip>
+1228|                </div>
+1229|                <AnimatePresence>
+1230|                    {launchpadCondensed && !agentMode ? <motion.div className="creation-floating-prompt" key="floating-prompt"
+1231|                        style={{ x: "-50%" }}
+1232|                        initial={{ opacity: 0, y: -12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: .98 }}
+1233|                        transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 360, damping: 32, mass: .8 }}>
+1234|                        <Sparkles aria-hidden="true" />
+1235|                        <input aria-label="快捷编辑提示词" placeholder="继续描述你的创作想法…" value={prompt} disabled={busy || referenceReplacementBusy} onChange={(event) => setPrompt(event.target.value)} />
+1236|                        <Tooltip title="展开完整创作区"><button type="button" aria-label="展开完整创作区" onClick={() => {
+1237|                            threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+1238|                            composerFocusRef.current?.focus({ preventScroll: true });
+1239|                        }}><Maximize2 /></button></Tooltip>
+1240|                    </motion.div> : null}
+1241|                </AnimatePresence>
+1242|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-empty-workspace creation-scrollbar">
+1243|<<<<<<< ours
+1244|                <CreationEmptyBanner />
+1245|                <div className="creation-chat-intro">
+1246|                    <span className="creation-intro-signal" aria-hidden="true" />
+1247|                    <p>映雪 · AI 创作工作台</p>
+1248|                    <h1>让你的下一个想法，<span className="creation-intro-emphasis"><span className="is-pink">在这里</span><span className="is-blue">成为作品</span></span></h1>
+1249|                </div>
+1250|                <div className="creation-empty-composer">
+1251|                    <CreationComposer {...composerProps} variant="empty" />
+1252|=======
+1253|                <div className="creation-home-heading">
+1254|                    <h1>和{brandName}聊聊创作想法</h1>
+1255|                    <p>从一个画面、一个角色或一句话开始，继续你的创作。</p>
+1256|>>>>>>> theirs
+1257|                </div>
+1258|                <section ref={launchpadRef} className="creation-launchpad" aria-label="开始创作">
+1259|                    <div className={cn("creation-composer-stage is-home-mode", agentMode && "is-agent-mode")}>
+1260|                        <CreationModeTabs mode={mode} agentActive={agentMode} onAgentSelect={() => setAgentMode(true)} onModeChange={(next) => { setAgentMode(false); selectMode(next); }} />
+1261|                        {agentMode ? <CreationAgentEntry /> : <div className="creation-empty-composer"><CreationComposer {...composerProps} variant="empty" /></div>}
+1262|                    </div>
+1263|                    <CreationEmptySuggest
+1264|                        onStartPrompt={(nextMode, prompt) => { setAgentMode(false); selectMode(nextMode); setPrompt(prompt); window.requestAnimationFrame(() => composerFocusRef.current?.focus()); }}
+1265|                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); setLibraryOpen(true); }}
+1266|                    />
+1267|                </section>
+1268|                <CreationFeaturedWorks
+1269|                    onStartPrompt={(nextMode, prompt) => { setAgentMode(false); selectMode(nextMode); setPrompt(prompt); window.requestAnimationFrame(() => composerFocusRef.current?.focus()); }}
+1270|                />
+1271|            </main>
+1272|            </> : viewMode === "chat" ? <div className="creation-thread-workbench">
+1273|                <CreationWorkspaceToolbar viewMode={viewMode} onViewModeChange={setViewMode} onNewConversation={startNewConversation} onOpenHistory={() => setHistoryOpen(true)} />
+1274|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-thread-scroll creation-scrollbar">
+1275|                    <section className="creation-thread-stage"><div className="creation-results">{activeConversation.messages.map((item, index) => <CreationMessageView
+1276|                        key={item.id}
+1277|                        item={item}
+1278|                        modelName={item.model ? modelDisplayName(config, item.model) : ""}
+1279|                        onRetryFailure={() => retryFailedMessage(item, index)}
+1280|                        onCreateVariant={() => createVariant(item, index)}
+1281|                    />)}</div></section>
+1282|                </main>
+1283|                <section className="creation-thread-composer"><CreationComposer {...composerProps} variant="thread" /></section>
+1284|            </div> : <div className="storyboard-workbench">
+1285|                <StoryboardToolbar
+1286|                    shots={shots}
+1287|                    activeIndex={visibleShotIndex}
+1288|                    composing={composingNextShot}
+1289|                    onSelect={(index) => { setSelectedShotIndex(index); setComposingNextShot(false); }}
+1290|                    onBeginCompose={beginComposeNextShot}
+1291|                    onCancelCompose={cancelComposeNextShot}
+1292|                    onNewConversation={startNewConversation}
+1293|                    onOpenHistory={() => setHistoryOpen(true)}
+1294|                    viewMode={viewMode}
+1295|                    onViewModeChange={setViewMode}
+1296|                />
+1297|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="storyboard-workbench-stage creation-scrollbar">
+1298|                    <div className="storyboard-workbench-stage-inner">
+1299|                        {composingNextShot ? <StoryboardNextShotCard shotNumber={nextShotNumber} onCancel={cancelComposeNextShot} /> : visibleShot ? <StoryboardShotCard
+1300|                            shot={visibleShot}
+1301|                            shotNumber={visibleShotIndex + 1}
+1302|                            modelName={visibleShot.result?.model ? modelDisplayName(config, visibleShot.result.model) : ""}
+1303|                            busy={busy || preparing || agentLaunch.busy || uploading || skillLoading}
+1304|                            onRetryFailure={() => { if (visibleShotResultIndex >= 0 && visibleShot.result) retryFailedMessage(visibleShot.result, visibleShotResultIndex); }}
+1305|                            onCreateVariant={() => { if (visibleShotResultIndex >= 0 && visibleShot.result) createVariant(visibleShot.result, visibleShotResultIndex); }}
+1306|                        /> : null}
+1307|                    </div>
+1308|                </main>
+1309|                <section className="storyboard-workbench-composer">
+1310|                    <CreationComposer {...composerProps} variant="thread" />
+1311|                </section>
+1312|            </div>}
+1313|        </div>;
+1314|
+1315|    return <>
+1316|        {embedded ? <>
+1317|            <div className="creation-home creation-lobby">
+1318|                <CreationComposer {...composerProps} onSubmit={() => void submitLobbyToCanvas()} variant="lobby" />
+1319|            </div>
+1320|        </> : workspace}
+1321|        <CreationHistoryDrawer open={historyOpen} conversations={historyConversations} activeId={activeConversation.id} onClose={() => setHistoryOpen(false)} onSelect={selectConversation} onDelete={confirmDeleteConversation} />
+1322|        <AssetLibraryPickerModal
+1323|            open={libraryOpen}
+1324|            items={libraryItems}
+1325|            categoryLabels={{ ...creationAssetCategoryLabels, ...externalAssetSources.categoryLabels }}
+1326|            folders={externalAssetSources.folders}
+1327|            initialSelectedIds={attachments.flatMap((item) => item.id.startsWith("asset:") ? [item.id.slice(6)] : item.id.startsWith("external:") ? [item.id] : [])}
+1328|            upload={{ accept: creationUploadAccept(agentIntent ? "text" : mode), description: agentIntent || mode === "text" ? "支持图片、视频、音频和常用文档；媒体会保存到素材库" : `支持图片${mode === "video" ? "、视频和音频" : ""}，上传后保存到素材库`, onUpload: uploadLibraryAssets, external: { accept: "image/*", description: "写入当前 Eagle 文件夹；Eagle 当前支持图片文件", onUpload: (files, folderId) => externalAssetSources.uploadExternalFiles(files, folderId) } }}
+1329|            onClose={() => setLibraryOpen(false)}
+1330|            onConfirm={handleLibrarySelect}
+1331|        />
+1332|    </>;
+1333|}
+1334|
+1335|const creationAssetCategoryLabels: Record<string, string> = { all: "全部素材", character: "角色", environment: "场景", wardrobe: "服饰", prop: "道具", weapon: "武器", style: "画风", other: "其他" };
+1336|
+1337|function CreationHistoryDrawer({ open, conversations, activeId, onClose, onSelect, onDelete }: { open: boolean; conversations: CreationConversation[]; activeId: string; onClose: () => void; onSelect: (conversation: CreationConversation) => void; onDelete: (conversation: CreationConversation) => void }) {
+1338|    const [keyword, setKeyword] = useState("");
+1339|
+1340|    useEffect(() => {
+1341|        if (open) setKeyword("");
+1342|    }, [open]);
+1343|
+1344|    const visibleConversations = useMemo(() => {
+1345|        const query = keyword.trim().toLowerCase();
+1346|        if (!query) return conversations;
+1347|        return conversations.filter((conversation) => {
+1348|            const latest = conversationPreviewMessage(conversation);
+1349|            const searchable = [
+1350|                conversation.title,
+1351|                ...conversation.messages.flatMap((message) => [message.content, displayCreationPrompt(message.content, message.references || [])]),
+1352|                latest?.mode ? modeLabels[latest.mode] : "创作",
+1353|                formatConversationTime(conversation.updatedAt),
+1354|            ].filter(Boolean).join(" ").toLowerCase();
+1355|            return searchable.includes(query);
+1356|        });
+1357|    }, [conversations, keyword]);
+1358|
+1359|    return <Drawer open={open} onClose={onClose} placement="right" size="min(440px, 100vw)" closeIcon={<X className="size-4" />} className="creation-history-drawer" rootClassName="creation-history-drawer-root" styles={{ body: { padding: 0 } }} title={<div className="creation-history-title"><span>历史对话</span><small>{conversations.length} 个对话</small></div>}>
+1360|        <div className="creation-history-content">
+1361|            <label className="creation-history-search">
+1362|                <Search aria-hidden="true" />
+1363|                <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索对话标题或内容" aria-label="搜索历史对话" />
+1364|            </label>
+1365|            {visibleConversations.length ? <ul className="creation-history-list" aria-label="历史对话，按更新时间倒序排列">
+1366|                {visibleConversations.map((conversation) => {
+1367|                    const latest = conversationPreviewMessage(conversation);
+1368|                    const active = conversation.id === activeId;
+1369|                    return <li key={conversation.id} className={active ? "is-active" : undefined}>
+1370|                        <button type="button" className="creation-history-item-main" aria-current={active ? "page" : undefined} onClick={() => onSelect(conversation)}>
+1371|                            <span className="creation-history-time"><time dateTime={conversation.updatedAt}>{formatConversationTime(conversation.updatedAt)}</time><em>{latest?.mode ? modeLabels[latest.mode] : "创作"}</em></span>
+1372|                            <strong className="creation-history-item-heading">{conversation.title.trim() || "新创作"}</strong>
+1373|                            <span className="creation-history-snippet">{latest ? displayCreationPrompt(latest.content, latest.references || []).trim() || "还没有开始创作" : "还没有开始创作"}</span>
+1374|                        </button>
+1375|                        <Tooltip title="删除对话"><button type="button" className="creation-history-delete" aria-label={`删除对话：${conversation.title.trim() || "新创作"}`} onClick={() => onDelete(conversation)}><Trash2 /></button></Tooltip>
+1376|                    </li>;
+1377|                })}
+1378|            </ul> : <div className="creation-history-empty">{keyword.trim() ? "没有找到匹配的对话" : "暂无历史对话"}</div>}
+1379|        </div>
+1380|    </Drawer>;
+1381|}
+1382|
+1383|function CreationViewSwitch({ viewMode, onChange }: { viewMode: CreationViewMode; onChange: (mode: CreationViewMode) => void }) {
+1384|    return <div className="creation-view-switch" role="group" aria-label="创作视图">
+1385|        <button type="button" aria-pressed={viewMode === "chat"} onClick={() => onChange("chat")}><MessageSquareText />连续对话</button>
+1386|        <button type="button" aria-pressed={viewMode === "storyboard"} onClick={() => onChange("storyboard")}><Clapperboard />镜头创作</button>
+1387|    </div>;
+1388|}
+1389|
+1390|function CreationWorkspaceToolbar({ viewMode, onViewModeChange, onNewConversation, onOpenHistory }: { viewMode: CreationViewMode; onViewModeChange: (mode: CreationViewMode) => void; onNewConversation: () => void; onOpenHistory: () => void }) {
+1391|    return <header className="creation-thread-toolbar">
+1392|        <CreationViewSwitch viewMode={viewMode} onChange={onViewModeChange} />
+1393|        <div className="storyboard-workbench-bar-actions">
+1394|            <Tooltip title="新建创作"><button type="button" aria-label="新建创作" className="storyboard-workbench-bar-action" onClick={onNewConversation}><Plus /></button></Tooltip>
+1395|            <Tooltip title="历史对话"><button type="button" aria-label="查看历史对话" className="storyboard-workbench-bar-action" onClick={onOpenHistory}><History /></button></Tooltip>
+1396|        </div>
+1397|    </header>;
+1398|}
+1399|
+1400|function CreationMessageView({ item, modelName, onRetryFailure, onCreateVariant }: { item: CreationMessage; modelName: string; onRetryFailure: () => void; onCreateVariant: () => void }) {

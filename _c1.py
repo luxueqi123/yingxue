@@ -1,0 +1,11 @@
+import subprocess,difflib,json
+def blob(rev,p):
+    r=subprocess.run(["git","cat-file","blob",rev+":"+p],capture_output=True)
+    return None if r.returncode!=0 else r.stdout
+def L(b): return b.replace(b"\r\n",b"\n").decode("utf-8","replace").splitlines()
+d=json.load(open("_lossets.json",encoding="utf-8"))
+files=d["pure"][:7]
+for p in files:
+    print("#"*80); print("###",p)
+    for l in difflib.unified_diff(L(blob("01a2d171",p)),L(blob("MERGE_HEAD",p)),"v1.2.9","v1.5.5",lineterm="",n=0):
+        print("  ",l[:160])

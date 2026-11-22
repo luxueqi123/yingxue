@@ -1,4 +1,4 @@
-import { apiBaseURL, apiClient, compactApiParams, request } from "@/services/api/request";
+import { http, apiBaseURL, compactApiParams } from "@/services/api/request";
 
 export type AdminStorageResource = {
     id: string;
@@ -24,7 +24,7 @@ export type AdminResourcePage = {
     items: AdminStorageResource[];
     total: number;
     page: number;
-    limit: number;
+    pageSize: number;
 };
 
 export type AdminStorageDimensionStat = {
@@ -42,6 +42,15 @@ export type AdminStorageStats = {
     remoteBytes: number;
     byKind: Array<AdminStorageDimensionStat & { kind: string }>;
     byProvider: Array<AdminStorageDimensionStat & { provider: string }>;
+    /** 对象存储写入失败后先保存到服务器、等待补传的生成作品。 */
+    offload: AdminStorageOffloadSummary;
+};
+export type AdminStorageOffloadSummary = {
+    pending: number;
+    pendingBytes: number;
+    failed: number;
+    oldestPending?: string;
+    lastErrorCode?: string;
 };
 
 export type AdminResourceQuery = {
@@ -49,9 +58,10 @@ export type AdminResourceQuery = {
     kind?: string;
     status?: string;
     provider?: string;
+    user?: string;
     userId?: string;
     page?: number;
-    limit?: number;
+    pageSize?: number;
 };
 
 export type AdminResourceReference = {
@@ -72,16 +82,16 @@ export type AdminResourceDeleteResult = {
 };
 
 export async function listAdminResources(query: AdminResourceQuery, signal?: AbortSignal) {
-    return request<AdminResourcePage>(apiClient.get("/admin/resources", { params: compactApiParams(query), signal }));
+    return http.get<AdminResourcePage>("/admin/resources", { params: compactApiParams(query), signal });
 }
 
 export async function getAdminStorageStats(signal?: AbortSignal) {
-    const result = await request<{ stats: AdminStorageStats }>(apiClient.get("/admin/storage/stats", { signal }));
+    const result = await http.get<{ stats: AdminStorageStats }>("/admin/storage/stats", { signal });
     return result.stats;
 }
 
 export function deleteAdminResources(resourceIds: string[]) {
-    return request<AdminResourceDeleteResult>(apiClient.post("/admin/resources/delete", { resourceIds }));
+    return http.post<AdminResourceDeleteResult>("/admin/resources/delete", { resourceIds });
 }
 
 export function adminResourceFileUrl(id: string, download = false) {

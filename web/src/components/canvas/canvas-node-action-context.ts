@@ -6,6 +6,8 @@ import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 // 但画布节点经 CanvasProjectWorldLayers 渲染、不便逐个透传 handler，
 // 通过 Context 注入，避免改动 world-layers。无 Provider 时静默降级为 no-op。
 export type CanvasNodeActionContextValue = {
+    extractLayerMaterials?: (node: CanvasNodeData) => Promise<void>;
+    upload?: (node: CanvasNodeData) => void;
     download?: (node: CanvasNodeData) => void;
     duplicate?: (node: CanvasNodeData) => void;
     deleteNode?: (node: CanvasNodeData) => void;
@@ -21,6 +23,14 @@ export type CanvasNodeActionContextValue = {
     openPortraitClearance?: (node: CanvasNodeData) => void;
     /** 打开节点级 AI 审美批改报告。 */
     openArtCritique?: (node: CanvasNodeData) => void;
+    /** 全景节点导出截图：上传 dataUrl 并在源节点右侧创建派生图片节点。 */
+    addPanoramaCaptureNode?: (node: CanvasNodeData, dataUrl: string, title: string) => Promise<void> | void;
+    /** 打开媒体版本面板；只读页面不提供，节点角标随之隐藏。 */
+    openMediaVersions?: (node: CanvasNodeData) => void;
+    /** 短剧侧已有更新版本的节点（关联短剧的精修画布）；集合内容不变时引用保持不变。 */
+    dramaStaleNodeIds?: ReadonlySet<string>;
+    /** 把节点换成短剧当前的媒体，原画面进入版本历史。 */
+    refreshFromDrama?: (node: CanvasNodeData) => void;
 };
 
 export const CanvasNodeActionContext = createContext<CanvasNodeActionContextValue>({});

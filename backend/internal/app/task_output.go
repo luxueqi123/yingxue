@@ -1,0 +1,594 @@
+package app
+
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
+
+	"infinite-canvas/backend/internal/kernel"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/workbench"
+)
+
+// TaskSummary 是任务列表/会话详情的读模型，不直接复用数据库 Task，避免把
+// 渠道模型、供应线路和受保护输入泄露到普通用户接口。
+type TaskSummary struct {
+	ID                        string                     `json:"id"`
+	ProjectID                 string                     `json:"projectId,omitempty"`
+	Type                      string                     `json:"type"`
+	Status                    model.TaskStatus           `json:"status"`
+	Stage                     string                     `json:"stage"`
+	MediaStage                string                     `json:"mediaStage,omitempty"`
+	CanRecoverMedia           bool                       `json:"canRecoverMedia,omitempty"`
+	Progress                  int                        `json:"progress"`
+	Prompt                    string                     `json:"prompt"`
+	Operation                 string                     `json:"operation,omitempty"`
+	Provider                  string                     `json:"provider,omitempty"`
+	Model                     string                     `json:"model,omitempty"`
+	ProviderRequestID         string                     `json:"providerRequestId,omitempty"`
+	ProviderCancelStatus      model.ProviderCancelStatus `json:"providerCancelStatus,omitempty"`
+	ProviderCancelError       string                     `json:"providerCancelError,omitempty"`
+	ProviderCancelAttempts    int                        `json:"providerCancelAttempts,omitempty"`
+	ProviderCancelRequestedAt *time.Time                 `json:"providerCancelRequestedAt,omitempty"`
+	ProviderCancelledAt       *time.Time                 `json:"providerCancelledAt,omitempty"`
+	ErrorCode                 string                     `json:"errorCode,omitempty"`
+	PreviewURL                string                     `json:"previewUrl,omitempty"`
+	PreviewKind               string                     `json:"previewKind,omitempty"`
+	PreviewPosterURL          string                     `json:"previewPosterUrl,omitempty"`
+	Attempts                  int                        `json:"attempts"`
+	StartedAt                 *time.Time                 `json:"startedAt"`
+	CompletedAt               *time.Time                 `json:"completedAt"`
+	CreatedAt                 time.Time                  `json:"createdAt"`
+	UpdatedAt                 time.Time                  `json:"updatedAt"`
+	Billing                   *TaskBillingSummary        `json:"billing,omitempty"`
+	ClientContext             *TaskClientContext         `json:"clientContext,omitempty"`
+}
+
+type TaskClientContext struct {
+	NodeID           string `json:"nodeId,omitempty"`
+	AssetTitle       string `json:"assetTitle,omitempty"`
+	ConversationID   string `json:"conversationId,omitempty"`
+	MessageID        string `json:"messageId,omitempty"`
+	BatchID          string `json:"batchId,omitempty"`
+	BatchIndex       int    `json:"batchIndex,omitempty"`
+	BatchCount       int    `json:"batchCount,omitempty"`
+	DomainProjectID  string `json:"domainProjectId,omitempty"`
+	ChapterID        string `json:"chapterId,omitempty"`
+	ChapterOperation string `json:"chapterOperation,omitempty"`
+	ShotID           string `json:"shotId,omitempty"`
+	WorkflowStepID   string `json:"workflowStepId,omitempty"`
+	ArtifactType     string `json:"artifactType,omitempty"`
+}
+
+// TaskBillingSummary 是任务列表展示的计费摘要。冻结额与实收分列：只有已结算订单才有实收。
+type TaskBillingSummary struct {
+	// AmountMicrocredits 是下单时的冻结额（预授权），不是实际扣费；与 ReservedMicrocredits 相同。
+	AmountMicrocredits   int64 `json:"amountMicrocredits"`
+	ReservedMicrocredits int64 `json:"reservedMicrocredits"`
+	// ChargedMicrocredits 只在订单已结算（settled）时给出，是扣除差额退回后的实收。
+	ChargedMicrocredits *int64 `json:"chargedMicrocredits,omitempty"`
+	// RefundedMicrocredits 是已退回的金额：结算时的差额退回，或失败后整笔退回。
+	RefundedMicrocredits int64               `json:"refundedMicrocredits"`
+	Status               model.BillingStatus `json:"status"`
+}
+
+func taskBillingSummary(order model.BillingOrder) *TaskBillingSummary {
+	summary := &TaskBillingSummary{
+		AmountMicrocredits: order.AmountMicrocredits, ReservedMicrocredits: order.AmountMicrocredits,
+		RefundedMicrocredits: order.RefundedAmountMicrocredits, Status: order.Status,
+	}
+	if order.Status == model.BillingStatusSettled {
+		charged := order.ActualAmountMicrocredits
+		summary.ChargedMicrocredits = &charged
+	}
+	return summary
+}
+
+func taskSummariesForOutput(tasks []model.Task) []TaskSummary {
+	return taskSummariesForOutputWithBilling(tasks, nil)
+}
+
+func taskSummariesForOutputWithBilling(tasks []model.Task, orders map[string]model.BillingOrder) []TaskSummary {
+	result := make([]TaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		summary := taskSummaryForOutput(task)
+		if order, ok := orders[task.ID]; ok {
+			summary.Billing = taskBillingSummary(order)
+			if summary.ProviderRequestID == "" {
+				summary.ProviderRequestID = order.ProviderRequestID
+			}
+		}
+		result = append(result, summary)
+	}
+	return result
+}
+
+func taskBillingTaskIDs(tasks []model.Task) []string {
+	ids := make([]string, 0, len(tasks))
+	seen := map[string]struct{}{}
+	for _, task := range tasks {
+		if task.BillingOrderID == "" {
+			continue
+		}
+		if _, ok := seen[task.ID]; ok {
+			continue
+		}
+		seen[task.ID] = struct{}{}
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func taskSummaryForOutput(task model.Task) TaskSummary {
+	errorCode := ""
+	if isContentModerationFailure(task.Error) {
+		errorCode = contentModerationErrorCode
+	}
+	previewURL, previewKind, previewPosterURL := taskMediaPreviewWithPoster(task.ResultJSON, task.Type)
+	return TaskSummary{
+		ID:                        task.ID,
+		ProjectID:                 task.ProjectID,
+		Type:                      task.Type,
+		Status:                    task.Status,
+		Stage:                     task.Stage,
+		MediaStage:                task.MediaStage,
+		CanRecoverMedia:           task.MediaRecoveryJSON != "" && task.Status == model.TaskStatusFailed,
+		Progress:                  task.Progress,
+		Prompt:                    truncateRunes(task.Prompt, 500),
+		Operation:                 task.Operation,
+		Provider:                  task.Provider,
+		Model:                     task.Model,
+		ProviderRequestID:         task.ProviderRequestID,
+		ProviderCancelStatus:      task.ProviderCancelStatus,
+		ProviderCancelError:       sanitizeUserVisibleError(task.ProviderCancelError),
+		ProviderCancelAttempts:    task.ProviderCancelAttempts,
+		ProviderCancelRequestedAt: task.ProviderCancelRequestedAt,
+		ProviderCancelledAt:       task.ProviderCancelledAt,
+		ErrorCode:                 errorCode,
+		PreviewURL:                previewURL,
+		PreviewKind:               previewKind,
+		PreviewPosterURL:          previewPosterURL,
+		Attempts:                  task.Attempts,
+		StartedAt:                 task.StartedAt,
+		CompletedAt:               task.CompletedAt,
+		CreatedAt:                 task.CreatedAt,
+		UpdatedAt:                 task.UpdatedAt,
+		ClientContext:             taskClientContext(task.InputJSON),
+	}
+}
+
+// 列表只暴露页面恢复所需的关联 ID 和素材显示名，不下发完整任务输入或其他 metadata。
+func taskClientContext(raw string) *TaskClientContext {
+	var input struct {
+		Metadata struct {
+			Source          string `json:"source"`
+			NodeID          string `json:"nodeId"`
+			AssetTitle      string `json:"assetTitle"`
+			ConversationID  string `json:"conversationId"`
+			MessageID       string `json:"messageId"`
+			BatchIndex      int    `json:"batchIndex"`
+			BatchCount      int    `json:"batchCount"`
+			DomainProjectID string `json:"domainProjectId"`
+			ChapterID       string `json:"chapterId"`
+			Operation       string `json:"operation"`
+			ShotID          string `json:"shotId"`
+			WorkflowStepID  string `json:"workflowStepId"`
+			ArtifactType    string `json:"artifactType"`
+			Workbench       struct {
+				Batch struct {
+					ID    string `json:"id"`
+					Index int    `json:"index"`
+					Count int    `json:"count"`
+				} `json:"batch"`
+			} `json:"workbench"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal([]byte(raw), &input) != nil {
+		return nil
+	}
+	metadata := input.Metadata
+	title := []rune(strings.TrimSpace(metadata.AssetTitle))
+	context := &TaskClientContext{NodeID: metadata.NodeID, AssetTitle: string(title[:min(len(title), 200)])}
+	if metadata.Source == "create-page" && metadata.ConversationID != "" && metadata.MessageID != "" {
+		context.ConversationID = metadata.ConversationID
+		context.MessageID = metadata.MessageID
+		context.BatchIndex = metadata.BatchIndex
+		context.BatchCount = metadata.BatchCount
+		return context
+	}
+	// 工作台一次提交拆出的多个任务按批次 ID 在页面上归为一组；字段非法时按单任务展示。
+	if batch := metadata.Workbench.Batch; metadata.Source == "workbench" && workbench.ValidTaskBatch(batch.ID, batch.Index, batch.Count) {
+		context.BatchID = batch.ID
+		context.BatchIndex = batch.Index
+		context.BatchCount = batch.Count
+		return context
+	}
+	if metadata.ShotID != "" && metadata.WorkflowStepID != "" {
+		context.DomainProjectID = metadata.DomainProjectID
+		context.ShotID = metadata.ShotID
+		context.WorkflowStepID = metadata.WorkflowStepID
+		context.ArtifactType = metadata.ArtifactType
+		return context
+	}
+	chapterOperation := ""
+	if metadata.Operation == "chapter_character_breakdown" {
+		chapterOperation = "characters"
+	} else if metadata.Source == "short-drama-chapter-storyboard" {
+		chapterOperation = "storyboard"
+	}
+	if chapterOperation == "" || metadata.DomainProjectID == "" || metadata.ChapterID == "" {
+		if context.NodeID == "" && context.AssetTitle == "" {
+			return nil
+		}
+		return context
+	}
+	context.DomainProjectID = metadata.DomainProjectID
+	context.ChapterID = metadata.ChapterID
+	context.ChapterOperation = chapterOperation
+	return context
+}
+
+// 列表只暴露首个可访问媒体地址，避免把完整生成结果和内嵌数据带回前端。
+func taskMediaPreview(raw string, taskType string) (string, string) {
+	previewURL, previewKind, _ := taskMediaPreviewWithPoster(raw, taskType)
+	return previewURL, previewKind
+}
+
+func taskMediaPreviewWithPoster(raw string, taskType string) (string, string, string) {
+	if strings.TrimSpace(raw) == "" {
+		return "", "", ""
+	}
+	var payload any
+	if json.Unmarshal([]byte(raw), &payload) != nil {
+		return "", "", ""
+	}
+	defaultKind := "image"
+	if strings.Contains(strings.ToLower(taskType), "video") {
+		defaultKind = "video"
+	}
+	previewURL, previewKind := findTaskMediaPreview(payload, defaultKind)
+	posterURL := findTaskMediaPoster(payload)
+	if previewKind == "image" && posterURL == "" {
+		posterURL = previewURL
+	}
+	return previewURL, previewKind, posterURL
+}
+
+func findTaskMediaPoster(value any) string {
+	switch item := value.(type) {
+	case []any:
+		for _, child := range item {
+			if posterURL := findTaskMediaPoster(child); posterURL != "" {
+				return posterURL
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"posterUrl", "posterURL", "thumbnailUrl", "thumbnailURL", "coverUrl", "coverURL", "poster", "thumbnail", "cover"} {
+			child, exists := item[key]
+			if !exists {
+				continue
+			}
+			if previewURL, previewKind := findTaskMediaPreview(child, "image"); previewURL != "" && previewKind == "image" {
+				return previewURL
+			}
+		}
+		for _, child := range item {
+			if posterURL := findTaskMediaPoster(child); posterURL != "" {
+				return posterURL
+			}
+		}
+	}
+	return ""
+}
+
+func findTaskMediaPreview(value any, hint string) (string, string) {
+	switch item := value.(type) {
+	case string:
+		text := strings.TrimSpace(item)
+		if !isResourceFileURL(text) && !strings.HasPrefix(text, "http://") && !strings.HasPrefix(text, "https://") {
+			return "", ""
+		}
+		kind := hint
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, ".mp4") || strings.Contains(lower, ".webm") || strings.Contains(lower, ".mov") {
+			kind = "video"
+		} else if kind != "video" {
+			kind = "image"
+		}
+		return text, kind
+	case []any:
+		for _, child := range item {
+			if previewURL, previewKind := findTaskMediaPreview(child, hint); previewURL != "" {
+				return previewURL, previewKind
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"images", "image", "video", "dataUrl", "url", "resultUrl", "outputUrl"} {
+			child, exists := item[key]
+			if !exists {
+				continue
+			}
+			childHint := hint
+			if key == "video" {
+				childHint = "video"
+			} else if key == "images" || key == "image" {
+				childHint = "image"
+			}
+			if previewURL, previewKind := findTaskMediaPreview(child, childHint); previewURL != "" {
+				return previewURL, previewKind
+			}
+		}
+	}
+	return "", ""
+}
+
+func truncateRunes(value string, limit int) string {
+	return kernel.TruncateRunes(value, limit)
+}
+
+func taskForOutput(task model.Task) *model.Task {
+	task.CanRecoverMedia = task.MediaRecoveryJSON != "" && task.Status == model.TaskStatusFailed
+	task.Diagnostic = taskExecutionDiagnostic(&task)
+	task.InputJSON = publicTaskInputJSON(task.InputJSON)
+	// Task.Error 可能来自历史记录中的“前置原因；上游：原文”。
+	// 普通用户任务接口只返回可行动提示，完整上游诊断留在后台请求日志。
+	if strings.TrimSpace(task.Error) != "" {
+		task.Error = userFacingTaskError(task.Error)
+	}
+	task.ProviderCancelError = sanitizeUserVisibleError(task.ProviderCancelError)
+	// 普通任务接口只暴露前台模型身份；渠道模型和供应线路属于管理员内部信息。
+	task.LogicalModelRevisionID = ""
+	task.RouteID = ""
+	task.ChannelModelID = ""
+	return &task
+}
+
+func publicTaskInputJSON(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return ""
+	}
+	public := map[string]any{}
+	// 任务完成后仍需依靠这些非敏感 ID 恢复项目产物归属；密钥等配置继续被过滤。
+	for _, key := range []string{"mode", "metadata", "workflowStepId", "domainProjectId", "assetVersionId", "resourceId", "mediaType", "role"} {
+		if value, ok := input[key]; ok {
+			public[key] = value
+		}
+	}
+	if len(public) == 0 {
+		return ""
+	}
+	if workbench := publicWorkbenchInput(input); workbench != nil {
+		public["workbench"] = workbench
+	}
+	data, _ := json.Marshal(public)
+	return string(data)
+}
+
+func publicWorkbenchInput(input map[string]any) map[string]any {
+	metadata, ok := input["metadata"].(map[string]any)
+	if !ok || metadata["source"] != "workbench" {
+		return nil
+	}
+	kind := strings.TrimSpace(stringValue(metadata["workbenchKind"]))
+	if kind != model.WorkbenchKindImage && kind != model.WorkbenchKindVideo {
+		return nil
+	}
+	snapshot, _ := metadata["workbench"].(map[string]any)
+	result := map[string]any{
+		"kind":       kind,
+		"parameters": publicWorkbenchParameters(kind, snapshot, input),
+	}
+	if toolID := strings.TrimSpace(stringValue(metadata["workbenchToolId"])); toolID != "" {
+		result["toolId"] = toolID
+	}
+	if presetID := strings.TrimSpace(stringValue(metadata["workbenchPresetId"])); presetID != "" {
+		result["presetId"] = presetID
+	}
+	result["references"] = publicWorkbenchReferences(snapshot["references"], input)
+	if batch, ok := snapshot["batch"].(map[string]any); ok {
+		id := strings.TrimSpace(stringValue(batch["id"]))
+		index, indexOK := workbenchBatchInteger(batch["index"])
+		count, countOK := workbenchBatchInteger(batch["count"])
+		if indexOK && countOK && workbench.ValidTaskBatch(id, index, count) {
+			result["batch"] = map[string]any{"id": id, "index": index, "count": count}
+		}
+	}
+	return result
+}
+
+// 批次序号从 0 开始，不能复用 workbenchInteger（它要求 >= 1）。
+func workbenchBatchInteger(value any) (int, bool) {
+	switch number := value.(type) {
+	case float64:
+		parsed := int(number)
+		return parsed, float64(parsed) == number
+	case int:
+		return number, true
+	case int64:
+		parsed := int(number)
+		return parsed, int64(parsed) == number
+	case json.Number:
+		parsed, err := strconv.Atoi(number.String())
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func publicWorkbenchParameters(kind string, snapshot, input map[string]any) map[string]any {
+	parameters, _ := snapshot["parameters"].(map[string]any)
+	config, _ := input["config"].(map[string]any)
+	result := map[string]any{}
+	if kind == model.WorkbenchKindImage {
+		copyWorkbenchTextParameter(result, "size", parameters["size"])
+		copyWorkbenchTextParameter(result, "quality", parameters["quality"])
+		copyWorkbenchTextParameter(result, "imageResolution", parameters["imageResolution"])
+		if result["size"] == nil {
+			copyWorkbenchTextParameter(result, "size", config["size"])
+		}
+		if result["quality"] == nil {
+			copyWorkbenchTextParameter(result, "quality", config["quality"])
+		}
+		if result["imageResolution"] == nil {
+			copyWorkbenchTextParameter(result, "imageResolution", config["imageResolution"])
+		}
+		if value, ok := workbenchInteger(parameters["count"], 20); ok {
+			result["count"] = value
+		} else if value, ok := workbenchInteger(config["count"], 20); ok {
+			result["count"] = value
+		}
+		return result
+	}
+	if value, ok := workbenchInteger(parameters["seconds"], 3600); ok {
+		result["seconds"] = value
+	} else if value, ok := workbenchInteger(config["videoSeconds"], 3600); ok {
+		result["seconds"] = value
+	}
+	copyWorkbenchTextParameter(result, "ratio", firstWorkbenchValue(parameters["ratio"], config["size"]))
+	copyWorkbenchTextParameter(result, "resolution", firstWorkbenchValue(parameters["resolution"], config["vquality"]))
+	if value, ok := workbenchBoolean(firstWorkbenchValue(parameters["generateAudio"], config["videoGenerateAudio"])); ok {
+		result["generateAudio"] = value
+	}
+	if value, ok := workbenchBoolean(firstWorkbenchValue(parameters["watermark"], config["videoWatermark"])); ok {
+		result["watermark"] = value
+	}
+	return result
+}
+
+func firstWorkbenchValue(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func copyWorkbenchTextParameter(target map[string]any, key string, value any) {
+	text, ok := value.(string)
+	text = strings.TrimSpace(text)
+	if ok && text != "" && len(text) <= 64 && !strings.Contains(text, "://") && !strings.HasPrefix(strings.ToLower(text), "data:") {
+		target[key] = text
+	}
+}
+
+func workbenchInteger(value any, max int) (int, bool) {
+	var parsed int
+	switch number := value.(type) {
+	case float64:
+		parsed = int(number)
+		if float64(parsed) != number {
+			return 0, false
+		}
+	case int:
+		parsed = number
+	case int64:
+		parsed = int(number)
+		if int64(parsed) != number {
+			return 0, false
+		}
+	case json.Number:
+		var err error
+		parsed, err = strconv.Atoi(number.String())
+		if err != nil {
+			return 0, false
+		}
+	case string:
+		var err error
+		parsed, err = strconv.Atoi(strings.TrimSpace(number))
+		if err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	return parsed, parsed >= 1 && parsed <= max
+}
+
+func workbenchBoolean(value any) (bool, bool) {
+	switch flag := value.(type) {
+	case bool:
+		return flag, true
+	case string:
+		if strings.EqualFold(flag, "true") {
+			return true, true
+		}
+		if strings.EqualFold(flag, "false") {
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func publicWorkbenchReferences(snapshotReferences any, input map[string]any) []map[string]any {
+	result := make([]map[string]any, 0, 20)
+	appendReference := func(value map[string]any, fallbackKind string) {
+		if len(result) >= 20 {
+			return
+		}
+		resourceID := strings.TrimSpace(stringValue(value["resourceId"]))
+		if resourceID == "" {
+			storageKey := strings.TrimSpace(stringValue(value["storageKey"]))
+			if strings.HasPrefix(storageKey, "resource:") {
+				resourceID = strings.TrimPrefix(storageKey, "resource:")
+			}
+		}
+		if resourceID == "" || strings.ContainsAny(resourceID, "/\\?#") {
+			return
+		}
+		kind := strings.TrimSpace(stringValue(value["kind"]))
+		if kind != "image" && kind != "video" && kind != "audio" {
+			kind = fallbackKind
+		}
+		if kind != "image" && kind != "video" && kind != "audio" {
+			return
+		}
+		item := map[string]any{"resourceId": resourceID, "kind": kind}
+		role := strings.TrimSpace(stringValue(value["role"]))
+		if role == "reference" || role == "first_frame" || role == "last_frame" {
+			item["role"] = role
+		}
+		if slotKey := safeWorkbenchSlotKey(stringValue(value["slotKey"])); slotKey != "" {
+			item["slotKey"] = slotKey
+		}
+		result = append(result, item)
+	}
+	if values, ok := snapshotReferences.([]any); ok {
+		for _, value := range values {
+			if item, ok := value.(map[string]any); ok {
+				appendReference(item, "")
+			}
+		}
+	}
+	if len(result) > 0 {
+		return result
+	}
+	for _, group := range []struct{ key, kind string }{{"referenceImages", "image"}, {"referenceVideos", "video"}, {"referenceAudios", "audio"}} {
+		values, _ := input[group.key].([]any)
+		for _, value := range values {
+			if item, ok := value.(map[string]any); ok {
+				appendReference(item, group.kind)
+			}
+		}
+	}
+	return result
+}
+
+func safeWorkbenchSlotKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 64 {
+		return ""
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '_' || character == '-' {
+			continue
+		}
+		return ""
+	}
+	return value
+}

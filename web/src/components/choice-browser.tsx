@@ -1,3 +1,5 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 import { Input } from "antd";
 import { Search } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
@@ -19,7 +21,7 @@ export function ChoiceBrowser({
     onChange,
     options,
     label,
-    placeholder = "搜索名称、来源或请求路径",
+    placeholder,
     loading = false,
     error = "",
     disabled = false,
@@ -38,6 +40,8 @@ export function ChoiceBrowser({
     "aria-describedby"?: string;
     "aria-invalid"?: boolean | "true" | "false";
 }) {
+    const { t } = useInterfaceTranslation();
+    const searchPlaceholder = placeholder ?? t("choiceBrowserUi.searchPlaceholder" as InterfaceMessageKey);
     const name = useId();
     const [query, setQuery] = useState("");
     const selected = options.find((option) => option.value === value);
@@ -47,10 +51,10 @@ export function ChoiceBrowser({
 
     return (
         <div className="choice-browser">
-            <Input id={id} {...aria} allowClear aria-label={`搜索${label}`} disabled={unavailable} prefix={<Search className="size-3.5" aria-hidden="true" />} placeholder={placeholder} value={query} onChange={(event) => setQuery(event.target.value)} />
+            <Input id={id} {...aria} allowClear aria-label={t("choiceBrowserUi.searchLabel" as InterfaceMessageKey, { label })} disabled={unavailable} prefix={<Search className="size-3.5" aria-hidden="true" />} placeholder={searchPlaceholder} value={query} onChange={(event) => setQuery(event.target.value)} />
             {loading || error || !options.length ? (
                 <div className="choice-browser-state" role={error ? "alert" : "status"}>
-                    {loading ? "正在读取可选项…" : error || "暂无可用选项"}
+                    {loading ? t("choiceBrowserUi.loadingChoices" as InterfaceMessageKey) : error || t("choiceBrowserUi.noChoices" as InterfaceMessageKey)}
                 </div>
             ) : (
                 <div className="choice-browser-panels">
@@ -69,12 +73,12 @@ export function ChoiceBrowser({
                         ))}
                         {!visible.length && (
                             <div className="choice-browser-state" role="status">
-                                没有匹配的选项
+                                {t("sharedDialogsUi.noMatchingOptions")}
                             </div>
                         )}
                     </div>
                     <div className="choice-browser-detail" aria-live="polite">
-                        <span>当前选择</span>
+                        <span>{t("sharedDialogsUi.currentSelection")}</span>
                         {selected ? (
                             <>
                                 <strong>{selected.label}</strong>
@@ -88,7 +92,7 @@ export function ChoiceBrowser({
                                 </dl>
                             </>
                         ) : (
-                            <p>{value ? `当前配置 ${value} 不在可用目录中，请重新选择。` : "选择左侧选项查看详情"}</p>
+                            <p>{value ? t("choiceBrowserUi.unavailableValue" as InterfaceMessageKey, { value }) : t("choiceBrowserUi.selectToViewDetails" as InterfaceMessageKey)}</p>
                         )}
                     </div>
                 </div>

@@ -1,0 +1,865 @@
+package app
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/payment"
+	"infinite-canvas/backend/internal/protocol"
+	"infinite-canvas/backend/internal/repository"
+)
+
+const (
+	maxTopupCreditsMicrocredits = int64(1_000_000_000) * CreditScale
+)
+
+type PaymentProviderView struct {
+	PaymentMethods    []string `json:"paymentMethods,omitempty"`
+	ID                string   `json:"id"`
+	PluginID          string   `json:"pluginId"`
+	Name              string   `json:"name"`
+	Icon              string   `json:"icon"`
+	CheckoutMode      string   `json:"checkoutMode"`
+	Enabled           bool     `json:"enabled"`
+	PluginEnabled     bool     `json:"pluginEnabled"`
+	Configured        bool     `json:"configured"`
+	CloseAfterMinutes int      `json:"closeAfterMinutes"`
+	// SettlementCurrency 和 Methods 只在用户端渠道列表中返回。
+	SettlementCurrency string              `json:"settlementCurrency,omitempty"`
+	Methods            []PaymentMethodView `json:"methods,omitempty"`
+}
+
+// PaymentMethodView 是渠道内可选的支付方式，例如易支付的支付宝、微信支付。
+type PaymentMethodView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon,omitempty"`
+}
+
+type AdminPaymentProviderView struct {
+	PaymentProviderView
+	ConfigID         string                   `json:"configId,omitempty"`
+	ConfigEnabled    bool                     `json:"configEnabled"`
+	Version          int64                    `json:"version"`
+	Values           map[string]string        `json:"values"`
+	SecretConfigured map[string]bool          `json:"secretConfigured"`
+	ConfigFields     []protocol.ManifestField `json:"configFields"`
+	UpdatedAt        *time.Time               `json:"updatedAt,omitempty"`
+}
+
+type UpdatePaymentProviderConfigRequest struct {
+	Enabled           bool              `json:"enabled"`
+	CloseAfterMinutes int               `json:"closeAfterMinutes"`
+	Values            map[string]string `json:"values"`
+}
+
+type TopupProductRequest struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Kind        model.TopupProductKind `json:"kind"`
+	AmountFen   int64                  `json:"amountFen"`
+	// Currency 为空时使用后台默认充值货币。
+	Currency            string                  `json:"currency"`
+	CreditsMicrocredits int64                   `json:"creditsMicrocredits"`
+	StorageBytes        int64                   `json:"storageBytes"`
+	StorageDurationDays int                     `json:"storageDurationDays"`
+	Enabled             bool                    `json:"enabled"`
+	SortOrder           int                     `json:"sortOrder"`
+	SaleStrategy        model.TopupSaleStrategy `json:"saleStrategy"`
+	PeriodDays          int                     `json:"periodDays"`
+	PeriodPurchaseLimit int                     `json:"periodPurchaseLimit"`
+	StockTotal          int64                   `json:"stockTotal"`
+	SaleStartAt         *time.Time              `json:"saleStartAt"`
+	SaleEndAt           *time.Time              `json:"saleEndAt"`
+}
+
+type CreatePaymentOrderRequest struct {
+	PaymentMethod string `json:"paymentMethod,omitempty"`
+	ClientIP      string `json:"-"`
+	ProductID     string `json:"productId"`
+	ProviderID    string `json:"providerId"`
+	// Method 是渠道内的支付方式 ID；渠道只启用一种方式时可留空。
+	Method         string `json:"method"`
+	IdempotencyKey string `json:"idempotencyKey"`
+}
+
+type PaymentCheckoutView struct {
+	Mode      string     `json:"mode"`
+	Value     string     `json:"value,omitempty"`
+	URL       string     `json:"url,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+type PaymentOrderView struct {
+	CanClose            bool                     `json:"canClose"`
+	ID                  string                   `json:"id"`
+	UserID              string                   `json:"userId,omitempty"`
+	MerchantOrderNo     string                   `json:"merchantOrderNo"`
+	ProductID           string                   `json:"productId"`
+	ProductName         string                   `json:"productName"`
+	ProductKind         model.TopupProductKind   `json:"productKind"`
+	ProviderID          string                   `json:"providerId"`
+	PaymentMethod       string                   `json:"paymentMethod,omitempty"`
+	AmountFen           int64                    `json:"amountFen"`
+	Currency            string                   `json:"currency"`
+	ChargeAmountFen     int64                    `json:"chargeAmountFen"`
+	ChargeCurrency      string                   `json:"chargeCurrency"`
+	ExchangeRate        string                   `json:"exchangeRate,omitempty"`
+	CreditsMicrocredits int64                    `json:"creditsMicrocredits"`
+	StorageBytes        int64                    `json:"storageBytes,omitempty"`
+	StorageDurationDays int                      `json:"storageDurationDays,omitempty"`
+	Status              model.PaymentOrderStatus `json:"status"`
+	ProviderStatus      string                   `json:"providerStatus,omitempty"`
+	ProviderTradeNo     string                   `json:"providerTradeNo,omitempty"`
+	Checkout            PaymentCheckoutView      `json:"checkout"`
+	ExpiresAt           time.Time                `json:"expiresAt"`
+	ProviderPaidAt      *time.Time               `json:"providerPaidAt,omitempty"`
+	CreditedAt          *time.Time               `json:"creditedAt,omitempty"`
+	ClosedAt            *time.Time               `json:"closedAt,omitempty"`
+	CreatedAt           time.Time                `json:"createdAt"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+}
+
+type AdminPaymentOrderPage struct {
+	Orders []AdminPaymentOrderView `json:"orders"`
+	Total  int64                   `json:"total"`
+	Page   int                     `json:"page"`
+	Limit  int                     `json:"pageSize"`
+}
+
+type PaymentOrderPage struct {
+	Orders []PaymentOrderView `json:"orders"`
+	Total  int64              `json:"total"`
+	Page   int                `json:"page"`
+	Limit  int                `json:"pageSize"`
+}
+
+type AdminPaymentOrderUser struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+}
+
+type AdminPaymentOrderView struct {
+	PaymentOrderView
+	User *AdminPaymentOrderUser `json:"user"`
+}
+
+func (s *Service) CreatePaymentOrder(ctx context.Context, actor *model.User, request CreatePaymentOrderRequest) (*PaymentOrderView, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	idempotencyKey := strings.TrimSpace(request.IdempotencyKey)
+	if idempotencyKey == "" {
+		return nil, BadAuthRequest("支付幂等标识不能为空")
+	}
+	if len(idempotencyKey) > 120 {
+		return nil, BadAuthRequest("支付幂等标识过长")
+	}
+	productID := strings.TrimSpace(request.ProductID)
+	providerID := strings.TrimSpace(request.ProviderID)
+	requestedMethod := strings.ToLower(strings.TrimSpace(request.Method))
+	legacyMethod := strings.ToLower(strings.TrimSpace(request.PaymentMethod))
+	if requestedMethod == "" {
+		requestedMethod = legacyMethod
+	} else if legacyMethod != "" && legacyMethod != requestedMethod {
+		return nil, BadAuthRequest("支付方式参数不一致")
+	}
+
+	if existing, err := s.repo.PaymentOrderByIdempotency(actor.ID, idempotencyKey); err == nil {
+		// 留空方式由服务端自动选定，重试时不视为冲突；显式换了方式则必须换幂等键。
+		if existing.ProductID != productID || existing.ProviderID != providerID || (requestedMethod != "" && existing.PaymentMethod != requestedMethod) {
+			return nil, NewAppError(http.StatusConflict, "支付幂等标识已用于不同的商品或支付渠道")
+		}
+		result := paymentOrderView(*existing)
+		return &result, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	product, err := s.repo.TopupProduct(productID)
+	if err != nil || !product.Enabled {
+		return nil, BadAuthRequest("充值商品不存在或已停用")
+	}
+	// 积分功能关闭时积分商品不可购买；存储空间商品不依赖积分功能。
+	if topupProductKind(product.Kind) != model.TopupProductKindStorage {
+		if err := s.RequireFeature(FeatureCredits); err != nil {
+			return nil, err
+		}
+	}
+	provider, ok := s.paymentRegistry.Get(providerID)
+	if !ok {
+		return nil, BadAuthRequest("未知支付渠道")
+	}
+	view, config, err := s.paymentProviderView(provider.Descriptor())
+	if err != nil {
+		return nil, err
+	}
+	if !view.Enabled || !view.Configured || config == nil {
+		return nil, Forbidden("支付渠道未启用或尚未配置")
+	}
+	values, err := s.decryptPaymentConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	options, err := s.paymentProviderOptions(provider.Descriptor().ID, values)
+	if err != nil {
+		return nil, err
+	}
+	method, err := resolvePaymentMethod(options.Methods, requestedMethod)
+	if err != nil {
+		return nil, err
+	}
+	// 商品行总有货币（列默认 CNY），这里的兜底与列默认值一致。
+	productCurrency := firstNonEmpty(product.Currency, model.PriceCurrencyCNY)
+	rateMicros := int64(0)
+	if productCurrency != options.SettlementCurrency {
+		if rateMicros, err = s.paymentRateMicros(); err != nil {
+			return nil, err
+		}
+	}
+	chargeAmount, appliedRate, err := convertPaymentAmount(product.AmountFen, productCurrency, options.SettlementCurrency, rateMicros)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	order := &model.PaymentOrder{
+		ID: newID(), UserID: actor.ID, IdempotencyKey: idempotencyKey, MerchantOrderNo: newID(),
+		ProductID: product.ID, ProductName: product.Name, ProductKind: topupProductKind(product.Kind),
+		StorageBytes: product.StorageBytes, StorageDurationDays: product.StorageDurationDays, ProviderID: provider.Descriptor().ID,
+		PluginID: provider.Descriptor().PluginID, PluginVersion: provider.Descriptor().PluginVersion, ProviderConfigID: config.ID, ProviderConfigVersion: config.Version,
+		AmountFen: product.AmountFen, Currency: productCurrency, CreditsMicrocredits: product.CreditsMicrocredits,
+		ChargeAmountFen: chargeAmount, ChargeCurrency: options.SettlementCurrency, ExchangeRateMicros: appliedRate, PaymentMethod: method,
+		Status: model.PaymentOrderCreated, CheckoutMode: provider.Descriptor().CheckoutMode,
+		ExpiresAt: now.Add(time.Duration(config.CloseAfterMinutes) * time.Minute),
+	}
+	order, created, err := s.repo.CreatePaymentOrderWithProductReservation(order)
+	if errors.Is(err, repository.ErrTopupUnavailable) {
+		return nil, NewAppError(http.StatusConflict, "充值商品当前不可购买")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !created {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	checkout, err := provider.CreateOrder(ctx, values, paymentCreateRequest(order, product.Name, values, config.ID, request.ClientIP))
+	if err != nil {
+		_ = s.repo.SetPaymentOrderCreateFailure(order.ID, safePaymentError(err))
+		return nil, WrapAppError(http.StatusBadGateway, "支付渠道下单失败，请稍后重试", err)
+	}
+	if err := s.repo.SetPaymentOrderCheckout(order.ID, checkout.Mode, checkout.Value, checkout.ExpiresAt); err != nil {
+		_ = s.repo.SetPaymentOrderCreateFailure(order.ID, safePaymentError(err))
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(order.ID)
+	if err != nil {
+		return nil, err
+	}
+	result := paymentOrderView(*order)
+	return &result, nil
+}
+
+// resolvePaymentMethod 校验用户选择的支付方式属于渠道当前启用的方式。只有一种方式时自动选中；
+// 渠道没有声明方式时必须留空，由插件使用自己的默认方式。
+func resolvePaymentMethod(methods []PaymentMethodView, requested string) (string, error) {
+	if len(methods) == 0 {
+		if requested != "" {
+			return "", BadAuthRequest("该支付渠道不支持选择支付方式")
+		}
+		return "", nil
+	}
+	if requested == "" {
+		if len(methods) == 1 {
+			return methods[0].ID, nil
+		}
+		return "", BadAuthRequest("请选择支付方式")
+	}
+	for _, method := range methods {
+		if method.ID == requested {
+			return requested, nil
+		}
+	}
+	return "", BadAuthRequest("所选支付方式不可用，请刷新后重试")
+}
+
+// paymentCreateRequest 按订单快照组装渠道下单请求；首次下单与重建收银台共用，保证金额、货币和方式不漂移。
+func paymentCreateRequest(order *model.PaymentOrder, description string, values payment.Config, configID string, clientIP ...string) payment.CreateRequest {
+	baseURL := strings.TrimRight(values["publicBaseUrl"], "/")
+	return payment.CreateRequest{
+		ClientIP: firstNonEmpty(clientIP...), PaymentMethod: order.PaymentMethod, ChannelID: order.PaymentChannelID,
+		MerchantOrderNo: order.MerchantOrderNo, Description: description, AmountFen: order.ChargeAmountFen,
+		Currency: order.ChargeCurrency, Method: order.PaymentMethod, ExpiresAt: order.ExpiresAt,
+		NotifyURL: baseURL + "/api/payments/notify/" + url.PathEscape(order.ProviderID) + "/" + url.PathEscape(configID),
+		ReturnURL: baseURL + "/api/payments/return/" + url.PathEscape(order.ProviderID) + "?orderId=" + url.QueryEscape(order.ID),
+	}
+}
+
+func (s *Service) PaymentOrder(actor *model.User, id string) (*PaymentOrderView, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	order, err := s.repo.PaymentOrderForUser(actor.ID, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, NotFound("订单不存在")
+	}
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) PaymentOrders(actor *model.User, page, limit int) (*PaymentOrderPage, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	page, limit = normalizeAdminPage(page, limit)
+	orders, total, err := s.repo.PaymentOrdersForUser(actor.ID, "", limit, (page-1)*limit)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]PaymentOrderView, 0, len(orders))
+	for _, order := range orders {
+		views = append(views, paymentOrderView(order))
+	}
+	return &PaymentOrderPage{Orders: views, Total: total, Page: page, Limit: limit}, nil
+}
+
+func (s *Service) PaymentCheckout(actor *model.User, id string) (string, error) {
+	if actor == nil {
+		return "", Unauthorized("请先登录")
+	}
+	order, err := s.repo.PaymentOrderForUser(actor.ID, id)
+	if err != nil {
+		return "", err
+	}
+	if order.Status != model.PaymentOrderPending || order.CheckoutMode != "redirect" || strings.TrimSpace(order.CheckoutValue) == "" || !order.ExpiresAt.After(time.Now()) {
+		return "", BadAuthRequest("支付订单当前不能跳转收银台")
+	}
+	return order.CheckoutValue, nil
+}
+
+// RefreshPaymentCheckout reuses the original merchant order number and order
+// snapshot. It always queries the provider before rebuilding a checkout so an
+// ambiguous create response cannot turn into a duplicate payment attempt.
+func (s *Service) RefreshPaymentCheckout(ctx context.Context, actor *model.User, id string, clientIP ...string) (*PaymentOrderView, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	order, err := s.repo.PaymentOrderForUser(actor.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if (order.CheckoutMode != "qr_code" && order.CheckoutMode != "redirect") || (order.Status != model.PaymentOrderPending && order.Status != model.PaymentOrderCreateFailed) || !order.ExpiresAt.After(time.Now()) {
+		return nil, BadAuthRequest("支付订单当前不能刷新收银台")
+	}
+	provider, config, values, err := s.paymentRuntimeForOrder(order)
+	if err != nil {
+		return nil, err
+	}
+	providerResult, queryErr := provider.QueryOrder(ctx, values, payment.QueryRequest{MerchantOrderNo: order.MerchantOrderNo})
+	if queryErr == nil {
+		if strings.TrimSpace(providerResult.MerchantOrderNo) != order.MerchantOrderNo {
+			return nil, repository.ErrPaymentEvidenceMismatch
+		}
+		_ = s.repo.RecordPaymentQuery(order.ID, providerResult.ProviderStatus)
+		updated, applyErr := s.applyPaymentResult(order.ProviderID, providerResult)
+		if applyErr != nil {
+			return nil, applyErr
+		}
+		if providerResult.Paid || providerResult.Closed {
+			view := paymentOrderView(*updated)
+			return &view, nil
+		}
+	} else if !errors.Is(queryErr, payment.ErrOrderNotFound) {
+		return nil, WrapAppError(http.StatusBadGateway, "刷新支付收银台前查单失败，请稍后重试", queryErr)
+	}
+	checkout, err := provider.CreateOrder(ctx, values, paymentCreateRequest(order, order.ProductName, values, config.ID, clientIP...))
+	if err != nil {
+		return nil, WrapAppError(http.StatusBadGateway, "刷新支付收银台失败，请稍后重试", err)
+	}
+	if err := s.repo.SetPaymentOrderCheckout(order.ID, checkout.Mode, checkout.Value, checkout.ExpiresAt); err != nil {
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(order.ID)
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) QueryPaymentOrder(ctx context.Context, actor *model.User, id string) (*PaymentOrderView, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	order, err := s.repo.PaymentOrderForUser(actor.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status == model.PaymentOrderCredited || order.Status == model.PaymentOrderClosed {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	if order.LastQueriedAt != nil && time.Since(*order.LastQueriedAt) < 2*time.Second {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	if err := s.queryPaymentOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(order.ID)
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) ClosePaymentOrder(ctx context.Context, actor *model.User, id string) (*PaymentOrderView, error) {
+	if actor == nil {
+		return nil, Unauthorized("请先登录")
+	}
+	order, err := s.repo.PaymentOrderForUser(actor.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status == model.PaymentOrderCredited || order.Status == model.PaymentOrderClosed {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	if err := s.closePaymentOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(order.ID)
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) AcceptPaymentNotification(ctx context.Context, providerID, configID string, headers http.Header, rawBody []byte) error {
+	provider, ok := s.paymentRegistry.Get(providerID)
+	if !ok {
+		return BadAuthRequest("未知支付通知渠道")
+	}
+	config, err := s.repo.PaymentProviderConfig(configID)
+	if err != nil || config.ProviderID != providerID {
+		return BadAuthRequest("支付通知配置版本不存在")
+	}
+	values, err := s.decryptPaymentConfig(config)
+	if err != nil {
+		return err
+	}
+	notification, err := provider.VerifyNotification(ctx, values, headers, rawBody)
+	if err != nil {
+		return BadAuthRequest("支付通知验签失败")
+	}
+	order, err := s.repo.PaymentOrderByMerchant(providerID, notification.MerchantOrderNo)
+	if err != nil || order.ProviderConfigID != config.ID {
+		return BadAuthRequest("支付通知订单不存在或配置版本不匹配")
+	}
+	normalized, err := json.Marshal(notification.Result)
+	if err != nil {
+		return err
+	}
+	payloadCipher, err := s.encryptSettingSecret(string(rawBody))
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(rawBody)
+	inbox := &model.PaymentNotification{
+		ID: newID(), ProviderID: providerID, ProviderEventID: truncateRunes(notification.EventID, 160),
+		ProviderConfigID: config.ID, MerchantOrderNo: order.MerchantOrderNo, PaymentOrderID: order.ID,
+		PayloadDigest: hex.EncodeToString(digest[:]), PayloadCipher: payloadCipher, NormalizedJSON: string(normalized),
+		Status: model.PaymentNotificationPending, NextAttemptAt: time.Now(),
+	}
+	created, err := s.repo.SaveVerifiedPaymentNotification(inbox)
+	if err != nil || !created {
+		return err
+	}
+	// Keep the callback path fast but try once immediately. A durable inbox row
+	// remains for the worker if the credit transaction cannot complete now.
+	if err := s.processPaymentNotification(inbox); err != nil {
+		_ = s.repo.RetryPaymentNotification(inbox.ID, safePaymentError(err), time.Now().Add(5*time.Second))
+	}
+	return nil
+}
+
+func (s *Service) processPaymentNotification(notification *model.PaymentNotification) error {
+	var result payment.Result
+	if err := json.Unmarshal([]byte(notification.NormalizedJSON), &result); err != nil {
+		return err
+	}
+	if !result.Paid {
+		return errors.New("支付通知不是成功状态")
+	}
+	if _, err := s.applyPaymentResult(notification.ProviderID, result); err != nil {
+		return err
+	}
+	return s.repo.CompletePaymentNotification(notification.ID)
+}
+
+func (s *Service) queryPaymentOrder(ctx context.Context, order *model.PaymentOrder) error {
+	provider, config, values, err := s.paymentRuntimeForOrder(order)
+	if err != nil {
+		return err
+	}
+	_ = config
+	result, err := provider.QueryOrder(ctx, values, payment.QueryRequest{MerchantOrderNo: order.MerchantOrderNo})
+	if errors.Is(err, payment.ErrOrderNotFound) {
+		_ = s.repo.RecordPaymentQuery(order.ID, "NOT_FOUND")
+		return nil
+	}
+	if err != nil {
+		return WrapAppError(http.StatusBadGateway, "支付渠道查单失败，请稍后重试", err)
+	}
+	if strings.TrimSpace(result.MerchantOrderNo) != order.MerchantOrderNo {
+		return repository.ErrPaymentEvidenceMismatch
+	}
+	_ = s.repo.RecordPaymentQuery(order.ID, result.ProviderStatus)
+	_, err = s.applyPaymentResult(order.ProviderID, result)
+	return err
+}
+
+func (s *Service) closePaymentOrder(ctx context.Context, order *model.PaymentOrder) error {
+	provider, _, values, err := s.paymentRuntimeForOrder(order)
+	if err != nil {
+		return err
+	}
+	queryNotFound := false
+	result, queryErr := provider.QueryOrder(ctx, values, payment.QueryRequest{MerchantOrderNo: order.MerchantOrderNo})
+	if queryErr == nil {
+		if strings.TrimSpace(result.MerchantOrderNo) != order.MerchantOrderNo {
+			return repository.ErrPaymentEvidenceMismatch
+		}
+		_ = s.repo.RecordPaymentQuery(order.ID, result.ProviderStatus)
+		if _, err := s.applyPaymentResult(order.ProviderID, result); err != nil {
+			return err
+		}
+		if result.Paid || result.Closed {
+			return nil
+		}
+	} else if errors.Is(queryErr, payment.ErrOrderNotFound) {
+		queryNotFound = true
+	} else {
+		return WrapAppError(http.StatusBadGateway, "关单前查单失败，请稍后重试", queryErr)
+	}
+	closed, err := provider.CloseOrder(ctx, values, payment.CloseRequest{MerchantOrderNo: order.MerchantOrderNo})
+	if err == nil {
+		if closed.MerchantOrderNo == "" {
+			closed.MerchantOrderNo = order.MerchantOrderNo
+		}
+		if strings.TrimSpace(closed.MerchantOrderNo) != order.MerchantOrderNo {
+			return repository.ErrPaymentEvidenceMismatch
+		}
+		if closed.Paid || closed.Closed {
+			_, applyErr := s.applyPaymentResult(order.ProviderID, closed)
+			return applyErr
+		}
+		return s.repo.MarkPaymentOrderClosed(order.ID, closed.ProviderStatus)
+	}
+
+	// A payment can complete after the first query and immediately before the
+	// close request. Query once more on every close failure so a successful
+	// payment is credited instead of being left in a closing retry loop.
+	recheck, recheckErr := provider.QueryOrder(ctx, values, payment.QueryRequest{MerchantOrderNo: order.MerchantOrderNo})
+	if recheckErr == nil {
+		if strings.TrimSpace(recheck.MerchantOrderNo) != order.MerchantOrderNo {
+			return repository.ErrPaymentEvidenceMismatch
+		}
+		_ = s.repo.RecordPaymentQuery(order.ID, recheck.ProviderStatus)
+		if _, applyErr := s.applyPaymentResult(order.ProviderID, recheck); applyErr != nil {
+			return applyErr
+		}
+		if recheck.Paid || recheck.Closed {
+			return nil
+		}
+	}
+	if queryNotFound && errors.Is(err, payment.ErrOrderNotFound) && errors.Is(recheckErr, payment.ErrOrderNotFound) {
+		return s.repo.MarkPaymentOrderClosed(order.ID, "NOT_FOUND")
+	}
+	return WrapAppError(http.StatusBadGateway, "支付渠道关单失败，请稍后重试", err)
+}
+
+func (s *Service) applyPaymentResult(providerID string, result payment.Result) (*model.PaymentOrder, error) {
+	order, err := s.repo.PaymentOrderByMerchant(providerID, result.MerchantOrderNo)
+	if err != nil {
+		return nil, err
+	}
+	if result.Paid {
+		if result.AmountFen != order.ChargeAmountFen || result.Currency != order.ChargeCurrency {
+			return nil, repository.ErrPaymentEvidenceMismatch
+		}
+		completed, granted, err := s.repo.CompletePaymentOrder(providerID, result.MerchantOrderNo, repository.PaymentEvidence{
+			ProviderTradeNo: result.ProviderTradeNo, ProviderStatus: result.ProviderStatus,
+			AmountFen: result.AmountFen, Currency: result.Currency, PaidAt: result.PaidAt,
+		})
+		if err == nil && granted {
+			s.afterStorageOrderGranted(completed)
+		}
+		if err == nil {
+			// 不只看 granted：已入账订单的重复通知也会补发此前失败的返佣，唯一约束保证不重复。
+			s.grantReferralCommission(completed)
+		}
+		return completed, err
+	}
+	if result.Closed {
+		if err := s.repo.MarkPaymentOrderClosed(order.ID, result.ProviderStatus); err != nil {
+			return nil, err
+		}
+		return s.repo.PaymentOrder(order.ID)
+	}
+	return order, nil
+}
+
+func (s *Service) paymentRuntimeForOrder(order *model.PaymentOrder) (payment.Provider, *model.PaymentProviderConfig, payment.Config, error) {
+	config, err := s.paymentConfigForOrder(order)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	provider, ok := s.paymentRegistry.Get(order.ProviderID)
+	if !ok {
+		return nil, nil, nil, errors.New("支付宿主适配器不存在")
+	}
+	values, err := s.decryptPaymentConfig(config)
+	return provider, config, values, err
+}
+
+// topupProductKind 把迁移前或未填写的类型视为积分商品。
+func topupProductKind(kind model.TopupProductKind) model.TopupProductKind {
+	if kind == model.TopupProductKindMembership {
+		return kind
+	}
+	if kind == model.TopupProductKindStorage {
+		return kind
+	}
+	return model.TopupProductKindCredits
+}
+
+func paymentOrderView(order model.PaymentOrder) PaymentOrderView {
+	providerTradeNo := ""
+	if order.ProviderTradeNo != nil {
+		providerTradeNo = *order.ProviderTradeNo
+	}
+	checkout := PaymentCheckoutView{Mode: order.CheckoutMode, ExpiresAt: order.CheckoutExpiresAt}
+	if order.Status == model.PaymentOrderPending && order.ExpiresAt.After(time.Now()) {
+		if order.CheckoutMode == "qr_code" {
+			checkout.Value = order.CheckoutValue
+		} else if order.CheckoutMode == "redirect" {
+			checkout.URL = "/api/payments/topup-orders/" + url.PathEscape(order.ID) + "/checkout"
+		}
+	}
+	return PaymentOrderView{
+		CanClose: order.ProviderID != PaymentProviderCloudCatEPay && order.ProviderConfigID != "" && order.Status != model.PaymentOrderCredited && order.Status != model.PaymentOrderClosed,
+		ID:       order.ID, UserID: order.UserID, MerchantOrderNo: order.MerchantOrderNo, ProductID: order.ProductID, ProductName: order.ProductName,
+		ProductKind: topupProductKind(order.ProductKind), StorageBytes: order.StorageBytes, StorageDurationDays: order.StorageDurationDays,
+		ProviderID: order.ProviderID, PaymentMethod: order.PaymentMethod, AmountFen: order.AmountFen, Currency: order.Currency,
+		ChargeAmountFen: order.ChargeAmountFen, ChargeCurrency: order.ChargeCurrency, ExchangeRate: formatPaymentRate(order.ExchangeRateMicros),
+		CreditsMicrocredits: order.CreditsMicrocredits, Status: order.Status, ProviderStatus: order.ProviderStatus,
+		ProviderTradeNo: providerTradeNo, Checkout: checkout, ExpiresAt: order.ExpiresAt,
+		ProviderPaidAt: order.ProviderPaidAt, CreditedAt: order.CreditedAt, ClosedAt: order.ClosedAt,
+		CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
+	}
+}
+
+func (s *Service) AdminPaymentOrderPage(actor *model.User, query PaymentOrderQuery, page, limit int) (*AdminPaymentOrderPage, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	page, limit = normalizeAdminPage(page, limit)
+	filter, err := query.filter()
+	if err != nil {
+		return nil, err
+	}
+	orders, total, err := s.repo.AdminPaymentOrders(filter, limit, (page-1)*limit)
+	if err != nil {
+		return nil, err
+	}
+	userIDs := make([]string, 0, len(orders))
+	for _, order := range orders {
+		userIDs = append(userIDs, order.UserID)
+	}
+	users, err := s.repo.UsersByIDs(userIDs)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]AdminPaymentOrderView, 0, len(orders))
+	for _, order := range orders {
+		view := AdminPaymentOrderView{PaymentOrderView: paymentOrderView(order)}
+		if user, ok := users[order.UserID]; ok {
+			view.User = &AdminPaymentOrderUser{ID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Email: user.Email}
+		}
+		views = append(views, view)
+	}
+	return &AdminPaymentOrderPage{Orders: views, Total: total, Page: page, Limit: limit}, nil
+}
+
+func (s *Service) AdminQueryPaymentOrder(ctx context.Context, actor *model.User, id string) (*PaymentOrderView, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	order, err := s.repo.PaymentOrder(id)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status == model.PaymentOrderCredited || order.Status == model.PaymentOrderClosed {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	if err := s.queryPaymentOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(id)
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) AdminClosePaymentOrder(ctx context.Context, actor *model.User, id string) (*PaymentOrderView, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	order, err := s.repo.PaymentOrder(id)
+	if err != nil {
+		return nil, err
+	}
+	if order.Status == model.PaymentOrderCredited || order.Status == model.PaymentOrderClosed {
+		view := paymentOrderView(*order)
+		return &view, nil
+	}
+	if err := s.closePaymentOrder(ctx, order); err != nil {
+		return nil, err
+	}
+	order, err = s.repo.PaymentOrder(id)
+	if err != nil {
+		return nil, err
+	}
+	view := paymentOrderView(*order)
+	return &view, nil
+}
+
+func (s *Service) UserPaymentOrders(actor *model.User, status string, page, pageSize int) (*UserPaymentOrderPage, error) {
+	if actor == nil || strings.TrimSpace(actor.ID) == "" {
+		return nil, Unauthorized("请先登录")
+	}
+	status = strings.TrimSpace(status)
+	switch model.PaymentOrderStatus(status) {
+	case "", "all", model.PaymentOrderCreated, model.PaymentOrderPending, model.PaymentOrderClosing, model.PaymentOrderClosed, model.PaymentOrderCredited, model.PaymentOrderCreateFailed:
+	default:
+		return nil, BadAuthRequest("支付订单状态无效")
+	}
+	page, pageSize = normalizeAdminPage(page, pageSize)
+	if page-1 > int(^uint(0)>>1)/pageSize {
+		return nil, BadAuthRequest("分页范围无效")
+	}
+	orders, total, err := s.repo.PaymentOrdersForUser(actor.ID, status, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]PaymentOrderView, 0, len(orders))
+	for _, order := range orders {
+		items = append(items, paymentOrderView(order))
+	}
+	totalPages := total / int64(pageSize)
+	if total%int64(pageSize) != 0 {
+		totalPages++
+	}
+	return &UserPaymentOrderPage{Items: items, Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, nil
+}
+
+func paymentCheckoutError(err error, fallback string) error {
+	var providerErr *payment.ProviderError
+	if errors.As(err, &providerErr) && providerErr.Code == "cloudcat_create_rejected" {
+		return NewAppError(http.StatusUnprocessableEntity, "收款通道暂时无法受理该金额，请联系管理员检查通道余额或额度")
+	}
+	return WrapAppError(http.StatusBadGateway, fallback, err)
+}
+
+func (s *Service) paymentConfigForOrder(order *model.PaymentOrder) (*model.PaymentProviderConfig, error) {
+	if order == nil || strings.TrimSpace(order.ProviderConfigID) == "" || order.ProviderConfigVersion <= 0 {
+		return nil, NewAppError(http.StatusConflict, "支付订单缺少可验证的配置快照，仅支持查看状态")
+	}
+	config, err := s.repo.PaymentProviderConfig(order.ProviderConfigID)
+	if err != nil {
+		return nil, err
+	}
+	// 插件代码可独立升级；订单绑定的配置 ID 和版本才是商户凭据快照。
+	if config.ProviderID != order.ProviderID || config.PluginID != order.PluginID || config.Version != order.ProviderConfigVersion {
+		return nil, WrapAppError(http.StatusConflict, "支付订单与商户配置快照不匹配，请联系管理员核对", repository.ErrPaymentOrderStateConflict)
+	}
+	return config, nil
+}
+
+func paymentNotificationMethod(order *model.PaymentOrder, values payment.Config) string {
+	if order.PaymentMethod != "" {
+		return order.PaymentMethod
+	}
+	return strings.ToLower(strings.TrimSpace(values["paymentType"]))
+}
+
+func paymentRoutingChannel(values payment.Config, method string, amountFen int64) (string, error) {
+	if err := validatePaymentRoutingConfig(values); err != nil {
+		return "", err
+	}
+	if amountFen <= 0 {
+		return "", errors.New("支付金额必须为正数")
+	}
+	switch method {
+	case "alipay":
+		return values["alipayChannelId"], nil
+	case "wxpay":
+		if amountFen >= 100 && amountFen <= 20000 {
+			return values["wechatRewardChannelId"], nil
+		}
+		if amountFen >= 50000 && amountFen <= 100000 {
+			return values["wechatPersonalChannelId"], nil
+		}
+		return "", errors.New("当前金额不支持微信支付，请选择支付宝")
+	default:
+		return "", errors.New("请选择支付宝或微信支付")
+	}
+}
+
+func validatePaymentRoutingConfig(values payment.Config) error {
+	for _, field := range []string{"alipayChannelId", "wechatRewardChannelId", "wechatPersonalChannelId"} {
+		value := values[field]
+		if value == "" || value[0] == '0' {
+			return fmt.Errorf("支付通道 %s 必须为正整数", field)
+		}
+		for _, ch := range value {
+			if ch < '0' || ch > '9' {
+				return fmt.Errorf("支付通道 %s 必须为正整数", field)
+			}
+		}
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil || n == 0 {
+			return fmt.Errorf("支付通道 %s 必须为正整数", field)
+		}
+	}
+	return nil
+}
+
+type UserPaymentOrderPage struct {
+	Items      []PaymentOrderView `json:"items"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"pageSize"`
+	Total      int64              `json:"total"`
+	TotalPages int64              `json:"totalPages"`
+}

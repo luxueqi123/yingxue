@@ -1,5 +1,4 @@
-import { compactApiParams, serializeApiParams, type ApiParams } from "@/services/api/request";
-import { apiClient, request } from "@/services/api/request";
+import { compactApiParams, http, type ApiParams } from "@/services/api/request";
 
 export type PromptScope = "public" | "mine" | "created" | "favorites" | "history";
 export type PromptSort = "popular" | "new" | "favorites" | "history";
@@ -73,37 +72,34 @@ export type PromptMutationInput = {
     visibility: "public" | "private";
 };
 
-const api = apiClient;
-
 export function listPrompts(input: ListPromptsInput = {}) {
-    const params = serializeApiParams(compactApiParams(input as ApiParams));
-    return request<PromptList>(api.get(`/prompts?${params.toString()}`));
+    return http.get<PromptList>("/prompts", { params: compactApiParams(input as ApiParams) });
 }
 
 export function getPrompt(id: string) {
-    return request<{ prompt: Prompt }>(api.get(`/prompts/${encodeURIComponent(id)}`));
+    return http.get<{ prompt: Prompt }>(`/prompts/${encodeURIComponent(id)}`);
 }
 
 export function createPrompt(input: PromptMutationInput) {
-    return request<{ prompt: Prompt }>(api.post("/prompts", input));
+    return http.post<{ prompt: Prompt }>("/prompts", input);
 }
 
 export function updatePrompt(id: string, input: PromptMutationInput) {
-    return request<{ prompt: Prompt }>(api.put(`/prompts/${encodeURIComponent(id)}`, input));
+    return http.put<{ prompt: Prompt }>(`/prompts/${encodeURIComponent(id)}`, input);
 }
 
 export function deletePrompt(id: string) {
-    return request<{ deleted: boolean }>(api.delete(`/prompts/${encodeURIComponent(id)}`));
+    return http.delete<{ deleted: boolean }>(`/prompts/${encodeURIComponent(id)}`);
 }
 
 export function favoritePrompt(id: string) {
-    return request<{ prompt: Prompt }>(api.post(`/prompts/${encodeURIComponent(id)}/favorite`));
+    return http.post<{ prompt: Prompt }>(`/prompts/${encodeURIComponent(id)}/favorite`);
 }
 
 export function unfavoritePrompt(id: string) {
-    return request<{ prompt: Prompt }>(api.delete(`/prompts/${encodeURIComponent(id)}/favorite`));
+    return http.delete<{ prompt: Prompt }>(`/prompts/${encodeURIComponent(id)}/favorite`);
 }
 
 export function usePrompt(id: string) {
-    return request<{ prompt: Prompt }>(api.post(`/prompts/${encodeURIComponent(id)}/use`));
+    return http.post<{ prompt: Prompt }>(`/prompts/${encodeURIComponent(id)}/use`);
 }

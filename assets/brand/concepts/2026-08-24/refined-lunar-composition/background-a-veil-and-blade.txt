@@ -1,0 +1,9 @@
+Asset type: abstract structural background for a premium horizontal Chinese logo
+Primary request: Create only two clean abstract lunar shapes on pure black, leaving the wide center completely empty for a separate two-character wordmark that will be added later.
+Subject: in the upper half, one broad virtual moon shadow made from a restrained translucent gunmetal arc with a controlled fade and a deliberate interruption near the upper-right; in the lower half, one different narrow upward ice-light curve, energetic but concise, ending before both side edges. The upper shape is dark and wide; the lower shape is bright and thin. They must not mirror each other.
+Style/medium: professional vector-friendly brand geometry with restrained 2.5D brushed metal and frosted-jade material; luxury film-studio identity, powerful and minimal.
+Composition/framing: square canvas, horizontal landscape emblem zone centered; keep a clean empty rectangle across the middle 45 percent of the canvas for a later horizontal wordmark; only two visual masses; generous black negative space; no floor and no environment.
+Lighting/mood: cold moon edge light, one controlled highlight on each shape, crisp edges, no haze in the center.
+Color palette: graphite, dark gunmetal, platinum edge, tiny restrained ice blue.
+Constraints: no text of any language, no letters, no symbols, no characters; abstract shapes only; no complete circle; no literal moon surface; no platform; no reflection on a floor.
+Avoid: words, calligraphy, watermark, realistic moon, crater texture, landscape, floor, horizon, debris, fragments, particles, dots, shards, smoke, ribbons, long trails, excessive glow, bloom, blur, ornate frame, seal, badge, game emblem, weapon, symmetric crescents, mirrored shapes, tray-like base.

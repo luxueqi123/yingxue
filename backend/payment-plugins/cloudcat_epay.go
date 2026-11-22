@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,9 @@ const (
 var (
 	cloudCatMerchantIDPattern = regexp.MustCompile(`^[0-9]{1,32}$`)
 	cloudCatOrderIDPattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	cloudCatChannelIDPattern  = regexp.MustCompile(`^[1-9][0-9]*$`)
+	cloudCatTradeIDPattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	cloudCatQueryMoneyPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]{1,2})?$`)
 )
 
 type CloudCatEPayProvider struct {
@@ -43,7 +47,7 @@ func NewCloudCatEPayProvider(client *http.Client) *CloudCatEPayProvider {
 func (p *CloudCatEPayProvider) Descriptor() Descriptor {
 	return Descriptor{
 		ID: ProviderCloudCatEPay, PluginID: PluginCloudCatEPay, PluginVersion: "1.0.0",
-		Name: "云猫码支付", Icon: "brand:cloudcat-pay", CheckoutMode: "redirect",
+		Name: "云猫码支付", Icon: "brand:cloudcat-pay", CheckoutMode: "qr_code",
 		IdentityFields:      []string{"merchantId"},
 		NotificationSuccess: NotificationResponse{Status: 200, ContentType: "text/plain; charset=utf-8", Body: "success"},
 		NotificationFailure: NotificationResponse{Status: 400, ContentType: "text/plain; charset=utf-8", Body: "failure"},
@@ -81,6 +85,13 @@ func (p *CloudCatEPayProvider) CreateOrder(ctx context.Context, config Config, r
 	if err := p.ValidateConfig(config); err != nil {
 		return Checkout{}, err
 	}
+	paymentMethod := request.PaymentMethod
+	if paymentMethod == "" && request.ChannelID == "" {
+		// Existing orders have no route snapshot and retain their original configured method.
+		paymentMethod = strings.ToLower(strings.TrimSpace(config["paymentType"]))
+	} else if (paymentMethod != "alipay" && paymentMethod != "wxpay") || !cloudCatChannelIDPattern.MatchString(request.ChannelID) {
+		return Checkout{}, errors.New("云猫码下单支付方式或通道编号无效")
+	}
 	if !cloudCatOrderIDPattern.MatchString(strings.TrimSpace(request.MerchantOrderNo)) || request.AmountFen <= 0 || request.Currency != "CNY" || !request.ExpiresAt.After(time.Now().Add(-time.Minute)) {
 		return Checkout{}, errors.New("云猫码下单参数无效")
 	}
@@ -97,7 +108,7 @@ func (p *CloudCatEPayProvider) CreateOrder(ctx context.Context, config Config, r
 	}
 	values := url.Values{
 		"pid":          {strings.TrimSpace(config["merchantId"])},
-		"type":         {strings.ToLower(strings.TrimSpace(config["paymentType"]))},
+		"type":         {paymentMethod},
 		"out_trade_no": {strings.TrimSpace(request.MerchantOrderNo)},
 		"notify_url":   {request.NotifyURL},
 		"return_url":   {request.ReturnURL},
@@ -107,6 +118,9 @@ func (p *CloudCatEPayProvider) CreateOrder(ctx context.Context, config Config, r
 		"clientip":     {clientIP.String()},
 		"device":       {"pc"},
 		"sign_type":    {"MD5"},
+	}
+	if request.ChannelID != "" {
+		values.Set("channel_id", request.ChannelID)
 	}
 	values.Set("sign", cloudCatEPaySign(values, config["merchantKey"]))
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, cloudCatGateway(config), strings.NewReader(values.Encode()))
@@ -150,11 +164,65 @@ func (p *CloudCatEPayProvider) CreateOrder(ctx context.Context, config Config, r
 	return cloudCatCheckout(result.cloudCatCreatePayload, request.ExpiresAt)
 }
 
-func (p *CloudCatEPayProvider) QueryOrder(_ context.Context, config Config, _ QueryRequest) (Result, error) {
+func (p *CloudCatEPayProvider) QueryOrder(ctx context.Context, config Config, request QueryRequest) (Result, error) {
 	if err := p.ValidateConfig(config); err != nil {
 		return Result{}, err
 	}
-	return Result{}, &ProviderError{Code: "cloudcat_query_unsupported", Message: "云猫码查单合同尚未验证，当前版本不执行查单"}
+	if !cloudCatOrderIDPattern.MatchString(request.MerchantOrderNo) {
+		return Result{}, errors.New("云猫码查单订单号无效")
+	}
+	values := url.Values{"act": {"order"}, "pid": {strings.TrimSpace(config["merchantId"])}, "key": {strings.TrimSpace(config["merchantKey"])}, "out_trade_no": {request.MerchantOrderNo}}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://m.ooeao.com/xpay/epay/api.php", strings.NewReader(values.Encode()))
+	if err != nil {
+		return Result{}, err
+	}
+	httpRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	httpRequest.Header.Set("Accept", "application/json")
+	// POST body support is verified; never put the merchant key in a URL or replay it on redirect.
+	client := *p.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return Result{}, &ProviderError{Code: "cloudcat_query_transport_error", Message: "云猫码查单网络请求失败", Temporary: true}
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxCloudCatEPayResponseBytes+1))
+	if err != nil {
+		return Result{}, errors.New("读取云猫码查单响应失败")
+	}
+	if len(body) > maxCloudCatEPayResponseBytes {
+		return Result{}, errors.New("云猫码查单响应超过安全限制")
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return Result{}, &ProviderError{Code: "cloudcat_query_http_error", Message: "云猫码查单接口返回失败", Temporary: response.StatusCode >= 500}
+	}
+	var result struct {
+		Code            *int        `json:"code"`
+		Msg             string      `json:"msg"`
+		PID             json.Number `json:"pid"`
+		MerchantOrderNo string      `json:"out_trade_no"`
+		TradeNo         string      `json:"trade_no"`
+		Type            string      `json:"type"`
+		Money           string      `json:"money"`
+		Status          *int        `json:"status"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return Result{}, errors.New("云猫码查单响应不是有效 JSON")
+	}
+	if result.Code != nil && *result.Code == 0 && result.Msg == "没有找到订单信息" {
+		return Result{}, ErrOrderNotFound
+	}
+	if result.Code == nil || *result.Code != 1 {
+		return Result{}, &ProviderError{Code: "cloudcat_query_rejected", Message: "云猫码未能查询该订单"}
+	}
+	if result.Status == nil || (*result.Status != 0 && *result.Status != 1) || result.PID.String() != strings.TrimSpace(config["merchantId"]) || result.MerchantOrderNo != request.MerchantOrderNo || !cloudCatTradeIDPattern.MatchString(result.TradeNo) || (result.Type != "alipay" && result.Type != "wxpay") || !cloudCatQueryMoneyPattern.MatchString(result.Money) {
+		return Result{}, errors.New("云猫码查单响应订单、商户、方式、金额或状态无效")
+	}
+	amount, err := parseYuanToFen(result.Money)
+	if err != nil || amount <= 0 {
+		return Result{}, errors.New("云猫码查单响应金额无效")
+	}
+	return Result{PaymentMethod: result.Type, MerchantOrderNo: result.MerchantOrderNo, ProviderTradeNo: result.TradeNo, ProviderStatus: strconv.Itoa(*result.Status), AmountFen: amount, Currency: "CNY", Paid: *result.Status == 1}, nil
 }
 
 func (p *CloudCatEPayProvider) CloseOrder(_ context.Context, config Config, _ CloseRequest) (Result, error) {
@@ -180,7 +248,9 @@ func (p *CloudCatEPayProvider) VerifyNotification(_ context.Context, config Conf
 	if values.Get("sign_type") != "MD5" || len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 		return Notification{}, errors.New("云猫码支付通知签名无效")
 	}
-	if values.Get("pid") != strings.TrimSpace(config["merchantId"]) || strings.ToLower(values.Get("type")) != strings.ToLower(strings.TrimSpace(config["paymentType"])) || values.Get("trade_status") != "TRADE_SUCCESS" {
+	paymentMethod := strings.ToLower(values.Get("type"))
+	validMethod := paymentMethod == "alipay" || paymentMethod == "wxpay" || (paymentMethod == "qqpay" && strings.EqualFold(strings.TrimSpace(config["paymentType"]), "qqpay"))
+	if values.Get("pid") != strings.TrimSpace(config["merchantId"]) || !validMethod || values.Get("trade_status") != "TRADE_SUCCESS" {
 		return Notification{}, errors.New("云猫码支付通知商户、支付方式或状态不匹配")
 	}
 	merchantOrderNo := strings.TrimSpace(values.Get("out_trade_no"))
@@ -197,6 +267,7 @@ func (p *CloudCatEPayProvider) VerifyNotification(_ context.Context, config Conf
 	}
 	status := values.Get("trade_status")
 	return Notification{EventID: "cloudcat:" + providerTradeNo + ":" + status, Result: Result{
+		PaymentMethod:   paymentMethod,
 		MerchantOrderNo: merchantOrderNo, ProviderTradeNo: providerTradeNo, ProviderStatus: status,
 		AmountFen: amountFen, Currency: "CNY", Paid: true,
 	}}, nil
@@ -238,7 +309,7 @@ func cloudCatCheckout(payload cloudCatCreatePayload, expiresAt time.Time) (Check
 		if !strings.EqualFold(parsed.Hostname(), "m.ooeao.com") {
 			return Checkout{}, errors.New("云猫码跳转收银台必须属于 m.ooeao.com")
 		}
-		return Checkout{Mode: "redirect", Value: candidate, ExpiresAt: expiresAt}, nil
+		return Checkout{Mode: "qr_code", Value: candidate, ExpiresAt: expiresAt}, nil
 	}
 	for _, candidate := range []string{payload.QRCode, payload.URLScheme} {
 		candidate = strings.TrimSpace(candidate)

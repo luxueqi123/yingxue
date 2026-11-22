@@ -1,0 +1,116 @@
+1225|            {isEmpty ? <>
+1226|                <div className="creation-top-actions">
+1227|                    <Tooltip title="历史对话"><button type="button" aria-label="查看历史对话" aria-expanded={historyOpen} className="creation-top-action" onClick={() => setHistoryOpen(true)}><History /></button></Tooltip>
+1228|                </div>
+1229|                <AnimatePresence>
+1230|                    {launchpadCondensed && !agentMode ? <motion.div className="creation-floating-prompt" key="floating-prompt"
+1231|                        style={{ x: "-50%" }}
+1232|                        initial={{ opacity: 0, y: -12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: .98 }}
+1233|                        transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 360, damping: 32, mass: .8 }}>
+1234|                        <Sparkles aria-hidden="true" />
+1235|                        <input aria-label="快捷编辑提示词" placeholder="继续描述你的创作想法…" value={prompt} disabled={busy || referenceReplacementBusy} onChange={(event) => setPrompt(event.target.value)} />
+1236|                        <Tooltip title="展开完整创作区"><button type="button" aria-label="展开完整创作区" onClick={() => {
+1237|                            threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+1238|                            composerFocusRef.current?.focus({ preventScroll: true });
+1239|                        }}><Maximize2 /></button></Tooltip>
+1240|                    </motion.div> : null}
+1241|                </AnimatePresence>
+1242|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-empty-workspace creation-scrollbar">
+1243|<<<<<<< ours
+1244|                <CreationEmptyBanner />
+1245|                <div className="creation-chat-intro">
+1246|                    <span className="creation-intro-signal" aria-hidden="true" />
+1247|                    <p>映雪 · AI 创作工作台</p>
+1248|                    <h1>让你的下一个想法，<span className="creation-intro-emphasis"><span className="is-pink">在这里</span><span className="is-blue">成为作品</span></span></h1>
+1249|                </div>
+1250|                <div className="creation-empty-composer">
+1251|                    <CreationComposer {...composerProps} variant="empty" />
+1252|=======
+1253|                <div className="creation-home-heading">
+1254|                    <h1>和{brandName}聊聊创作想法</h1>
+1255|                    <p>从一个画面、一个角色或一句话开始，继续你的创作。</p>
+1256|>>>>>>> theirs
+1257|                </div>
+1258|                <section ref={launchpadRef} className="creation-launchpad" aria-label="开始创作">
+1259|                    <div className={cn("creation-composer-stage is-home-mode", agentMode && "is-agent-mode")}>
+1260|                        <CreationModeTabs mode={mode} agentActive={agentMode} onAgentSelect={() => setAgentMode(true)} onModeChange={(next) => { setAgentMode(false); selectMode(next); }} />
+1261|                        {agentMode ? <CreationAgentEntry /> : <div className="creation-empty-composer"><CreationComposer {...composerProps} variant="empty" /></div>}
+1262|                    </div>
+1263|                    <CreationEmptySuggest
+1264|                        onStartPrompt={(nextMode, prompt) => { setAgentMode(false); selectMode(nextMode); setPrompt(prompt); window.requestAnimationFrame(() => composerFocusRef.current?.focus()); }}
+1265|                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); setLibraryOpen(true); }}
+1266|                    />
+1267|                </section>
+1268|                <CreationFeaturedWorks
+1269|                    onStartPrompt={(nextMode, prompt) => { setAgentMode(false); selectMode(nextMode); setPrompt(prompt); window.requestAnimationFrame(() => composerFocusRef.current?.focus()); }}
+1270|                />
+1271|            </main>
+1272|            </> : viewMode === "chat" ? <div className="creation-thread-workbench">
+1273|                <CreationWorkspaceToolbar viewMode={viewMode} onViewModeChange={setViewMode} onNewConversation={startNewConversation} onOpenHistory={() => setHistoryOpen(true)} />
+1274|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-thread-scroll creation-scrollbar">
+1275|                    <section className="creation-thread-stage"><div className="creation-results">{activeConversation.messages.map((item, index) => <CreationMessageView
+1276|                        key={item.id}
+1277|                        item={item}
+1278|                        modelName={item.model ? modelDisplayName(config, item.model) : ""}
+1279|                        onRetryFailure={() => retryFailedMessage(item, index)}
+1280|                        onCreateVariant={() => createVariant(item, index)}
+1281|                    />)}</div></section>
+1282|                </main>
+1283|                <section className="creation-thread-composer"><CreationComposer {...composerProps} variant="thread" /></section>
+1284|            </div> : <div className="storyboard-workbench">
+1285|                <StoryboardToolbar
+1286|                    shots={shots}
+1287|                    activeIndex={visibleShotIndex}
+1288|                    composing={composingNextShot}
+1289|                    onSelect={(index) => { setSelectedShotIndex(index); setComposingNextShot(false); }}
+1290|                    onBeginCompose={beginComposeNextShot}
+1291|                    onCancelCompose={cancelComposeNextShot}
+1292|                    onNewConversation={startNewConversation}
+1293|                    onOpenHistory={() => setHistoryOpen(true)}
+1294|                    viewMode={viewMode}
+1295|                    onViewModeChange={setViewMode}
+1296|                />
+1297|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="storyboard-workbench-stage creation-scrollbar">
+1298|                    <div className="storyboard-workbench-stage-inner">
+1299|                        {composingNextShot ? <StoryboardNextShotCard shotNumber={nextShotNumber} onCancel={cancelComposeNextShot} /> : visibleShot ? <StoryboardShotCard
+1300|                            shot={visibleShot}
+1301|                            shotNumber={visibleShotIndex + 1}
+1302|                            modelName={visibleShot.result?.model ? modelDisplayName(config, visibleShot.result.model) : ""}
+1303|                            busy={busy || preparing || agentLaunch.busy || uploading || skillLoading}
+1304|                            onRetryFailure={() => { if (visibleShotResultIndex >= 0 && visibleShot.result) retryFailedMessage(visibleShot.result, visibleShotResultIndex); }}
+1305|                            onCreateVariant={() => { if (visibleShotResultIndex >= 0 && visibleShot.result) createVariant(visibleShot.result, visibleShotResultIndex); }}
+1306|                        /> : null}
+1307|                    </div>
+1308|                </main>
+1309|                <section className="storyboard-workbench-composer">
+1310|                    <CreationComposer {...composerProps} variant="thread" />
+1311|                </section>
+1312|            </div>}
+1313|        </div>;
+1314|
+1315|    return <>
+1316|        {embedded ? <>
+1317|            <div className="creation-home creation-lobby">
+1318|                <CreationComposer {...composerProps} onSubmit={() => void submitLobbyToCanvas()} variant="lobby" />
+1319|            </div>
+1320|        </> : workspace}
+1321|        <CreationHistoryDrawer open={historyOpen} conversations={historyConversations} activeId={activeConversation.id} onClose={() => setHistoryOpen(false)} onSelect={selectConversation} onDelete={confirmDeleteConversation} />
+1322|        <AssetLibraryPickerModal
+1323|            open={libraryOpen}
+1324|            items={libraryItems}
+1325|            categoryLabels={{ ...creationAssetCategoryLabels, ...externalAssetSources.categoryLabels }}
+1326|            folders={externalAssetSources.folders}
+1327|            initialSelectedIds={attachments.flatMap((item) => item.id.startsWith("asset:") ? [item.id.slice(6)] : item.id.startsWith("external:") ? [item.id] : [])}
+1328|            upload={{ accept: creationUploadAccept(agentIntent ? "text" : mode), description: agentIntent || mode === "text" ? "支持图片、视频、音频和常用文档；媒体会保存到素材库" : `支持图片${mode === "video" ? "、视频和音频" : ""}，上传后保存到素材库`, onUpload: uploadLibraryAssets, external: { accept: "image/*", description: "写入当前 Eagle 文件夹；Eagle 当前支持图片文件", onUpload: (files, folderId) => externalAssetSources.uploadExternalFiles(files, folderId) } }}
+1329|            onClose={() => setLibraryOpen(false)}
+1330|            onConfirm={handleLibrarySelect}
+1331|        />
+1332|    </>;
+1333|}
+1334|
+1335|const creationAssetCategoryLabels: Record<string, string> = { all: "全部素材", character: "角色", environment: "场景", wardrobe: "服饰", prop: "道具", weapon: "武器", style: "画风", other: "其他" };
+1336|
+1337|function CreationHistoryDrawer({ open, conversations, activeId, onClose, onSelect, onDelete }: { open: boolean; conversations: CreationConversation[]; activeId: string; onClose: () => void; onSelect: (conversation: CreationConversation) => void; onDelete: (conversation: CreationConversation) => void }) {
+1338|    const [keyword, setKeyword] = useState("");
+1339|
+1340|    useEffect(() => {

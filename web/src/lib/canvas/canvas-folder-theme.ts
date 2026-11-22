@@ -1,14 +1,16 @@
 import type { CanvasFolderTheme } from "@/types/canvas";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
 
 export const CANVAS_FOLDER_THEME_OPTIONS: ReadonlyArray<{
     key: CanvasFolderTheme;
     label: string;
+    labelKey: InterfaceMessageKey;
     cover: string;
 }> = [
-    { key: "aurora", label: "赤蓝流光", cover: "/images/canvas/folder-default-cover.png" },
-    { key: "obsidian", label: "曜石银蓝", cover: "/images/canvas/folder-theme-obsidian.png" },
-    { key: "ember", label: "熔金赤焰", cover: "/images/canvas/folder-theme-ember.png" },
-    { key: "pearl", label: "珍珠薄雾", cover: "/images/canvas/folder-theme-pearl.png" },
+    { key: "aurora", label: "赤蓝流光", labelKey: "canvasCompleteUi.auroraFolder", cover: "/images/canvas/folder-default-cover.png" },
+    { key: "obsidian", label: "曜石银蓝", labelKey: "canvasCompleteUi.obsidianFolder", cover: "/images/canvas/folder-theme-obsidian.png" },
+    { key: "ember", label: "熔金赤焰", labelKey: "canvasCompleteUi.emberFolder", cover: "/images/canvas/folder-theme-ember.png" },
+    { key: "pearl", label: "珍珠薄雾", labelKey: "canvasCompleteUi.pearlFolder", cover: "/images/canvas/folder-theme-pearl.png" },
 ];
 
 export function resolveCanvasFolderTheme(value?: string): CanvasFolderTheme {

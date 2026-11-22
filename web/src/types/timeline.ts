@@ -89,6 +89,8 @@ export type TimelineDirectMedia = {
 
 export type TimelineClip = {
     id: string;
+    /** 分离音频关联的视频片段；恢复布局时对齐起点，裁切或分割音频后解除。 */
+    linkedVideoClipId?: string;
     kind: TimelineClipKind;
     nodeId: string;
     trackId: string;

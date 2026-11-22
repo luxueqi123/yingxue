@@ -1,12 +1,16 @@
 import { App, Button, Modal } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { deleteCanvasProjectsWithRemoteSync } from "@/services/user-data-sync";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 export function CanvasDeleteProjectsDialog() {
+    
     const { message } = App.useApp();
+    const { t } = useInterfaceTranslation();
     const ids = useCanvasUiStore((state) => state.deleteProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const removeSelectedIds = useCanvasUiStore((state) => state.removeSelectedProjectIds);
@@ -20,7 +24,7 @@ export function CanvasDeleteProjectsDialog() {
             removeSelectedIds(ids);
             setDeleteIds([]);
         } catch (error) {
-            message.error(error instanceof Error ? `删除画布失败：${error.message}` : "删除画布失败，请稍后重试");
+            message.error(error instanceof Error ? t("canvasA.deleteProjects.failedWithReason", { reason: error.message }) : t("canvasA.deleteProjects.failed"));
         } finally {
             setDeleting(false);
         }
@@ -28,20 +32,20 @@ export function CanvasDeleteProjectsDialog() {
 
     return (
         <Modal
-            title="删除画布？"
+            title={t("canvasA.deleteProjects.title")}
             open={ids.length > 0}
             centered
             onCancel={() => setDeleteIds([])}
             footer={
                 <>
-                    <Button onClick={() => setDeleteIds([])}>取消</Button>
+                    <Button onClick={() => setDeleteIds([])}>{t("common.cancel")}</Button>
                     <Button danger type="primary" loading={deleting} onClick={() => void confirm()}>
-                        删除
+                        {t("common.delete")}
                     </Button>
                 </>
             }
         >
-            <p className="text-sm text-stone-500">将删除 {ids.length} 个画布，里面的节点和连线也会一起移除。</p>
+            <p className="text-sm text-stone-500">{t("canvasA.deleteProjects.body", { count: ids.length })}</p>
         </Modal>
     );
 }

@@ -6,6 +6,8 @@ import { Link } from "react-router";
 
 import { formatShotOrdinal } from "@/lib/shot-label";
 import { saveProjectShot, type ProjectDetail } from "@/services/api/projects";
+import type { InterfaceMessageKey } from "@/lib/interface-locale";
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 
 import { AssetsStage, DeliveryStage, StoryStage } from "./workflow-stage-views";
 import { type ShortDramaWorkflowStage, workflowStages } from "./workflow-shared";
@@ -23,6 +25,7 @@ type Props = {
 export default function ProjectWorkflowView({ detail, projectId, unitId, stage }: Props) {
     const queryClient = useQueryClient();
     const { message } = App.useApp();
+    const { t } = useInterfaceTranslation();
     const orderedUnits = useMemo(() => detail.units.slice().sort((left, right) => left.position - right.position), [detail.units]);
     const unit = orderedUnits.find((item) => item.id === unitId) || orderedUnits[0];
     const activeStage = workflowStages.some((item) => item.key === stage) ? stage as ShortDramaWorkflowStage : "video";
@@ -48,11 +51,11 @@ export default function ProjectWorkflowView({ detail, projectId, unitId, stage }
     };
     const addShot = useMutation({
         mutationFn: () => {
-            if (!unit) throw new Error("请先添加章节");
+            if (!unit) throw new Error(t("projectUi.addChapterBeforeStoryboard" as InterfaceMessageKey));
             return saveProjectShot(projectId, {
                 unitId: unit.id,
                 title: formatShotOrdinal(shots.length),
-                description: "待补充分镜画面",
+                description: t("coverageUi.370"),
                 position: shots.length,
                 durationMs: 3000,
                 revision: { plotDescription: "待补充分镜画面", durationMs: 3000 },
@@ -62,12 +65,12 @@ export default function ProjectWorkflowView({ detail, projectId, unitId, stage }
             setSelectedShotId(shot.id);
             sessionStorage.setItem(`project-workflow-selected-shot:${projectId}`, shot.id);
             await refresh();
-            message.success("已新增分镜");
+            message.success(t("projectUi.shotAdded" as InterfaceMessageKey));
         },
-        onError: (error) => message.error(error instanceof Error ? error.message : "新增分镜失败"),
+        onError: (error) => message.error(error instanceof Error ? error.message : t("projectUi.addShotFailed" as InterfaceMessageKey)),
     });
     if (!unit) {
-        return <div className="grid h-full place-items-center"><EmptyState title="先添加一个章节，再进入分镜制作" action={<Link to={`/projects/${projectId}/chapters`}><Button type="primary">添加章节</Button></Link>} /></div>;
+        return <div className="grid h-full place-items-center"><EmptyState title={t("projectUi.addChapterToStartProduction" as InterfaceMessageKey)} action={<Link to={`/projects/${projectId}/chapters`}><Button type="primary">{t("projectUi.addChapter" as InterfaceMessageKey)}</Button></Link>} /></div>;
     }
 
     return (
@@ -75,7 +78,7 @@ export default function ProjectWorkflowView({ detail, projectId, unitId, stage }
             <main className={`workflow-stage-content ${productionStage ? "is-production" : ""}`}>
                 {activeStage === "story" ? <div className="workflow-overview-scroll thin-scrollbar"><StoryStage detail={detail} projectId={projectId} unitId={unit.id} /></div> : null}
                 {activeStage === "assets" ? <div className="workflow-overview-scroll thin-scrollbar"><AssetsStage detail={detail} projectId={projectId} unitId={unit.id} /></div> : null}
-                {productionStage ? <Suspense fallback={<div className="workflow-workbench-loading">正在准备分镜工作台…</div>}><WorkflowProductionWorkbench activeStage={activeStage} detail={detail} projectId={projectId} unitId={unit.id} workflowStep={activeStep} selectedShot={selectedShot} onSelectShot={setSelectedShotId} onRefresh={refresh} onAddShot={() => addShot.mutate()} addingShot={addShot.isPending} /></Suspense> : null}
+                {productionStage ? <Suspense fallback={<div className="workflow-workbench-loading">{t("projectUi.preparingStoryboardWorkbench" as InterfaceMessageKey)}</div>}><WorkflowProductionWorkbench activeStage={activeStage} detail={detail} projectId={projectId} unitId={unit.id} workflowStep={activeStep} selectedShot={selectedShot} onSelectShot={setSelectedShotId} onRefresh={refresh} onAddShot={() => addShot.mutate()} addingShot={addShot.isPending} /></Suspense> : null}
                 {activeStage === "delivery" ? <div className="workflow-overview-scroll thin-scrollbar"><DeliveryStage detail={detail} unitId={unit.id} /></div> : null}
             </main>
         </div>

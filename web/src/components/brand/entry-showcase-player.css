@@ -1,0 +1,2 @@
+.yx-entry-player video { display: block; width: 100%; max-height: 72svh; aspect-ratio: 16 / 9; object-fit: contain; background: var(--color-black, #000); border-radius: var(--r-lg); }
+.yx-entry-player [role="alert"] { margin: 12px 0 0; color: var(--destructive); }

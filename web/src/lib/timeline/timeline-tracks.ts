@@ -2,6 +2,7 @@
 // 默认三轨：视频轨、音频轨、字幕轨；提供轨道查询与规范化。
 
 import type { TimelineProject, TimelineTrack } from "@/types/timeline";
+import { restoreLinkedTimelineAudio } from './linked-timeline-audio';
 
 export const DEFAULT_VIDEO_TRACK_ID = "video-1";
 export const DEFAULT_AUDIO_TRACK_ID = "audio-1";
@@ -41,8 +42,9 @@ export function normalizeTimelineProject(timeline: Partial<TimelineProject> | nu
         return true;
     });
     const baseTracks = createDefaultTracks();
-    const tracks = [...baseTracks, ...deduped.filter((track) => !baseTracks.some((base) => base.id === track.id))];
-    const clips = Array.isArray(timeline?.clips) ? timeline.clips : [];
+    const savedById = new Map(deduped.map((track) => [track.id, track]));
+    const tracks = [...baseTracks.map((track) => savedById.get(track.id) ?? track), ...deduped.filter((track) => !baseTracks.some((base) => base.id === track.id))];
+    const clips = restoreLinkedTimelineAudio(Array.isArray(timeline?.clips) ? timeline.clips : []);
     const durationMs = clips.reduce((max, clip) => Math.max(max, clip.startMs + clip.durationMs), 0);
     return {
         version: 2,

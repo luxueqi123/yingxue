@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"strconv"
+	"net/http"
 
 	"infinite-canvas/backend/internal/service"
 
@@ -48,11 +48,18 @@ func RegisterAdminStorageRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		page, limit, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		userQuery := c.Query("user")
+		if userQuery == "" {
+			userQuery = c.Query("userId")
+		}
 		result, err := svc.AdminResourcePage(user, service.AdminResourceQuery{
 			Keyword: c.Query("keyword"), Kind: c.Query("kind"), Status: c.Query("status"),
-			Provider: c.Query("provider"), UserID: c.Query("userId"), Page: page, Limit: limit,
+			Provider: c.Query("provider"), UserQuery: userQuery, Page: page, Limit: limit,
 		})
 		if err != nil {
 			failService(c, err)
@@ -67,25 +74,15 @@ func RegisterAdminStorageRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		stream, err := svc.OpenResourceRangeAsAdmin(user, c.Param("id"), c.GetHeader("Range"))
+		delivery, err := svc.PrepareResourceDeliveryAsAdmin(user, c.Param("id"), resourceAccessOptions(c), c.GetHeader("Range"))
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		defer stream.Body.Close()
-		mimeType := stream.Resource.MimeType
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-		c.Header("Cache-Control", "private, no-cache")
-		c.Header("Accept-Ranges", stream.AcceptRanges)
-		c.Header("X-Content-Type-Options", "nosniff")
-		if stream.ContentRange != "" {
-			c.Header("Content-Range", stream.ContentRange)
-		}
+		disposition := ""
 		if c.Query("download") == "1" {
-			c.Header("Content-Disposition", "attachment")
+			disposition = "attachment"
 		}
-		c.DataFromReader(stream.StatusCode, stream.ContentLength, mimeType, stream.Body, nil)
+		serveResourceDelivery(c, delivery, "private, no-cache", disposition)
 	})
 }

@@ -1,15 +1,14 @@
+import { useInterfaceTranslation } from "@/stores/use-interface-locale-store";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, ColorPicker, Input, InputNumber, Modal, Progress, Segmented } from "antd";
+import { App, Button, ColorPicker, Input, InputNumber, Progress, Segmented } from "antd";
+import { AppModal } from "@/components/ui/product/app-modal";
 import { Switch } from "@/components/ui/base/switch";
-import { Captions, FileDown, FileUp, ListPlus, LoaderCircle, Plus, Scissors, Sparkles, Trash2 } from "lucide-react";
+import { Captions, FileDown, FileUp, ListPlus, LoaderCircle, Plus, Scissors, Trash2 } from "lucide-react";
 import { saveAs } from "file-saver";
-
 import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { resolveMediaUrl } from "@/services/file-storage";
-import { cacheResourceObjectUrl } from "@/services/resource-blob-cache";
-import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { parseSrt, serializeSrtEntries } from "@/lib/timeline/srt-parser";
 import { DEFAULT_MAX_CHARS_PER_ENTRY, MAX_CHARS_PER_ENTRY_LIMIT, MIN_CHARS_PER_ENTRY, resegmentSrtEntries, splitLongEntry } from "@/lib/timeline/srt-resegment";
 import { buildFallbackHighlights, remapHighlightsAfterResegment } from "@/lib/timeline/subtitle-highlights";
@@ -17,7 +16,6 @@ import { generateSubtitleHighlights, type SubtitleHighlightProgress } from "@/li
 import { createDefaultSubtitleStyle, type SrtEntry, type SubtitleHighlight, type SubtitlePosition, type SubtitleStyle } from "@/types/timeline";
 import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 import { SubtitleHighlightedText } from "./canvas-subtitle-text";
-
 type CanvasSubtitleDialogProps = {
     node: CanvasNodeData;
     open: boolean;
@@ -26,10 +24,10 @@ type CanvasSubtitleDialogProps = {
     onClose: () => void;
     onSave: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
 };
-
 export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, onSave }: CanvasSubtitleDialogProps) {
+    const { t } = useInterfaceTranslation();
     const { message, modal } = App.useApp();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = canvasThemes[useActiveTheme()];
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const [entries, setEntries] = useState<SrtEntry[]>([]);
     const [highlights, setHighlights] = useState<SubtitleHighlight[]>([]);
@@ -56,13 +54,10 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         setRunning(false);
         setProgress(null);
     }, [open, node]);
-
     useEffect(() => {
         return () => abortRef.current?.abort();
     }, []);
-
-    // 打开弹窗时解析视频地址，用于字幕叠加预览。
-    // 远端资源优先走节点同款缓存下载（对象 URL），失败再退回资源代理地址。
+    // 打开弹窗时解析视频地址，用于字幕叠加预览；远端资源统一走稳定的云端地址。
     useEffect(() => {
         if (!open) return;
         let cancelled = false;
@@ -71,30 +66,13 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         setVideoError(false);
         const storageKey = node.metadata?.storageKey || "";
         const fallback = node.metadata?.content || "";
-        const applyUrl = (url: string) => {
+        void resolveMediaUrl(storageKey, fallback).then((url) => {
             if (!cancelled) setVideoUrl(url);
-        };
-        if (resourceIdFromStorageKey(storageKey)) {
-            void cacheResourceObjectUrl(storageKey)
-                .then((cached) => {
-                    if (cancelled) return;
-                    if (cached) {
-                        setVideoUrl(cached);
-                    } else {
-                        void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-                    }
-                })
-                .catch(() => {
-                    if (!cancelled) void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-                });
-        } else {
-            void resolveMediaUrl(storageKey, fallback).then(applyUrl);
-        }
+        });
         return () => {
             cancelled = true;
         };
     }, [open, node]);
-
     // 监听预览容器与视口尺寸，视频按分辨率等比缩放，不撑满也不变形。
     useEffect(() => {
         if (!open || !videoUrl) return;
@@ -111,7 +89,6 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             window.removeEventListener("resize", measure);
         };
     }, [open, videoUrl]);
-
     const previewDisplay = useMemo(() => {
         if (!videoSize || videoSize.height <= 0) return null;
         const maxHeight = Math.round((viewportHeight || window.innerHeight) * 0.45);
@@ -125,18 +102,14 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         }
         return { width: Math.round(width), height: Math.round(height) };
     }, [previewBoxWidth, videoSize, viewportHeight]);
-
     const highlightByEntry = new Map(highlights.map((item) => [item.entryIndex, item]));
     const activeEntry = entries.find((entry) => currentTimeMs >= entry.startMs && currentTimeMs < entry.endMs);
     const activeHighlight = activeEntry ? highlightByEntry.get(activeEntry.index) : undefined;
     const activePositionClass = style.position === "top" ? "top-3" : style.position === "center" ? "top-1/2 -translate-y-1/2" : "bottom-4";
-
     const updateEntry = (position: number, patch: Partial<SrtEntry>) => {
         setEntries((current) => current.map((entry, idx) => (idx === position ? { ...entry, ...patch } : entry)));
     };
-
     const renumber = (list: SrtEntry[]) => list.map((entry, idx) => ({ ...entry, index: idx + 1 }));
-
     const normalizeEntries = (list: SrtEntry[]) =>
         renumber(
             list
@@ -144,7 +117,6 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                 .map((entry) => ({ ...entry, startMs: Math.max(0, entry.startMs), endMs: Math.max(0, entry.endMs) }))
                 .sort((a, b) => a.startMs - b.startMs || a.index - b.index),
         );
-
     const addEntry = () => {
         setEntries((current) => {
             const last = current[current.length - 1];
@@ -152,7 +124,6 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             return [...current, { index: current.length + 1, startMs, endMs: startMs + 2_000, text: "" }];
         });
     };
-
     const deleteEntry = (position: number) => {
         const removed = entries[position];
         if (!removed) return;
@@ -168,13 +139,12 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             subtitleStyle: style,
             subtitleUpdatedAt: new Date().toISOString(),
         });
-        message.success(next.length ? "已删除该条字幕并同步到视频节点与时间线" : "字幕已清空并同步到视频节点与时间线");
+        message.success(next.length ? t("canvasSubtitleUi001") : t("canvasSubtitleUi002"));
     };
-
     const splitEntry = (position: number) => {
         const entry = entries[position];
         if (!entry || !entry.text.trim()) {
-            message.warning("该条字幕没有可切分的内容");
+            message.warning(t("canvasSubtitleUi003"));
             return;
         }
         const segments = splitLongEntry(entry, Math.max(2, Math.ceil(entry.text.length / 2)));
@@ -183,7 +153,6 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
         const { remapped } = remapHighlightsAfterResegment(highlights, next);
         setHighlights(remapped);
     };
-
     const seekToEntry = (entry: SrtEntry) => {
         const video = videoRef.current;
         if (video) {
@@ -191,38 +160,35 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             setCurrentTimeMs(entry.startMs);
         }
     };
-
     const resegmentAll = () => {
         if (!entries.length) return;
         const maxChars = style.maxCharsPerEntry || DEFAULT_MAX_CHARS_PER_ENTRY;
         const next = resegmentSrtEntries(entries, maxChars);
         if (next.length === entries.length) {
-            message.info(`所有字幕均未超过单条上限 ${maxChars} 字，无需切分；可在“字幕样式”中调低上限后重试`);
+            message.info(t("canvasSubtitleDyn001", { max: maxChars }));
             return;
         }
         setEntries(next);
         const { remapped, dropped } = remapHighlightsAfterResegment(highlights, next);
         setHighlights(remapped);
-        message.success(`自动切分完成：${entries.length} 条 → ${next.length} 条`);
-        if (dropped.length) message.info(`已移除 ${dropped.length} 条未能匹配的旧高亮`);
+        message.success(t("canvasSubtitleDyn002", { before: entries.length, after: next.length }));
+        if (dropped.length) message.info(t("canvasSubtitleDyn003", { count: dropped.length }));
     };
-
     const importSrt = (file: File) => {
         const reader = new FileReader();
         reader.onload = () => {
             const parsed = parseSrt(String(reader.result || ""));
             if (!parsed.length) {
-                message.warning("未解析到有效字幕：文件需为 SRT 格式（序号 + 时间码 + 正文），纯文本请用“导入文本”");
+                message.warning(t("canvasSubtitleUi004"));
                 return;
             }
             const autoSegmented = style.autoResegment ? resegmentSrtEntries(parsed, style.maxCharsPerEntry || DEFAULT_MAX_CHARS_PER_ENTRY) : parsed;
             setEntries(renumber(autoSegmented));
             setHighlights([]);
-            message.success(autoSegmented.length > parsed.length ? `已导入 ${parsed.length} 条字幕，按单条上限自动切分为 ${autoSegmented.length} 条` : `已导入 ${parsed.length} 条字幕`);
+            message.success(autoSegmented.length > parsed.length ? t("canvasSubtitleDyn004", { sourceCount: parsed.length, count: autoSegmented.length }) : t("canvasSubtitleDyn005", { count: autoSegmented.length }));
         };
         reader.readAsText(file);
     };
-
     // 纯文本导入：一行一条字幕，按视频时长平均分配起止时间；视频时长未知时按每条 4 秒估算。
     const importPlainText = (file: File) => {
         const reader = new FileReader();
@@ -232,7 +198,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                 .map((line) => line.trim())
                 .filter(Boolean);
             if (!lines.length) {
-                message.warning("文本中没有可导入的内容");
+                message.warning(t("canvasSubtitleUi005"));
                 return;
             }
             const durationMs = node.metadata?.durationMs;
@@ -245,29 +211,27 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             }));
             setEntries(entries);
             setHighlights([]);
-            message.success(durationMs && durationMs > 0 ? `已导入 ${entries.length} 条字幕，按视频时长 ${formatDurationMs(durationMs)} 平均分配` : `已导入 ${entries.length} 条字幕（视频时长未知，按每条 4 秒估算）`);
+            message.success(durationMs && durationMs > 0 ? t("canvasSubtitleDyn006", { count: entries.length, duration: formatDurationMs(durationMs) }) : t("canvasSubtitleDyn007", { count: entries.length }));
         };
         reader.readAsText(file);
     };
-
     const exportSrt = () => {
         const content = serializeSrtEntries(entries);
         if (!content) {
-            message.warning("暂无字幕可导出");
+            message.warning(t("canvasSubtitleUi006"));
             return;
         }
         saveAs(new Blob([content], { type: "text/plain;charset=utf-8" }), `${node.title || "subtitle"}.srt`);
     };
-
     const runAiHighlight = async () => {
         if (!entries.length) {
-            message.warning("请先添加字幕内容");
+            message.warning(t("canvasSubtitleUi007"));
             return;
         }
         if (!isAiConfigReady(config, config.textModel)) {
             // 未配置文本模型时本地回退：按终止标点取首段作为高亮，保证功能不中断。
             setHighlights(buildFallbackHighlights(entries));
-            message.info("未配置可用的文本模型，已使用本地标点高亮");
+            message.info(t("canvasSubtitleUi008"));
             return;
         }
         const controller = new AbortController();
@@ -283,21 +247,19 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                 onProgress: setProgress,
             });
             setHighlights(nextHighlights);
-            message.success(`已生成 ${nextHighlights.length} 条关键词高亮`);
+            message.success(t("canvasSubtitleDyn008", { count: nextHighlights.length }));
         } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") return;
-            message.error(error instanceof Error ? error.message : "关键词高亮生成失败");
+            message.error(error instanceof Error ? error.message : t("canvasSubtitleUi009"));
         } finally {
             setRunning(false);
             setProgress(null);
             abortRef.current = null;
         }
     };
-
     const cancelAiHighlight = () => {
         abortRef.current?.abort();
     };
-
     const handleSave = () => {
         const normalized = normalizeEntries(entries);
         const { remapped } = remapHighlightsAfterResegment(highlights, normalized);
@@ -307,15 +269,13 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
             subtitleStyle: style,
             subtitleUpdatedAt: new Date().toISOString(),
         });
-        message.success(normalized.length ? "字幕已保存" : "字幕已清空并保存");
+        message.success(normalized.length ? t("canvasSubtitleUi010") : t("canvasSubtitleUi011"));
         onClose();
     };
-
     const formatDurationMs = (ms: number) => {
         const seconds = Math.round(ms / 1000);
-        return seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60}秒` : `${seconds}秒`;
+        return seconds >= 60 ? t("canvasSubtitleDyn009", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }) : t("canvasSubtitleDyn010", { seconds });
     };
-
     const previewBlock = (
         <div className="flex min-h-0 flex-col gap-2">
             <div ref={previewBoxRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border" style={{ borderColor: theme.toolbar.border, background: "#000" }}>
@@ -337,7 +297,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                             onError={() => setVideoError(true)}
                             onTimeUpdate={(event) => setCurrentTimeMs(Math.round(event.currentTarget.currentTime * 1000))}
                         />
-                        {videoError ? <div className="absolute inset-0 grid place-items-center text-xs opacity-70">视频预览加载失败，请检查素材是否仍然可用</div> : null}
+                        {videoError ? <div className="absolute inset-0 grid place-items-center text-xs opacity-70">{t("canvasSubtitleUi012")}</div> : null}
                         {activeEntry ? (
                             <div className={`pointer-events-none absolute inset-x-0 flex justify-center px-4 ${activePositionClass}`}>
                                 <span className="rounded-lg px-2 py-0.5 text-center leading-7" style={{ background: "rgba(0,0,0,.62)", color: style.color, fontSize: style.fontSize, borderRadius: style.highlightRadius, maxWidth: "90%" }}>
@@ -347,39 +307,38 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         ) : null}
                     </div>
                 ) : (
-                    <div className="grid h-40 w-full max-w-[640px] place-items-center px-4 text-center text-xs opacity-60">{videoError ? "视频预览加载失败，请检查素材是否仍然可用" : "暂无视频素材可预览，可先在节点上传或生成视频"}</div>
+                    <div className="grid h-40 w-full max-w-[640px] place-items-center px-4 text-center text-xs opacity-60">{videoError ? t("canvasSubtitleUi012") : t("canvasSubtitleUi013")}</div>
                 )}
             </div>
-            <div className="shrink-0 text-center text-xs opacity-40">点击字幕条目可跳转预览</div>
+            <div className="shrink-0 text-center text-xs opacity-40">{t("canvasSubtitleUi014")}</div>
         </div>
     );
-
     const styleControls = (
         <>
             <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                <span>字号</span>
+                <span>{t("canvasSubtitleUi015")}</span>
                 <InputNumber size="small" min={12} max={40} value={style.fontSize} onChange={(fontSize) => setStyle((current) => ({ ...current, fontSize: fontSize ?? current.fontSize }))} className="w-20" />
             </label>
             <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                <span>颜色</span>
+                <span>{t("canvasPrevisUi196")}</span>
                 <ColorPicker size="small" value={style.color} onChange={(color) => setStyle((current) => ({ ...current, color: color.toHexString() }))} />
             </label>
             <div className="text-xs opacity-70">
-                <div className="mb-1">位置</div>
+                <div className="mb-1">{t("previewPosition")}</div>
                 <Segmented
                     block
                     size="small"
                     value={style.position}
                     options={[
-                        { label: "顶部", value: "top" },
-                        { label: "居中", value: "center" },
-                        { label: "底部", value: "bottom" },
+                        { label: t("canvasSubtitleUi016"), value: "top" },
+                        { label: t("titleCenter"), value: "center" },
+                        { label: t("canvasSubtitleUi017"), value: "bottom" },
                     ]}
                     onChange={(position) => setStyle((current) => ({ ...current, position: position as SubtitlePosition }))}
                 />
             </div>
             <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                <span>单条上限</span>
+                <span>{t("canvasSubtitleUi018")}</span>
                 <span className="flex items-center gap-1">
                     <InputNumber
                         size="small"
@@ -389,40 +348,39 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         onChange={(maxCharsPerEntry) => setStyle((current) => ({ ...current, maxCharsPerEntry: maxCharsPerEntry ?? DEFAULT_MAX_CHARS_PER_ENTRY }))}
                         className="w-20"
                     />
-                    <span className="opacity-40">字</span>
+                    <span className="opacity-40">{t("canvasSubtitleUi019")}</span>
                 </span>
             </label>
             <div className="border-t pt-3" style={{ borderColor: theme.toolbar.border }}>
                 <div className="mb-2 flex items-center justify-between text-xs font-medium opacity-55">
-                    <span>关键词高亮</span>
+                    <span>{t("canvasSubtitleUi020")}</span>
                     <Switch size="sm" checked={style.highlightEnabled} onChange={(highlightEnabled) => setStyle((current) => ({ ...current, highlightEnabled }))} />
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                        <span>背景色</span>
+                        <span>{t("canvasSubtitleUi021")}</span>
                         <ColorPicker size="small" value={style.highlightBackgroundColor} onChange={(color) => setStyle((current) => ({ ...current, highlightBackgroundColor: color.toHexString() }))} />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                        <span>文字色</span>
+                        <span>{t("canvasSubtitleUi022")}</span>
                         <ColorPicker size="small" value={style.highlightTextColor} onChange={(color) => setStyle((current) => ({ ...current, highlightTextColor: color.toHexString() }))} />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                        <span>内边距 X</span>
+                        <span>{t("canvasSubtitleUi023")}</span>
                         <InputNumber size="small" min={0} max={24} value={style.highlightPaddingX} onChange={(highlightPaddingX) => setStyle((current) => ({ ...current, highlightPaddingX: highlightPaddingX ?? 0 }))} className="w-20" />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                        <span>内边距 Y</span>
+                        <span>{t("canvasSubtitleUi024")}</span>
                         <InputNumber size="small" min={0} max={24} value={style.highlightPaddingY} onChange={(highlightPaddingY) => setStyle((current) => ({ ...current, highlightPaddingY: highlightPaddingY ?? 0 }))} className="w-20" />
                     </label>
                     <label className="flex items-center justify-between gap-2 text-xs opacity-70">
-                        <span>圆角</span>
+                        <span>{t("canvasSubtitleUi025")}</span>
                         <InputNumber size="small" min={0} max={24} value={style.highlightRadius} onChange={(highlightRadius) => setStyle((current) => ({ ...current, highlightRadius: highlightRadius ?? 0 }))} className="w-20" />
                     </label>
                 </div>
             </div>
         </>
     );
-
     const entriesBlock = (
         <div className="thin-scrollbar min-h-0 space-y-2 overflow-y-auto pr-1">
             {entries.length ? (
@@ -431,8 +389,8 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                     return (
                         <div
                             key={`${entry.index}-${idx}`}
-                            className="cursor-pointer rounded-xl border p-2.5 transition-colors"
-                            title="点击跳转到该条字幕时间"
+                            className="cursor-pointer rounded-xl border p-2 transition-colors"
+                            title={t("canvasSubtitleUi026")}
                             style={{ background: theme.node.fill, borderColor: activeEntry?.index === entry.index ? theme.accent.primary : theme.node.stroke }}
                             onClick={(event) => {
                                 const target = event.target as HTMLElement;
@@ -440,16 +398,16 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                 seekToEntry(entry);
                             }}
                         >
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-2">
                                 <span className="grid size-6 shrink-0 place-items-center rounded-md text-xs font-semibold" style={{ background: theme.accent.primarySoft, color: theme.accent.primary }}>
                                     {idx + 1}
                                 </span>
-                                <InputNumber size="small" min={0} step={100} value={entry.startMs} onChange={(startMs) => updateEntry(idx, { startMs: startMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条开始时间（毫秒）`} />
+                                <InputNumber size="small" min={0} step={100} value={entry.startMs} onChange={(startMs) => updateEntry(idx, { startMs: startMs ?? 0 })} className="w-32" aria-label={t("canvasSubtitleDyn011", { index: idx + 1 })} />
                                 <span className="text-xs opacity-40">→</span>
-                                <InputNumber size="small" min={0} step={100} value={entry.endMs} onChange={(endMs) => updateEntry(idx, { endMs: endMs ?? 0 })} className="w-32" aria-label={`第 ${idx + 1} 条结束时间（毫秒）`} />
+                                <InputNumber size="small" min={0} step={100} value={entry.endMs} onChange={(endMs) => updateEntry(idx, { endMs: endMs ?? 0 })} className="w-32" aria-label={t("canvasSubtitleDyn012", { index: idx + 1 })} />
                                 <button
                                     type="button"
-                                    title="切分这条字幕"
+                                    title={t("canvasSubtitleUi027")}
                                     className="ml-auto grid size-7 place-items-center rounded-lg border transition-colors hover:opacity-75"
                                     style={{ borderColor: theme.toolbar.border }}
                                     disabled={running}
@@ -459,7 +417,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                 </button>
                                 <button
                                     type="button"
-                                    title="删除这条字幕"
+                                    title={t("canvasSubtitleUi028")}
                                     className="grid size-7 place-items-center rounded-lg border text-red-500 transition-colors hover:opacity-75"
                                     style={{ borderColor: theme.toolbar.border }}
                                     disabled={running}
@@ -468,10 +426,11 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                     <Trash2 className="size-3.5" />
                                 </button>
                             </div>
-                            <Input.TextArea value={entry.text} autoSize={{ minRows: 1, maxRows: 3 }} placeholder="字幕文本" className="mt-2" onChange={(event) => updateEntry(idx, { text: event.target.value })} />
+                            <Input.TextArea value={entry.text} autoSize={{ minRows: 1, maxRows: 3 }} placeholder={t("timelineSubtitleText")} className="mt-2" onChange={(event) => updateEntry(idx, { text: event.target.value })} />
                             {highlight ? (
-                                <div className="mt-1.5 text-xs" style={{ color: theme.accent.primary }}>
-                                    重点：{highlight.highlightText}
+                                <div className="mt-2 text-xs" style={{ color: theme.accent.primary }}>
+                                    {t("canvasSubtitleUi029")}
+                                    {highlight.highlightText}
                                 </div>
                             ) : null}
                         </div>
@@ -481,27 +440,25 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                 <div className="grid h-40 place-items-center text-center">
                     <div className="text-xs opacity-45">
                         <ListPlus className="mx-auto mb-2 size-8" />
-                        还没有字幕：导入 SRT 或文本文件，或点击工具栏“新增字幕”。
+                        {t("canvasSubtitleUi030")}
                     </div>
                 </div>
             )}
         </div>
     );
-
     const title = (
-        <div className="flex min-w-0 items-center gap-2.5 pr-10">
+        <div className="flex min-w-0 items-center gap-2 pr-10">
             <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: theme.accent.primarySoft, color: theme.accent.primary }}>
                 <Captions className="size-4" />
             </span>
             <div className="min-w-0">
-                <div className="truncate text-[var(--fs-heading-lg)] font-semibold leading-6 tracking-[-0.02em]">字幕编辑</div>
-                <div className="truncate text-xs opacity-45">{node.title || "视频节点"}</div>
+                <div className="truncate text-[var(--fs-heading-lg)] font-semibold leading-6 tracking-[-0.02em]">{t("timelineSubtitleEdit")}</div>
+                <div className="truncate text-xs opacity-45">{node.title || t("contextVideoNode")}</div>
             </div>
         </div>
     );
-
     return (
-        <Modal className="canvas-subtitle-dialog" title={title} open={open} centered footer={null} width={1120} destroyOnHidden onCancel={onClose} styles={{ container: { padding: 0, overflow: "hidden" }, body: { padding: 0 } }}>
+        <AppModal className="canvas-subtitle-dialog" title={title} open={open} centered footer={null} width={1120} destroyOnHidden onCancel={onClose} flush>
             <div className="flex h-[min(72vh,680px)] min-h-[420px] flex-col text-sm" style={{ color: theme.node.text }}>
                 <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                     <input
@@ -527,19 +484,19 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         }}
                     />
                     <Button size="small" icon={<FileUp className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
-                        导入 SRT
+                        {t("canvasSubtitleUi031")}
                     </Button>
                     <Button size="small" icon={<FileUp className="size-3.5" />} onClick={() => textInputRef.current?.click()}>
-                        导入文本
+                        {t("canvasSubtitleUi032")}
                     </Button>
                     <Button size="small" icon={<FileDown className="size-3.5" />} disabled={!entries.length} onClick={exportSrt}>
-                        导出 SRT
+                        {t("canvasSubtitleUi033")}
                     </Button>
                     <Button size="small" icon={<Scissors className="size-3.5" />} disabled={!entries.length || running} onClick={resegmentAll}>
-                        自动切分
+                        {t("canvasSubtitleUi034")}
                     </Button>
                     <Button size="small" icon={<Plus className="size-3.5" />} disabled={running} onClick={addEntry}>
-                        新增字幕
+                        {t("canvasSubtitleUi035")}
                     </Button>
                     <Button
                         size="small"
@@ -548,11 +505,11 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         disabled={!entries.length || running}
                         onClick={() =>
                             modal.confirm({
-                                title: "清空全部字幕",
-                                content: `将删除全部 ${entries.length} 条字幕及关键词高亮，此操作不可撤销。`,
-                                okText: "清空",
+                                title: t("canvasSubtitleUi036"),
+                                content: t("canvasSubtitleDyn013", { count: entries.length }),
+                                okText: t("canvasHistoryClear"),
                                 okButtonProps: { danger: true },
-                                cancelText: "取消",
+                                cancelText: t("timelineCancel"),
                                 onOk: () => {
                                     // 互通加固：清空全部立即持久化到节点并同步时间线，避免清空后直接关闭弹窗（未点保存）导致重开视频节点旧字幕复活。
                                     onSave(node.id, {
@@ -563,27 +520,27 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                                     });
                                     setEntries([]);
                                     setHighlights([]);
-                                    message.success("已清空全部字幕并同步到视频节点与时间线");
+                                    message.success(t("canvasSubtitleUi037"));
                                 },
                             })
                         }
                     >
-                        清空全部
+                        {t("canvasSubtitleUi038")}
                     </Button>
                     <Button
                         size="small"
                         type={running ? "default" : "primary"}
-                        icon={running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                        icon={running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Captions className="size-3.5" />}
                         disabled={!entries.length}
                         onClick={running ? cancelAiHighlight : () => void runAiHighlight()}
                     >
-                        {running ? "取消高亮" : "AI 关键词高亮"}
+                        {running ? t("canvasSubtitleUi039") : t("canvasSubtitleUi040")}
                     </Button>
                 </div>
 
                 {progress && running ? (
                     <div className="border-b px-4 py-2" style={{ borderColor: theme.toolbar.border }}>
-                        <Progress percent={progress.percent} size="small" format={() => `${progress.processedEntries}/${progress.totalEntries} 条 · 批次 ${progress.batchIndex}/${progress.batchTotal}`} />
+                        <Progress percent={progress.percent} size="small" format={() => t("canvasSubtitleDyn014", { processed: progress.processedEntries, total: progress.totalEntries, batch: progress.batchIndex, batches: progress.batchTotal })} />
                     </div>
                 ) : null}
 
@@ -592,7 +549,7 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
                         {entriesBlock}
                         {previewBlock}
                         <div className="thin-scrollbar min-h-0 space-y-3 overflow-y-auto pr-1">
-                            <div className="text-xs font-medium opacity-55">字幕样式</div>
+                            <div className="text-xs font-medium opacity-55">{t("canvasSubtitleUi041")}</div>
                             {styleControls}
                         </div>
                     </div>
@@ -600,18 +557,18 @@ export function CanvasSubtitleDialog({ node, open, projectId, config, onClose, o
 
                 <div className="flex items-center justify-between gap-3 border-t px-4 py-3" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                     <div className="text-xs opacity-45">
-                        {entries.length} 条字幕 · 单条上限 {style.maxCharsPerEntry || DEFAULT_MAX_CHARS_PER_ENTRY} 字
+                        {entries.length} {t("canvasSubtitleUi042")} {style.maxCharsPerEntry || DEFAULT_MAX_CHARS_PER_ENTRY} {t("canvasSubtitleUi019")}
                     </div>
                     <div className="flex items-center gap-2">
                         <Button disabled={running} onClick={onClose}>
-                            取消
+                            {t("timelineCancel")}
                         </Button>
                         <Button type="primary" disabled={running} onClick={handleSave}>
-                            保存
+                            {t("timelineSave")}
                         </Button>
                     </div>
                 </div>
             </div>
-        </Modal>
+        </AppModal>
     );
 }

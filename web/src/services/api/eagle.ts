@@ -1,4 +1,4 @@
-import { apiBaseURL, apiClient, request } from "@/services/api/request";
+import { http, apiBaseURL } from "@/services/api/request";
 
 export type EagleFolder = {
     id: string;
@@ -28,7 +28,7 @@ export type EagleItem = {
 };
 
 export type EagleAddItemInput = {
-	url: string;
+    url: string;
     name: string;
     folderId?: string;
     tags?: string[];
@@ -37,12 +37,13 @@ export type EagleAddItemInput = {
     modificationTime?: number;
 };
 
-export async function getEagleLibrary(baseUrl: string) {
-    return request<{ library: EagleLibrary }>(apiClient.get("/plugins/eagle/library", { params: { baseUrl } }));
+export async function getEagleLibrary(baseUrl: string, signal?: AbortSignal) {
+    return http.get<{ library: EagleLibrary }>("/plugins/eagle/library", { params: { baseUrl }, signal });
 }
 
-export async function listEagleItems(input: { baseUrl: string; folderId?: string; keyword?: string; limit?: number; offset?: number }) {
-    return request<{ items: EagleItem[] }>(apiClient.get("/plugins/eagle/items", {
+export async function listEagleItems(input: { baseUrl: string; folderId?: string; keyword?: string; limit?: number; offset?: number; signal?: AbortSignal }) {
+    return http.get<{ items: EagleItem[] }>("/plugins/eagle/items", {
+        signal: input.signal,
         params: {
             baseUrl: input.baseUrl,
             folderId: input.folderId || undefined,
@@ -50,7 +51,7 @@ export async function listEagleItems(input: { baseUrl: string; folderId?: string
             limit: input.limit,
             offset: input.offset,
         },
-    }));
+    });
 }
 
 export function eagleItemThumbnailUrl(itemId: string, baseUrl: string) {
@@ -66,7 +67,7 @@ export async function downloadEagleItem(itemId: string, baseUrl: string, signal?
     if (!response.ok) {
         let message = "读取 Eagle 素材失败";
         try {
-            const body = await response.json() as { msg?: string };
+            const body = (await response.json()) as { msg?: string };
             message = body.msg || message;
         } catch {
             // 保留通用错误，避免把 HTML 或服务器内部信息展示给用户。
@@ -76,10 +77,10 @@ export async function downloadEagleItem(itemId: string, baseUrl: string, signal?
     return response.blob();
 }
 
-export async function addEagleItem(baseUrl: string, input: EagleAddItemInput) {
-    return request<{ item: { id?: string } }>(apiClient.post(`/plugins/eagle/items?baseUrl=${encodeURIComponent(baseUrl)}`, input));
+export async function addEagleItem(baseUrl: string, input: EagleAddItemInput, signal?: AbortSignal) {
+    return http.post<{ item: { id?: string } }>(`/plugins/eagle/items?baseUrl=${encodeURIComponent(baseUrl)}`, input, { signal });
 }
 
 export async function createEagleFolder(baseUrl: string, input: { name: string; parentId?: string }) {
-    return request<{ created: boolean }>(apiClient.post(`/plugins/eagle/folders?baseUrl=${encodeURIComponent(baseUrl)}`, input));
+    return http.post<{ created: boolean }>(`/plugins/eagle/folders?baseUrl=${encodeURIComponent(baseUrl)}`, input);
 }

@@ -1,0 +1,84 @@
+.membership-credit-summary {
+    --membership-detail-text: var(--welcome-text, var(--foreground));
+    --membership-detail-muted: var(--welcome-muted, var(--catalog-muted, var(--muted-foreground)));
+    margin-block: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--membership-detail-text) 12%, transparent);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--membership-detail-text) 5%, transparent);
+    color: var(--membership-detail-muted);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.membership-credit-summary-amount {
+    margin: 0;
+    line-height: 1.4;
+}
+
+.membership-credit-summary-amount strong {
+    color: var(--membership-detail-text);
+    font-size: var(--fs-heading);
+    font-weight: 680;
+}
+
+.membership-credit-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-2);
+    line-height: 1.4;
+}
+
+.membership-credit-summary-count {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.membership-credit-summary-note {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--space-6);
+    block-size: var(--space-6);
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: help;
+}
+
+.membership-credit-summary-note:hover {
+    color: var(--membership-detail-text);
+}
+
+.membership-credit-summary-note:focus-visible {
+    outline: 2px solid var(--membership-detail-text);
+    outline-offset: 2px;
+}
+
+.membership-model-access {
+    display: grid;
+    gap: var(--space-1);
+    margin: var(--space-3) 0 0;
+    color: var(--welcome-muted, var(--catalog-muted, var(--muted-foreground)));
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+.membership-model-access > div {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-2);
+}
+
+.membership-model-access dt {
+    color: var(--welcome-text, var(--foreground));
+    font-weight: 610;
+}
+
+.membership-model-access dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}

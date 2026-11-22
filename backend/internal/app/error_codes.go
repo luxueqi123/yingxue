@@ -1,0 +1,54 @@
+package app
+
+import "infinite-canvas/backend/internal/kernel"
+
+// 错误码和原因已迁到 kernel；此处保留兼容别名。
+const (
+	CodeOK                  = kernel.CodeOK
+	CodeInvalidArgument     = kernel.CodeInvalidArgument
+	CodeUnauthorized        = kernel.CodeUnauthorized
+	CodeForbidden           = kernel.CodeForbidden
+	CodeNotFound            = kernel.CodeNotFound
+	CodeConflict            = kernel.CodeConflict
+	CodeTooManyRequests     = kernel.CodeTooManyRequests
+	CodeInternal            = kernel.CodeInternal
+	CodeBadGateway          = kernel.CodeBadGateway
+	CodeUnavailable         = kernel.CodeUnavailable
+	CodeTimeout             = kernel.CodeTimeout
+	CodeQuotaExceeded       = kernel.CodeQuotaExceeded
+	CodeStorageReadOnly     = kernel.CodeStorageReadOnly
+	CodeIdempotencyConflict = kernel.CodeIdempotencyConflict
+	CodeRateLimited         = kernel.CodeRateLimited
+)
+
+type ErrorReason = kernel.ErrorReason
+
+const (
+	ReasonInvalidArgument              = kernel.ReasonInvalidArgument
+	ReasonUnauthorized                 = kernel.ReasonUnauthorized
+	ReasonForbidden                    = kernel.ReasonForbidden
+	ReasonNotFound                     = kernel.ReasonNotFound
+	ReasonConflict                     = kernel.ReasonConflict
+	ReasonProjectNameConflict          = kernel.ReasonProjectNameConflict
+	ReasonFailedPrecondition           = kernel.ReasonFailedPrecondition
+	ReasonQuotaExceeded                = kernel.ReasonQuotaExceeded
+	ReasonStorageCapacity              = kernel.ReasonStorageCapacityExceeded
+	ReasonStorageReadOnly              = kernel.ReasonStorageReadOnly
+	ReasonDramaBudget                  = kernel.ReasonDramaBudgetExhausted
+	ReasonDramaSegmentChanged          = kernel.ReasonDramaSegmentChanged
+	ReasonDramaEpisodeConfirmRequired  = kernel.ReasonDramaEpisodeConfirmRequired
+	ReasonAgentInterjectionRunFinished = kernel.ReasonAgentInterjectionRunFinished
+	ReasonAgentInterjectionDelivered   = kernel.ReasonAgentInterjectionDelivered
+	ReasonAgentRunStateBusy            = kernel.ReasonAgentRunStateBusy
+	ReasonRateLimited                  = kernel.ReasonRateLimited
+	ReasonUnavailable                  = kernel.ReasonUnavailable
+	ReasonTimeout                      = kernel.ReasonTimeout
+	ReasonInternal                     = kernel.ReasonInternal
+	ReasonBadGateway                   = kernel.ReasonBadGateway
+	ReasonUpstreamDNSFailed            = kernel.ReasonUpstreamDNSFailed
+	ReasonSkillVersionConflict         = kernel.ReasonSkillVersionConflict
+)
+
+func ReasonForStatus(status int) ErrorReason {
+	return kernel.ReasonForStatus(status)
+}
