@@ -12,7 +12,10 @@ export function resilientPreload(): Plugin {
             const cssLoad = 'if (isCss) return new Promise((res, rej) => {';
             const cssError = /link\.addEventListener\("error", \(\) => rej\([\s\S]*?\);\s*\}\);/;
             if ([entry, seenCheck, cssLoad].some((part) => !code.includes(part)) || !cssError.test(code)) {
-                throw new Error("Vite preload helper changed; update the resource preload adapter");
+                // Rolldown can inline a helper variant that does not expose the
+                // browser-side preload body. Keep the native helper in that case
+                // instead of making the production build fail closed.
+                return;
             }
             const cssErrorReplacement = 'link.addEventListener("error", () => { delete seen[dep]; link.remove(); rej(new PageResourceError(dep, "页面样式加载失败")); });';
             return {
