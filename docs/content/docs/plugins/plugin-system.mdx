@@ -53,6 +53,8 @@ description: 映雪统一插件系统的扩展边界、Manifest 合同与 Eagle 
 
 `/plugins` 是用户发现、个人启用和个人配置入口；`/admin/plugins` 是平台可用性、上传、卸载和启用人数入口。普通用户是否能看到只读的系统/自定义插件由“向普通用户显示系统插件”功能开关控制，但官方应用插件始终保留个人开关。
 
+官方或内置插件随应用版本更新，不通过上传同 ID 的 `.yingce-plugin` 覆盖。上传冲突返回 HTTP 409 及应用升级提示；部署时应升级包含新插件包的完整应用，再核对实际注册版本。修改包 ID 或删除内置插件不是升级流程。旧部署若仍返回通用 HTTP 500，需随应用更新此错误处理，不能据此判断协议能力不支持。
+
 ### 4.1 画布节点插件
 
 新增自定义节点类型、节点内容渲染、节点详情面板、节点工具栏和节点输入输出资源。
@@ -81,9 +83,9 @@ Eagle 插件属于此类，具体方案见第 8 节。
 
 扩展剧本、分镜、提示词、素材包、JSON、Markdown、PDF 等格式的导入或导出。
 
-### 4.6 Agent / MCP 插件
+### 4.6 云端 Agent 能力
 
-为 Codex、Claude 或其他 Agent 暴露画布工具。这一类与网页插件可以协同，但仍使用独立的 Agent / MCP 安全边界。
+云端 Agent 通过后端受控工具合同读取和修改画布。插件只能通过版本化的宿主贡献点提供技能或能力声明，不能注入本地进程、MCP 连接或浏览器私有状态。
 
 ## 5. 插件包与清单
 
@@ -97,6 +99,20 @@ eagle-asset-connector.yingce-plugin
 ├── web/entry.js       # 有 UI/功能代码时声明
 └── web/assets/...     # 可选静态资源
 ```
+
+### 单视频签名上传合同
+
+声明式视频 Provider 可增加 `upload`，由宿主在创建任务后上传原片，再进入轮询。必须同时声明 `poll`，且能力只能为 `video`。该合同目前只支持一段视频、一个签名 PUT 地址，不能用于多片或分片上传。
+
+| 字段 | 含义 |
+| --- | --- |
+| `createUrlsPath` | 创建响应中的单元素签名地址数组路径 |
+| `pendingUrlsPath` | 查询响应中尚待上传的单元素地址数组路径 |
+| `statusPath` | 查询响应中的状态路径 |
+| `receivedStatuses` | 供应商确认原片已接收的状态列表 |
+| `pendingStatuses` | 供应商确认仍待上传的状态列表 |
+
+状态必须非空、小写且两组互不重叠。未知状态拒绝自动重传。恢复时先查供应商状态；只有明确待上传且返回有效地址才传原片。宿主不向签名地址转发渠道鉴权，不跟随上传重定向，继续执行出站安全限制。检查点按用户、任务、输入和租约绑定并加密；完成后清除。完整示例见 `plugin-packages/topaz-video-enhance/manifest.json`。
 
 `manifest.json` 建议从以下最小清单开始：
 
@@ -124,6 +140,24 @@ eagle-asset-connector.yingce-plugin
 - `permissions`：最小权限集合，宿主在安装和首次使用时展示。
 - `dependencies`：插件依赖的其他插件或宿主能力。
 - `integrity`：用于校验远程产物是否被替换。
+
+### 5.1 文本多模态声明式投影
+
+文本请求保留原有 `request.messages`，另提供 `request.textMessages`：每条含 `role`、有序规范化 `parts` 和文字拼接 `text`。媒体块带 `value/mimeType/format/isInline/data/valid`，`raw` 保留原始块；`request.textInput` 汇总所有历史和当前输入的 `parts/types/invalidCount` 及远程媒体数量，供现有 `validations` 使用。投影不下载媒体、不推断模型能力，也不改变准入、选线或计费。
+
+插件负责原生编码：Gemini/Vertex 使用 inlineData/fileData，Ollama 使用字符串和 Base64 images，Converse 使用原生 content/source.bytes，DashScope 使用 input.messages 和正确端点，Messages 转换历史与当前图片并保留原生缓存/工具/思考块。InvokeModel 必须提供模型专属非空 body/extra_body，不伪造通用格式。具体媒体、URI 和 MIME 边界见各包接口文档，不能把 profile 限制等同于供应商所有产品能力。Agent 原生路径不经过内容转换。
+
+文本协议以目录内 manifest 为事实源；`generate-catalog.mjs <插件ID...>` 从实际清单刷新字段表和完整嵌入文档，不再从重复模板覆盖修复。修改后必须同步重建实际 `.yingce-plugin`；启动刷新应保留管理员停用状态。
+
+### 短剧视频续接
+
+宿主使用渠道所绑定插件版本的 `videoReferences`。当协议声明 `dramaTailFrame` 时，短剧预演与出站请求使用相同的素材角色。
+
+- `omni-first-frame` 使用全能参考模式发送上一段尾帧和本段参考图，尾帧保留首帧角色。可灵的 `omni-contents` 布局根据 `contents` 中随请求发送的素材 ID 改写提示词。
+- `reference-image` 在同时带其他参考图时，把上一段尾帧放在第一张开场参考图。单尾帧仍按渠道声明的图生模式处理。
+- `parallel-only` 用于短剧并行出片。AutoDL 的专用首尾帧工作流可在画布手动提供两张关键帧。
+
+`input-media-top-prompt` 布局从 `input.media` 读取素材顺序，改写请求顶层的 `prompt`。参考图编号规则由插件声明，宿主按实际出站顺序校验。
 
 ## 6. 宿主 API 边界
 

@@ -1,6 +1,7 @@
 .next/
 out/
 node_modules/
+open-storyboard-canvas/
 docs/*
 !docs/design/
 !docs/index.md
@@ -17,8 +18,40 @@ docs/content/docs/plugins/*
 # Keep the task stability runbook versioned without unignoring generated docs.
 !docs/content/docs/backend/
 docs/content/docs/backend/*
+!docs/content/docs/backend/skill-curation.mdx
 !docs/content/docs/backend/task-runtime-stability.mdx
+!docs/content/docs/backend/agent-prompt-policy.mdx
+!docs/content/docs/backend/agent-mcp.mdx
+!docs/content/docs/backend/canvas-agent-appearance.mdx
+!docs/content/docs/backend/update-announcements.mdx
+!docs/content/docs/backend/http-api.mdx
+!docs/content/docs/backend/wechat-login.mdx
+!docs/content/docs/backend/code-map.mdx
+!docs/content/docs/backend/channel-configuration.mdx
+!docs/content/docs/backend/official-video-protocols.mdx
 !docs/content/docs/backend/newapi-channel-2.mdx
+!docs/content/docs/backend/bailian-minimax-video.mdx
+!docs/content/docs/backend/minimax-h3-image.mdx
+!docs/content/docs/backend/video-token-billing.mdx
+!docs/content/docs/backend/video-depth.mdx
+!docs/content/docs/backend/image-usage-billing.mdx
+!docs/content/docs/backend/credit-rewards.mdx
+!docs/content/docs/backend/creative-agent-runtime.mdx
+# Keep the creative Agent design versioned without unignoring generated docs.
+!docs/content/docs/overview/
+docs/content/docs/overview/*
+!docs/content/docs/overview/creative-agent-design.mdx
+!docs/content/docs/overview/ltv-creation-integration.mdx
+!docs/content/docs/overview/yingxue-v129-release.mdx
+!docs/content/docs/overview/ecommerce-platform-rules.mdx
+# Screenshots in the channel configuration guide use isolated sample data.
+!docs/public/
+docs/public/*
+!docs/public/images/
+docs/public/images/*
+!docs/public/images/channel-website-groups.png
+!docs/public/images/channel-batch-configuration.png
+!docs/public/images/canvas-image-version-ratio.png
 .env*
 !.env.example
 data/
@@ -26,8 +59,14 @@ data/
 /.local/docker-compose.postgres.yml
 coverage/
 dist/
+tmp/
 *.log
 *.tsbuildinfo
+/web/dist-r31-*/
+/web/node_modules-pnpm-stale/
+/web/pnpm-lock.yaml
+/.deploy-tmp/
+/.local-autodl-docs.html
 /web/public/OpenAICanvas-ComfyBridge.exe
 /web/public/OpenAICanvas-ComfyBridge-linux-amd64
 /web/public/OpenAICanvas-ComfyBridge-linux-arm64
@@ -47,7 +86,7 @@ assets/prototypes/.*.drawio.bkp
 .fleet/
 .history/
 .cache/
-.claude/settings.local.json
+.claude/
 .cursor/
 .playwright-mcp/
 .serena/
@@ -56,4 +95,17 @@ assets/prototypes/.*.drawio.bkp
 camera_language_guide.md
 .superdesign
 .playwright-cli/
+# Local Playwright / browser verification artifacts.
+/output/
 /project-memory/
+.workbuddy/
+
+# Local backend executable; never commit build output.
+backend/cmd/server/server
+# One-off local probe scripts and their compiled output.
+backend/tmp_*
+# Keep the runtime in source control; its optional debug map is not deployed.
+/web/public/live2d/live2dcubismcore.min.js.map
+.zocde/
+# Generated locally by scripts/export-theme-skins.ts.
+/web/theme-skins-install.js

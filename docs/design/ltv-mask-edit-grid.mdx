@@ -1,0 +1,50 @@
+---
+title: 《格子》局部擦除与重绘合同审计
+---
+
+## 来源与范围
+
+本次只审计 `case-0c332142d6c54aedad1a504357957d16` 的 7 个图像编辑节点。源工程取自本地锁定快照 `.local/featured-200/locked-source-cache/0c332142d6c54aedad1a504357957d16.json`，修改前的逐例基线取自 `.local/featured-200/final-200-audit/reports.json`；修改后的本地收据为 `.local/featured-200/mask-edit-audit/grid.json`，源图片字节 SHA 与 alpha 统计在同目录 `pixel-evidence.json`。未调用收费模型，未覆盖冻结名单或既有审计。
+
+| 场景 | 数量 | 源字段 | 本地图像证据 | 原生提交形状 |
+| --- | ---: | --- | --- | --- |
+| `erase` | 2 | `originImage`，没有 `mark` 和提示词 | 两张 `originImage` 为带透明区的 RGBA PNG，透明像素分别为 30198、204793；原图由各自唯一入边提供 | 入边原图 + `originImage` 透明蒙版；用场景语义生成填补指令 |
+| `redraw` | 5 | `originImage`、`mark`、提示词 | 五张 `mark` 与对应 `originImage` 同尺寸，RGB 全黑，alpha 只有 0/255；透明像素数依次为 518036、132404、1463747、49508、31606 | 原图 + `mark` 透明蒙版 + 原提示词 |
+
+原生画布的 `canvas-node-mask-edit-dialog.tsx` 也以 alpha=0 表示可修改区域；后端 `provider_image.go` 的手写分支在 OpenAI Images `/images/edits` 同时提交 `image` 与 `mask`，其它协议或缺原图会拒绝蒙版请求。导入后在首次生成、批量子节点与重试中传递蒙版；原图 URL 改动时拒绝旧蒙版。映射仅限一张图片参考、合法场景和完整原图/蒙版地址；其它私有编辑字段继续上报。
+
+主线程沿真实调度继续核对发现：声明式插件优先于该手写分支。旧包已有动态路径，实际编辑请求是 `/v1/images/edits`，但仍使用 JSON 正文传入 `images` 和 `mask`，并非标准文件上传。此前“固定 generations”的判断已由 HTTP 捕获纠正。
+
+OpenAI Images 2.0.1 已改为有参考图时发送 multipart `image` / `mask` 文件，无图时保持 JSON `/v1/images/generations`；同时移除 multipart 不需要的公开媒体 URL 要求。专项测试加载实际插件包、注册 adapter 并调用 `runImageTask`，核对请求路径、文件字节与 MIME；缺原图和不支持蒙版的能力配置保持拒绝。实际包 SHA-256 为 `69526cb695e6e5b9dce599b34ed4daf81b2780fce78c9f4cc00670a5bba5f01f`。这证明本地协议消费链，不证明真实上游兼容或等价 2K 生成；尚未部署。生产生效需随发布携带新插件包并重启后端，由启动流程按包 SHA 刷新官方插件，保留启用状态。
+
+## 输出规格和当前边界
+
+七个源节点都保存 `quality=2K`，源结果 `resourceMeta` 全为 **2752×1536**。这不是 OpenAI Images 的 `quality=medium`，也不能只用 `16:9` 代替。节点保留源 `2K` 和实测输出像素尺寸，原生 `size` 使用 `2752x1536`。
+
+继续核对接口文档与原生提交链后修正了先前的判定：旧转换器无条件添加 `image-resolution-adapter-required`，即使模型目录已经明确登记蒙版和精确尺寸也不检查。原生插件本来按 `request.aspectRatio` 传递精确 size，运行时也已有蒙版、精确尺寸和引用数量校验；这是转换器未使用已有合同，不是影策缺少 2K 接入协议。
+
+现在根据 `openai-image`、`maskSupported=true`、`size.values` 含 `2752x1536`、图片参考范围、完整提示词长度、输出数量及透明背景要求选取已登记模型。缺少匹配声明时保留空模型和完整严格参数，记 `channel-configuration-required`；禁用渠道也保持配置告警。不能选择只有 `16:9`／`2K`／`1024x1024` 声明的模型，不能减少输出数量或把像素档位偷偷写为 quality。首次生成和重试的原生校验不放宽。
+
+专项新增了声明匹配与不匹配测试；加载实际 OpenAI Images 插件包的 Go HTTP 捕获测试，蒙版请求真实走 multipart `/v1/images/edits`，保留 `size=2752x1536`、`n=2`、原图和蒙版字节，quality 未被凭空设为 medium。测试使用本机假上游和固定响应，只证明原生传输，不证明真实供应商接受该规格或生成效果。
+
+按冻结顺序重审 200 例后，36 处无条件尺寸适配误报解除；《格子》（排名 6）成为 `configuration-required`，整体适配准备计数由 40 变为 41，仍非上线验收。审计使用空模型目录，不能据此判断生产渠道缺失；没有执行付费模型生成。新报告为 `.local/featured-200/director-mask-200-audit/reports.json`，原报告保留。
+
+清洗版图片替换必须同时给出原图与蒙版的一一对应 URL 映射。`remapLtvMaskEditMedia` 原子更新原图节点、引用计划与局部编辑元数据；`loadProductionCaseProject` 仅在调用者提供 `mediaUrlMap` 时使用该映射。本轮未新增经像素复核的清洗映射，未核验生产渠道的真实 2K 输出，也未执行付费生成、用户工程覆盖或发布。
+
+## 无入边的透明底图擦除
+
+源 `3fmef38tastmc.js` 的 `handleGenerateErase` 只提交 `originImage`、数量、质量、场景、模态及可选比例／尺寸，不要求 `imageList`。排名 50 三个擦除节点无入边、四类参考列表为空，所存 `originImage` 本身就是带透明擦除区的底图，不是生成结果。
+
+已取得三张原始 PNG 并解码：均为 RGBA、622×350，透明像素分别为 23,401、70,739、795，其余 alpha=255，没有中间透明度。图片已逐张查看，尚未作为清洗发布资源。输入尺寸 622×350 与节点要求的输出 2752×1536 分开保留，不将低分辨率输入冒称为 2K 原图。源字节 SHA、透明度和原快照哈希在 `.local/featured-200/standalone-erase-source/receipt.json`。
+
+主转换器现仅对没有任何入边、没有其它参考、参数完整的 `erase/image2image` 补入 `originImage` 参考，经原有内嵌素材节点路径建立独立输入及连线。该图片同时作为原生 image 和透明 mask；保存的生成结果不参与输入恢复。有入边的原图＋蒙版路径保持原样；缺原图、redraw、畸形／冲突参考和含凭据地址不补位，未知制作参数仍阻塞。
+
+新增先失败后通过的主转换器测试覆盖输入、蒙版、输出区分、调用者快照不变、清洗地址原子替换和负例。连同原转换器、参考、分镜及导演台回归，共 59 项前端测试／215 个 Bun expect 通过，TypeScript 检查通过。Go 插件运行测试新增相同图片同时作为 image/mask 的 multipart 捕获，通过真实 `runImageTask` 与现有打包插件，保留精确 size 和数量；仍是本机假上游协议证据，不是付费生成或视觉等价验证。
+
+冻结原序 200 例重审发现 5 个工程的 12 个节点进入此路径，排名 50 转为 `configuration-required`；其它工程仍有自身缺口。适配准备为 **42/200**，不是验收上线数。报告 `.local/featured-200/standalone-erase-200-audit/reports.json`，SHA `12633e7b867d724bb2f568d09b107a5d80a4e01c52210860defdaf3cca37d4b2`；本批发布 0，原序未变。
+
+## 擦除请求中的水印镜像残留
+
+源 `handleGenerateErase` 显式选择 `originImage`，并不展开整个参数对象，因此 `originImage_wm` 不进入该请求。仅在擦除合同已完整映射时，不再将这个镜像键判作缺失的制作参数；不把镜像当原图／蒙版，不以它补齐缺失原图，也没有对重绘或其它操作扩大豁免。测试先复现原误报，再验证镜像不进入转换项目、原输入不变、缺原图仍失败及重绘继续报告该字段。
+
+40 项前端回归／92 个 Bun expect 和类型检查通过。冻结 200 例重审仅移除排名 187 的 5 条镜像误报，无新增告警或准入变化；该工程仍有视频增强、字幕擦除等未完成项。当前回执 `.local/featured-200/erase-mirror-200-audit/`，报告 SHA `968327070de7159ae700649487acb9b322fa159e126b3f3757014bfc7af7603a`。42/200 适配准备、本批发布 0；字段不参与请求并不等于图片像素水印已经清洗。

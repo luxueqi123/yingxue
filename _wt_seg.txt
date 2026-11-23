@@ -1,0 +1,293 @@
+TOTAL 2260
+=== B1end-B2 15-70
+15|
+16|import { AIMessageMarkdown } from "@/components/ai/ai-message-markdown";
+17|import { GenerationToolCard, type GenerationToolStatus } from "@/components/ai/generation-tool-card";
+18|import { MessageReasoning } from "@/components/ai/message-reasoning";
+19|import { AssetLibraryPickerModal, type AssetLibraryPickerItem } from "@/components/assets/asset-library-picker-modal";
+20|import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
+21|import { CanvasPromptOptimizerDrawer } from "@/components/canvas/canvas-prompt-optimizer-drawer";
+22|import { VoiceRecordingButton } from "@/components/conversation/voice-recording-button";
+23|import { ModelPicker } from "@/components/model-picker";
+24|import { CreationModelsMenu } from "@/components/creation-models-menu";
+25|import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+26|import { creationCanvasHandoffPath, creationResultAssetIds } from "@/lib/canvas/canvas-asset-handoff";
+27|import { readCreationDocument } from "@/lib/canvas/canvas-creation-brief";
+28|import { createGenerationBatchRetryContexts, createGenerationRetryContext, runGenerationOperationOnce, type GenerationRetryContext } from "@/lib/canvas/canvas-project-generation";
+29|import { createClientId } from "@/lib/client-id";
+30|import { consumeCreationLaunch } from "@/lib/creation-launch";
+31|import { getActiveUserScope } from "@/lib/user-scope";
+32|import { generationErrorCode, generationErrorMessage } from "@/lib/generation-error";
+33|import { useCopyText } from "@/hooks/use-copy-text";
+34|import { useExternalAssetSources } from "@/hooks/use-external-asset-sources";
+35|import { useCanvasCreationBrief } from "@/hooks/use-canvas-creation-brief";
+36|import { buildImageResolutionOptions, formatImageResolutionSize, imageRatioForSize, imageResolutionChoices, imageResolutionOption, imageSizeForResolution, supportsImageResolutionPresets, type ImageResolutionChoice } from "@/lib/image-resolution-tiers";
+37|import { VIDEO_RESOLUTION_OPTIONS } from "@/lib/video-generation-options";
+38|import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, videoDurationAllowed, videoDurationOptions, type ImageCapabilityConfig, type VideoCapabilityConfig } from "@/lib/model-capabilities";
+39|import { inferVideoOperation, modelCompatibilityError, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
+40|import { backendModelRuntimeRequired, isGenerationTaskCancelled, runBackendGenerationTask, runBackendGenerationTaskBatch, type BackendGenerationResult } from "@/services/api/generation-task";
+41|import { requestImageQuestion, type AiTextContentPart } from "@/services/api/image";
+42|import { addSkill, getSkill, listAddedSkills, type Skill } from "@/services/api/skills";
+43|import { subscribeGenerationTasks, type GenerationTask } from "@/services/api/task-center";
+44|import { createTextReplayPublisher } from "@/lib/creation-text-replay";
+45|import { isLocalDreaminaWaitStopped, localDreaminaCancellationMessage } from "@/services/local-dreamina-task-projection";
+46|import { getMediaBlob, uploadMediaFile } from "@/services/file-storage";
+47|import { uploadImage } from "@/services/image-storage";
+48|import { consumeGenerationTaskMessage, generationTaskMaterializedUrls, materializeGenerationTaskAssets, projectGenerationTaskResult } from "@/services/project-asset-sync";
+49|import { applyGenerationConsumerEffect } from "@/services/generation-consumer-dedupe";
+50|import { beginGenerationConsumer, runGenerationConsumer } from "@/services/generation-consumer-lifecycle";
+51|import { loadCreationConversations, pendingCreationTaskIds, pendingCreationTaskKey, removeCreationConversationSnapshot, saveCreationConversations, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
+52|import { recoverCreationTextTask } from "@/services/creation-text-task-recovery";
+53|import { modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+54|import { useAssetStore, type Asset } from "@/stores/use-asset-store";
+55|<<<<<<< ours
+56|=======
+57|import { useAppearanceStore } from "@/stores/use-appearance-store";
+58|import { cn } from "@/lib/utils";
+59|>>>>>>> theirs
+60|import { useUserStore } from "@/stores/use-user-store";
+61|import { useCanvasAgentStore } from "@/stores/canvas/use-canvas-agent-store";
+62|import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
+63|import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
+64|import { createPluginHostContext } from "@/services/plugin-host";
+65|import { usePluginStore } from "@/stores/use-plugin-store";
+66|<<<<<<< ours
+67|import { buildCreationMentionReferences, creationReferenceMetadata, displayCreationPrompt, expandCreationPrompt, removeCreationReferenceTokens, selectedCreationReferences, type CreationReference } from "./creation-references";
+68|import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
+69|import { creationInputIssues, creationInputLimits } from "./creation-input-policy";
+70|import { CreationSkillPicker } from "@/components/creation-skill-picker";
+=== B3end-B5 160-225
+160|
+161|function shotsFromMessages(messages: CreationMessage[]): CreationShot[] {
+162|    const shots: CreationShot[] = [];
+163|    for (const message of messages) {
+164|        if (message.role === "user") {
+165|            shots.push({ user: message });
+166|        } else if (shots.length) {
+167|            shots[shots.length - 1].result = message;
+168|        } else {
+169|            shots.push({ result: message });
+170|        }
+171|    }
+172|    return shots;
+173|}
+174|
+175|function completedCreationGenerationTask(input: { taskId: string; task?: GenerationTask; mode: "image" | "video"; prompt: string; result: BackendGenerationResult; conversationId: string; messageId: string; batchIndex?: number; batchCount?: number }): GenerationTask {
+176|    const now = new Date().toISOString();
+177|    const task = input.task ?? { id: input.taskId, type: input.mode, status: "succeeded" as const, prompt: input.prompt, attempts: 1, createdAt: now, updatedAt: now };
+178|    return projectGenerationTaskResult({ ...task, status: "succeeded", prompt: input.prompt, clientContext: { conversationId: input.conversationId, messageId: input.messageId, ...(typeof input.batchIndex === "number" ? { batchIndex: input.batchIndex } : {}), ...(typeof input.batchCount === "number" ? { batchCount: input.batchCount } : {}) } }, input.result);
+179|}
+180|
+181|<<<<<<< ours
+182|export type CreationEntrySeed = { id: string; prompt?: string; mode?: CreationMode; skillId?: string };
+183|
+184|export default function CreatePage({ embedded = false, seed }: { embedded?: boolean; seed?: CreationEntrySeed } = {}) {
+185|=======
+186|export default function CreatePage() {
+187|    const [agentMode, setAgentMode] = useState(false);
+188|>>>>>>> theirs
+189|    const { message: toast, modal } = App.useApp();
+190|    const [searchParams, setSearchParams] = useSearchParams();
+191|    const config = useEffectiveConfig();
+192|    const agentLaunch = useCanvasCreationBrief();
+193|    const [agentIntent, setAgentIntent] = useState(embedded);
+194|    const confirmTools = useCanvasAgentStore(state => state.confirmTools);
+195|    const setAgentState = useCanvasAgentStore(state => state.setAgentState);
+196|    const [uploading, setUploading] = useState(false);
+197|    const uploadingRef = useRef(false);
+198|    const [preparing, setPreparing] = useState(false);
+199|    const preparingRef = useRef(false);
+200|    const [uploadFailures, setUploadFailures] = useState<{ file: File; error: string }[]>([]);
+201|    const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
+202|    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
+203|    const promptOptimizerProvider = useMemo<PromptOptimizerProvider | null>(() => {
+204|        if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
+205|        return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, config));
+206|    }, [config, promptOptimizerEnabled, promptOptimizerInstallation]);
+207|    const updateConfig = useConfigStore((state) => state.updateConfig);
+208|    const assets = useAssetStore((state) => state.assets);
+209|    const addAsset = useAssetStore((state) => state.addAsset);
+210|    const [conversations, setConversations] = useState<CreationConversation[]>([]);
+211|    const conversationsRef = useRef<CreationConversation[]>([]);
+212|    const [activeId, setActiveId] = useState("");
+213|    const activeIdRef = useRef("");
+214|    const [hydrated, setHydrated] = useState(false);
+215|<<<<<<< ours
+216|    const [mode, setMode] = useState<CreationMode>("video");
+217|=======
+218|    const [mode, setMode] = useState<CreationMode>(() => initialComposerPreferences.mode || defaultCreationMode);
+219|>>>>>>> theirs
+220|    const [prompt, setPrompt] = useState("");
+221|    const [attachments, setAttachments] = useState<CreationAttachment[]>([]);
+222|    const [draftReferences, setDraftReferences] = useState<CreationReference[]>([]);
+223|    const seedAppliedRef = useRef("");
+224|    const [skillLoading, setSkillLoading] = useState(false);
+225|    const skillLoadsRef = useRef(0);
+=== B6-B7 290-350
+290|        const imageAttachments = attachments.filter(isImageAttachment);
+291|        if (imageAttachments.length !== 1) return undefined;
+292|        const { width, height } = imageAttachments[0];
+293|        if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) return undefined;
+294|        return { width, height };
+295|    }, [attachments]);
+296|    const mentionReferences = useMemo(() => buildCreationMentionReferences(addedSkills, attachments, draftReferences), [addedSkills, attachments, draftReferences]);
+297|    const isEmpty = !activeConversation?.messages.length;
+298|<<<<<<< ours
+299|    const pendingTaskKey = useMemo(() => pendingCreationTaskKey(conversations), [conversations]);
+300|=======
+301|
+302|    // 空首页从顶部开始；有消息的对话由跟随消息逻辑管理滚动。
+303|    useLayoutEffect(() => {
+304|        if (!hydrated || !isEmpty) return;
+305|        const frame = window.requestAnimationFrame(() => {
+306|            threadScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+307|        });
+308|        return () => window.cancelAnimationFrame(frame);
+309|    }, [activeId, hydrated, isEmpty]);
+310|>>>>>>> theirs
+311|    const pendingTaskIds = useMemo(() => pendingCreationTaskIds(conversations), [conversations]);
+312|    const shots = useMemo(() => shotsFromMessages(activeConversation?.messages || []), [activeConversation]);
+313|    const visibleShotIndex = shots.length ? selectedShotIndex >= 0 && selectedShotIndex < shots.length ? selectedShotIndex : shots.length - 1 : -1;
+314|
+315|    useEffect(() => {
+316|<<<<<<< ours
+317|        if (agentIntent || mode !== "image") return;
+318|        // 前台逻辑模型的默认参数优先于旧的全局创作参数；否则旧的合法值会一直覆盖后台刚配置的默认值。
+319|=======
+320|        writeComposerPref(TEXT_STREAMING_PREF_KEY, textStreaming);
+321|        writeComposerPref(TEXT_THINKING_PREF_KEY, textThinking);
+322|    }, [textStreaming, textThinking]);
+323|    useEffect(() => {
+324|        if (!composerPreferencesHydrated || composerPreferencesInitialized) return;
+325|        const saved = useCreationPreferencesStore.getState().preferences;
+326|        const nextMode = saved.mode || defaultCreationMode;
+327|        setMode(nextMode);
+328|        if (nextMode === "image" && saved.image) {
+329|            if (saved.image.ratio) setRatio(saved.image.ratio);
+330|            if (saved.image.quality) setQuality(saved.image.quality);
+331|            if (saved.image.count) setCount(saved.image.count);
+332|        }
+333|        if (nextMode === "video" && saved.video) {
+334|            if (saved.video.ratio) setRatio(saved.video.ratio);
+335|            if (saved.video.seconds) setSeconds(saved.video.seconds);
+336|            if (saved.video.videoQuality) setVideoQuality(saved.video.videoQuality);
+337|        }
+338|        setComposerPreferencesInitialized(true);
+339|    }, [composerPreferencesHydrated, composerPreferencesInitialized]);
+340|
+341|    useEffect(() => {
+342|        if (!composerPreferencesHydrated || !composerPreferencesInitialized || mode !== "image") return;
+343|        const saved = useCreationPreferencesStore.getState().preferences.image;
+344|        // 优先恢复用户上次选择；只有当前模型不支持该值时，normalizeImageValue 才回退到模型默认值。
+345|>>>>>>> theirs
+346|        const normalized = normalizeImageValue(imageProfile, {
+347|            size: imageProfile.size.default,
+348|            quality: imageProfile.quality.default,
+349|            count,
+350|        });
+=== B8 720-760
+720|        }
+721|        if (!selectedModel) {
+722|            toast.warning(`请先在设置中配置${modeLabels[mode]}模型`);
+723|            releaseRetryLock();
+724|            releaseSubmitGate();
+725|            return;
+726|        }
+727|<<<<<<< ours
+728|        if (agentIntent) {
+729|            const skills = selectedCreationReferences(text, mentionReferences).flatMap(reference => reference.skill ? [reference.skill] : []);
+730|            try {
+731|                await agentLaunch.launch({ prompt: text, attachments, skills, models: { text: config.textModel, image: config.imageModel, video: config.videoModel }, confirmTools });
+732|            } catch (reason) { toast.error(reason instanceof Error ? reason.message : "创作简报未能交给画布，输入内容已保留。"); }
+733|            finally { releaseRetryLock(); }
+734|=======
+735|        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
+736|            toast.error("当前模型不支持所选视频时长，请重新选择");
+737|            releaseRetryLock();
+738|            releaseSubmitGate();
+739|>>>>>>> theirs
+740|            return;
+741|        }
+742|        const compatibilityError = modelCompatibilityError(config, selectedModel, modelRequirements);
+743|        if (compatibilityError) { toast.warning(compatibilityError); releaseRetryLock(); return; }
+744|        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
+745|            toast.error("当前模型不支持所选视频时长，请重新选择");
+746|            releaseRetryLock();
+747|            releaseSubmitGate();
+748|            return;
+749|        }
+750|        const settings = { ratio, seconds, quality, videoQuality, count };
+751|        const references = selectedCreationReferences(text, mentionReferences);
+752|        // 后端对图片和视频使用不同的参考字段；这里先拆分，避免媒体类型在写入任务时被误判。
+753|        const { referenceImages, referenceVideos, referenceAudios } = splitCreationAttachments(attachments);
+754|        const videoOperation = inferVideoOperation({
+755|            textCount: text ? 1 : 0,
+756|            imageCount: referenceImages.length,
+757|            videoCount: referenceVideos.length,
+758|            audioCount: referenceAudios.length,
+759|            characterCount: 0,
+760|        });
+=== B9end 800-830
+800|            releaseRetryLock();
+801|            releaseSubmitGate();
+802|            return;
+803|>>>>>>> theirs
+804|        }
+805|        const referenceMetadata = creationReferenceMetadata(references);
+806|        followLatestMessageRef.current = true;
+807|        const userMessage = newMessage("user", text, { mode, model: selectedModel, attachments, references, settings });
+808|        const assistantMessage = newMessage("assistant", "", { mode, model: selectedModel, status: mode === "text" ? "streaming" : "pending", settings, ...retryContext });
+809|        const originConversationId = activeConversation.id;
+810|        const updateOriginAssistant = (updater: (item: CreationMessage) => CreationMessage) => updateConversationMessage(originConversationId, assistantMessage.id, updater);
+811|        const boundTaskIds = new Set<string>();
+812|        const boundTaskIdsByBatchIndex = new Map<number, string>();
+813|        const boundTasks = new Map<string, GenerationTask>();
+814|        const bindTask = (task: GenerationTask) => {
+815|            if (typeof task.clientContext?.batchIndex === "number") boundTaskIdsByBatchIndex.set(task.clientContext.batchIndex, task.id);
+816|            boundTaskIds.add(task.id);
+817|            boundTasks.set(task.id, task);
+818|            updateOriginAssistant((item) => ({ ...item, generationStage: task.stage, generationOperation: task.operation, generationErrorCode: task.errorCode, taskIds: Array.from(new Set([...(item.taskIds || []), task.id])), clientOperationId: task.clientOperationId, retryOf: task.retryOf, attemptGroupId: task.attemptGroupId }));
+819|            if (abortRef.current === controller) {
+820|                abortRef.current = null;
+821|                setBusy(false);
+822|            }
+823|        };
+824|        updateActive((conversation) => ({
+825|            ...conversation,
+826|            title: conversation.messages.length ? conversation.title : text.slice(0, 24),
+827|            updatedAt: new Date().toISOString(),
+828|            messages: [...conversation.messages, userMessage, assistantMessage],
+829|        }));
+830|        draftEpochRef.current += 1;
+=== B10 1235-1265
+1235|                        <input aria-label="快捷编辑提示词" placeholder="继续描述你的创作想法…" value={prompt} disabled={busy || referenceReplacementBusy} onChange={(event) => setPrompt(event.target.value)} />
+1236|                        <Tooltip title="展开完整创作区"><button type="button" aria-label="展开完整创作区" onClick={() => {
+1237|                            threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+1238|                            composerFocusRef.current?.focus({ preventScroll: true });
+1239|                        }}><Maximize2 /></button></Tooltip>
+1240|                    </motion.div> : null}
+1241|                </AnimatePresence>
+1242|                <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-empty-workspace creation-scrollbar">
+1243|<<<<<<< ours
+1244|                <CreationEmptyBanner />
+1245|                <div className="creation-chat-intro">
+1246|                    <span className="creation-intro-signal" aria-hidden="true" />
+1247|                    <p>映雪 · AI 创作工作台</p>
+1248|                    <h1>让你的下一个想法，<span className="creation-intro-emphasis"><span className="is-pink">在这里</span><span className="is-blue">成为作品</span></span></h1>
+1249|                </div>
+1250|                <div className="creation-empty-composer">
+1251|                    <CreationComposer {...composerProps} variant="empty" />
+1252|=======
+1253|                <div className="creation-home-heading">
+1254|                    <h1>和{brandName}聊聊创作想法</h1>
+1255|                    <p>从一个画面、一个角色或一句话开始，继续你的创作。</p>
+1256|>>>>>>> theirs
+1257|                </div>
+1258|                <section ref={launchpadRef} className="creation-launchpad" aria-label="开始创作">
+1259|                    <div className={cn("creation-composer-stage is-home-mode", agentMode && "is-agent-mode")}>
+1260|                        <CreationModeTabs mode={mode} agentActive={agentMode} onAgentSelect={() => setAgentMode(true)} onModeChange={(next) => { setAgentMode(false); selectMode(next); }} />
+1261|                        {agentMode ? <CreationAgentEntry /> : <div className="creation-empty-composer"><CreationComposer {...composerProps} variant="empty" /></div>}
+1262|                    </div>
+1263|                    <CreationEmptySuggest
+1264|                        onStartPrompt={(nextMode, prompt) => { setAgentMode(false); selectMode(nextMode); setPrompt(prompt); window.requestAnimationFrame(() => composerFocusRef.current?.focus()); }}
+1265|                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); setLibraryOpen(true); }}

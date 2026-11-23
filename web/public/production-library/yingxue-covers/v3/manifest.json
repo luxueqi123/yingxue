@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "id": "0e0ed67d0d3f4fb3921b76afcf9e1913",
+      "cover": "/production-library/yingxue-covers/v3/case-0e0ed67d0d3f4fb3921b76afcf9e1913.webp",
+      "sourceReference": "huai-frame35.jpg",
+      "model": "gpt-image-2.5",
+      "provider": "观雪",
+      "prompt": "Use case: illustration-story. Create a new cinematic cover for the actual Chinese 2D fantasy animation 淮水谣, using this frame only as character and drawing-style reference, not as a composition to copy. Preserve the hand-drawn ink contours, cel-shaded anthropomorphic mouse, traditional dark Chinese robes, round brass spectacles, small pale mouse companion. A new medium-wide three-quarter composition: the robed mouse guardian and tiny pale companion in a richly painted old wooden Chinese apothecary, warm amber light grazing ceramic jars, cool blue shadow behind, expressive quietly resolute faces, exquisite 2D feature-animation background painting. Keep the recognisable species, costume and 2D visual grammar of the reference. Premium film key art, coherent anatomy, no generic human warrior, no boats, no photorealism, no 3D plastic fur. Remove all subtitles and text. No lettering, logo or watermark. Landscape 3:2, safe central composition for a 16:9 crop.\n",
+      "sha256": "9e87bbd1e7e4296fefecc6b30e715e6b54c077879a218bcdfe60b006a8280830",
+      "contentReviewed": true
+    },
+    {
+      "id": "5d4fbcff82a64b9fbbed41b719f8cd76",
+      "cover": "/production-library/yingxue-covers/v3/case-5d4fbcff82a64b9fbbed41b719f8cd76.webp",
+      "sourceReference": "pike-frame20.jpg",
+      "model": "gpt-image-2.5",
+      "provider": "观雪",
+      "prompt": "Use case: illustration-story. Create a new premium film cover for the 2D pastoral fantasy animation 皮克与波克 地下水. This input frame is a reference for the hand-drawn animation style, character designs and pastoral digging subject, not an image to reproduce. New composition with the small stocky raccoon farmer in off-white work shirt and brown belt kneeling beside a freshly dug garden trench, companion's period-clothed hands holding a pickaxe on the opposite side. Emphasize the raccoon's expressive black eye mask, ink outlines, soft cel shading, ochre earth cross-section, tiny moisture glints beneath the soil, distant rolling green and gold countryside. Do not invent new main characters. Sophisticated warm 2D animated feature key art, painterly background, clear narrative about finding underground water for planting, new lower camera angle. Not 3D, not photorealism, not plush toys, not an unrelated magical forest adventure. No subtitles, text, logos or watermarks. Landscape 3:2 with 16:9 crop safety.\n",
+      "sha256": "784e213057bd046ee80e3ea9809d62c200218e5e9b55d526ce4ddc357df9503c",
+      "contentReviewed": true
+    },
+    {
+      "id": "19a5252f8c8044a682b220a4c359ac19",
+      "cover": "/production-library/yingxue-covers/v3/case-19a5252f8c8044a682b220a4c359ac19.webp",
+      "sourceReference": "wings-frame40.jpg",
+      "model": "gpt-image-2.5",
+      "provider": "观雪",
+      "prompt": "Use case: stylized-concept. Create a NEW premium cinematic poster for the fantasy flight montage 幻象之翼. Input frame is ONLY a reference for its lush green fantasy world, winged flight subject and richly painted animation aesthetic. New scene viewed from a three-quarter side angle: a tiny brown-cloaked traveller with an olive-green pack riding a vast blue-grey feathered bird over a luminous turquoise river and waterfalls between emerald cliffs. Preserve the stylized painted cinematic rendering and adventurous soaring mood, use detailed layered feathers, sun shafts and monumental misty canyon depth. This must look like another shot from the same film, not a fish illustration, not a photographic landscape. IMPORTANT remove the giant artificial letters/platform from the landscape; replace that area with natural river and rocks. Do not reproduce any brand marks, signatures, text, lettering or watermark from the reference. New composition, not a copy of the source frame. Landscape 3:2 with central crop safety for 16:9.\n",
+      "sha256": "4ac02fd8c0d31bec19cd676b2107885d3fd66977ccaa61cd7b7bcd38090d89ec",
+      "contentReviewed": true
+    }
+  ]
+}

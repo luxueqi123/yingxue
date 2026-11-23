@@ -1,0 +1,200 @@
+[
+ {
+  "file": "backend/internal/app/platform_bridge.go",
+  "disk_eq_base": true,
+  "base_to_up": "0\t14\tbackend/internal/app/platform_bridge.go",
+  "up_to_disk": "14\t0\tbackend/internal/app/platform_bridge.go"
+ },
+ {
+  "file": "backend/internal/app/service.go",
+  "disk_eq_base": false,
+  "base_to_up": "52\t115\tbackend/internal/app/service.go",
+  "up_to_disk": "75\t7\tbackend/internal/app/service.go"
+ },
+ {
+  "file": "backend/internal/app/upload_quota.go",
+  "disk_eq_base": true,
+  "base_to_up": "0\t8\tbackend/internal/app/upload_quota.go",
+  "up_to_disk": "8\t0\tbackend/internal/app/upload_quota.go"
+ },
+ {
+  "file": "backend/internal/app/workflow_provider.go",
+  "disk_eq_base": false,
+  "base_to_up": "80\t87\tbackend/internal/app/workflow_provider.go",
+  "up_to_disk": "80\t5\tbackend/internal/app/workflow_provider.go"
+ },
+ {
+  "file": "backend/internal/handler/custom_proxy.go",
+  "disk_eq_base": true,
+  "base_to_up": "6\t11\tbackend/internal/handler/custom_proxy.go",
+  "up_to_disk": "11\t6\tbackend/internal/handler/custom_proxy.go"
+ },
+ {
+  "file": "backend/internal/handler/custom_proxy_test.go",
+  "disk_eq_base": true,
+  "base_to_up": "20\t136\tbackend/internal/handler/custom_proxy_test.go",
+  "up_to_disk": "136\t20\tbackend/internal/handler/custom_proxy_test.go"
+ },
+ {
+  "file": "backend/internal/handler/routes.go",
+  "disk_eq_base": false,
+  "base_to_up": "20\t92\tbackend/internal/handler/routes.go",
+  "up_to_disk": "80\t0\tbackend/internal/handler/routes.go"
+ },
+ {
+  "file": "backend/internal/platform/feature_availability.go",
+  "disk_eq_base": false,
+  "base_to_up": "7\t13\tbackend/internal/platform/feature_availability.go",
+  "up_to_disk": "13\t5\tbackend/internal/platform/feature_availability.go"
+ },
+ {
+  "file": "backend/internal/platform/host.go",
+  "disk_eq_base": true,
+  "base_to_up": "0\t9\tbackend/internal/platform/host.go",
+  "up_to_disk": "9\t0\tbackend/internal/platform/host.go"
+ },
+ {
+  "file": "backend/internal/platform/runtime_policy.go",
+  "disk_eq_base": false,
+  "base_to_up": "11\t21\tbackend/internal/platform/runtime_policy.go",
+  "up_to_disk": "20\t10\tbackend/internal/platform/runtime_policy.go"
+ },
+ {
+  "file": "backend/internal/service/aliases_consts.go",
+  "disk_eq_base": false,
+  "base_to_up": "0\t7\tbackend/internal/service/aliases_consts.go",
+  "up_to_disk": "5\t0\tbackend/internal/service/aliases_consts.go"
+ },
+ {
+  "file": "backend/internal/service/aliases_funcs.go",
+  "disk_eq_base": true,
+  "base_to_up": "0\t4\tbackend/internal/service/aliases_funcs.go",
+  "up_to_disk": "4\t0\tbackend/internal/service/aliases_funcs.go"
+ },
+ {
+  "file": "backend/internal/service/aliases_types.go",
+  "disk_eq_base": false,
+  "base_to_up": "30\t10\tbackend/internal/service/aliases_types.go",
+  "up_to_disk": "9\t0\tbackend/internal/service/aliases_types.go"
+ },
+ {
+  "file": "web/src/components/canvas/canvas-node-action-context.ts",
+  "disk_eq_base": true,
+  "base_to_up": "0\t1\tweb/src/components/canvas/canvas-node-action-context.ts",
+  "up_to_disk": "1\t0\tweb/src/components/canvas/canvas-node-action-context.ts"
+ },
+ {
+  "file": "web/src/components/layout/workspace-wallet-modal.tsx",
+  "disk_eq_base": false,
+  "base_to_up": "367\t0\tweb/src/components/layout/workspace-wallet-modal.tsx",
+  "up_to_disk": "6\t14\tweb/src/components/layout/workspace-wallet-modal.tsx"
+ },
+ {
+  "file": "web/src/components/workflow-test-workbench.tsx",
+  "disk_eq_base": true,
+  "base_to_up": "2\t4\tweb/src/components/workflow-test-workbench.tsx",
+  "up_to_disk": "4\t2\tweb/src/components/workflow-test-workbench.tsx"
+ },
+ {
+  "file": "web/src/lib/canvas/canvas-workflow-builder.ts",
+  "disk_eq_base": false,
+  "base_to_up": "240\t0\tweb/src/lib/canvas/canvas-workflow-builder.ts",
+  "up_to_disk": "24\t1\tweb/src/lib/canvas/canvas-workflow-builder.ts"
+ },
+ {
+  "file": "web/src/lib/canvas/canvas-workflow.ts",
+  "disk_eq_base": true,
+  "base_to_up": "2\t3\tweb/src/lib/canvas/canvas-workflow.ts",
+  "up_to_disk": "3\t2\tweb/src/lib/canvas/canvas-workflow.ts"
+ },
+ {
+  "file": "web/src/lib/generation-error.ts",
+  "disk_eq_base": false,
+  "base_to_up": "1\t12\tweb/src/lib/generation-error.ts",
+  "up_to_disk": "12\t1\tweb/src/lib/generation-error.ts"
+ },
+ {
+  "file": "web/src/lib/generation-task-display.ts",
+  "disk_eq_base": true,
+  "base_to_up": "3\t17\tweb/src/lib/generation-task-display.ts",
+  "up_to_disk": "17\t3\tweb/src/lib/generation-task-display.ts"
+ },
+ {
+  "file": "web/src/lib/generation-workflow-execution.ts",
+  "disk_eq_base": true,
+  "base_to_up": "5\t30\tweb/src/lib/generation-workflow-execution.ts",
+  "up_to_disk": "30\t5\tweb/src/lib/generation-workflow-execution.ts"
+ },
+ {
+  "file": "web/src/lib/plugins/builtin/workflows.ts",
+  "disk_eq_base": true,
+  "base_to_up": "2\t22\tweb/src/lib/plugins/builtin/workflows.ts",
+  "up_to_disk": "22\t2\tweb/src/lib/plugins/builtin/workflows.ts"
+ },
+ {
+  "file": "web/src/pages/admin/channels/channels-page.tsx",
+  "disk_eq_base": true,
+  "base_to_up": "24\t49\tweb/src/pages/admin/channels/channels-page.tsx",
+  "up_to_disk": "49\t24\tweb/src/pages/admin/channels/channels-page.tsx"
+ },
+ {
+  "file": "web/src/pages/admin/components/feature-availability-panel.tsx",
+  "disk_eq_base": false,
+  "base_to_up": "4\t17\tweb/src/pages/admin/components/feature-availability-panel.tsx",
+  "up_to_disk": "1\t0\tweb/src/pages/admin/components/feature-availability-panel.tsx"
+ },
+ {
+  "file": "web/src/pages/admin/settings/runtime-policy-settings-page.tsx",
+  "disk_eq_base": true,
+  "base_to_up": "0\t4\tweb/src/pages/admin/settings/runtime-policy-settings-page.tsx",
+  "up_to_disk": "4\t0\tweb/src/pages/admin/settings/runtime-policy-settings-page.tsx"
+ },
+ {
+  "file": "web/src/pages/canvas/use-canvas-assistant-visibility.ts",
+  "disk_eq_base": true,
+  "base_to_up": "8\t35\tweb/src/pages/canvas/use-canvas-assistant-visibility.ts",
+  "up_to_disk": "35\t8\tweb/src/pages/canvas/use-canvas-assistant-visibility.ts"
+ },
+ {
+  "file": "web/src/pages/settings/channel-settings-pane.tsx",
+  "disk_eq_base": true,
+  "base_to_up": "10\t64\tweb/src/pages/settings/channel-settings-pane.tsx",
+  "up_to_disk": "64\t10\tweb/src/pages/settings/channel-settings-pane.tsx"
+ },
+ {
+  "file": "web/src/pages/settings/index.tsx",
+  "disk_eq_base": false,
+  "base_to_up": "38\t79\tweb/src/pages/settings/index.tsx",
+  "up_to_disk": "80\t24\tweb/src/pages/settings/index.tsx"
+ },
+ {
+  "file": "web/src/pages/tasks/index.tsx",
+  "disk_eq_base": true,
+  "base_to_up": "19\t74\tweb/src/pages/tasks/index.tsx",
+  "up_to_disk": "74\t19\tweb/src/pages/tasks/index.tsx"
+ },
+ {
+  "file": "web/src/services/api/custom-channel-relay.ts",
+  "disk_eq_base": true,
+  "base_to_up": "10\t17\tweb/src/services/api/custom-channel-relay.ts",
+  "up_to_disk": "17\t10\tweb/src/services/api/custom-channel-relay.ts"
+ },
+ {
+  "file": "web/src/services/api/image-models.ts",
+  "disk_eq_base": true,
+  "base_to_up": "6\t9\tweb/src/services/api/image-models.ts",
+  "up_to_disk": "9\t6\tweb/src/services/api/image-models.ts"
+ },
+ {
+  "file": "web/src/services/api/task-center.ts",
+  "disk_eq_base": false,
+  "base_to_up": "13\t183\tweb/src/services/api/task-center.ts",
+  "up_to_disk": "181\t7\tweb/src/services/api/task-center.ts"
+ },
+ {
+  "file": "web/src/stores/use-user-store.ts",
+  "disk_eq_base": false,
+  "base_to_up": "5\t6\tweb/src/stores/use-user-store.ts",
+  "up_to_disk": "6\t3\tweb/src/stores/use-user-store.ts"
+ }
+]

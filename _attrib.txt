@@ -1,0 +1,112 @@
+
+=== test/app-theme.test.ts
+   web/src/lib/app-theme.ts                       UNION
+   web/src/lib/skin-themes.ts                     UP-won(整文件被上游覆盖)
+   web/src/pages/admin/theme/admin-ant-theme.ts   UP-only/ABSENT-in-HEAD
+
+=== test/appearance-bootstrap.test.ts
+   web/src/pages/auth/auth-scene.tsx              HEAD-won(未动)
+   web/src/main.tsx                               HEAD-won(未动)
+   web/index.html                                 UNION
+   web/src/components/brand/brand-logo.tsx        UP-won(整文件被上游覆盖)
+   web/src/services/api/appearance.ts             HEAD==UP
+   web/src/stores/use-appearance-store.ts         UP-won(整文件被上游覆盖)
+
+=== test/ark-video-execution.test.ts
+
+=== test/canvas-angle-dialog.test.ts
+   web/src/pages/canvas/project.tsx               UNION  <<< 丢映雪行 10
+
+=== test/canvas-image-upload.test.tsx
+   web/src/lib/canvas/canvas-file-upload.ts       HEAD-won(未动)
+   web/src/components/canvas/canvas-file-upload-content.tsx UP-won(整文件被上游覆盖)
+
+=== test/canvas-node-config-reset.test.ts
+   web/src/lib/canvas/canvas-project-domain.ts    UNION
+
+=== test/create-canvas-handoff.test.ts
+   web/src/pages/create/index.tsx                 UNION  <<< 丢映雪行 29
+   web/src/pages/create/creation-workspace.tsx    UP-won(整文件被上游覆盖)
+   web/src/pages/canvas/project.tsx               UNION  <<< 丢映雪行 10
+   web/src/services/creation-conversation-store.ts HEAD==UP
+   web/src/lib/canvas/canvas-asset-handoff.ts     HEAD==UP
+
+=== test/create-library-button.test.ts
+   web/src/pages/create/index.tsx                 UNION  <<< 丢映雪行 29
+   web/src/pages/create/creation-workspace.tsx    UP-won(整文件被上游覆盖)
+   web/src/components/layout/workspace-top-bar.tsx UNION  <<< 丢映雪行 9
+   web/src/components/assets/asset-library-picker-modal.tsx UP-won(整文件被上游覆盖)
+   web/src/components/canvas/canvas-node-prompt-panel.tsx UNION  <<< 丢映雪行 1
+
+=== test/generation-task-local.test.ts
+   web/src/services/api/task-center.ts            UNION
+   web/src/lib/generation-task-display.ts         UP-won(整文件被上游覆盖)
+   web/src/pages/tasks/index.tsx                  UP-won(整文件被上游覆盖)
+   web/src/services/api/generation-task.ts        UNION
+   web/src/pages/canvas/use-canvas-generation.ts  UNION  <<< 丢映雪行 5
+   web/src/lib/canvas/canvas-generation-task-sync.ts UNION  <<< 丢映雪行 2
+   web/src/pages/canvas/use-canvas-operation-history.ts UP-only/ABSENT-in-HEAD
+   web/src/services/local-dreamina-generation.ts  HEAD-only(映雪新增文件,未被动)
+
+=== test/kling-native-execution.test.ts
+   web/src/lib/canvas/canvas-generation-task-sync.ts UNION  <<< 丢映雪行 2
+   web/src/services/resource-blob-cache.ts        UP-won(整文件被上游覆盖)
+   web/src/lib/canvas/ltv-kling-options.ts        HEAD-only(映雪新增文件,未被动)
+
+=== test/local-channel-permission.test.ts
+   web/src/lib/desktop-local-channel.ts           HEAD-only(映雪新增文件,未被动)
+   web/src/services/api/generation-task.ts        UNION
+   web/src/services/api/custom-channel-relay.ts   HEAD-won(未动)
+   web/src/services/api/image.ts                  UP-won(整文件被上游覆盖)
+   web/src/stores/use-config-store.ts             UNION
+   web/src/pages/settings/channel-settings-pane.tsx UP-won(整文件被上游覆盖)
+
+=== test/local-channel-runtime-projection.node.test.mjs
+   web/src/services/api/generation-task.ts        UNION
+   web/src/services/api/image.ts                  UP-won(整文件被上游覆盖)
+
+=== test/local-channel-task-center.node.test.mjs
+   web/src/services/api/task-center.ts            UNION
+
+=== test/local-channel-ui.node.test.mjs
+   web/src/pages/admin/channels/channels-page.tsx UP-won(整文件被上游覆盖)
+   web/src/pages/settings/index.tsx               UP-won(整文件被上游覆盖)
+
+=== test/local-cli-settings.test.ts
+   web/src/pages/settings/index.tsx               UP-won(整文件被上游覆盖)
+   web/src/pages/settings/local-cli-settings.tsx  HEAD-only(映雪新增文件,未被动)
+   web/src/pages/create/index.tsx                 UNION  <<< 丢映雪行 29
+
+=== test/local-runtime-connection.test.ts
+   web/src/components/layout/client-root-init.tsx UNION
+   web/src/services/local-runtime.ts              HEAD==UP
+
+=== test/ltv-audio-execution.test.ts
+
+=== test/project-document-persistence.test.ts
+   web/src/lib/canvas/canvas-project-documents.ts HEAD-only(映雪新增文件,未被动)
+   web/src/services/user-data-sync.ts             UNION
+   web/src/stores/canvas/use-canvas-store.ts      UNION
+   web/src/stores/use-asset-store.ts              UP-won(整文件被上游覆盖)
+
+=== test/settings-preference-spacing.test.ts
+   web/src/pages/settings/index.tsx               UP-won(整文件被上游覆盖)
+   web/src/styles/globals.css                     UNION
+
+=== test/topaz-video-execution.test.ts
+
+=== test/ui-kit-retirement.test.ts
+
+=== test/user-scoped-generation-persistence.test.ts
+   web/src/lib/user-session.ts                    UNION
+   web/src/services/user-data-sync.ts             UNION
+   web/src/services/canvas-asset-repair.ts        UP-won(整文件被上游覆盖)
+   web/src/stores/use-asset-store.ts              UP-won(整文件被上游覆盖)
+   web/src/stores/canvas/use-canvas-store.ts      UNION
+
+=== test/workspace-route-loading.test.ts
+   web/src/router.tsx                             UNION
+   web/src/components/brand/yingxue-brand-lockup.tsx HEAD-only(映雪新增文件,未被动)
+   web/src/components/layout/workspace-sidebar-nav.tsx UNION  <<< 丢映雪行 88
+   web/src/layouts/user-layout.tsx                UP-won(整文件被上游覆盖)
+   web/src/lib/workspace-route-modules.ts         UNION

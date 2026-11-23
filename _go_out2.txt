@@ -1,0 +1,12 @@
+# infinite-canvas/backend/internal/app
+internal\app\desktop_local_channel.go:48:23: s.runtimeCapabilities undefined (type *Service has no field or method runtimeCapabilities)
+internal\app\desktop_local_channel.go:220:19: method Service.ValidateChannelOutboundURL already declared at internal\app\channel_outbound.go:11:19
+internal\app\desktop_local_channel.go:224:19: method Service.OutboundHTTPClientForChannel already declared at internal\app\channel_outbound.go:15:19
+internal\app\session_upload.go:29:51: undefined: model.Session
+internal\app\session_upload.go:52:102: undefined: model.SessionFile
+internal\app\session_upload.go:56:113: undefined: model.SessionFile
+internal\app\session_creation.go:30:64: undefined: CreateSessionRequest
+internal\app\session_creation.go:30:88: undefined: SessionDetail
+internal\app\session_creation.go:63:116: undefined: model.Session
+internal\app\channel_models.go:166:104: unknown field AllowLocalChannel in struct literal of type ChannelModelsRequest
+internal\app\desktop_local_channel.go:48:23: too many errors

@@ -134,10 +134,12 @@ services:
       - "${CANVAS_HTTP_BIND:-0.0.0.0}:${CANVAS_HTTP_PORT:-3000}:3000"
     volumes:
       # Keep hashed chunks from current and previous releases for existing tabs.
-      - ${CANVAS_WEB_DATA_PATH:-web-data}:/usr/share/nginx/html
-      - ${CANVAS_SKILL_MEDIA_PATH:-./skill-media}:/usr/share/nginx/html/skill-media:ro
-      - ${CANVAS_LTV_CASE_MEDIA_PATH:-./ltv-case-library}:/data/ltv-case-library:ro
-      - ${CANVAS_LTV_CASE_MEDIA_EXTRA_PATH:-${CANVAS_LTV_CASE_MEDIA_PATH:-./ltv-case-library}/media}:/data/ltv-case-library-extra:ro
+      # Defaults preserve the existing production bind mounts so rolling updates
+      # can warm a second slot without moving user assets or the case library.
+      - ${CANVAS_WEB_DATA_PATH:-/opt/open-ai-canvas/web-data}:/usr/share/nginx/html
+      - ${CANVAS_SKILL_MEDIA_PATH:-/opt/open-ai-canvas/skill-media}:/usr/share/nginx/html/skill-media:ro
+      - ${CANVAS_LTV_CASE_MEDIA_PATH:-/opt/open-ai-canvas/releases/featured200-20261026/published}:/data/ltv-case-library:ro
+      - ${CANVAS_LTV_CASE_MEDIA_EXTRA_PATH:-/opt/open-ai-canvas/releases/clean-media-20260928-interior-v1/published/media}:/data/ltv-case-library-extra:ro
     depends_on:
       backend:
         condition: service_healthy

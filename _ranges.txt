@@ -1,0 +1,192 @@
+----- 294-320
+  294|         return { width, height };
+  295|     }, [attachments]);
+  296|     const mentionReferences = useMemo(() => buildCreationMentionReferences(addedSkills, attachments, draftReferences), [addedSkills, attachments, draftReferences]);
+  297|     const isEmpty = !activeConversation?.messages.length;
+  298| <<<<<<< ours
+  299|     const pendingTaskKey = useMemo(() => pendingCreationTaskKey(conversations), [conversations]);
+  300| =======
+  301| 
+  302|     // 空首页从顶部开始；有消息的对话由跟随消息逻辑管理滚动。
+  303|     useLayoutEffect(() => {
+  304|         if (!hydrated || !isEmpty) return;
+  305|         const frame = window.requestAnimationFrame(() => {
+  306|             threadScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  307|         });
+  308|         return () => window.cancelAnimationFrame(frame);
+  309|     }, [activeId, hydrated, isEmpty]);
+  310| >>>>>>> theirs
+  311|     const pendingTaskIds = useMemo(() => pendingCreationTaskIds(conversations), [conversations]);
+  312|     const shots = useMemo(() => shotsFromMessages(activeConversation?.messages || []), [activeConversation]);
+  313|     const visibleShotIndex = shots.length ? selectedShotIndex >= 0 && selectedShotIndex < shots.length ? selectedShotIndex : shots.length - 1 : -1;
+  314| 
+  315|     useEffect(() => {
+  316| <<<<<<< ours
+  317|         if (agentIntent || mode !== "image") return;
+  318|         // 前台逻辑模型的默认参数优先于旧的全局创作参数；否则旧的合法值会一直覆盖后台刚配置的默认值。
+  319| =======
+  320|         writeComposerPref(TEXT_STREAMING_PREF_KEY, textStreaming);
+----- 688-762
+  688|         if (reference) setPrompt((current) => removeCreationReferenceTokens(current, [reference]));
+  689|     };
+  690| 
+  691|     const reorderAttachments = useCallback((next: CreationAttachment[]) => {
+  692|         setAttachments(next);
+  693|     }, []);
+  694| 
+  695|     const submit = async (retryContext?: CreationRetryContext, retryLockKey?: string) => {
+  696|         const releaseRetryLock = () => {
+  697|             if (retryLockKey) retryPreparingRef.current.delete(retryLockKey);
+  698|         };
+  699|         if (!submitGateRef.current.tryAcquire()) {
+  700|             releaseRetryLock();
+  701|             return;
+  702|         }
+  703|         const releaseSubmitGate = () => submitGateRef.current.release();
+  704|         const text = prompt.trim();
+  705|         if (submissionBlocked || uploadingRef.current || skillLoadsRef.current > 0) {
+  706|             toast.warning(inputIssues[0] || (uploadFailures.length ? "请重试或移除失败的附件后再提交。" : "附件或技能正在加载，请稍候。"));
+  707|             releaseRetryLock();
+  708|             return;
+  709|         }
+  710|         const missingSkill = [...text.matchAll(/@\[skill:([^\]]+)\]/g)].some(match => !mentionReferences.some(reference => reference.skill?.skillId === match[1] && reference.skill.instruction));
+  711|         if (missingSkill) {
+  712|             toast.warning("专业技能尚未加载完整，请稍后重试或重新选择技能。");
+  713|             releaseRetryLock();
+  714|             return;
+  715|         }
+  716|         if (!text || busy || preparingRef.current || agentLaunch.busy || (!retryLockKey && retryPreparingRef.current.size > 0) || !activeConversation) {
+  717|             releaseRetryLock();
+  718|             releaseSubmitGate();
+  719|             return;
+  720|         }
+  721|         if (!selectedModel) {
+  722|             toast.warning(`请先在设置中配置${modeLabels[mode]}模型`);
+  723|             releaseRetryLock();
+  724|             releaseSubmitGate();
+  725|             return;
+  726|         }
+  727| <<<<<<< ours
+  728|         if (agentIntent) {
+  729|             const skills = selectedCreationReferences(text, mentionReferences).flatMap(reference => reference.skill ? [reference.skill] : []);
+  730|             try {
+  731|                 await agentLaunch.launch({ prompt: text, attachments, skills, models: { text: config.textModel, image: config.imageModel, video: config.videoModel }, confirmTools });
+  732|             } catch (reason) { toast.error(reason instanceof Error ? reason.message : "创作简报未能交给画布，输入内容已保留。"); }
+  733|             finally { releaseRetryLock(); }
+  734| =======
+  735|         if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
+  736|             toast.error("当前模型不支持所选视频时长，请重新选择");
+  737|             releaseRetryLock();
+  738|             releaseSubmitGate();
+  739| >>>>>>> theirs
+  740|             return;
+  741|         }
+  742|         const compatibilityError = modelCompatibilityError(config, selectedModel, modelRequirements);
+  743|         if (compatibilityError) { toast.warning(compatibilityError); releaseRetryLock(); return; }
+  744|         if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
+  745|             toast.error("当前模型不支持所选视频时长，请重新选择");
+  746|             releaseRetryLock();
+  747|             releaseSubmitGate();
+  748|             return;
+  749|         }
+  750|         const settings = { ratio, seconds, quality, videoQuality, count };
+  751|         const references = selectedCreationReferences(text, mentionReferences);
+  752|         // 后端对图片和视频使用不同的参考字段；这里先拆分，避免媒体类型在写入任务时被误判。
+  753|         const { referenceImages, referenceVideos, referenceAudios } = splitCreationAttachments(attachments);
+  754|         const videoOperation = inferVideoOperation({
+  755|             textCount: text ? 1 : 0,
+  756|             imageCount: referenceImages.length,
+  757|             videoCount: referenceVideos.length,
+  758|             audioCount: referenceAudios.length,
+  759|             characterCount: 0,
+  760|         });
+  761| <<<<<<< ours
+  762|         let expandedPrompt = expandCreationPrompt(text, references, attachments);
+----- 1140-1226
+ 1140| 
+ 1141|     const cancelComposeNextShot = () => setComposingNextShot(false);
+ 1142| 
+ 1143|     const submitLobbyToCanvas = async () => {
+ 1144|         const text = prompt.trim();
+ 1145|         if (submissionBlocked || uploadingRef.current || skillLoadsRef.current > 0) {
+ 1146|             toast.warning(inputIssues[0] || (uploadFailures.length ? "请重试或移除失败的附件后再继续。" : "附件或技能正在加载，请稍候。"));
+ 1147|             return;
+ 1148|         }
+ 1149|         const missingSkill = [...text.matchAll(/@\[skill:([^\]]+)\]/g)].some(match => !mentionReferences.some(reference => reference.skill?.skillId === match[1] && reference.skill.instruction));
+ 1150|         if (missingSkill) {
+ 1151|             toast.warning("专业技能尚未加载完整，请稍后重试或重新选择技能。");
+ 1152|             return;
+ 1153|         }
+ 1154|         if (!text || busy || preparingRef.current || agentLaunch.busy || retryPreparingRef.current.size > 0) return;
+ 1155|         const skills = selectedCreationReferences(text, mentionReferences).flatMap(reference => reference.skill ? [reference.skill] : []);
+ 1156|         try {
+ 1157|             await agentLaunch.launch({
+ 1158|                 prompt: text,
+ 1159|                 attachments,
+ 1160|                 skills,
+ 1161|                 models: { text: config.textModel, image: config.imageModel, video: config.videoModel },
+ 1162|                 confirmTools,
+ 1163|                 entryMode: agentIntent ? "agent" : mode,
+ 1164|                 requireTextModel: false,
+ 1165|             });
+ 1166|         } catch (reason) {
+ 1167|             toast.error(reason instanceof Error ? reason.message : "创作草稿未能交给映雪画布，输入内容已保留。");
+ 1168|         }
+ 1169|     };
+ 1170| 
+ 1171|     const composerProps = {
+ 1172|         agentIntent,
+ 1173|         onAgentIntentChange: () => { if (!preparingRef.current && !agentLaunch.busy) { setAgentIntent(true); setMode("text"); } },
+ 1174|         confirmTools,
+ 1175|         onConfirmToolsChange: (confirmTools: boolean) => setAgentState({ confirmTools }),
+ 1176|         onSelectSkill: selectSkill,
+ 1177|         uploading,
+ 1178|         uploadFailures,
+ 1179|         inputIssues,
+ 1180|         submissionBlocked,
+ 1181|         onAddFiles: (files: File[]) => void addAttachments(files),
+ 1182|         onRetryUploads: () => void addAttachments(uploadFailures.map(item => item.file)),
+ 1183|         onDismissUploadFailure: (file: File) => setUploadFailures(current => current.filter(item => item.file !== file)),
+ 1184|         mode,
+ 1185|         prompt,
+ 1186|         setPrompt: (value: string) => { if (!preparingRef.current && !agentLaunch.busy) setPrompt(value); },
+ 1187|         busy: busy || agentLaunch.busy || preparing,
+ 1188|         attachments,
+ 1189|         referenceImageSize,
+ 1190|         maxReferences,
+ 1191|         references: mentionReferences,
+ 1192|         onRemoveAttachment: removeAttachment,
+ 1193|         onReorderAttachments: reorderAttachments,
+ 1194|         onOpenLibrary: () => setLibraryOpen(true),
+ 1195|         fileInputRef,
+ 1196|         onFileChange: handleFileChange,
+ 1197|         onModeChange: selectMode,
+ 1198|         model: selectedModel,
+ 1199|         modelRequirements,
+ 1200|         imageProfile,
+ 1201|         videoProfile,
+ 1202|         config,
+ 1203|         onModelChange: (value: string) => updateConfig(agentIntent || mode === "text" ? "textModel" : mode === "image" ? "imageModel" : "videoModel", value),
+ 1204|         onAgentModelChange: (kind: "text" | "image" | "video", value: string) => updateConfig(kind === "text" ? "textModel" : kind === "image" ? "imageModel" : "videoModel", value),
+ 1205|         ratio,
+ 1206|         setRatio,
+ 1207|         seconds,
+ 1208|         setSeconds,
+ 1209|         quality,
+ 1210|         setQuality,
+ 1211|         videoQuality,
+ 1212|         setVideoQuality,
+ 1213|         count,
+ 1214|         setCount,
+ 1215|         promptOptimizerProvider,
+ 1216|         composerFocusRef,
+ 1217|         placeholderOverride: viewMode === "storyboard" && composingNextShot ? `SC.${String(nextShotNumber).padStart(2, "0")} · 写下这一镜的镜头、画面或故事` : undefined,
+ 1218|         onSubmit: () => void submit(),
+ 1219|     };
+ 1220| 
+ 1221|     const visibleShot = shots[visibleShotIndex];
+ 1222|     const visibleShotResultIndex = visibleShot?.result ? activeConversation.messages.indexOf(visibleShot.result) : -1;
+ 1223| 
+ 1224|     const workspace = <div className="creation-home relative flex h-full min-h-0 flex-col overflow-hidden">
+ 1225|             {isEmpty ? <>
+ 1226|                 <div className="creation-top-actions">

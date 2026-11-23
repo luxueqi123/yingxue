@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/open-ai-canvas}"
-REPOSITORY="${REPOSITORY:-luxueqi123/yingxue}"
+REPOSITORY="${REPOSITORY:-ddcat-ai/open-ai-canvas}"
 SOCKET_DIR="${CANVAS_UPDATER_SOCKET_DIR:-/run/open-ai-canvas-updater}"
 UPDATER_BIN="/usr/local/bin/open-ai-canvas-host-updater"
 UPDATER_ENV="/etc/open-ai-canvas-updater.env"
@@ -23,6 +23,11 @@ require_root() {
     command -v openssl >/dev/null 2>&1 || fail "缺少 openssl"
     [[ -f "${INSTALL_DIR}/.env" ]] || fail "未找到 ${INSTALL_DIR}/.env"
     [[ -f "${INSTALL_DIR}/docker-compose.deploy.yml" ]] || fail "未找到部署 Compose"
+    local backend_image web_image
+    backend_image="$(sed -n 's/^CANVAS_BACKEND_IMAGE=//p' "${INSTALL_DIR}/.env" | tail -n 1)"
+    web_image="$(sed -n 's/^CANVAS_WEB_IMAGE=//p' "${INSTALL_DIR}/.env" | tail -n 1)"
+    [[ "$backend_image" =~ ^(ghcr\.io|ghcr\.nju\.edu\.cn)/[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || fail "CANVAS_BACKEND_IMAGE 必须固定为 GHCR 或南京大学镜像源 digest"
+    [[ "$web_image" =~ ^(ghcr\.io|ghcr\.nju\.edu\.cn)/[^[:space:]]+@sha256:[a-f0-9]{64}$ ]] || fail "CANVAS_WEB_IMAGE 必须固定为 GHCR 或南京大学镜像源 digest"
 }
 
 read_image_tag() {
@@ -56,7 +61,7 @@ install_binary() {
 }
 
 ensure_token() {
-    local token temporary image_repository
+    local token temporary
     token="$(sed -n 's/^CANVAS_UPDATER_TOKEN=//p' "${INSTALL_DIR}/.env" | tail -n 1)"
     if [[ -z "$token" ]]; then
         token="$(openssl rand -hex 32)"
@@ -71,25 +76,8 @@ ensure_token() {
         mv "$temporary" "${INSTALL_DIR}/.env"
     fi
     [[ ${#token} -ge 32 ]] || fail "CANVAS_UPDATER_TOKEN 长度不足"
-    image_repository="$(sed -n 's/^CANVAS_IMAGE_REPOSITORY=//p' "${INSTALL_DIR}/.env" | tail -n 1)"
-    if [[ -z "$image_repository" ]]; then
-        image_repository="ghcr.io/${REPOSITORY%%/*}"
-    fi
-    temporary="$(mktemp "${INSTALL_DIR}/.env.XXXXXX")"
-    awk -v repository="$REPOSITORY" -v image_repository="$image_repository" '
-        BEGIN { updater_written=0; image_written=0 }
-        /^CANVAS_UPDATER_REPOSITORY=/ { print "CANVAS_UPDATER_REPOSITORY=" repository; updater_written=1; next }
-        /^CANVAS_IMAGE_REPOSITORY=/ { print "CANVAS_IMAGE_REPOSITORY=" image_repository; image_written=1; next }
-        { print }
-        END {
-            if (!updater_written) print "CANVAS_UPDATER_REPOSITORY=" repository
-            if (!image_written) print "CANVAS_IMAGE_REPOSITORY=" image_repository
-        }
-    ' "${INSTALL_DIR}/.env" > "$temporary"
-    chmod --reference="${INSTALL_DIR}/.env" "$temporary"
-    mv "$temporary" "${INSTALL_DIR}/.env"
     umask 077
-    printf 'CANVAS_UPDATER_TOKEN=%s\nCANVAS_UPDATER_REPOSITORY=%s\nCANVAS_UPDATER_INSTALL_DIR=%s\nCANVAS_UPDATER_SOCKET=%s/updater.sock\n' "$token" "$REPOSITORY" "$INSTALL_DIR" "$SOCKET_DIR" > "$UPDATER_ENV"
+    printf 'CANVAS_UPDATER_TOKEN=%s\nCANVAS_UPDATER_INSTALL_DIR=%s\nCANVAS_UPDATER_SOCKET=%s/updater.sock\n' "$token" "$INSTALL_DIR" "$SOCKET_DIR" > "$UPDATER_ENV"
 }
 
 install_service() {

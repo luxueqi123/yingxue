@@ -1,0 +1,81 @@
+{
+ "test/app-theme.test.ts": [
+  "error: expect(received).toBe(expected)"
+ ],
+ "test/appearance-bootstrap.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/ark-video-execution.test.ts": [
+  "error: 游客不能读取远程媒体缓存"
+ ],
+ "test/canvas-angle-dialog.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/canvas-image-upload.test.tsx": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/canvas-node-config-reset.test.ts": [
+  "error: expect(received).toEqual(expected)"
+ ],
+ "test/create-canvas-handoff.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/create-library-button.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/generation-task-local.test.ts": [
+  "error: expect(received).toBe(expected)",
+  "error: expect(received).toContain(expected)",
+  "error: expect(received).toBeGreaterThanOrEqual(expected)",
+  "error: 当前模型未选择可用请求协议，请先在模型设置中选择协议插件",
+  "error: expect(received).toEqual(expected)",
+  "error: expect(received).toMatchObject(expected)"
+ ],
+ "test/kling-native-execution.test.ts": [
+  "error: 游客不能读取远程媒体缓存",
+  "error: expect(received).toBeUndefined()"
+ ],
+ "test/local-channel-permission.test.ts": [
+  "error: expect(received).toBe(expected)"
+ ],
+ "test/local-channel-runtime-projection.node.test.mjs": [
+  "AssertionError: persisted channel intentionally remains true before runtime projection",
+  "AssertionError: Expected values to be strictly equal:"
+ ],
+ "test/local-channel-task-center.node.test.mjs": [
+  "AssertionError: Expected values to be strictly equal:"
+ ],
+ "test/local-channel-ui.node.test.mjs": [
+  "AssertionError: adminLocalChannelFormOwner must be exported by ../src/pages/admin/channels/channels-page.tsx",
+  "AssertionError: userLocalChannelFormOwner must be exported by ../src/pages/settings/index.tsx"
+ ],
+ "test/local-cli-settings.test.ts": [
+  "error: expect(received).toBe(expected)"
+ ],
+ "test/local-runtime-connection.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/ltv-audio-execution.test.ts": [
+  "error: expect(received).toBe(expected)"
+ ],
+ "test/project-document-persistence.test.ts": [],
+ "test/settings-preference-spacing.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ],
+ "test/topaz-video-execution.test.ts": [
+  "error: 游客不能读取远程媒体缓存"
+ ],
+ "test/ui-kit-retirement.test.ts": [
+  "error: expect(received).toEqual(expected)"
+ ],
+ "test/user-scoped-generation-persistence.test.ts": [
+  "error: No available storage method found.",
+  "error: expect(received).toEqual(expected)",
+  "error: expect(received).resolves.toBeUndefined()",
+  "error: 模型目录响应来源无效",
+  "error: expect(received).rejects.toThrow(expected)"
+ ],
+ "test/workspace-route-loading.test.ts": [
+  "error: expect(received).toContain(expected)"
+ ]
+}

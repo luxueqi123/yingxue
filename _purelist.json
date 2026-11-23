@@ -1,0 +1,163 @@
+[
+ {
+  "path": "web/src/pages/settings/index.tsx",
+  "up_only": 38,
+  "up_added": 36,
+  "up_deleted": 43,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/pages/admin/channels/channels-page.tsx",
+  "up_only": 24,
+  "up_added": 33,
+  "up_deleted": 16,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/handler/custom_proxy_test.go",
+  "up_only": 20,
+  "up_added": 14,
+  "up_deleted": 122,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/pages/tasks/index.tsx",
+  "up_only": 19,
+  "up_added": 18,
+  "up_deleted": 56,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/components/layout/workspace-wallet-modal.tsx",
+  "up_only": 14,
+  "up_added": 0,
+  "up_deleted": 0,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/platform/runtime_policy.go",
+  "up_only": 10,
+  "up_added": 11,
+  "up_deleted": 10,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/pages/settings/channel-settings-pane.tsx",
+  "up_only": 10,
+  "up_added": 19,
+  "up_deleted": 45,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/services/api/custom-channel-relay.ts",
+  "up_only": 10,
+  "up_added": 16,
+  "up_deleted": 1,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/pages/canvas/use-canvas-assistant-visibility.ts",
+  "up_only": 8,
+  "up_added": 34,
+  "up_deleted": 1,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/app/service.go",
+  "up_only": 7,
+  "up_added": 52,
+  "up_deleted": 63,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/services/api/task-center.ts",
+  "up_only": 7,
+  "up_added": 23,
+  "up_deleted": 160,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/handler/custom_proxy.go",
+  "up_only": 6,
+  "up_added": 11,
+  "up_deleted": 0,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/services/api/image-models.ts",
+  "up_only": 6,
+  "up_added": 7,
+  "up_deleted": 2,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/app/workflow_provider.go",
+  "up_only": 5,
+  "up_added": 73,
+  "up_deleted": 14,
+  "xue_touched": false
+ },
+ {
+  "path": "backend/internal/platform/feature_availability.go",
+  "up_only": 5,
+  "up_added": 6,
+  "up_deleted": 7,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/generation-workflow-execution.ts",
+  "up_only": 5,
+  "up_added": 26,
+  "up_deleted": 4,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/generation-task-display.ts",
+  "up_only": 3,
+  "up_added": 3,
+  "up_deleted": 14,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/stores/use-user-store.ts",
+  "up_only": 3,
+  "up_added": 3,
+  "up_deleted": 3,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/components/workflow-test-workbench.tsx",
+  "up_only": 2,
+  "up_added": 2,
+  "up_deleted": 2,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/canvas/canvas-workflow.ts",
+  "up_only": 2,
+  "up_added": 2,
+  "up_deleted": 1,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/plugins/builtin/workflows.ts",
+  "up_only": 2,
+  "up_added": 2,
+  "up_deleted": 20,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/canvas/canvas-workflow-builder.ts",
+  "up_only": 1,
+  "up_added": 0,
+  "up_deleted": 0,
+  "xue_touched": false
+ },
+ {
+  "path": "web/src/lib/generation-error.ts",
+  "up_only": 1,
+  "up_added": 1,
+  "up_deleted": 11,
+  "xue_touched": false
+ }
+]
