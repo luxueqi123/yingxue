@@ -107,7 +107,7 @@ func TestPluginRuntimeRefreshesExistingOfficialPackageDocumentation(t *testing.T
 	}
 	registryData, err := json.Marshal([]pluginRegistryRecord{{
 		ID: pkg.Manifest.Metadata.ID, Raw: staleRaw, Source: PluginOriginOfficial,
-		FileName: filepath.Base(packagePath), PackageSHA256: "stale-package-hash",
+		FileName: filepath.Base(packagePath), PackagePath: filepath.Base(packagePath), PackageSHA256: "stale-package-hash",
 	}})
 	if err != nil {
 		t.Fatal(err)

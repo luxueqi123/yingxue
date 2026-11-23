@@ -232,7 +232,7 @@ func TestProtocolTextMultimodalOfficialPackageRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	records, err := json.Marshal([]pluginRegistryRecord{{ID: stale.Metadata.ID, Raw: staleRaw, Source: PluginOriginOfficial, FileName: filepath.Base(packagePath), PackageSHA256: "stale-multimodal-mapping"}})
+	records, err := json.Marshal([]pluginRegistryRecord{{ID: stale.Metadata.ID, Raw: staleRaw, Source: PluginOriginOfficial, FileName: filepath.Base(packagePath), PackagePath: filepath.Base(packagePath), PackageSHA256: "stale-multimodal-mapping"}})
 	if err != nil {
 		t.Fatal(err)
 	}

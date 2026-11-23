@@ -120,7 +120,7 @@ func retainRequestPackage(record pluginRegistryRecord, next protocol.Manifest, d
 	}
 	if previous.Metadata.Version != next.Metadata.Version {
 		history = append(history, requestPackageVersion{Version: previous.Metadata.Version, SHA256: record.PackageSHA256})
-	} else if record.PackageSHA256 != digest {
+	} else if record.PackageSHA256 != digest && record.Source == PluginOriginUploaded {
 		return nil, fmt.Errorf("请求插件 %s@%s 已安装，但包摘要不同；请发布新版本", record.ID, next.Metadata.Version)
 	}
 	for index, release := range history {
@@ -128,6 +128,10 @@ func retainRequestPackage(record pluginRegistryRecord, next protocol.Manifest, d
 			continue
 		}
 		if release.SHA256 != digest {
+			if record.Source != PluginOriginUploaded {
+				history = append(history[:index], history[index+1:]...)
+				break
+			}
 			return nil, fmt.Errorf("请求插件 %s@%s 已安装，但包摘要不同；请发布新版本", record.ID, release.Version)
 		}
 		return append(history[:index], history[index+1:]...), nil

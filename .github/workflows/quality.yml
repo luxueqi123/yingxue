@@ -186,7 +186,12 @@ jobs:
       - name: Check formatting
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun scripts/check-changed-formatting.mjs
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-parse HEAD^1)"
+            export BASE_SHA
+          fi
+          bun scripts/check-changed-formatting.mjs
       - name: Typecheck
         run: bun run typecheck
       - name: Lint retired Ant Design APIs

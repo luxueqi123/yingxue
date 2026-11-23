@@ -1,0 +1,13 @@
+# The Agent image only needs its runtime and the three server modules.
+# Keep web assets and production-library snapshots out of this build context.
+*
+!backend/
+!backend/agent-runtime/
+!backend/agent-runtime/pi/
+!backend/agent-runtime/pi/package.json
+!backend/agent-runtime/pi/package-lock.json
+!backend/agent-runtime/pi/agent-runtime.mjs
+!yingce-agent/
+!yingce-agent/server.mjs
+!yingce-agent/run-directories.mjs
+!yingce-agent/session-admission.mjs
