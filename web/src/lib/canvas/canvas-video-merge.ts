@@ -152,6 +152,8 @@ export function transcodeVideoToMp4(input: Blob, optionsOrProgress: TranscodeVid
     );
 }
 
+export const withFFmpeg = runFFmpegTask;
+
 export async function mergeVideos(inputs: MergeVideoInput[], onProgress?: (progress: MergeVideoProgress) => void) {
     if (inputs.length < 2) throw new Error("至少选择 2 个视频才能合并");
     return runFFmpegTask(async (ffmpeg) => {

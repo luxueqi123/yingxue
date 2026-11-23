@@ -10,10 +10,11 @@ export function resilientPreload(): Plugin {
             const entry = "function preload(baseModule, deps, importerUrl) {";
             const seenCheck = "if (dep in seen) return;";
             const cssLoad = 'if (isCss) return new Promise((res, rej) => {';
-            const cssError = 'link.addEventListener("error", () => rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`)));\n\t\t\t});';
-            if ([entry, seenCheck, cssLoad, cssError].some((part) => !code.includes(part))) {
+            const cssError = /link\.addEventListener\("error", \(\) => rej\([\s\S]*?\);\s*\}\);/;
+            if ([entry, seenCheck, cssLoad].some((part) => !code.includes(part)) || !cssError.test(code)) {
                 throw new Error("Vite preload helper changed; update the resource preload adapter");
             }
+            const cssErrorReplacement = 'link.addEventListener("error", () => { delete seen[dep]; link.remove(); rej(new PageResourceError(dep, "页面样式加载失败")); });';
             return {
                 code:
                     'import { PageResourceError, warmPreloadResources } from "@/lib/module-preload";\n' +
@@ -29,7 +30,7 @@ export function resilientPreload(): Plugin {
                     )
                         .replace(seenCheck, "if (dep in seen) return seen[dep] === true ? undefined : seen[dep];")
                         .replace(cssLoad, "if (isCss) return (seen[dep] = new Promise((res, rej) => {")
-                        .replace(cssError, 'link.addEventListener("error", () => { delete seen[dep]; link.remove(); rej(new PageResourceError(dep, "页面样式加载失败")); });\n\t\t\t}));'),
+                        .replace(cssError, `${cssErrorReplacement}\n\t\t\t}));`),
                 map: null,
             };
         },
