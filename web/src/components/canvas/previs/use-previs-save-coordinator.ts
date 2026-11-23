@@ -11,6 +11,7 @@ export type PrevisSaveController = {
     /** canonical 提交入口：预览态与「仅镜像」路径都不得调用。 */
     commitScene: (scene: PrevisScene) => void;
     retry: () => Promise<boolean>;
+    retrySave: () => Promise<boolean>;
     restoreCandidate: () => PrevisDraftEnvelope | null;
     restoreDraft: (candidate: PrevisDraftEnvelope) => boolean;
     discardDraft: () => boolean;
@@ -176,6 +177,7 @@ export function usePrevisSaveCoordinator(input: { sceneId: string | null; initia
         progress,
         commitScene,
         retry,
+        retrySave: retry,
         restoreCandidate,
         restoreDraft,
         discardDraft,

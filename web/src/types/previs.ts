@@ -329,6 +329,15 @@ export type PrevisObject = {
     motions?: PrevisActorMotion[];
     /** A→B 位移段（飞行、御剑、闪现等），与 transform 关键帧配合。 */
     travels?: PrevisActorTravel[];
+    /** 场景语义与渲染类型分离；源 GLB 角色仍按 model 加载。 */
+    role?: "actor";
+    /** 缺省 fit 保持旧模型行为，整场景导入显式保留源坐标。 */
+    modelNormalization?: "fit" | "preserve-source";
+    /** 显式导入的 GLB 整场景动画。 */
+    sourceAnimation?: {
+        mode: "threebox-scene";
+        duration: number;
+    };
 };
 
 export type PrevisCamera = {
@@ -346,18 +355,30 @@ export type PrevisCamera = {
     motionPath?: PrevisMotionPath;
     /** 运镜段（推拉摇移、环绕、跟拍…），叠加在 transform 关键帧之上按镜头时间求值。 */
     moves?: PrevisCameraMoveSegment[];
+    /** 同一整场景 Mixer 的源机位。 */
+    sourceCamera?: {
+        objectId: string;
+        entityId: string;
+    };
+    /** 源贝塞尔机位的弧长时钟。 */
+    ltvCameraMotion?: PrevisLtvCameraMotion;
+    /** 原空轨道保留作者信息。 */
+    ltvEmptyCameraTrack?: PrevisLtvEmptyCameraTrack;
 };
 
 export type PrevisLight = {
     id: string;
     name: string;
-    type: "directional" | "point" | "spot" | "ambient";
+    type: "directional" | "point" | "spot" | "ambient" | "hemisphere";
     transform: PrevisTransform;
     color: string;
     intensity: number;
     angle?: number;
     penumbra?: number;
     castShadow: boolean;
+    groundColor?: string;
+    shadowNear?: number;
+    shadowFar?: number;
 };
 
 export type PrevisShot = {
@@ -407,6 +428,15 @@ export type PrevisScene = {
     activeShotId: string;
     createdAt: string;
     updatedAt: string;
+    /** Absent keeps the native floor and tone mapping used by existing scenes. */
+    groundVisible?: boolean;
+    toneMapping?: "none" | "aces";
+    /** Full-frame camera output independent of the editor pane dimensions. */
+    outputFrame?: {
+        width: number;
+        height: number;
+        aspect: number;
+    };
 };
 
 export type PrevisCanvasExport = {
@@ -427,4 +457,46 @@ export type PrevisSceneOutput = {
     clayVideo?: Blob;
     clayVideoMimeType?: string;
     depthVideo?: Blob;
+};
+
+export type PrevisLtvEmptyCameraTrack = {
+    id: string;
+    name: string;
+    targetId: string;
+    interpolation: "linear" | "catmullRom";
+    keyframes: [];
+};
+
+export type PrevisLtvCameraMotion = {
+    version: 1;
+    duration: number;
+    baseY: number;
+    matrix: number[];
+    sourceTrack?: {
+        id: string;
+        name: string;
+        targetId: string;
+        interpolation: "linear" | "catmullRom";
+        pathId: string;
+        pathName: string;
+        orientToPath: boolean;
+        keyframes: Array<{
+            time: number;
+            position: PrevisVec3;
+            lookAt?: PrevisVec3;
+            fov?: number;
+        }>;
+    };
+    path: {
+        start: number;
+        end: number;
+        points: PrevisVec3[];
+        bezierPoints: Array<{
+            anchor: PrevisVec3;
+            in?: PrevisVec3;
+            out?: PrevisVec3;
+            handleMode?: "vertex" | "symmetric" | "asymmetric";
+        }>;
+        offset: PrevisVec3;
+    };
 };
