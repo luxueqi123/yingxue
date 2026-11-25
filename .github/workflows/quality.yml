@@ -128,10 +128,26 @@ jobs:
           if-no-files-found: ignore
 
   payment-plugins:
-    name: Payment plugin artifacts
+    name: Plugin artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify packaged provider manifests
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          for package in sorted(Path("plugin-packages").glob("*.yingce-plugin")):
+              source = package.with_suffix("") / "manifest.json"
+              manifest = json.loads(source.read_bytes())
+              if not manifest.get("contributes", {}).get("providers"):
+                  continue
+              with ZipFile(package) as archive:
+                  if json.loads(archive.read("manifest.json")) != manifest:
+                      raise SystemExit(f"{package.name} does not match {source}")
+          PY
       - name: Verify canonical payment packages
         env:
           PAYMENT_PLUGIN_SMOKE_TEST: "1"

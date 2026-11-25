@@ -54,7 +54,12 @@ func TestUploadedPackageFailedInstallRetainsExistingArtifact(t *testing.T) {
 					restoreRegistry()
 				}
 			}()
-			if _, err := center.install(item.data, "retry.yingce-plugin"); err == nil {
+			view, err := center.install(item.data, "retry.yingce-plugin")
+			if pluginHash(item.data) == installed.SHA256 {
+				if err != nil || view.SHA256 != installed.SHA256 {
+					t.Fatalf("identical reinstallation must reuse the active package: %v", err)
+				}
+			} else if err == nil {
 				t.Fatal("registry storage failure was hidden")
 			}
 			retained, err := os.ReadFile(packagePath)

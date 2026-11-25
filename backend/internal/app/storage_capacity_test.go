@@ -24,7 +24,11 @@ func newStorageCapacityTestService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&model.CreditAccount{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.CreditAccount{}, &model.AgentStorageUsage{},
+		&model.CloudAgentExecution{}, &model.CloudAgentPiSession{}, &model.CloudAgentEventRecord{},
+		&model.CloudAgentMessageRecord{}, &model.CloudAgentCanvasMutation{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })

@@ -28,6 +28,7 @@ func newResourceFallbackTestService(t *testing.T) (*Service, *gorm.DB) {
 		&model.SystemSetting{},
 		&model.StorageLocation{},
 		&model.UserDailyActivity{},
+		&model.CreditAccount{},
 	); err != nil {
 		t.Fatal(err)
 	}
