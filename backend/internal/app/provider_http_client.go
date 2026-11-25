@@ -313,7 +313,7 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 			recordProviderRequest(req, startedAt, 0, nil, err)
 			return nil, "", err
 		}
-	} else if _, err := ValidateOutboundURL(req.URL.String()); err != nil {
+	} else if _, err := ValidateOutboundURLWithProxy(req.URL.String(), channelProxyURL); err != nil {
 		recordProviderRequest(req, startedAt, 0, nil, err)
 		return nil, "", err
 	}

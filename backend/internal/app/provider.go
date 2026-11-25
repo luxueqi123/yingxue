@@ -387,7 +387,7 @@ func (s *Service) resolveProviderConfig(config providerConfig, task *model.Task)
 	if modelKey == "" {
 		modelKey = requestedModel
 	}
-	if _, err := s.validateChannelOutboundURL(channel.BaseURL, channel.AllowLocalChannel, false); err != nil {
+	if _, err := s.validateChannelOutboundURL(channel.BaseURL, channel.AllowLocalChannel, false, channel.ProxyURL); err != nil {
 		return providerConfig{}, err
 	}
 	config.ChannelID = channel.ID

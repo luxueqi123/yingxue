@@ -217,7 +217,7 @@ func CustomRelayHTTPClientForChannel(timeout time.Duration, target *url.URL, req
 	return CustomRelayHTTPClient(timeout)
 }
 
-func (s *Service) validateChannelOutboundURL(rawURL string, requestedAllowLocal bool, customRelay bool) (*url.URL, error) {
+func (s *Service) validateChannelOutboundURL(rawURL string, requestedAllowLocal bool, customRelay bool, proxyURL ...string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if requestedAllowLocal {
 		if !s.effectiveAllowLocalChannel(true) {
@@ -232,6 +232,9 @@ func (s *Service) validateChannelOutboundURL(rawURL string, requestedAllowLocal 
 	}
 	if customRelay {
 		return ValidateCustomRelayURL(rawURL)
+	}
+	if len(proxyURL) > 0 {
+		return ValidateOutboundURLWithProxy(rawURL, proxyURL[0])
 	}
 	return ValidateOutboundURL(rawURL)
 }

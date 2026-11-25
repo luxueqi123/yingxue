@@ -180,7 +180,7 @@ func (s *Service) channelFromRequest(req ChannelRequest, channel model.ModelChan
 	}
 	connectionChanged := model.CanonicalWebsiteURL(baseURL) != model.CanonicalWebsiteURL(channel.BaseURL) || allowLocal != channel.AllowLocalChannel
 	if connectionChanged || allowLocal {
-		if _, err := s.validateChannelOutboundURL(baseURL, allowLocal, false); err != nil {
+		if _, err := s.validateChannelOutboundURL(baseURL, allowLocal, false, channel.ProxyURL); err != nil {
 			return channel, err
 		}
 	}

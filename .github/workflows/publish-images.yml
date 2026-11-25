@@ -90,7 +90,6 @@ jobs:
             arch: multi
             platforms: linux/amd64,linux/arm64
             runner: ubuntu-24.04
-            reuse_tag: 2026.11.23-yingxue.10
     env:
       IMAGE: ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.image }}
     steps:
@@ -105,20 +104,12 @@ jobs:
         id: existing
         env:
           IMAGE_REF: ${{ env.IMAGE }}:sha-${{ github.sha }}-${{ matrix.arch }}
-          REUSE_TAG: ${{ matrix.reuse_tag || '' }}
-        run: |
-          if [[ -n "$REUSE_TAG" ]]; then
-            digest="$(docker buildx imagetools inspect "$IMAGE:$REUSE_TAG" --format '{{.Manifest.Digest}}')"
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Invalid reusable Agent image digest" >&2; exit 1; }
-            printf 'found=true\ndigest=%s\n' "$digest" >> "${GITHUB_OUTPUT:?}"
-          else
-            bash .github/scripts/resolve-image.sh "$IMAGE_REF"
-          fi
+        run: bash .github/scripts/resolve-image.sh "$IMAGE_REF"
       - name: Build and push immutable commit image
         id: build
         # A version tag is a release boundary: rebuild its image even if a SHA tag
         # already exists, so a stale/corrupt SHA tag cannot be promoted as a release.
-        if: (matrix.reuse_tag == '' && startsWith(github.ref, 'refs/tags/v')) || steps.existing.outputs.found != 'true'
+        if: startsWith(github.ref, 'refs/tags/v') || steps.existing.outputs.found != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .

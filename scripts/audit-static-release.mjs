@@ -5,7 +5,7 @@ import { extname, join, resolve } from "node:path";
 
 const releaseRoot = resolve(process.argv[2] || "web/dist");
 const assetsRoot = join(releaseRoot, "assets");
-const assetReferencePattern = /(?:\.\/|\/assets\/)([A-Za-z0-9_.-]+\.(?:js|css|wasm|woff2?|png|jpe?g|webp|svg))/g;
+const assetReferencePattern = /(?:\.\/|\/assets\/)([A-Za-z0-9_.-]+\.(?:json|js|css|wasm|woff2?|png|jpe?g|webp|svg))(?![A-Za-z0-9_.-])/g;
 
 async function assertDirectory(path) {
     const info = await stat(path).catch(() => null);

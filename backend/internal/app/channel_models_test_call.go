@@ -48,9 +48,7 @@ func (s *Service) TestAdminChannelModel(ctx context.Context, actor *model.User, 
 		return nil, BadAuthRequest("请先在渠道中配置 Base URL 和 API Key")
 
 	}
-
-	if _, err := ValidateOutboundURL(channel.BaseURL); err != nil {
-
+	if _, err := s.validateChannelOutboundURL(channel.BaseURL, channel.AllowLocalChannel, false, channel.ProxyURL); err != nil {
 		return nil, err
 
 	}

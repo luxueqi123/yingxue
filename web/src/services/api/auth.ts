@@ -420,7 +420,8 @@ export type RuntimeResourcePolicy = {
   recycleBinRetentionDays?: number;
   sessionUploadMB: number;
   sessionCount: number;
-    agentHistoryMB: number;
+  agentHistoryMB: number;
+  agentHistoryGlobalMB: number;
 };
 export type RuntimeStoragePolicy = {
   transferTimeoutSeconds: number;
