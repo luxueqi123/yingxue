@@ -231,6 +231,11 @@ func (m *Manager) runRollingUpdate(fromVersion string, release Release, nextComp
 				m.recordRollingRollback(active.Version, err, restoreErr)
 				return
 			}
+			if current, ingressErr := m.ingress(); ingressErr == nil && current == active &&
+				m.checkHealthOnce(m.healthURL(), active.Version) == nil {
+				m.recordRollingRollback(active.Version, err, m.stopSlot(slot))
+				return
+			}
 		}
 		m.revertRollingSwitch(active, slot, err)
 		return

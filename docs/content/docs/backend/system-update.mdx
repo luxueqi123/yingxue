@@ -38,7 +38,7 @@ description: Host Updater、Release 检查、数据库备份迁移、健康验�
 
 ### 在线切换
 
-已有 Nginx 入口的映雪部署可通过 Host Updater 的服务环境启用在线切换。将站点的 `proxy_pass` 指向独立 upstream，在 upstream 块中 include 专用文件。专用文件初始只写 `server 127.0.0.1:3000;`，其中端口取当前 Web 的本机端口。设置 `CANVAS_UPDATER_NGINX_UPSTREAM_FILE` 为专用文件绝对路径，`CANVAS_UPDATER_HEALTH_URL` 为**通过该 Nginx 入口**访问的就绪接口 URL。两个候选本机端口默认为 13001、13002，可以用 `CANVAS_UPDATER_BLUE_PORT` 和 `CANVAS_UPDATER_GREEN_PORT` 调整。与正常升级同样，启用前应核对安装镜像版本和真实运行版本。
+已有 Nginx 入口的映雪部署可通过 Host Updater 的服务环境启用在线切换。将站点的 `proxy_pass` 指向独立 upstream，在 upstream 块中 include `/var/lib/open-ai-canvas-updater/active-upstream.conf`。该文件由更新器在可写状态目录中原子替换，初始只写 `server 127.0.0.1:3000;`，其中端口取当前 Web 的本机端口。设置 `CANVAS_UPDATER_NGINX_UPSTREAM_FILE` 为同一绝对路径，`CANVAS_UPDATER_HEALTH_URL` 为**通过该 Nginx 入口**访问的就绪接口 URL。两个候选本机端口默认为 13001、13002，可以用 `CANVAS_UPDATER_BLUE_PORT` 和 `CANVAS_UPDATER_GREEN_PORT` 调整。启用前核对安装镜像版本和真实运行版本。
 
 点击更新后，现网在镜像拉取、数据库备份、新版启动与检查期间继续服务。候选先使用 `migrate-schema verify` 核对同一 PostgreSQL 的迁移身份和校验和。存储挂载、PostgreSQL/Redis 拓扑及未经在线演练的数据库结构变更会中止在线切换。支持在线切换的包在清单中声明 `rollingProtocol: 1`。
 

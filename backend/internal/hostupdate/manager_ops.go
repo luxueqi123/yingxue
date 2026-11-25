@@ -135,6 +135,11 @@ func (m *Manager) preflight(composePath, targetVersion string, images deployment
 	if _, err := os.Stat(m.envPath()); err != nil {
 		return fmt.Errorf("读取部署环境：%w", err)
 	}
+	if m.rollingEnabled() {
+		if err := checkWritableDirectory(filepath.Dir(m.config.NginxUpstreamFile)); err != nil {
+			return fmt.Errorf("检查 Nginx 切流目录：%w", err)
+		}
+	}
 	if m.config.SelfUpdate {
 		if strings.TrimSpace(m.config.BinaryPath) == "" {
 			return errors.New("检查 Host Updater 安装目录：二进制路径为空")
