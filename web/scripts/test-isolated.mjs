@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -27,9 +28,15 @@ const run = (parameters, binary = process.execPath, file) => new Promise((resolv
     child.once("error", reject);
     child.once("close", (code) => {
         if (record && code !== 0) {
-            const output = Buffer.concat(chunks).toString("utf8").replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replaceAll(path.resolve(root), "<web>");
+            const output = Buffer.concat(chunks).toString("utf8")
+                .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+                .replaceAll(path.dirname(path.resolve(root)) + path.sep, "<checkout>/")
+                .replaceAll(tmpdir() + path.sep, "<tmp>/")
+                .replace(/<tmp>\/([\w-]+)-[A-Za-z0-9]{6}(?=[/\\])/g, "<tmp>/$1-<id>");
             const reasons = output.split(/\r?\n/).map((line) => line.trim()).filter((line) => /^(?:\(fail\)|not ok |error:|\w*Error:)/.test(line))
-                .map((line) => line.replace(/\s+\[[\d.]+m?s\]$/, "")).sort();
+                .map((line) => line.replace(/\s+\[[\d.]+m?s\]$/, "")
+                    // A missing package can be reported by any importer in the same directory.
+                    .replace(/^(error: Cannot find package '[^']+' from '[^']*[/\\])[^/'\\]+'$/, "$1'")).sort();
             failedTests[path.relative(root, file).split(path.sep).join("/")] = { code, reasons };
         }
         resolve(code ?? 1);

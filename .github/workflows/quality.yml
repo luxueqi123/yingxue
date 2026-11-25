@@ -45,6 +45,10 @@ jobs:
     runs-on: ubuntu-24.04
     # go test 自身有 20 分钟超时；这里兜底防止依赖服务卡死时占用 Runner 数小时。
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [app-1, app-2, app-3, app-4, rest]
     defaults:
       run:
         working-directory: backend
@@ -101,24 +105,77 @@ jobs:
           echo "$RUNNER_TEMP/redis/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/redis/bin/redis-server" --version
       - name: Check formatting
-        run: test -z "$(gofmt -l .)"
+        if: matrix.shard == 'rest'
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            echo "::error::Go files require gofmt. Run gofmt -w on the files listed above."
+            exit 1
+          fi
       - name: Run Go tests
-        # 本轮个人发布快照包含历史二开测试与当前协议契约的漂移项。
-        # 保留完整输出和失败回执，但不让这些旧契约阻塞镜像构建；迁移、插件、架构和后续真实验收仍是阻塞门。
-        continue-on-error: ${{ github.repository == 'luxueqi123/yingxue' && startsWith(github.ref, 'refs/tags/v2026.11.23-yingxue.') }}
         shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          APP_SHARDS: "4"
         run: |
-          set -o pipefail
-          # internal/app 约 1000 个用例串行执行，是后端检查的关键路径（本地约 2–3 分钟）。
+          set -euo pipefail
           # 此前每个用例构造 Service 时都会完整解压 85MB 官方插件包（约 4 秒/次，累计 7 分钟以上），
-          # 现已改为只读清单 + 进程内缓存；若该包耗时再次明显上涨，先查 newPluginRuntime。
-          go test -json -timeout=20m ./... | tee "$RUNNER_TEMP/go-tests.jsonl"
-      - name: Ensure dependency-backed tests were not skipped
-        continue-on-error: ${{ github.repository == 'luxueqi123/yingxue' && startsWith(github.ref, 'refs/tags/v2026.11.23-yingxue.') }}
+          # 现已改为只读清单 + 进程内缓存；若 internal/app 耗时再次明显上涨，先查 newPluginRuntime。
+          out="$RUNNER_TEMP/go-tests.jsonl"
+          if [ "$SHARD" = rest ]; then
+            packages=$(go list ./... | grep -Fvx "$(go list -m)/internal/app")
+            # shellcheck disable=SC2086 # 包路径不含空格，按空白展开为多个参数。
+            go test -json -timeout=20m $packages | tee "$out"
+            exit 0
+          fi
+          # 顶层用例按名字排序后轮转分片；子用例跟随顶层用例，不会被拆开或漏跑。
+          names=$(go test -list '.' ./internal/app | grep -E '^(Test|Example|Fuzz)[A-Za-z0-9_]*$' | sort | awk -v n="$APP_SHARDS" -v i="${SHARD#app-}" '(NR - 1) % n == i - 1')
+          [ -n "$names" ] || { echo "::error::shard $SHARD has no tests"; exit 1; }
+          echo "shard $SHARD: $(printf '%s\n' "$names" | wc -l) top-level tests"
+          pattern="^($(printf '%s\n' "$names" | paste -sd'|' -))\$"
+          go test -json -timeout=20m -run "$pattern" ./internal/app | tee "$out"
+      - name: Upload Go test timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-test-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/go-tests.jsonl
+          if-no-files-found: ignore
+
+  # 汇总分片结果，保留原有的 Backend checks 检查名，仓库必需检查不用改。
+  backend:
+    name: Backend checks
+    needs: backend-tests
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: go-test-timings-*
+          path: ${{ runner.temp }}/shards
+      - name: Merge Go test timings
         shell: bash
         run: |
-          python3 ../.github/scripts/test_check_dependency_tests.py
-          python3 ../.github/scripts/check-dependency-tests.py "$RUNNER_TEMP/go-tests.jsonl"
+          set -euo pipefail
+          count=$(find "$RUNNER_TEMP/shards" -name go-tests.jsonl | wc -l)
+          echo "merged $count shard timing files"
+          find "$RUNNER_TEMP/shards" -name go-tests.jsonl -exec cat {} + > "$RUNNER_TEMP/go-tests.jsonl"
+      - name: Require every shard to pass
+        env:
+          RESULT: ${{ needs.backend-tests.result }}
+        run: |
+          [ "$RESULT" = success ] || { echo "::error::Backend test shards finished with: $RESULT"; exit 1; }
+      - name: Ensure dependency-backed tests were not skipped
+        shell: bash
+        run: |
+          python3 .github/scripts/test_check_dependency_tests.py
+          python3 .github/scripts/check-dependency-tests.py "$RUNNER_TEMP/go-tests.jsonl"
       - name: Upload Go test timings
         if: always()
         uses: actions/upload-artifact@v4
