@@ -14,7 +14,7 @@ const phaseLabels: Record<UpdatePhase, string> = {
     checking: "正在检查",
     ready: "可更新",
     no_update: "已是最新",
-    waiting_release: "等待映雪发布",
+    waiting_release: "等待自动构建",
     preflight: "前置检查",
     backing_up: "正在备份",
     pulling: "拉取镜像",
@@ -99,7 +99,7 @@ export default function SystemUpdatePage() {
                 setStatus(next);
                 setLoadError("");
                 if (notify) {
-                    if (next.operation.phase === "waiting_release") message.info("影策已更新，正在等待通过验收的映雪发布包");
+                    if (next.operation.phase === "waiting_release") message.info("已发现影策新版，构建通过后可安装");
                     else message.success(next.updateAvailable ? `发现新版本 ${next.latestRelease?.version}` : "当前已是最新版本");
                 }
             } catch (error) {
@@ -201,7 +201,7 @@ export default function SystemUpdatePage() {
                         layout="stacked"
                         icon={<ServerCog className="size-4" />}
                         title="可用版本"
-                        description={status?.operation.phase === "waiting_release" ? `影策 ${status.upstreamVersion} 尚无通过验收的映雪更新包。` : undefined}
+                        description={status?.operation.phase === "waiting_release" ? `影策 ${status.upstreamVersion} 构建通过后可安装。` : undefined}
                         status={<PhaseBadge phase={status?.operation.phase ?? "idle"} />}
                         footer={
                             <>
@@ -227,7 +227,7 @@ export default function SystemUpdatePage() {
                                 ) : null}
                                 <div>
                                     <span>最新发布</span>
-                                    <strong>{status?.latestRelease?.version || (status?.operation.phase === "waiting_release" ? "等待发布" : "尚未检查")}</strong>
+                                    <strong>{status?.latestRelease?.version || (status?.operation.phase === "waiting_release" ? "等待自动构建" : "尚未检查")}</strong>
                                     {status?.latestRelease?.prerelease ? <AdminStatusBadge label="预览版" tone="warning" /> : null}
                                     {status?.updateAvailable ? <AdminStatusBadge label="可更新" tone="success" /> : null}
                                 </div>

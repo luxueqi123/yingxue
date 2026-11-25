@@ -19,10 +19,12 @@ concurrency:
 jobs:
   checks:
     name: Quality checks
+    if: github.repository != 'luxueqi123/yingxue' || startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/quality.yml
 
   prepare:
     name: Resolve build version
+    if: github.repository != 'luxueqi123/yingxue' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.info.outputs.version }}

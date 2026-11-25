@@ -2,7 +2,7 @@ name: Sync upstream and publish Yingxue
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,21 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Resolve verified Yingxue baseline
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" --jq '
+            [.[] | select(.draft == false and .prerelease == false and any(.assets[]; .name == "yingxue-update.json" and .state == "uploaded"))]
+            | first.tag_name // empty
+          ')"
+          if [[ -n "$tag" ]]; then
+            git fetch --no-tags origin "refs/tags/$tag"
+            echo "commit=$(git rev-parse 'FETCH_HEAD^{commit}')" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve stable upstream version
         id: upstream
         env:
@@ -34,33 +49,46 @@ jobs:
           [[ "$tag" =~ ^v[0-9]+(\.[0-9]+){2,3}$ ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           git fetch --no-tags https://github.com/ddcat-ai/open-ai-canvas.git "refs/tags/$tag"
+          echo "commit=$(git rev-parse 'FETCH_HEAD^{commit}')" >> "$GITHUB_OUTPUT"
 
       - name: Merge upstream into Yingxue
         id: merge
         env:
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          UPSTREAM_COMMIT: ${{ steps.upstream.outputs.commit }}
+          BASELINE_COMMIT: ${{ steps.baseline.outputs.commit }}
         shell: bash
         run: |
           base="$(git rev-parse --short=12 HEAD)"
-          candidate="codex/sync-$UPSTREAM_TAG-$base"
+          baseline="${BASELINE_COMMIT:0:12}"
+          candidate="codex/sync-$UPSTREAM_TAG-$base${baseline:+-$baseline}"
           echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
-          if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
-            git switch --detach "refs/remotes/origin/$candidate"
-            exit 0
-          fi
-          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git merge --no-ff --no-commit FETCH_HEAD; then
-            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/merge-conflicts.txt"
-            git merge --abort
-            echo "conflict=true" >> "$GITHUB_OUTPUT"
-            printf '影策 %s 与映雪合并有冲突，未发布更新包。\n' "$UPSTREAM_TAG" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+
+          merge_or_report() {
+            if ! git merge "$@"; then
+              git diff --name-only --diff-filter=U > "$RUNNER_TEMP/merge-conflicts.txt"
+              if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then git merge --abort; fi
+              echo "conflict=true" >> "$GITHUB_OUTPUT"
+              printf '影策 %s 与映雪合并失败，现网继续使用已发布版本。\n' "$UPSTREAM_TAG" >> "$GITHUB_STEP_SUMMARY"
+              return 1
+            fi
+          }
+
+          if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+            git switch --detach "refs/remotes/origin/$candidate"
+            git merge-base --is-ancestor "$base" HEAD
+            git merge-base --is-ancestor "$UPSTREAM_COMMIT" HEAD
+            if [[ -n "$BASELINE_COMMIT" ]]; then git merge-base --is-ancestor "$BASELINE_COMMIT" HEAD; fi
+            exit 0
           fi
-          git commit -m "feat(sync): 上游更新 - 合并影策 $UPSTREAM_TAG"
+          if [[ -n "$BASELINE_COMMIT" ]]; then
+            merge_or_report --ff -m "chore(sync): 更新基线 - 合入最近发布的映雪版本" "$BASELINE_COMMIT"
+          fi
+          if ! git merge-base --is-ancestor "$UPSTREAM_COMMIT" HEAD; then
+            merge_or_report --no-ff -m "feat(sync): 上游更新 - 合并影策 $UPSTREAM_TAG" "$UPSTREAM_COMMIT"
+          fi
 
       - uses: actions/upload-artifact@v4
         if: failure() && steps.merge.outputs.conflict == 'true'
