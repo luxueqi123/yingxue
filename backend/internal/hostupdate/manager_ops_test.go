@@ -124,7 +124,7 @@ func TestCreateBackupReadsBackendDataAsRoot(t *testing.T) {
 		config: Config{InstallDir: installDir, ComposeFile: "docker-compose.deploy.yml", EnvFile: ".env", BackupDir: backupDir},
 		runner: runner,
 	}
-	if _, err := manager.createBackup("v1.2.2-preview.2"); err != nil {
+	if _, err := manager.createBackup(appSlot{Name: legacySlot, Version: "v1.2.2-preview.2"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, call := range runner.calls {

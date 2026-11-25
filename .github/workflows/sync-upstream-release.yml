@@ -59,6 +59,12 @@ jobs:
           BASELINE_COMMIT: ${{ steps.baseline.outputs.commit }}
         shell: bash
         run: |
+          if [[ -n "$BASELINE_COMMIT" ]] && git merge-base --is-ancestor "$UPSTREAM_COMMIT" "$BASELINE_COMMIT" &&
+             [[ "$(git show "$BASELINE_COMMIT:VERSION" | tr -d '\r\n')" == "$UPSTREAM_TAG" ]]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "影策 $UPSTREAM_TAG 对应的映雪安装包已发布。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           base="$(git rev-parse --short=12 HEAD)"
           baseline="${BASELINE_COMMIT:0:12}"
           candidate="codex/sync-$UPSTREAM_TAG-$base${baseline:+-$baseline}"
@@ -99,6 +105,7 @@ jobs:
           retention-days: 7
 
       - name: Publish only through the release gates
+        if: steps.merge.outputs.up_to_date != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
@@ -112,10 +119,11 @@ jobs:
             git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' tag -a "$tag" -m "映雪 · 影策 $UPSTREAM_TAG"
             git push --atomic origin "HEAD:refs/heads/$CANDIDATE_BRANCH" "refs/tags/$tag"
           fi
-          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --silent 2>"$RUNNER_TEMP/release-check.err"; then
-            exit 0
-          fi
-          if ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-check.err"; then
+          if published="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '
+            .draft == false and .prerelease == false and any(.assets[]; .name == "yingxue-update.json" and .state == "uploaded")
+          ' 2>"$RUNNER_TEMP/release-check.err")"; then
+            if [[ "$published" == true ]]; then exit 0; fi
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-check.err"; then
             cat "$RUNNER_TEMP/release-check.err" >&2
             exit 1
           fi

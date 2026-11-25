@@ -432,7 +432,8 @@ func ensureAgentToken(path string) error {
 	return setEnvValue(path, "YINGCE_AGENT_TOKEN", hex.EncodeToString(token))
 }
 
-func (m *Manager) createBackup(version string) (Backup, error) {
+func (m *Manager) createBackup(slot appSlot) (Backup, error) {
+	version := slot.Version
 	now := time.Now().UTC()
 	id := "backup-" + now.Format("20060102-150405")
 	path := filepath.Join(m.config.BackupDir, id+".zip")
@@ -471,8 +472,12 @@ func (m *Manager) createBackup(version string) (Backup, error) {
 	if err != nil {
 		return Backup{}, err
 	}
-	// 复用部署镜像与原数据卷，只执行 tar，不启动业务或依赖服务。
-	if err := m.compose(m.composePath(), version, m.config.StepTimeout, dataEntry, "run", "--rm", "--no-deps", "--pull", "never", "-T", "--user", "root", "--entrypoint", "tar", "backend", "-C", "/data", "-cf", "-", "."); err != nil {
+	if slot.Name == legacySlot {
+		err = m.composeSlot(slot, dataEntry, "run", "--rm", "--no-deps", "--pull", "never", "-T", "--user", "root", "--entrypoint", "tar", "backend", "-C", "/data", "-cf", "-", ".")
+	} else {
+		err = m.composeSlot(slot, dataEntry, "exec", "-T", "--user", "root", "slot-backend", "tar", "-C", "/data", "-cf", "-", ".")
+	}
+	if err != nil {
 		return Backup{}, fmt.Errorf("备份数据目录：%w", err)
 	}
 	if err := archive.Close(); err != nil {

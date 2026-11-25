@@ -365,7 +365,7 @@ func (m *Manager) runUpdate(fromVersion string, release Release, sources Sources
 
 	// 最终备份必须包含旧服务退出前的全部写入；镜像下载不占用停服窗口。
 	m.setPhase(PhaseBackingUp, "创建停服后的 PostgreSQL 与数据目录 ZIP 备份")
-	backup, err := m.createBackup(fromVersion)
+	backup, err := m.createBackup(appSlot{Name: legacySlot, Version: fromVersion})
 	if err != nil {
 		m.failBeforeMigration(err, fromVersion)
 		return

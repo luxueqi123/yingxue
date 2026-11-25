@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -147,16 +148,16 @@ func (m *Manager) slotDir(slot appSlot) string {
 	return filepath.Join(m.config.StateDir, "rollout", slot.Name)
 }
 
-func (m *Manager) composeSlot(slot appSlot, arguments ...string) error {
+func (m *Manager) composeSlot(slot appSlot, output io.Writer, arguments ...string) error {
 	if slot.Name == legacySlot {
-		return m.compose(m.composePath(), slot.Version, m.config.StepTimeout, nil, arguments...)
+		return m.compose(m.composePath(), slot.Version, m.config.StepTimeout, output, arguments...)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), m.config.StepTimeout)
 	defer cancel()
 	args := []string{"compose", "--project-name", composeProjectName(m.config.InstallDir) + "-" + slot.Name, "--project-directory", m.config.InstallDir,
 		"-f", filepath.Join(m.slotDir(slot), "compose.json")}
 	var stderr bytes.Buffer
-	if err := m.runner.Run(ctx, "docker", append(args, arguments...), nil, nil, &stderr); err != nil {
+	if err := m.runner.Run(ctx, "docker", append(args, arguments...), nil, output, &stderr); err != nil {
 		if detail := strings.TrimSpace(stderr.String()); detail != "" {
 			err = errors.New(detail)
 		}
@@ -188,7 +189,7 @@ func (m *Manager) prepareSlot(nextCompose string, images deploymentImages, relea
 	}
 	if _, err := os.Stat(filepath.Join(dir, "compose.json")); err == nil {
 		// The two names are reserved for updater-managed application projects.
-		if err := m.composeSlot(slot, "down"); err != nil {
+		if err := m.composeSlot(slot, nil, "down"); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {

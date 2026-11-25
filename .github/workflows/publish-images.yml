@@ -296,12 +296,42 @@ jobs:
           )
           if [[ "$YINGXUE_RELEASE" == true ]]; then
             assets+=(dist/yingxue-update.json)
-          fi
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if [[ "$YINGXUE_RELEASE" == true ]]; then
-              echo "映雪版本已发布，保留原镜像摘要与验收清单。"
+            release_api="repos/$GITHUB_REPOSITORY/releases"
+            release="$(gh api "$release_api?per_page=50" | jq -c --arg tag "$GITHUB_REF_NAME" '[.[] | select(.tag_name == $tag)] | first // empty')"
+            if [[ -z "$release" ]]; then
+              release="$(gh api --method POST "$release_api" -f tag_name="$GITHUB_REF_NAME" \
+                -f name="$GITHUB_REF_NAME" -f body="$(cat dist/RELEASE_NOTES.md)" -F draft=true)"
+            fi
+            release_id="$(jq -er '.id' <<< "$release")"
+            attachments() {
+              gh api "$release_api/$release_id/assets"
+            }
+            if [[ "$(jq -r '.draft' <<< "$release")" != true ]]; then
+              uploaded="$(attachments)"
+              for asset in "${assets[@]}"; do
+                jq -e --arg name "${asset##*/}" 'any(.[]; .name == $name and .state == "uploaded")' <<< "$uploaded" >/dev/null
+              done
               exit 0
             fi
+            for asset in "${assets[@]}"; do
+              name="${asset##*/}"
+              digest="sha256:$(sha256sum "$asset" | awk '{print $1}')"
+              info="$(attachments | jq -c --arg name "$name" '[.[] | select(.name == $name)] | first // empty')"
+              if [[ -z "$info" ]]; then
+                gh release upload "$GITHUB_REF_NAME" "$asset" --repo "$GITHUB_REPOSITORY" || echo "核对上传响应后的附件状态：$name"
+              elif ! jq -e --arg digest "$digest" '.state == "uploaded" and .digest == $digest' <<< "$info" >/dev/null; then
+                gh release upload "$GITHUB_REF_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --clobber
+              fi
+              info="$(attachments | jq -c --arg name "$name" '[.[] | select(.name == $name)] | first // empty')"
+              if ! jq -e --arg digest "$digest" '.state == "uploaded" and .digest == $digest' <<< "$info" >/dev/null || [[ -z "$info" ]]; then
+                echo "映雪发布附件未通过校验：$name" >&2
+                exit 1
+              fi
+            done
+            gh api --method PATCH "$release_api/$release_id" -F draft=false -f make_latest=true --silent
+            exit 0
+          fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
           else
             # A verified release may be built from an isolated candidate ref.

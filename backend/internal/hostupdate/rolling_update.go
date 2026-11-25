@@ -92,16 +92,16 @@ func (m *Manager) routeTo(slot appSlot) error {
 
 func (m *Manager) startSlot(slot appSlot) error {
 	if slot.Name == legacySlot {
-		return m.composeSlot(slot, "start", "yingce-agent", "backend", "web")
+		return m.composeSlot(slot, nil, "start", "yingce-agent", "backend", "web")
 	}
-	return m.composeSlot(slot, "up", "-d", "--pull", "never", "--wait", "--wait-timeout", "240")
+	return m.composeSlot(slot, nil, "up", "-d", "--pull", "never", "--wait", "--wait-timeout", "240")
 }
 
 func (m *Manager) stopSlot(slot appSlot) error {
 	if slot.Name == legacySlot {
-		return m.composeSlot(slot, "stop", "web", "backend", "yingce-agent")
+		return m.composeSlot(slot, nil, "stop", "web", "backend", "yingce-agent")
 	}
-	return m.composeSlot(slot, "stop", "slot-web", "slot-backend", "slot-yingce-agent")
+	return m.composeSlot(slot, nil, "stop", "slot-web", "slot-backend", "slot-yingce-agent")
 }
 
 func (m *Manager) workerActivationPath(slot appSlot) string {
@@ -164,7 +164,8 @@ func (m *Manager) runRollingUpdate(fromVersion string, release Release, nextComp
 	}
 
 	m.setPhase(PhasePreflight, "核对线上数据库和新版迁移账本")
-	if err := m.composeWithImages(nextCompose, release.Version, images, m.config.StepTimeout, nil, "run", "--rm", "--no-deps", "-T", "migrate", "verify"); err != nil {
+	migrate, err := m.checkRollingSchema(nextCompose, release, images)
+	if err != nil {
 		m.failWithoutRollback(PhaseFailed, fmt.Errorf("新版未通过在线数据库校验，保留现有版本：%w", err))
 		return
 	}
@@ -180,27 +181,70 @@ func (m *Manager) runRollingUpdate(fromVersion string, release Release, nextComp
 	m.mu.Unlock()
 
 	m.setPhase(PhaseBackingUp, "网站运行中，创建升级前备份")
-	backup, err := m.createBackup(fromVersion)
+	backup, err := m.createBackup(active)
 	if err != nil {
 		m.failWithoutRollback(PhaseFailed, err)
 		return
 	}
+	abortStartup := func(cause error) {
+		stopErr := m.stopSlot(slot)
+		if migrate {
+			m.setPhase(PhaseRollingBack, "恢复升级前的数据库迁移记录")
+			restoreErr := m.restoreArchiveSchema(active.Version)
+			if restoreErr == nil {
+				restoreErr = m.checkHealthOnce(m.healthURL(), active.Version)
+			}
+			m.recordRollingRollback(active.Version, cause, errors.Join(stopErr, restoreErr))
+			return
+		}
+		m.failWithoutRollback(PhaseFailed, errors.Join(cause, stopErr))
+	}
+	if migrate {
+		m.mu.Lock()
+		m.state.LastBackup = &backup
+		_ = m.saveStateLocked()
+		m.mu.Unlock()
+
+		m.setPhase(PhaseMigrating, "执行已演练的 Agent 历史归档结构迁移")
+		err := m.migrateForRollout(nextCompose, release.Version, images, "up", nil)
+		if err == nil {
+			err = m.migrateForRollout(nextCompose, release.Version, images, "verify", nil)
+		}
+		if err != nil {
+			abortStartup(err)
+			return
+		}
+	}
 	m.setPhase(PhaseWarming, "旧版继续服务，新版独立启动并检查")
 	if err := m.startSlot(slot); err != nil {
-		m.failWithoutRollback(PhaseFailed, errors.Join(err, m.stopSlot(slot)))
+		abortStartup(err)
 		return
 	}
 	if err := m.verifyHealthyAt(slotHealthURL(slot), slot.Version); err != nil {
-		m.failWithoutRollback(PhaseFailed, errors.Join(err, m.stopSlot(slot)))
+		abortStartup(err)
 		return
 	}
 	if err := m.promoteSlot(active, slot); err != nil {
+		if migrate {
+			m.setPhase(PhaseRollingBack, "检查能否恢复升级前的数据库迁移记录")
+			if restoreErr := m.restoreArchiveSchema(active.Version); restoreErr != nil {
+				m.recordRollingRollback(active.Version, err, restoreErr)
+				return
+			}
+		}
 		m.revertRollingSwitch(active, slot, err)
 		return
 	}
 	m.mu.Lock()
 	m.state.LastBackup = &backup
-	m.state.RollbackSlot, m.state.RollbackVersion = &active, active.Version
+	if migrate {
+		// The previous backend cannot restart once the ledger advances.
+		m.state.RollbackSlot, m.state.RollbackVersion = nil, ""
+		// This candidate's bundled updater predates the rolling migration and slot backup fixes.
+		updaterBinary = ""
+	} else {
+		m.state.RollbackSlot, m.state.RollbackVersion = &active, active.Version
+	}
 	_ = m.saveStateLocked()
 	m.mu.Unlock()
 	m.finishUpdate(release.Version, updaterBinary)
