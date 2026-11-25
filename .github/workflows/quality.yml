@@ -213,9 +213,19 @@ jobs:
       - name: Lint retired Ant Design APIs
         run: bun run lint
       - name: Run tests
-        # 同上。typecheck、lint、构建与真实预演 E2E 仍保持阻塞。
-        continue-on-error: ${{ github.repository == 'luxueqi123/yingxue' && startsWith(github.ref, 'refs/tags/v2026.11.23-yingxue.') }}
+        if: github.repository != 'luxueqi123/yingxue' || !startsWith(github.ref, 'refs/tags/v')
         run: bun run test
+      - name: Verify Yingxue release acceptance and web regressions
+        if: github.repository == 'luxueqi123/yingxue' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash ../.github/scripts/check-yingxue-web-release.sh
+      - uses: actions/upload-artifact@v4
+        if: always() && github.repository == 'luxueqi123/yingxue' && startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: yingxue-web-regression-reports
+          path: ${{ runner.temp }}/yingxue-web-*.json
+          if-no-files-found: ignore
       # ubuntu-latest 预装 google-chrome；脚本的解析顺序已覆盖该路径，
       # 因此不引入第三方 setup action，也不需要任何 secret。
       - name: Previs P0 Chrome E2E

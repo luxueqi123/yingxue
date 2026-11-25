@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 
@@ -24,18 +25,8 @@ func newStorageCapacityTestService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(
-		&model.CreditAccount{}, &model.AgentStorageUsage{},
-		&model.CloudAgentExecution{}, &model.CloudAgentPiSession{}, &model.CloudAgentEventRecord{},
-		&model.CloudAgentMessageRecord{}, &model.CloudAgentCanvasMutation{},
-	); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.SystemSetting{}, &model.User{}, &model.Resource{}, &model.UserStorageGrant{}, &model.UserStorageState{}, &model.AdminAuditEvent{}, &model.UserDailyUploadUsage{}, &model.UploadReservation{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(&model.Asset{}, &model.CanvasProject{}, &model.Task{}, &model.TaskLog{}, &model.Result{}, &model.ApiCallLog{}, &model.TaskTextDelta{}); err != nil {
+	if err := database.MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	return &Service{repo: repository.New(db)}, db
